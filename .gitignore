@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+obj/
+dist/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Runtime
+logs/
+*.log
+
+# Secrets (never commit)
+appsettings.Local.json
+appsettings.Production.json
+
+# OS
+.DS_Store
+Thumbs.db
