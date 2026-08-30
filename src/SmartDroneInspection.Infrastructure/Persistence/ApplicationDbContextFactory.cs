@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
+using Pgvector.EntityFrameworkCore;
 
 namespace SmartDroneInspection.Infrastructure.Persistence;
 
@@ -17,7 +18,9 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
             .Build();
 
         var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
-        optionsBuilder.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
+        optionsBuilder.UseNpgsql(configuration.GetConnectionString("DefaultConnection"), npgsql =>
+            npgsql.UseVector())
+            .UseSnakeCaseNamingConvention();
 
         return new ApplicationDbContext(optionsBuilder.Options);
     }

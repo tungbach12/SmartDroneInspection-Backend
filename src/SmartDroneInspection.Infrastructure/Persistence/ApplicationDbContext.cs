@@ -1,33 +1,107 @@
 using Microsoft.EntityFrameworkCore;
+using SmartDroneInspection.Application.Common.Interfaces;
+using SmartDroneInspection.Domain.Ai;
+using SmartDroneInspection.Domain.Assets;
 using SmartDroneInspection.Domain.Common;
+using SmartDroneInspection.Domain.Missions;
+using SmartDroneInspection.Domain.Planning;
+using SmartDroneInspection.Domain.Reports;
+using SmartDroneInspection.Domain.Users;
 
 namespace SmartDroneInspection.Infrastructure.Persistence;
 
-public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : DbContext(options)
+public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+    : DbContext(options), IApplicationDbContext
 {
+    public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetDocument> AssetDocuments => Set<AssetDocument>();
+    public DbSet<AssetLifecycleLog> AssetLifecycleLogs => Set<AssetLifecycleLog>();
+
+    public DbSet<InspectionPlan> InspectionPlans => Set<InspectionPlan>();
+    public DbSet<PlanAsset> PlanAssets => Set<PlanAsset>();
+    public DbSet<InspectionSchedule> InspectionSchedules => Set<InspectionSchedule>();
+    public DbSet<InspectionCalendarEvent> InspectionCalendarEvents => Set<InspectionCalendarEvent>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+
+    public DbSet<InspectionRequest> InspectionRequests => Set<InspectionRequest>();
+    public DbSet<DroneMission> DroneMissions => Set<DroneMission>();
+    public DbSet<MissionTelemetry> MissionTelemetries => Set<MissionTelemetry>();
+    public DbSet<MissionImage> MissionImages => Set<MissionImage>();
+    public DbSet<MissionFlightLog> MissionFlightLogs => Set<MissionFlightLog>();
+
+    public DbSet<InspectionReport> InspectionReports => Set<InspectionReport>();
+    public DbSet<ReportEvidence> ReportEvidences => Set<ReportEvidence>();
+    public DbSet<ReportFinding> ReportFindings => Set<ReportFinding>();
+    public DbSet<Defect> Defects => Set<Defect>();
+    public DbSet<MaintenanceTicket> MaintenanceTickets => Set<MaintenanceTicket>();
+    public DbSet<TicketHistory> TicketHistories => Set<TicketHistory>();
+    public DbSet<DefectEvidence> DefectEvidences => Set<DefectEvidence>();
+
+    public DbSet<AiAnalysisJob> AiAnalysisJobs => Set<AiAnalysisJob>();
+    public DbSet<KnowledgeCase> KnowledgeCases => Set<KnowledgeCase>();
+    public DbSet<KnowledgeCaseEmbedding> KnowledgeCaseEmbeddings => Set<KnowledgeCaseEmbedding>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.HasPostgresExtension("vector");
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
-        // Module configurations are added here as entities are implemented, one file
-        // per module under Persistence/Configurations/, owned by that module's developer.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (!typeof(ISoftDelete).IsAssignableFrom(entityType.ClrType))
+            {
+                continue;
+            }
+
+            var method = typeof(ApplicationDbContext)
+                .GetMethod(nameof(ApplySoftDeleteFilter), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+                .MakeGenericMethod(entityType.ClrType);
+            method.Invoke(null, [modelBuilder]);
+        }
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
+        var utcNow = DateTime.UtcNow;
+
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
-            switch (entry.State)
+            if (entry.State == EntityState.Added)
             {
-                case EntityState.Added:
-                    entry.Entity.CreatedAt = DateTime.UtcNow;
-                    break;
-                case EntityState.Modified:
-                    entry.Entity.UpdatedAt = DateTime.UtcNow;
-                    break;
+                entry.Entity.CreatedAt = utcNow;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = utcNow;
             }
         }
 
-        return base.SaveChangesAsync(ct);
+        foreach (var entry in ChangeTracker.Entries<ISoftDelete>())
+        {
+            if (entry.State != EntityState.Deleted)
+            {
+                continue;
+            }
+
+            entry.State = EntityState.Modified;
+            entry.Entity.IsDeleted = true;
+            entry.Entity.DeletedAt = utcNow;
+        }
+
+        return await base.SaveChangesAsync(ct);
+    }
+
+    private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder)
+        where TEntity : class, ISoftDelete
+    {
+        modelBuilder.Entity<TEntity>().HasQueryFilter(entity => !entity.IsDeleted);
     }
 }
