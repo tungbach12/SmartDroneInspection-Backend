@@ -1,7 +1,11 @@
+using System.Threading.RateLimiting;
 using Scalar.AspNetCore;
 using Serilog;
+using SmartDroneInspection.Api.Middleware;
 using SmartDroneInspection.Application;
+using SmartDroneInspection.Application.Common.Interfaces;
 using SmartDroneInspection.Infrastructure;
+using SmartDroneInspection.Infrastructure.Auth;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -18,12 +22,48 @@ try
         .ReadFrom.Services(services));
 
     builder.Services.AddProblemDetails();
+    builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
+    builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
     builder.Services.AddControllers();
     builder.Services.AddOpenApi();
+
+    builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy
+        .WithOrigins("http://localhost:3000")
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()));
+
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        // Strict per-IP limit for auth endpoints (brute-force protection);
+        // applied via [EnableRateLimiting("auth")] on auth controllers.
+        options.AddPolicy("auth", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 10,
+                    Window = TimeSpan.FromMinutes(1),
+                }));
+
+        // Generous global per-IP limit
+        options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 300,
+                    Window = TimeSpan.FromMinutes(1),
+                }));
+    });
+
+    builder.Services.AddHealthChecks();
 
     var app = builder.Build();
 
@@ -35,13 +75,16 @@ try
 
     app.UseSerilogRequestLogging();
 
-    app.UseExceptionHandler(); // ProblemDetails for unhandled errors
+    app.UseExceptionHandler();
     app.UseHttpsRedirection();
+    app.UseCors("frontend");
+    app.UseRateLimiter();
 
     app.UseAuthentication();
     app.UseAuthorization();
 
     app.MapControllers();
+    app.MapHealthChecks("/health");
 
     app.Run();
 }
