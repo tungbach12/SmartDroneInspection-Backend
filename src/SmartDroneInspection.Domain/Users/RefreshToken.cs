@@ -6,6 +6,7 @@ namespace SmartDroneInspection.Domain.Users;
 public class RefreshToken : BaseEntity
 {
     public Guid UserId { get; set; }
+    public User? User { get; set; }
     public string TokenHash { get; set; } = string.Empty;
     public string JwtId { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }

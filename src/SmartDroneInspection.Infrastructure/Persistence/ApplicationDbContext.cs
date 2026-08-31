@@ -10,8 +10,9 @@ using SmartDroneInspection.Domain.Users;
 
 namespace SmartDroneInspection.Infrastructure.Persistence;
 
-public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-    : DbContext(options), IApplicationDbContext
+public class ApplicationDbContext(
+    DbContextOptions<ApplicationDbContext> options,
+    ICurrentUserService currentUser) : DbContext(options), IApplicationDbContext
 {
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<User> Users => Set<User>();
@@ -71,16 +72,30 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
         var utcNow = DateTime.UtcNow;
+        var userId = currentUser.UserId;
 
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
             if (entry.State == EntityState.Added)
             {
                 entry.Entity.CreatedAt = utcNow;
+                if (entry.Entity is IAuditable added)
+                {
+                    added.CreatedBy = userId;
+                }
             }
             else if (entry.State == EntityState.Modified)
             {
                 entry.Entity.UpdatedAt = utcNow;
+                if (entry.Entity is IAuditable modified)
+                {
+                    modified.UpdatedBy = userId;
+                }
+
+                if (entry.Entity is IHasVersion versioned)
+                {
+                    versioned.Version += 1;
+                }
             }
         }
 
@@ -94,6 +109,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entry.State = EntityState.Modified;
             entry.Entity.IsDeleted = true;
             entry.Entity.DeletedAt = utcNow;
+            entry.Entity.DeletedBy = userId;
         }
 
         return await base.SaveChangesAsync(ct);

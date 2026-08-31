@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SmartDroneInspection.Domain.Common;
 
 namespace SmartDroneInspection.Domain.Reports;
@@ -11,6 +12,6 @@ public class ReportFinding : BaseEntity
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
     public Guid? ImageId { get; set; }
-    public string? BoundingBoxJson { get; set; }
+    public JsonDocument? BoundingBox { get; set; }
     public decimal? ConfidenceScore { get; set; }
 }

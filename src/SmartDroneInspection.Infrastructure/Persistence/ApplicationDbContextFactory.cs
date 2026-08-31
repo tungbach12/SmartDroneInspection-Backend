@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 using Pgvector.EntityFrameworkCore;
+using SmartDroneInspection.Application.Common.Interfaces;
 
 namespace SmartDroneInspection.Infrastructure.Persistence;
 
@@ -22,6 +23,15 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
             npgsql.UseVector())
             .UseSnakeCaseNamingConvention();
 
-        return new ApplicationDbContext(optionsBuilder.Options);
+        return new ApplicationDbContext(optionsBuilder.Options, new DesignTimeCurrentUser());
+    }
+
+    /// <summary>No HTTP context at design time — audit stamps stay null, which is correct for migrations.</summary>
+    private sealed class DesignTimeCurrentUser : ICurrentUserService
+    {
+        public Guid? UserId => null;
+        public string? UserName => "design-time";
+        public IReadOnlyList<string> Roles => [];
+        public bool IsInRole(string role) => true;
     }
 }

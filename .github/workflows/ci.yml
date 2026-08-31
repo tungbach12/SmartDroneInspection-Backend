@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  DOTNET_VERSION: "9.0.x"
+
+jobs:
+  build:
+    name: build-format-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore SmartDroneInspection.sln
+
+      - name: Build
+        run: dotnet build SmartDroneInspection.sln --no-restore --nologo
+
+      - name: Format (verify no changes)
+        run: dotnet format SmartDroneInspection.sln --verify-no-changes --no-restore
+
+      - name: Test
+        run: dotnet test SmartDroneInspection.sln --no-build --nologo

@@ -748,6 +748,7 @@ namespace SmartDroneInspection.Infrastructure.Persistence.Migrations
                         .HasColumnName("updated_at");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(1)
@@ -1230,7 +1231,10 @@ namespace SmartDroneInspection.Infrastructure.Persistence.Migrations
                     b.HasIndex("ScheduleId")
                         .HasDatabaseName("ix_inspection_calendar_events_schedule_id");
 
-                    b.ToTable("inspection_calendar_events", (string)null);
+                    b.ToTable("inspection_calendar_events", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_inspection_calendar_events_date_range", "end_date IS NULL OR end_date >= event_date");
+                        });
                 });
 
             modelBuilder.Entity("SmartDroneInspection.Domain.Planning.InspectionPlan", b =>
@@ -1934,6 +1938,7 @@ namespace SmartDroneInspection.Infrastructure.Persistence.Migrations
                         .HasColumnName("updated_by");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(1)
@@ -2210,10 +2215,9 @@ namespace SmartDroneInspection.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("BoundingBoxJson")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("bounding_box_json");
+                    b.Property<JsonDocument>("BoundingBox")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("bounding_box");
 
                     b.Property<decimal?>("ConfidenceScore")
                         .HasPrecision(5, 4)
@@ -2696,6 +2700,7 @@ namespace SmartDroneInspection.Infrastructure.Persistence.Migrations
                         .HasColumnName("value");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(1)
@@ -3397,12 +3402,14 @@ namespace SmartDroneInspection.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_refresh_tokens_refresh_tokens_replaced_by_token_id");
 
-                    b.HasOne("SmartDroneInspection.Domain.Users.User", null)
+                    b.HasOne("SmartDroneInspection.Domain.Users.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SmartDroneInspection.Domain.Users.SystemSetting", b =>

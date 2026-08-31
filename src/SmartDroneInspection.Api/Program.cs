@@ -1,11 +1,12 @@
 using System.Threading.RateLimiting;
+using Asp.Versioning;
 using Scalar.AspNetCore;
 using Serilog;
 using SmartDroneInspection.Api.Middleware;
 using SmartDroneInspection.Application;
-using SmartDroneInspection.Application.Common.Interfaces;
 using SmartDroneInspection.Infrastructure;
-using SmartDroneInspection.Infrastructure.Auth;
+using SmartDroneInspection.Infrastructure.Persistence;
+using SmartDroneInspection.Infrastructure.Persistence.Seed;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -26,10 +27,20 @@ try
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
-    builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
     builder.Services.AddControllers();
     builder.Services.AddOpenApi();
+
+    builder.Services.AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ReportApiVersions = true;
+    }).AddApiExplorer(o =>
+    {
+        o.GroupNameFormat = "'v'VVV";
+        o.SubstituteApiVersionInUrl = true;
+    });
 
     builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy
         .WithOrigins("http://localhost:3000")
@@ -63,14 +74,19 @@ try
                 }));
     });
 
-    builder.Services.AddHealthChecks();
+    builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>("database");
 
     var app = builder.Build();
 
     if (app.Environment.IsDevelopment())
     {
         app.MapOpenApi();
-        app.MapScalarApiReference(); // interactive UI at /scalar
+        app.MapScalarApiReference();
+        // Idempotent dev seed: default org + admin user, only if missing.
+        using var scope = app.Services.CreateScope();
+        var seeder = scope.ServiceProvider.GetRequiredService<AdminUserSeed>();
+        await seeder.EnsureSeedAsync();
     }
 
     app.UseSerilogRequestLogging();
