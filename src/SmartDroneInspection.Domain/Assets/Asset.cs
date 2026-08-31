@@ -23,7 +23,7 @@ public class Asset : BaseEntity, IAuditable, ISoftDelete
     public DateTime? NextInspectionDueAt { get; set; }
     public JsonDocument? Metadata { get; set; }
     public JsonDocument? Specifications { get; set; }
-    public string[]? Tags { get; set; }
+    public List<string> Tags { get; private set; } = new();
     public Guid? CreatedBy { get; set; }
     public Guid? UpdatedBy { get; set; }
     public bool IsDeleted { get; set; }

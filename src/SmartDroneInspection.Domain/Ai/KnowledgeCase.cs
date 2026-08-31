@@ -11,7 +11,7 @@ public class KnowledgeCase : BaseEntity, IAuditable
     public string Content { get; set; } = string.Empty;
     public string? Summary { get; set; }
     public KnowledgeCaseType CaseType { get; set; }
-    public string[]? Tags { get; set; }
+    public List<string> Tags { get; private set; } = new();
     public string Language { get; set; } = "en";
     public KnowledgeCaseSource Source { get; set; }
     public bool IsPublished { get; set; }
