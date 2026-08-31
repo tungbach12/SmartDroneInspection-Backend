@@ -3,7 +3,7 @@ using SmartDroneInspection.Domain.Common;
 
 namespace SmartDroneInspection.Domain.Users;
 
-public class SystemSetting : BaseEntity, IAuditable
+public class SystemSetting : BaseEntity, IAuditable, IHasVersion
 {
     public string Key { get; set; } = string.Empty;
     public JsonDocument Value { get; set; } = JsonDocument.Parse("null");

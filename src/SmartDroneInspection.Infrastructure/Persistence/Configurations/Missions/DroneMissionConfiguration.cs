@@ -12,7 +12,7 @@ public sealed class DroneMissionConfiguration : IEntityTypeConfiguration<DroneMi
     {
         builder.ConfigureBase("drone_missions"); builder.Property(x => x.SmartDroneHubMissionId); builder.Property(x => x.ExternalStatusCode).HasMaxLength(100);
         builder.Property(x => x.MissionType).HasConversion<string>().HasMaxLength(32); builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32); builder.Property(x => x.CreatedVia).HasConversion<string>().HasMaxLength(32);
-        builder.Property(x => x.Notes).HasColumnType("text"); builder.Property(x => x.WeatherConditions).HasColumnType("jsonb"); builder.Property(x => x.Version).HasDefaultValue(1); builder.Property(x => x.LastSyncedAt);
+        builder.Property(x => x.Notes).HasColumnType("text"); builder.Property(x => x.WeatherConditions).HasColumnType("jsonb"); builder.Property(x => x.Version).HasDefaultValue(1).IsConcurrencyToken(); builder.Property(x => x.LastSyncedAt);
         builder.HasIndex(x => x.SmartDroneHubMissionId).IsUnique(); builder.HasIndex(x => new { x.OrganizationId, x.Status }); builder.HasIndex(x => x.InspectionRequestId);
         builder.ToTable("drone_missions", table =>
         {

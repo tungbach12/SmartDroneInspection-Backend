@@ -3,7 +3,7 @@ using SmartDroneInspection.Domain.Common;
 
 namespace SmartDroneInspection.Domain.Missions;
 
-public class DroneMission : BaseEntity
+public class DroneMission : BaseEntity, IHasVersion
 {
     public Guid OrganizationId { get; set; }
     public Guid InspectionRequestId { get; set; }

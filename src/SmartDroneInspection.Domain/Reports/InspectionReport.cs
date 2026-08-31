@@ -3,7 +3,7 @@ using SmartDroneInspection.Domain.Common;
 
 namespace SmartDroneInspection.Domain.Reports;
 
-public class InspectionReport : BaseEntity, IAuditable, ISoftDelete
+public class InspectionReport : BaseEntity, IAuditable, ISoftDelete, IHasVersion
 {
     public Guid OrganizationId { get; set; }
     public Guid InspectionRequestId { get; set; }
