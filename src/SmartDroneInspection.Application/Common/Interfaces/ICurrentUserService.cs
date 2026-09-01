@@ -7,4 +7,6 @@ public interface ICurrentUserService
     string? UserName { get; }
     IReadOnlyList<string> Roles { get; }
     bool IsInRole(string role);
+    string? ClientIp { get; }
+    string? UserAgent { get; }
 }

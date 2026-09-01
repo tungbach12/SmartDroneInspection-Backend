@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmartDroneInspection.Domain.Reports;
 using SmartDroneInspection.Domain.Missions;
-using SmartDroneInspection.Domain.Assets;
 using SmartDroneInspection.Domain.Users;
 using SmartDroneInspection.Infrastructure.Persistence.Configurations;
 
