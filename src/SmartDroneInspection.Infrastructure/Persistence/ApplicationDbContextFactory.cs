@@ -33,5 +33,7 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
         public string? UserName => "design-time";
         public IReadOnlyList<string> Roles => [];
         public bool IsInRole(string role) => true;
+        public string? ClientIp => null;
+        public string? UserAgent => null;
     }
 }

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using SmartDroneInspection.Domain.Common;
 
 namespace SmartDroneInspection.Domain.Missions;

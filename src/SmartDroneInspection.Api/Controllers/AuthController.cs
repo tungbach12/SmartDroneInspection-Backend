@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using SmartDroneInspection.Application.Common.Interfaces;
 using SmartDroneInspection.Application.Users.Commands;
 using SmartDroneInspection.Application.Users.Dtos;
 
@@ -13,7 +14,7 @@ namespace SmartDroneInspection.Api.Controllers;
 [ApiController]
 [Route("api/v{version:apiVersion}/auth")]
 [EnableRateLimiting("auth")]
-public class AuthController(IMediator mediator) : ControllerBase
+public class AuthController(IMediator mediator, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpPost("login")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
@@ -21,10 +22,8 @@ public class AuthController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<AuthResponse>> LoginAsync(
         [FromBody] LoginRequest request, CancellationToken ct)
     {
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var ua = Request.Headers.UserAgent.ToString();
         var result = await mediator.Send(
-            new LoginCommand(request.Email, request.Password, ip, ua), ct);
+            new LoginCommand(request.Email, request.Password, currentUser.ClientIp, currentUser.UserAgent), ct);
         return Ok(result);
     }
 
@@ -34,10 +33,8 @@ public class AuthController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<AuthResponse>> RefreshAsync(
         [FromBody] RefreshRequest request, CancellationToken ct)
     {
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var ua = Request.Headers.UserAgent.ToString();
         var result = await mediator.Send(
-            new RefreshTokenCommand(request.RefreshToken, ip, ua), ct);
+            new RefreshTokenCommand(request.RefreshToken, currentUser.ClientIp, currentUser.UserAgent), ct);
         return Ok(result);
     }
 }

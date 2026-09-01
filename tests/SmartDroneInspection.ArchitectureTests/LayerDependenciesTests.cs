@@ -148,17 +148,34 @@ public sealed class LayerDependenciesTests
     {
         // The mediator pipeline must dispatch to handlers that live in Application; if a
         // handler leaks into Infrastructure or Api the boundary has been broken.
-        var assembly = typeof(BaseEntity).Assembly;
-        var result = Types.InAssembly(assembly)
-            .That()
-            .ImplementInterface(typeof(MediatR.IRequestHandler<,>))
-            .Should()
-            .ResideInNamespace(ApplicationNamespace)
-            .GetResult();
+        // Scan every layer that could plausibly host a handler — Domain has no
+        // MediatR reference at all, so scanning it would always pass vacuously.
+        var assemblies = new[]
+        {
+            typeof(Application.Common.Models.PagedResult<>).Assembly,
+            typeof(Infrastructure.Persistence.ApplicationDbContext).Assembly,
+            Assembly.Load(ApiNamespace),
+        };
 
-        Assert.True(result.IsSuccessful,
+        var violations = new List<string>();
+        foreach (var assembly in assemblies)
+        {
+            var result = Types.InAssembly(assembly)
+                .That()
+                .ImplementInterface(typeof(MediatR.IRequestHandler<,>))
+                .Should()
+                .ResideInNamespace(ApplicationNamespace)
+                .GetResult();
+
+            if (!result.IsSuccessful)
+            {
+                violations.Add($"{assembly.GetName().Name}:{Environment.NewLine}{FormatFailures(result)}");
+            }
+        }
+
+        Assert.True(violations.Count == 0,
             "IRequestHandler implementations must live in SmartDroneInspection.Application. Violations:" +
-            Environment.NewLine + FormatFailures(result));
+            Environment.NewLine + string.Join(Environment.NewLine, violations));
     }
 
     [Fact]
