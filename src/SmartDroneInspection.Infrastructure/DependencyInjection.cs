@@ -31,6 +31,7 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
         services.AddSingleton<Microsoft.AspNetCore.Identity.PasswordHasher<User>>();
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddSingleton<IPasswordHasher, PasswordHasherAdapter>();
@@ -58,6 +59,7 @@ public static class DependencyInjection
             .Configure<JwtOptions>((options, jwt) =>
             {
                 options.RequireHttpsMetadata = !jwt.AllowInsecure;
+                options.TokenValidationParameters!.ValidAlgorithms = [SecurityAlgorithms.HmacSha256];
                 options.TokenValidationParameters!.ValidIssuer = jwt.Issuer;
                 options.TokenValidationParameters!.ValidAudience = jwt.Audience;
                 options.TokenValidationParameters!.IssuerSigningKey =
