@@ -1,6 +1,5 @@
 ﻿using Clean.Architecture.Core.Ai;
 using Clean.Architecture.Core.Assets;
-using Clean.Architecture.Core.ContributorAggregate;
 using Clean.Architecture.Core.Missions;
 using Clean.Architecture.Core.Planning;
 using Clean.Architecture.Core.Reports;
@@ -8,9 +7,6 @@ using Clean.Architecture.Core.Users;
 using Vogen;
 
 namespace Clean.Architecture.Infrastructure.Data.Config;
-
-[EfCoreConverter<ContributorId>]
-[EfCoreConverter<ContributorName>]
 [EfCoreConverter<AssetId>]
 [EfCoreConverter<AssetDocumentId>]
 [EfCoreConverter<AssetLifecycleLogId>]

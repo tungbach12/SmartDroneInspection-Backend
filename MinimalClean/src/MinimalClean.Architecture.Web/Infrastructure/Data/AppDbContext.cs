@@ -2,13 +2,9 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using MinimalClean.Architecture.Web.Domain.Ai;
 using MinimalClean.Architecture.Web.Domain.Assets;
-using MinimalClean.Architecture.Web.Domain.CartAggregate;
 using MinimalClean.Architecture.Web.Domain.Common;
-using MinimalClean.Architecture.Web.Domain.GuestUserAggregate;
 using MinimalClean.Architecture.Web.Domain.Missions;
-using MinimalClean.Architecture.Web.Domain.OrderAggregate;
 using MinimalClean.Architecture.Web.Domain.Planning;
-using MinimalClean.Architecture.Web.Domain.ProductAggregate;
 using MinimalClean.Architecture.Web.Domain.Reports;
 using MinimalClean.Architecture.Web.Domain.Users;
 
@@ -17,14 +13,6 @@ namespace MinimalClean.Architecture.Web.Infrastructure.Data;
 public class AppDbContext(DbContextOptions<AppDbContext> options) :
   DbContext(options)
 {
-    // Template sample
-    public DbSet<Product> Products => Set<Product>();
-    public DbSet<Cart> Carts => Set<Cart>();
-    public DbSet<CartItem> CartItems => Set<CartItem>();
-    public DbSet<GuestUser> GuestUsers => Set<GuestUser>();
-    public DbSet<Order> Orders => Set<Order>();
-    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
-
     // SmartDrone — preserve tables/fields (same schema as full)
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<User> Users => Set<User>();

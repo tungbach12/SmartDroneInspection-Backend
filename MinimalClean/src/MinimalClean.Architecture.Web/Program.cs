@@ -5,8 +5,7 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults()    // This sets up OpenTelemetry logging
-       .AddLoggerConfigs();     // This adds Serilog for console formatting
+builder.AddLoggerConfigs();     // This adds Serilog for console formatting
 
 using var loggerFactory = LoggerFactory.Create(config => config.AddConsole());
 var startupLogger = loggerFactory.CreateLogger<Program>();
@@ -25,8 +24,6 @@ builder.Services.AddFastEndpoints()
 var app = builder.Build();
 
 await app.UseAppMiddlewareAndSeedDatabase();
-
-app.MapDefaultEndpoints(); // Aspire health checks and metrics
 
 app.Run();
 

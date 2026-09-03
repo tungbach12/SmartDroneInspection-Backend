@@ -1,7 +1,6 @@
 using Clean.Architecture.Core.Ai;
 using Clean.Architecture.Core.Assets;
 using Clean.Architecture.Core.Common;
-using Clean.Architecture.Core.ContributorAggregate;
 using Clean.Architecture.Core.Missions;
 using Clean.Architecture.Core.Planning;
 using Clean.Architecture.Core.Reports;
@@ -12,10 +11,7 @@ namespace Clean.Architecture.Infrastructure.Data;
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
-    // Template sample
-    public DbSet<Contributor> Contributors => Set<Contributor>();
-
-    // SmartDrone — preserve tables/fields
+    // SmartDrone â€” preserve tables/fields
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
@@ -80,7 +76,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             var entity = entry.Entity;
             var entityType = entity.GetType();
 
-            // Timestamps — preserve CreatedAt/UpdatedAt columns
+            // Timestamps ï¿½ preserve CreatedAt/UpdatedAt columns
             var createdAtProp = entityType.GetProperty("CreatedAt");
             var updatedAtProp = entityType.GetProperty("UpdatedAt");
 
