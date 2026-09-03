@@ -1,57 +1,34 @@
-﻿using Clean.Architecture.Core.Interfaces;
-using Clean.Architecture.Core.Services;
-using Clean.Architecture.Infrastructure.Data;
-using Clean.Architecture.Infrastructure.Data.Queries;
-using Clean.Architecture.UseCases.Contributors.List;
+﻿using Clean.Architecture.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Clean.Architecture.Infrastructure;
+
 public static class InfrastructureServiceExtensions
 {
-  public static IServiceCollection AddInfrastructureServices(
-    this IServiceCollection services,
-    ConfigurationManager config,
-    ILogger logger)
-  {
-    // Try to get connection strings in order of priority:
-    // 1. "cleanarchitecture" - provided by Aspire when using .WithReference(cleanArchDb)
-    // 2. "DefaultConnection" - SQL Server (Windows only by default, can be forced with USE_SQL_SERVER=true)
-    // 3. "SqliteConnection" - fallback to SQLite
-    bool isWindows = OperatingSystem.IsWindows();
-    bool forceSqlServer = Environment.GetEnvironmentVariable("USE_SQL_SERVER") == "true";
-    
-    string? connectionString = config.GetConnectionString("cleanarchitecture")
-                               ?? ((isWindows || forceSqlServer) ? config.GetConnectionString("DefaultConnection") : null)
-                               ?? config.GetConnectionString("SqliteConnection");
-    Guard.Against.Null(connectionString);
-
-    services.AddScoped<EventDispatchInterceptor>();
-    services.AddScoped<IDomainEventDispatcher, MediatorDomainEventDispatcher>();
-
-    services.AddDbContext<AppDbContext>((provider, options) =>
+    public static IServiceCollection AddInfrastructureServices(
+        this IServiceCollection services,
+        ConfigurationManager config,
+        ILogger logger)
     {
-      var eventDispatchInterceptor = provider.GetRequiredService<EventDispatchInterceptor>();
-      
-      // Use SQL Server if Aspire or DefaultConnection (on Windows or forced) is available, otherwise use SQLite
-      if (config.GetConnectionString("cleanarchitecture") != null || 
-          ((isWindows || forceSqlServer) && config.GetConnectionString("DefaultConnection") != null))
-      {
-        options.UseSqlServer(connectionString);
-      }
-      else
-      {
-        options.UseSqlite(connectionString);
-      }
-      
-      options.AddInterceptors(eventDispatchInterceptor);
-    });
+        string? connectionString = config.GetConnectionString("DefaultConnection") ?? config.GetConnectionString("AppDb");
+        Guard.Against.Null(connectionString, "DefaultConnection is required.");
 
-    services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>))
-           .AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>))
-           .AddScoped<IListContributorsQueryService, ListContributorsQueryService>()
-           .AddScoped<IDeleteContributorService, DeleteContributorService>();
+        services.AddScoped<EventDispatchInterceptor>();
+        services.AddScoped<IDomainEventDispatcher, MediatorDomainEventDispatcher>();
 
-    logger.LogInformation("{Project} services registered", "Infrastructure");
+        services.AddDbContext<AppDbContext>((provider, options) =>
+        {
+            var interceptor = provider.GetRequiredService<EventDispatchInterceptor>();
+            options.UseNpgsql(connectionString, o => o.UseVector());
+            options.UseSnakeCaseNamingConvention();
+            options.AddInterceptors(interceptor);
+        });
 
-    return services;
-  }
+        services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>))
+               .AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
+
+        logger.LogInformation("{Project} services registered", "Infrastructure");
+
+        return services;
+    }
 }

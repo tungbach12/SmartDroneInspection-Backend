@@ -55,8 +55,6 @@
     </PackageReference>
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\MinimalClean.Architecture.ServiceDefaults\MinimalClean.Architecture.ServiceDefaults.csproj" />
-  </ItemGroup>
+
 
 </Project>
