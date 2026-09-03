@@ -1,0 +1,40 @@
+<Project>
+  <ItemGroup>
+    <PackageVersion Include="Ardalis.GuardClauses" Version="5.0.0" />
+    <PackageVersion Include="Ardalis.ListStartupServices" Version="1.1.4" />
+    <PackageVersion Include="Ardalis.Result" Version="10.1.0" />
+    <PackageVersion Include="Ardalis.Result.AspNetCore" Version="10.1.0" />
+    <PackageVersion Include="Ardalis.SharedKernel" Version="5.0.0" />
+    <PackageVersion Include="Ardalis.SmartEnum" Version="8.2.0" />
+    <PackageVersion Include="Ardalis.Specification" Version="9.3.1" />
+    <PackageVersion Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="FastEndpoints" Version="8.2.0" />
+    <PackageVersion Include="FastEndpoints.Swagger" Version="8.2.0" />
+    <PackageVersion Include="MailKit" Version="4.17.0" />
+    <PackageVersion Include="Mediator.Abstractions" Version="3.0.2" />
+    <PackageVersion Include="Mediator.SourceGenerator" Version="3.0.2" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
+    <PackageVersion Include="EFCore.NamingConventions" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.9.0" />
+    <PackageVersion Include="MimeKit" Version="4.17.0" />
+    <PackageVersion Include="NimblePros.Metronome" Version="0.4.1" />
+    <PackageVersion Include="NsDepCop" Version="3.1.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.16.18" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
+    <PackageVersion Include="Vogen" Version="8.0.7" />
+  </ItemGroup>
+</Project>

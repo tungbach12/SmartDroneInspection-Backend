@@ -1,12 +1,14 @@
 <Project>
-
-  <!-- Shared build defaults for every project in the solution.
-       csproj files stay free of duplicated PropertyGroups. -->
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
-
+  <PropertyGroup>
+    <NoWarn>1591</NoWarn> <!-- Remove this to turn on warnings for missing XML Comments -->
+  </PropertyGroup>
 </Project>
