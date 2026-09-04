@@ -28,6 +28,11 @@ public static class InfrastructureServiceExtensions
         services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>))
                .AddScoped(typeof(IReadRepository<>), typeof(EfRepository<>));
 
+        services.Configure<MinimalClean.Architecture.Web.Infrastructure.Auth.JwtOptions>(
+            config.GetSection(MinimalClean.Architecture.Web.Infrastructure.Auth.JwtOptions.SectionName));
+        services.AddScoped<MinimalClean.Architecture.Web.Domain.Interfaces.IPasswordHasher, MinimalClean.Architecture.Web.Infrastructure.Auth.PasswordHasherAdapter>();
+        services.AddScoped<MinimalClean.Architecture.Web.Domain.Interfaces.ITokenService, MinimalClean.Architecture.Web.Infrastructure.Auth.JwtTokenService>();
+
         logger.LogInformation("{Project} services registered", "Infrastructure");
 
         return services;
