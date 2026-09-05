@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Clean.Architecture.Core.Assets;
 using Clean.Architecture.Core.Planning;
 using Clean.Architecture.Core.Users;
+using Clean.Architecture.Core.Planning.Enums;
 
 namespace Clean.Architecture.Infrastructure.Data.Config.Planning;
 
@@ -11,7 +12,7 @@ public sealed class InspectionScheduleConfiguration : IEntityTypeConfiguration<I
     public void Configure(EntityTypeBuilder<InspectionSchedule> builder)
     {
         builder.ConfigureBase("inspection_schedules");
-        builder.Property(x => x.Id).HasVogenConversion(); builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.Id).HasVogenConversion(); builder.Property(x => x.Status).HasConversion(SmartEnumStringConverter.Create<ScheduleStatus>()).HasMaxLength(32);
         builder.Property(x => x.CancelledReason).HasMaxLength(500); builder.HasIndex(x => new { x.AssetId, x.ScheduledDate }); builder.HasIndex(x => new { x.InspectorId, x.ScheduledDate });
         builder.ToTable("inspection_schedules", table => table.HasCheckConstraint("ck_inspection_schedules_date_range", "scheduled_end_date IS NULL OR scheduled_end_date >= scheduled_date"));
         builder.HasOne<InspectionPlan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict);

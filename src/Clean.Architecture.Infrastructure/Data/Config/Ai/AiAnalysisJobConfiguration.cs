@@ -5,6 +5,7 @@ using Clean.Architecture.Core.Missions;
 using Clean.Architecture.Core.Reports;
 using Clean.Architecture.Core.Users;
 using Clean.Architecture.Infrastructure.Data.Config;
+using Clean.Architecture.Core.Ai.Enums;
 
 namespace Clean.Architecture.Infrastructure.Data.Config.Ai;
 
@@ -14,8 +15,8 @@ public sealed class AiAnalysisJobConfiguration : IEntityTypeConfiguration<AiAnal
     {
         builder.ConfigureBase("ai_analysis_jobs");
         builder.Property(x => x.Id).HasVogenConversion();
-        builder.Property(x => x.JobType).HasConversion<string>().HasMaxLength(40);
-        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.JobType).HasConversion(SmartEnumStringConverter.Create<AiJobType>()).HasMaxLength(40);
+        builder.Property(x => x.Status).HasConversion(SmartEnumStringConverter.Create<AiJobStatus>()).HasMaxLength(32);
         builder.Property(x => x.InputPayload).HasColumnType("jsonb");
         builder.Property(x => x.Result).HasColumnType("jsonb");
         builder.Property(x => x.Confidence).HasPrecision(5, 4);

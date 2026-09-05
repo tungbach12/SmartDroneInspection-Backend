@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Clean.Architecture.Core.Assets;
 using Clean.Architecture.Core.Users;
 using Clean.Architecture.Infrastructure.Data.Config;
+using Clean.Architecture.Core.Assets.Enums;
 
 namespace Clean.Architecture.Infrastructure.Data.Config.Assets;
 
@@ -14,7 +15,7 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
         builder.Property(x => x.Id).HasVogenConversion(); builder.ConfigureAudit(); builder.ConfigureSoftDelete();
         builder.Property(x => x.Code).HasMaxLength(100).IsRequired(); builder.Property(x => x.NormalizedCode).HasMaxLength(100).IsRequired();
         builder.Property(x => x.Name).HasMaxLength(250).IsRequired(); builder.Property(x => x.Description).HasColumnType("text");
-        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32); builder.Property(x => x.CountryCode).HasMaxLength(2);
+        builder.Property(x => x.Status).HasConversion(SmartEnumStringConverter.Create<AssetStatus>()).HasMaxLength(32); builder.Property(x => x.CountryCode).HasMaxLength(2);
         builder.Property(x => x.Address).HasMaxLength(500); builder.Property(x => x.Region).HasMaxLength(150);
         builder.Property(x => x.Metadata).HasColumnType("jsonb"); builder.Property(x => x.Specifications).HasColumnType("jsonb");
         builder.Property(x => x.Tags).HasColumnType("text[]"); builder.HasIndex(x => new { x.OrganizationId, x.NormalizedCode }).IsUnique();

@@ -5,6 +5,7 @@ using Clean.Architecture.Core.Missions;
 using Clean.Architecture.Core.Planning;
 using Clean.Architecture.Core.Users;
 using Clean.Architecture.Infrastructure.Data.Config;
+using Clean.Architecture.Core.Missions.Enums;
 
 namespace Clean.Architecture.Infrastructure.Data.Config.Missions;
 
@@ -14,7 +15,7 @@ public sealed class InspectionRequestConfiguration : IEntityTypeConfiguration<In
     {
         builder.ConfigureBase("inspection_requests");
         builder.Property(x => x.Id).HasVogenConversion(); builder.ConfigureAudit(); builder.Property(x => x.Title).HasMaxLength(250).IsRequired(); builder.Property(x => x.Description).HasColumnType("text").IsRequired();
-        builder.Property(x => x.Priority).HasConversion<string>().HasMaxLength(32); builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32); builder.Property(x => x.LocationOverride).HasMaxLength(500);
+        builder.Property(x => x.Priority).HasConversion(SmartEnumStringConverter.Create<InspectionRequestPriority>()).HasMaxLength(32); builder.Property(x => x.Status).HasConversion(SmartEnumStringConverter.Create<InspectionRequestStatus>()).HasMaxLength(32); builder.Property(x => x.LocationOverride).HasMaxLength(500);
         builder.HasIndex(x => new { x.OrganizationId, x.Status }); builder.HasIndex(x => x.MissionCreationKey).IsUnique();
         builder.ToTable("inspection_requests", table => table.HasCheckConstraint("ck_inspection_requests_coordinates", "(latitude IS NULL AND longitude IS NULL) OR (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180)"));
         builder.ToTable("inspection_requests", table => table.HasCheckConstraint("ck_inspection_requests_duration", "estimated_duration_minutes IS NULL OR estimated_duration_minutes > 0"));

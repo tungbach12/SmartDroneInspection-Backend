@@ -1,5 +1,4 @@
 ﻿using Ardalis.ListStartupServices;
-using Clean.Architecture.Infrastructure.Email;
 
 namespace Clean.Architecture.Web.Configurations;
 
@@ -10,7 +9,7 @@ public static class OptionConfigs
                                                     Microsoft.Extensions.Logging.ILogger logger,
                                                     WebApplicationBuilder builder)
   {
-    services.Configure<MailserverConfiguration>(configuration.GetSection("Mailserver"))
+    services
     // Configure Web Behavior
     .Configure<CookiePolicyOptions>(options =>
     {

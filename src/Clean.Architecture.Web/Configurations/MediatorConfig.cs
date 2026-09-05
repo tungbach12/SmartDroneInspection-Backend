@@ -1,7 +1,7 @@
-﻿using Ardalis.SharedKernel;
-using Clean.Architecture.Core.ContributorAggregate;
+using Ardalis.SharedKernel;
+using Clean.Architecture.Core.Assets;
 using Clean.Architecture.Infrastructure;
-using Clean.Architecture.UseCases.Contributors.Create;
+using Clean.Architecture.UseCases.Assets.Get;
 
 namespace Clean.Architecture.Web.Configurations;
 
@@ -20,10 +20,10 @@ public static class MediatorConfig
       // Supply any TYPE from each assembly you want scanned (the generator finds the assembly from the type)
       options.Assemblies =
       [
-        typeof(Contributor),                       // Core
-        typeof(CreateContributorCommand),         // UseCases
-        typeof(InfrastructureServiceExtensions), // Infrastructure
-        typeof(MediatorConfig)                  // Web
+        typeof(Asset),                            // Core
+        typeof(GetAssetQuery),                    // UseCases
+        typeof(InfrastructureServiceExtensions),  // Infrastructure
+        typeof(MediatorConfig)                    // Web
       ];
 
       // Register pipeline behaviors here (order matters)
