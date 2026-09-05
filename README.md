@@ -1,122 +1,97 @@
-# SmartDroneInspection Backend API
+[![.NET Core](https://github.com/ardalis/CleanArchitecture/workflows/.NET%20Core/badge.svg)](https://github.com/ardalis/CleanArchitecture/actions)
+[![publish Ardalis.CleanArchitecture Template to nuget](https://github.com/ardalis/CleanArchitecture/actions/workflows/publish.yml/badge.svg)](https://github.com/ardalis/CleanArchitecture/actions/workflows/publish.yml)
+[![Ardalis.CleanArchitecture.Template on NuGet](https://img.shields.io/nuget/v/Ardalis.CleanArchitecture.Template?label=Ardalis.CleanArchitecture.Template)](https://www.nuget.org/packages/Ardalis.CleanArchitecture.Template/)
 
-[![.NET](https://img.shields.io/badge/.NET-9%20%2F%2010-purple.svg)](https://dotnet.microsoft.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17%20%2B%20pgvector-blue.svg)](https://github.com/pgvector/pgvector)
-[![FastEndpoints](https://img.shields.io/badge/FastEndpoints-REPR%20Pattern-brightgreen.svg)](https://fast-endpoints.com/)
-[![Architecture](https://img.shields.io/badge/Architecture-Ardalis%20Clean%20%2F%20Vertical%20Slice-orange.svg)](https://github.com/ardalis/CleanArchitecture)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<a href="https://twitter.com/intent/follow?screen_name=ardalis">
+    <img src="https://img.shields.io/twitter/follow/ardalis.svg?label=Follow%20@ardalis" alt="Follow @ardalis" />
+</a> &nbsp; <a href="https://twitter.com/intent/follow?screen_name=nimblepros">
+    <img src="https://img.shields.io/twitter/follow/nimblepros.svg?label=Follow%20@nimblepros" alt="Follow @nimblepros" />
+</a>
 
-**SmartDroneInspection** (Capstone FA26SE112 — FPT University SWE) is an enterprise **Infrastructure Inspection & Maintenance Management Platform**. It manages the end-to-end lifecycle of infrastructure inspection across bridges, wind turbines, power grids, and industrial facilities.
+<p>
 
-> **Note**: SmartDroneInspection is a **Business Management Platform** (Consumer), not a drone flight controller. Flight operations and drone hardware are managed by the external **SmartDroneHub** platform (AiTA Lab) via REST APIs.
+![Alt](https://repobeats.axiom.co/api/embed/be5094dd306ba53b8f4fc0b43c9de5d8ca23a608.svg "Repobeats analytics image")
 
----
+</p>
 
-## 🏗️ Architecture Options
+# Clean Architecture
 
-The solution implements **Ardalis Clean Architecture** with two project structures:
+A starting point for Clean Architecture with ASP.NET Core. [Clean Architecture](https://8thlight.com/blog/uncle-bob/2012/08/13/the-clean-architecture.html) is just the latest in a series of names for the same loosely-coupled, dependency-inverted architecture. You will also find it named [hexagonal](https://alistair.cockburn.us/hexagonal-architecture), [ports-and-adapters](http://www.dossier-andreas.net/software_architecture/ports_and_adapters.html), or [onion architecture](http://jeffreypalermo.com/blog/the-onion-architecture-part-1/).
 
-### 1. Minimal Clean Architecture (`MinimalClean/` — Recommended)
-A streamlined, single-project **Vertical Slice Architecture (VSA)** organized by business capabilities.
-* **FastEndpoints (REPR Pattern)**: One endpoint class per file (`Request-Endpoint-Response`).
-* **Ardalis.Specification**: Reusable, testable domain query specifications.
-* **Pragmatic DDD**: Domain encapsulation, **Vogen Strongly-Typed IDs**, and **Ardalis.SmartEnum**.
-* **Zero Merge Conflicts**: Each API endpoint is isolated in its own feature folder.
+Learn more about Clean Architecture and this template in [NimblePros' Introducing Clean Architecture course](https://academy.nimblepros.com/p/learn-clean-architecture). Use code ARDALIS to save 20%.
 
-```text
-backend/MinimalClean/src/MinimalClean.Architecture.Web/
-├── Domain/                   # Pure Domain Model (No framework dependencies)
-│   ├── Assets/               # Asset, AssetDocument, AssetLifecycleLog
-│   ├── Missions/             # DroneMission, InspectionRequest, MissionTelemetry, MissionImage
-│   ├── Planning/             # InspectionPlan, InspectionSchedule, CalendarEvent
-│   ├── Reports/              # InspectionReport, Defect, MaintenanceTicket, TicketHistory
-│   ├── Users/                # User, Organization, RefreshToken, AuditLog
-│   └── Ai/                   # KnowledgeCase, KnowledgeCaseEmbedding, AiAnalysisJob
-├── Infrastructure/           # Data access (EF Core 30 DbSets, pgvector HNSW, JWT, PBKDF2)
-├── Features/                 # Vertical Slices (Auth, Assets, Missions, Reports, Tickets)
-└── Configurations/           # DI, Serilog, Middleware, OpenAPI / Scalar UI
-```
+This architecture is used in the [DDD Fundamentals course](https://www.pluralsight.com/courses/fundamentals-domain-driven-design) by [Steve Smith](https://ardalis.com) and [Julie Lerman](https://thedatafarm.com/).
 
-### 2. Full Clean Architecture (`src/Clean.Architecture.*`)
-A traditional 4-layer separation (`Core`, `UseCases`, `Infrastructure`, `Web`) enforcing strict compiler-level dependency boundaries.
+:school: Contact Steve's company, [NimblePros](https://nimblepros.com/), for Clean Architecture or DDD training and/or implementation assistance for your team.
 
----
+## Take the Course!
 
-## 🚀 Key Business Modules
+[Learn about how to implement Clean Architecture](https://academy.nimblepros.com/p/intro-to-clean-architecture) from [NimblePros](https://nimblepros.com) trainers [Sarah "sadukie" Dutkiewicz](https://blog.nimblepros.com/author/sadukie/) and [Steve "ardalis" Smith](https://blog.nimblepros.com/author/ardalis/).
 
-* **Asset Management (`/assets`)**: Hierarchical asset registry with GPS coordinates, categorization, and technical document tracking.
-* **Inspection Planning & Requests (`/missions/requests`)**: Periodic scheduling, ad-hoc digital inspection requests, and manager approval flows.
-* **Drone Mission Execution (`/missions`)**: Consuming SmartDroneHub REST APIs, real-time telemetry streaming via **SignalR**, and 4K image ingestion to **MinIO**.
-* **Inspection Reports & Defect Detection (`/reports`)**: Automated defect detection via **DroneVisionAI (YOLOv8/11 + SAHI)**, inspector verification, and LLM-powered executive summarization.
-* **Maintenance Work Orders (`/tickets`)**: Automated ticket generation from confirmed defects, technician assignment, and asset repair history.
-* **AI Knowledge RAG (`/ai/knowledge`)**: Semantic retrieval of historical incidents and repair guidelines via **PostgreSQL pgvector (HNSW Cosine Index)**.
-* **Authentication & RBAC (`/auth`)**: JWT Access Tokens, single-use Refresh Token rotation, and role-based permissions (5 roles: `Administrator`, `InspectionManager`, `Inspector`, `MaintenanceEngineer`, `Viewer`).
+## Table Of Contents
 
----
+- [Clean Architecture](#clean-architecture)
+  - [Take the Course!](#take-the-course)
+  - [Table Of Contents](#table-of-contents)
+  - [Give a Star! :star:](#give-a-star-star)
+  - [Sponsors](#sponsors)
+  - [Troubleshooting Chrome Errors](#troubleshooting-chrome-errors)
+  - [Versions](#versions)
+  - [Learn More](#learn-more)
+- [Getting Started](#getting-started)
+  - [Template Installation](#template-installation)
+  - [Using the dotnet CLI template](#using-the-dotnet-cli-template)
+    - [Full Clean Architecture (`clean-arch`)](#full-clean-architecture-clean-arch)
+    - [Minimal Clean Architecture (`min-clean`)](#minimal-clean-architecture-min-clean)
+  - [Template Comparison](#template-comparison)
+    - [Which Template Should I Use?](#which-template-should-i-use)
+  - [What about Controllers and Razor Pages?](#what-about-controllers-and-razor-pages)
+    - [Add Ardalis.ApiEndpoints](#add-ardalisapiendpoints)
+    - [Add Controllers](#add-controllers)
+    - [Add Razor Pages](#add-razor-pages)
+  - [Using the GitHub Repository](#using-the-github-repository)
+  - [Running Migrations](#running-migrations)
+- [Goals](#goals)
+  - [History and Shameless Plug Section](#history-and-shameless-plug-section)
+- [Design Decisions and Dependencies](#design-decisions-and-dependencies)
+  - [Where To Validate](#where-to-validate)
+  - [The Core Project](#the-core-project)
+  - [The Use Cases Project](#the-use-cases-project)
+  - [The Infrastructure Project](#the-infrastructure-project)
+  - [The Web Project](#the-web-project)
+  - [The SharedKernel Package](#the-sharedkernel-package)
+  - [The Test Projects](#the-test-projects)
+- [Patterns Used](#patterns-used)
+  - [Domain Events](#domain-events)
+  - [Related Projects](#related-projects)
+  - [Presentations and Videos on Clean Architecture](#presentations-and-videos-on-clean-architecture)
 
-## 🛠️ Technology Stack
+## Give a Star! :star:
 
-| Component | Technology |
-| :--- | :--- |
-| **Runtime** | .NET 9 / .NET 10 (C# 13) |
-| **API Framework** | FastEndpoints (Minimal API / REPR Pattern) |
-| **ORM & Database** | Entity Framework Core 10 + PostgreSQL 17 |
-| **Vector Search** | `pgvector` with HNSW Cosine Index (`vector(1536)`) |
-| **Object Storage** | MinIO (S3-compatible 4K inspection imagery) |
-| **Real-time Comms** | ASP.NET Core SignalR |
-| **Domain Modeling** | Vogen Strongly-Typed IDs + Ardalis.SmartEnum |
-| **Data Querying** | Ardalis.Specification |
-| **Validation** | FluentValidation |
-| **Security** | JWT Bearer, PBKDF2 Password Hashing, Refresh Token Rotation |
-| **Logging** | Serilog (Structured JSON & Console) |
-| **API Documentation** | OpenAPI 3.0 + Scalar UI |
+If you like or are using this project to learn or start your solution, please give it a star. Thanks!
 
----
+Or if you're feeling really generous, we now support GitHub sponsorships - see the button above.
 
-## ⚡ Quickstart & Local Setup
+## Sponsors
 
-### 1. Start Infrastructure (PostgreSQL + pgvector, MinIO)
+I'm please to announce that [Amazon AWS's FOSS fund](https://github.com/aws/dotnet-foss) has chosen to award a 12-month sponsorship to this project. Thank you, and thanks to all of my other past and current sponsors!
 
-```bash
-# PostgreSQL 17 with pgvector extension
-docker run -d \
-  --name smartdroneinspection-postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=smartdroneinspection \
-  -p 5432:5432 \
-  pgvector/pgvector:pg17
+## Troubleshooting Chrome Errors
 
-# MinIO Object Storage
-docker run -d \
-  --name smartdroneinspection-minio \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  -p 9000:9000 -p 9001:9001 \
-  minio/minio server /data --console-address ":9001"
-```
+By default the site uses HTTPS and expects you to have a self-signed developer certificate for localhost use. If you get an error with Chrome [see this answer](https://stackoverflow.com/a/31900210/13729) for mitigation instructions.
 
-### 2. Run Database Migrations
+## Versions
 
-```bash
-cd MinimalClean
-dotnet ef database update -p src/MinimalClean.Architecture.Web -s src/MinimalClean.Architecture.Web
-```
+The main branch is now using **.NET 9**. This corresponds with NuGet package version 10.x. Previous versions are available - see our [Releases](https://github.com/ardalis/CleanArchitecture/releases).
 
-### 3. Run Backend API
+## Learn More
 
-```bash
-dotnet run --project src/MinimalClean.Architecture.Web
-```
+- [Live Stream Recordings Working on Clean Architecture](https://www.youtube.com/c/Ardalis/search?query=clean%20architecture)
+- [DotNetRocks Podcast Discussion with Steve "ardalis" Smith](https://player.fm/series/net-rocks/clean-architecture-with-steve-smith)
+- [Fritz and Friends Streaming Discussion with Steve "ardalis" Smith](https://www.youtube.com/watch?v=k8cZUW4MS3I)
 
-* **Scalar API Reference**: `https://localhost:7080/scalar/v1`
-* **Swagger UI**: `http://localhost:5080/swagger`
-* **Health Check**: `https://localhost:7080/health`
+# Documentation
 
----
+The official documentation for this template, including Getting Started steps, Migration Guides, and Architectural Decisions, can be found at [Ardalis Clean Architecture Docs](https://ardalis.github.io/CleanArchitecture).
 
-## 📖 Documentation & Related Repositories
-
-* **[SmartDroneInspection-Docs](https://github.com/tungbach12/SmartDroneInspection-Docs)**: Hugo documentation portal with architecture guides, ADRs, and team conventions.
-* **[SmartDroneInspection-Frontend](https://github.com/tungbach12/SmartDroneInspection-Frontend)**: React 19 + TypeScript + Vite + MUI web portal.
-* **[SmartDroneInspection-Mobile](https://github.com/tungbach12/SmartDroneInspection-Mobile)**: Flutter cross-platform mobile app.
+If you are upgrading from an older version, please be sure to review our [Migration Guides](https://ardalis.github.io/CleanArchitecture/migration-guides/) on the new documentation site!
