@@ -16,8 +16,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-    security_opt:
-      - no-new-privileges:true
 
   minio:
     image: minio/minio:latest
@@ -37,8 +35,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-    security_opt:
-      - no-new-privileges:true
 
 volumes:
   smartdroneinspection-postgres-data:
