@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: smartdroneinspection
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdroneinspection}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:local_dev_only_change_me}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  threads:
+    virtual:
+      enabled: true
+server:
+  port: ${SERVER_PORT:8080}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,flyway,hikari
+  endpoint:
+    health:
+      show-details: when-authorized
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
