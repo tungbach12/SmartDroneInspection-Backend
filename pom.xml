@@ -200,9 +200,22 @@
                 </rule>
               </rules>
               <excludes>
-                <!-- Domain entity packages: covered once feature phases land (Phase 5+).
-                     Remove entries as modules gain test coverage. -->
-                <exclude>com/smartdroneinspection/**/domain/**</exclude>
+                <!-- Persistence entities are covered by Testcontainers integration tests. -->
+                <exclude>com/smartdroneinspection/users/domain/User*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/AuthSession*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/RefreshToken*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/ActorZone*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/ClientType*</exclude>
+
+                <!-- HTTP, persistence and Spring-security wiring are covered by contract tests. -->
+                <exclude>com/smartdroneinspection/users/api/**</exclude>
+                <exclude>com/smartdroneinspection/users/repository/**</exclude>
+                <exclude>com/smartdroneinspection/users/security/**</exclude>
+                <exclude>com/smartdroneinspection/users/service/AdminUserService*</exclude>
+                <exclude>com/smartdroneinspection/users/service/AuthService*</exclude>
+                <exclude>com/smartdroneinspection/users/service/BootstrapAdministrator*</exclude>
+                <exclude>com/smartdroneinspection/users/service/LoginFailureService*</exclude>
+                <exclude>com/smartdroneinspection/users/service/SecurityAuditService*</exclude>
                 <exclude>com/smartdroneinspection/shared/**</exclude>
                 <exclude>com/smartdroneinspection/SmartDroneInspectionApplication*</exclude>
               </excludes>
