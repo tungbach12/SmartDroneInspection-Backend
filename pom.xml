@@ -20,6 +20,7 @@
     <java.version>21</java.version>
     <spring-modulith.version>2.1.1</spring-modulith.version>
     <springdoc.version>3.1.0</springdoc.version>
+    <bouncycastle.version>1.84</bouncycastle.version>
     <spotless.version>3.10.2</spotless.version>
     <jacoco.version>0.8.13</jacoco.version>
   </properties>
@@ -61,6 +62,11 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
