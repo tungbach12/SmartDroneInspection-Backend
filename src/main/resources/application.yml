@@ -33,4 +33,18 @@ springdoc:
     path: /swagger-ui.html
   api-docs:
     path: /v3/api-docs
-
+app:
+  auth:
+    issuer: ${AUTH_JWT_ISSUER:smartdroneinspection}
+    audience: ${AUTH_JWT_AUDIENCE:smartdroneinspection-api}
+    access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:7d}
+    jwt-secret: ${AUTH_JWT_SECRET:}
+    refresh-token-pepper: ${AUTH_REFRESH_TOKEN_PEPPER:}
+    secure-cookies: ${AUTH_SECURE_COOKIES:false}
+    allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:3000}
+    bootstrap:
+      enabled: ${AUTH_BOOTSTRAP_ENABLED:false}
+      email: ${AUTH_BOOTSTRAP_EMAIL:}
+      password: ${AUTH_BOOTSTRAP_PASSWORD:}
+      full-name: ${AUTH_BOOTSTRAP_FULL_NAME:Platform Administrator}
