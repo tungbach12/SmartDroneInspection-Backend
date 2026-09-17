@@ -20,6 +20,7 @@
     <java.version>21</java.version>
     <spring-modulith.version>2.1.1</spring-modulith.version>
     <springdoc.version>3.1.0</springdoc.version>
+    <bouncycastle.version>1.84</bouncycastle.version>
     <spotless.version>3.10.2</spotless.version>
     <jacoco.version>0.8.13</jacoco.version>
   </properties>
@@ -56,7 +57,16 @@
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -103,6 +113,16 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -180,9 +200,22 @@
                 </rule>
               </rules>
               <excludes>
-                <!-- Domain entity packages: covered once feature phases land (Phase 5+).
-                     Remove entries as modules gain test coverage. -->
-                <exclude>com/smartdroneinspection/domain/**</exclude>
+                <!-- Persistence entities are covered by Testcontainers integration tests. -->
+                <exclude>com/smartdroneinspection/users/domain/User*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/AuthSession*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/RefreshToken*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/ActorZone*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/ClientType*</exclude>
+
+                <!-- HTTP, persistence and Spring-security wiring are covered by contract tests. -->
+                <exclude>com/smartdroneinspection/users/api/**</exclude>
+                <exclude>com/smartdroneinspection/users/repository/**</exclude>
+                <exclude>com/smartdroneinspection/users/security/**</exclude>
+                <exclude>com/smartdroneinspection/users/service/AdminUserService*</exclude>
+                <exclude>com/smartdroneinspection/users/service/AuthService*</exclude>
+                <exclude>com/smartdroneinspection/users/service/BootstrapAdministrator*</exclude>
+                <exclude>com/smartdroneinspection/users/service/LoginFailureService*</exclude>
+                <exclude>com/smartdroneinspection/users/service/SecurityAuditService*</exclude>
                 <exclude>com/smartdroneinspection/shared/**</exclude>
                 <exclude>com/smartdroneinspection/SmartDroneInspectionApplication*</exclude>
               </excludes>

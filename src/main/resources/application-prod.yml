@@ -1,0 +1,14 @@
+app:
+  auth:
+    secure-cookies: true
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+management:
+  endpoint:
+    health:
+      show-details: never
