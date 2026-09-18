@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/platform/users")
-@PreAuthorize("hasRole('PLATFORM_ADMINISTRATOR')")
+@PreAuthorize("hasRole('ADMIN')")
 public class PlatformUserController {
 
   private final AdminUserService users;
