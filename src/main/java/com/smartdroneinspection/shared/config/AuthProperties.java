@@ -95,7 +95,7 @@ public class AuthProperties {
     private boolean enabled;
     private String email = "";
     private String password = "";
-    private String fullName = "Platform Administrator";
+    private String fullName = "Admin";
 
     public boolean isEnabled() {
       return enabled;

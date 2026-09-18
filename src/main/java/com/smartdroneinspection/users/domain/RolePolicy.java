@@ -14,19 +14,14 @@ public class RolePolicy {
 
     switch (zone) {
       case PLATFORM -> {
-        if (organizationId != null
-            || roles.size() != 1
-            || !roles.contains(UserRole.PLATFORM_ADMINISTRATOR)) {
-          throw new IllegalArgumentException(
-              "Platform users must have only the Platform Administrator role.");
+        if (organizationId != null || roles.size() != 1 || !roles.contains(UserRole.ADMIN)) {
+          throw new IllegalArgumentException("Platform users must have only the Admin role.");
         }
       }
       case CUSTOMER_ORGANIZATION -> {
-        if (organizationId == null
-            || roles.size() != 1
-            || !roles.contains(UserRole.ORGANIZATION_MANAGER)) {
+        if (organizationId == null || roles.size() != 1 || !roles.contains(UserRole.CLIENT)) {
           throw new IllegalArgumentException(
-              "Customer users must belong to an organization and be Organization Managers.");
+              "Customer users must belong to an organization and have the Client role.");
         }
       }
       case SERVICE_WORKFORCE -> {
