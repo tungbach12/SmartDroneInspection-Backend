@@ -18,7 +18,7 @@ Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, Post
 - `<feature>/domain/` - entities and domain rules owned by the feature
 - `<feature>/repository/` - persistence repositories
 - `<feature>/service/` - application use cases
-- `infrastructure/` - outbound adapters (SmartDroneHub REST, MinIO, LLM clients)
+- `infrastructure/` - outbound adapters (MinIO, AI, and notification clients)
 
 Do not create a top-level `domain/` entity module. User entities belong in
 `com.smartdroneinspection.users.domain`; the domain package is internal to the `users` module.
