@@ -7,6 +7,7 @@ import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import java.time.LocalDate;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -184,7 +185,7 @@ class AssetPersistenceTest {
 
   private UUID persistCategory() {
     UUID categoryId = UUID.randomUUID();
-    String suffix = categoryId.toString();
+    String suffix = categoryId.toString().toUpperCase(Locale.ROOT);
     jdbcTemplate.update(
         "INSERT INTO asset_categories (id, code, name) VALUES (?, ?, ?)",
         categoryId,
