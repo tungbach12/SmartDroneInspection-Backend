@@ -38,7 +38,7 @@ com.smartdroneinspection
 │   ├── domain/
 │   ├── repository/
 │   └── service/
-└── infrastructure/                    # SmartDroneHub, MinIO, and LLM adapters
+└── infrastructure/                    # MinIO, AI, and notification adapters
 ```
 
 Each direct package under `com.smartdroneinspection` is a Spring Modulith module.
