@@ -3,6 +3,9 @@ target/
 dependency-reduced-pom.xml
 release.properties
 
+# Local git worktrees
+.worktrees/
+
 # IDE
 .idea/
 *.iml

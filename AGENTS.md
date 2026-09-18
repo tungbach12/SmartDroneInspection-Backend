@@ -31,7 +31,7 @@ Modulith boundaries are enforced at build time by `ModulithArchitectureTest`.
 - DTO records: `XxxRequest` / `XxxResponse`
 - Validation: Jakarta Bean Validation (`@Valid`) on request records
 - Errors: expected -> `Result<T>`; unexpected -> RFC 7807 `ProblemDetail` via `GlobalExceptionHandler`
-- Flyway SQL under `src/main/resources/db/migration` (`V{n}__desc.sql`, team leader only)
+- Flyway SQL under `src/main/resources/db/migration` (`V{n}__desc.sql`) when the task includes database schema work; use forward-only migrations.
 - Auth is owned by the `users` module; shared filter-chain configuration remains under `shared/`
 
 ## Notes
