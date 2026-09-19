@@ -56,7 +56,7 @@ repositories, or services. Use a facade in the module root or a named interface.
 Keep entities inside the module that owns their use cases; do not create a global
 `com.smartdroneinspection.domain` entity module.
 
-The recommended dependency direction is `users -> shared`, `assets -> shared`,
+The recommended dependency direction is `users -> shared::auth, shared::config, shared::exception`, `assets -> shared`,
 `inspectionrequests -> assets, shared`, `inspections -> inspectionrequests, assets,
 shared`, and `maintenance -> inspections, inspectionrequests, shared`.
 `infrastructure` implements feature-owned SPI and shared adapters; business modules

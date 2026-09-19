@@ -27,7 +27,7 @@ exposed with `@NamedInterface`. HTTP `api/` is transport code and must not be
 imported by another module. Use a root facade or a named `events`/`spi` interface
 for cross-module calls. Business modules never import `infrastructure`.
 
-Dependency direction: `users -> shared`, `assets -> shared`,
+Dependency direction: `users -> shared::auth, shared::config, shared::exception`, `assets -> shared`,
 `inspectionrequests -> assets, shared`, `inspections -> inspectionrequests, assets,
 shared`, and `maintenance -> inspections, inspectionrequests, shared`.
 Do not create standalone `missions`, `reports`, `defects`, `tickets`, or `ai`
