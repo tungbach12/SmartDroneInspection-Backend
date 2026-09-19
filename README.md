@@ -24,25 +24,29 @@ Each direct package under `com.smartdroneinspection` is a Spring Modulith module
 The package root is the module's default Java API; nested packages are internal
 unless explicitly exposed with `@NamedInterface`.
 
-Implemented runtime modules:
+Implemented/runtime modules:
 
 - `users` - identity, authentication, and user administration.
 - `assets` - asset catalog, checklist templates, and recurring schedules (WF1).
 - `inspectionrequests` - requests, quotations, service orders, and assignments (WF2).
 - `shared` - minimal cross-cutting contracts and configuration.
 
-Scaffolded module roots (package metadata only; runtime slices are pending):
+Persistence-backed capability modules (application services and APIs are delivered incrementally):
 
-- `inspections` - field execution, evidence, findings, reports, and peer review (WF3).
-- `maintenance` - assessment, quotation, execution, change, and resolution (WF4).
-- `notifications` - supporting delivery capability.
+- `inspections` - field execution, evidence, findings, reports, and peer review (WF3); feature entities and repositories are present.
+- `maintenance` - assessment, quotation, execution, change, and resolution (WF4); feature entities and repositories are present.
+- `notifications` - supporting delivery capability; notification entity and repository are present.
+
+Scaffold-only module roots:
+
 - `dashboard` - read-only composition.
 - `infrastructure` - outbound adapters for feature-owned ports.
 
-The five scaffolded roots currently contain only `package-info.java` so the
+The scaffold-only roots currently contain only `package-info.java` so the
 capability map is visible to the team. Add nested `api`, `domain`, `repository`,
 `service`, `events`, or `spi` packages only with the first vertical slice that
-owns real code.
+owns real code. Every application table is mapped by an entity/repository in its
+owning capability; the Spring Modulith `event_publication` table is framework-owned.
 
 Inside a module, use only the packages the capability needs:
 
