@@ -1,5 +1,7 @@
 package com.smartdroneinspection.maintenance.domain;
 
+import com.smartdroneinspection.maintenance.domain.enums.MaintenanceAssignmentStatus;
+import com.smartdroneinspection.maintenance.domain.enums.MaintenanceAssignmentType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

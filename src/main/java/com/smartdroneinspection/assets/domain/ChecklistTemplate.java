@@ -1,5 +1,7 @@
 package com.smartdroneinspection.assets.domain;
 
+import com.smartdroneinspection.assets.domain.enums.ChecklistResponseType;
+import com.smartdroneinspection.assets.domain.enums.ChecklistTemplateStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

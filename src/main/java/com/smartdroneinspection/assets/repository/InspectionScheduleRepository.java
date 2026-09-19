@@ -1,7 +1,7 @@
 package com.smartdroneinspection.assets.repository;
 
 import com.smartdroneinspection.assets.domain.InspectionSchedule;
-import com.smartdroneinspection.assets.domain.InspectionScheduleStatus;
+import com.smartdroneinspection.assets.domain.enums.InspectionScheduleStatus;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;

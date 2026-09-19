@@ -1,5 +1,7 @@
 package com.smartdroneinspection.notifications.domain;
 
+import com.smartdroneinspection.notifications.domain.enums.NotificationChannel;
+import com.smartdroneinspection.notifications.domain.enums.NotificationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

@@ -54,6 +54,7 @@ Inside a module, use only the packages the capability needs:
 <feature>/
 |-- api/             # HTTP controllers and DTOs; internal transport code
 |-- domain/          # feature-owned entities and rules; internal
+|   `-- enums/       # domain enums; transport enums stay under api/dto
 |-- repository/      # scoped persistence; internal
 |-- service/         # use-case orchestration; internal
 |-- events/          # public only when marked @NamedInterface("events")

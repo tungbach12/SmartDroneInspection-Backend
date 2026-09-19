@@ -5,11 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspectionrequests.domain.InspectionAssignment;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionAssignmentStatus;
 import com.smartdroneinspection.inspectionrequests.domain.InspectionQuotation;
 import com.smartdroneinspection.inspectionrequests.domain.InspectionRequest;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionRequestPriority;
 import com.smartdroneinspection.inspectionrequests.domain.InspectionServiceOrder;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionAssignmentStatus;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestPriority;
 import com.smartdroneinspection.inspectionrequests.repository.InspectionAssignmentRepository;
 import com.smartdroneinspection.inspectionrequests.repository.InspectionQuotationRepository;
 import com.smartdroneinspection.inspectionrequests.repository.InspectionRequestRepository;

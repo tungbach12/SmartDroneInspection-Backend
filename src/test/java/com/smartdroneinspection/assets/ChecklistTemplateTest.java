@@ -3,9 +3,9 @@ package com.smartdroneinspection.assets;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.smartdroneinspection.assets.domain.ChecklistResponseType;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
-import com.smartdroneinspection.assets.domain.ChecklistTemplateStatus;
+import com.smartdroneinspection.assets.domain.enums.ChecklistResponseType;
+import com.smartdroneinspection.assets.domain.enums.ChecklistTemplateStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 

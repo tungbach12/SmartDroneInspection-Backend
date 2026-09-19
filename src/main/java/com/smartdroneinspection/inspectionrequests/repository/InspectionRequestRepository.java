@@ -1,7 +1,7 @@
 package com.smartdroneinspection.inspectionrequests.repository;
 
 import com.smartdroneinspection.inspectionrequests.domain.InspectionRequest;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionRequestStatus;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestStatus;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;

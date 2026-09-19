@@ -1,10 +1,10 @@
 package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.config.AuthProperties;
-import com.smartdroneinspection.users.domain.ActorZone;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.UserRole;
-import com.smartdroneinspection.users.domain.UserStatus;
+import com.smartdroneinspection.users.domain.enums.ActorZone;
+import com.smartdroneinspection.users.domain.enums.UserRole;
+import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;

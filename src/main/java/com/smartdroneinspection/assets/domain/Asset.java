@@ -1,5 +1,6 @@
 package com.smartdroneinspection.assets.domain;
 
+import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

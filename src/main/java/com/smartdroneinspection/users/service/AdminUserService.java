@@ -7,7 +7,7 @@ import com.smartdroneinspection.users.api.dto.response.ProvisionedUserResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.UserStatus;
+import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
 import java.util.ArrayList;

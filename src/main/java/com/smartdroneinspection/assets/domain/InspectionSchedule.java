@@ -1,5 +1,9 @@
 package com.smartdroneinspection.assets.domain;
 
+import com.smartdroneinspection.assets.domain.enums.AssetStatus;
+import com.smartdroneinspection.assets.domain.enums.ChecklistTemplateStatus;
+import com.smartdroneinspection.assets.domain.enums.InspectionFrequencyUnit;
+import com.smartdroneinspection.assets.domain.enums.InspectionScheduleStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

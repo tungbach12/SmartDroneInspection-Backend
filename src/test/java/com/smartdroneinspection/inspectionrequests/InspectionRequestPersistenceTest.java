@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspectionrequests.domain.InspectionRequest;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionRequestPriority;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestPriority;
 import com.smartdroneinspection.inspectionrequests.repository.InspectionRequestRepository;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;

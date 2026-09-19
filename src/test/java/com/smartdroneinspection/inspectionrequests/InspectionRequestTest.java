@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.inspectionrequests.domain.InspectionRequest;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionRequestPriority;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionRequestStatus;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestPriority;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;

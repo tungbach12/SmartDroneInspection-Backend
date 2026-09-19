@@ -1,5 +1,8 @@
 package com.smartdroneinspection.inspections.domain;
 
+import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
+import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
+import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

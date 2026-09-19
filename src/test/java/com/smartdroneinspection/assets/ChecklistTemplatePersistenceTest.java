@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.domain.AssetCategory;
-import com.smartdroneinspection.assets.domain.ChecklistResponseType;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.assets.domain.enums.ChecklistResponseType;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import jakarta.persistence.EntityManager;
