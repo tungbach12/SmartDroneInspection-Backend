@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(
@@ -46,6 +48,7 @@ public class AssetDocument {
   @Column(name = "size_bytes", nullable = false)
   private long sizeBytes;
 
+  @JdbcTypeCode(SqlTypes.CHAR)
   @Column(name = "checksum_sha256", nullable = false, length = 64)
   private String checksumSha256;
 
