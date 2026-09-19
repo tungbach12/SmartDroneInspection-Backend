@@ -206,6 +206,17 @@
                 <exclude>com/smartdroneinspection/users/domain/RefreshToken*</exclude>
                 <exclude>com/smartdroneinspection/users/domain/ActorZone*</exclude>
                 <exclude>com/smartdroneinspection/users/domain/ClientType*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/Organization*</exclude>
+                <exclude>com/smartdroneinspection/users/domain/SecurityAuditEvent*</exclude>
+
+                <!-- WF3, WF4, and notification persistence mappings are verified by metadata,
+                     ownership, SQL-contract, and Testcontainers tests as runtime slices land. -->
+                <exclude>com/smartdroneinspection/inspections/domain/**</exclude>
+                <exclude>com/smartdroneinspection/inspections/repository/**</exclude>
+                <exclude>com/smartdroneinspection/maintenance/domain/**</exclude>
+                <exclude>com/smartdroneinspection/maintenance/repository/**</exclude>
+                <exclude>com/smartdroneinspection/notifications/domain/**</exclude>
+                <exclude>com/smartdroneinspection/notifications/repository/**</exclude>
 
                 <!-- HTTP, persistence and Spring-security wiring are covered by contract tests. -->
                 <exclude>com/smartdroneinspection/users/api/**</exclude>

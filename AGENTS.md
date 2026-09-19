@@ -14,9 +14,11 @@ Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, Post
 - `SmartDroneInspectionApplication` (`@Modulithic`) - entry point
 - `shared/` - `Result<T>`, `PagedResult`, `Roles`, RFC 7807 handler, and shared security configuration
 - Implemented runtime modules: `users`, `assets`, `inspectionrequests`, and `shared`.
-- Scaffolded roots with package metadata only: `inspections` (WF3), `maintenance` (WF4), `notifications`, `dashboard`, and `infrastructure`.
+- Persistence modules: `inspections` (WF3), `maintenance` (WF4), and `notifications`; their application services and APIs are added incrementally.
+- Scaffold-only roots: `dashboard` and `infrastructure` (package metadata unless a real read-model or adapter slice exists).
 - `<feature>/api/` - controllers and request/response records
 - `<feature>/domain/` - entities and domain rules owned by the feature
+- `<feature>/domain/enums/` - domain-only enums; transport enums stay with their API DTOs
 - `<feature>/repository/` - persistence repositories
 - `<feature>/service/` - application use cases
 - `infrastructure/` - scaffolded outbound-adapter boundary; add adapters only with a feature-owned port

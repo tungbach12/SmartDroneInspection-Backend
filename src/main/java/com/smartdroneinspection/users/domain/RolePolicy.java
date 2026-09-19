@@ -1,5 +1,7 @@
 package com.smartdroneinspection.users.domain;
 
+import com.smartdroneinspection.users.domain.enums.ActorZone;
+import com.smartdroneinspection.users.domain.enums.UserRole;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;

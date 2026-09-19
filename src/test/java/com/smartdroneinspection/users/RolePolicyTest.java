@@ -3,9 +3,9 @@ package com.smartdroneinspection.users;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.smartdroneinspection.users.domain.ActorZone;
 import com.smartdroneinspection.users.domain.RolePolicy;
-import com.smartdroneinspection.users.domain.UserRole;
+import com.smartdroneinspection.users.domain.enums.ActorZone;
+import com.smartdroneinspection.users.domain.enums.UserRole;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

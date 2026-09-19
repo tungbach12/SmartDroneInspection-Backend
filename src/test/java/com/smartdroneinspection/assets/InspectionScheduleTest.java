@@ -3,11 +3,11 @@ package com.smartdroneinspection.assets;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.smartdroneinspection.assets.domain.AssetStatus;
-import com.smartdroneinspection.assets.domain.ChecklistTemplateStatus;
-import com.smartdroneinspection.assets.domain.InspectionFrequencyUnit;
 import com.smartdroneinspection.assets.domain.InspectionSchedule;
-import com.smartdroneinspection.assets.domain.InspectionScheduleStatus;
+import com.smartdroneinspection.assets.domain.enums.AssetStatus;
+import com.smartdroneinspection.assets.domain.enums.ChecklistTemplateStatus;
+import com.smartdroneinspection.assets.domain.enums.InspectionFrequencyUnit;
+import com.smartdroneinspection.assets.domain.enums.InspectionScheduleStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;

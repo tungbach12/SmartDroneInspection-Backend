@@ -1,7 +1,7 @@
 package com.smartdroneinspection.inspectionrequests.repository;
 
 import com.smartdroneinspection.inspectionrequests.domain.InspectionAssignment;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionAssignmentStatus;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionAssignmentStatus;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

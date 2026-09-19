@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.inspectionrequests.domain.InspectionQuotation;
-import com.smartdroneinspection.inspectionrequests.domain.InspectionQuotationStatus;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionQuotationStatus;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

@@ -1,5 +1,6 @@
 package com.smartdroneinspection.inspectionrequests.domain;
 
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionQuotationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

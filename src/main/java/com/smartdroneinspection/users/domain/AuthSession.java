@@ -1,5 +1,6 @@
 package com.smartdroneinspection.users.domain;
 
+import com.smartdroneinspection.users.domain.enums.ClientType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

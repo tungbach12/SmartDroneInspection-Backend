@@ -1,5 +1,8 @@
 package com.smartdroneinspection.inspectionrequests.domain;
 
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestPriority;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestStatus;
+import com.smartdroneinspection.inspectionrequests.domain.enums.InspectionRequestType;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

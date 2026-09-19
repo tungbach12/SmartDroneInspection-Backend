@@ -1,7 +1,7 @@
 package com.smartdroneinspection.users.repository;
 
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.UserRole;
+import com.smartdroneinspection.users.domain.enums.UserRole;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;

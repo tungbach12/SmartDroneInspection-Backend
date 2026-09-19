@@ -1,5 +1,8 @@
 package com.smartdroneinspection.users.domain;
 
+import com.smartdroneinspection.users.domain.enums.ActorZone;
+import com.smartdroneinspection.users.domain.enums.UserRole;
+import com.smartdroneinspection.users.domain.enums.UserStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

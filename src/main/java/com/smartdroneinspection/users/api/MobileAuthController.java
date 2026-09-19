@@ -9,7 +9,7 @@ import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeReque
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.RefreshRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
-import com.smartdroneinspection.users.domain.ClientType;
+import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
