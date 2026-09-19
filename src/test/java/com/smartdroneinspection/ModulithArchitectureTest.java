@@ -18,4 +18,13 @@ class ModulithArchitectureTest {
   void discoversInspectionRequestsCapability() {
     assertThat(modules.getModuleByName("inspectionrequests")).isPresent();
   }
+
+  @Test
+  void discoversApprovedScaffoldedCapabilityRoots() {
+    assertThat(modules.getModuleByName("inspections")).isPresent();
+    assertThat(modules.getModuleByName("maintenance")).isPresent();
+    assertThat(modules.getModuleByName("notifications")).isPresent();
+    assertThat(modules.getModuleByName("dashboard")).isPresent();
+    assertThat(modules.getModuleByName("infrastructure")).isPresent();
+  }
 }
