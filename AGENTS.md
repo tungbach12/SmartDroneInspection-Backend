@@ -13,12 +13,26 @@ Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, Post
 
 - `SmartDroneInspectionApplication` (`@Modulithic`) - entry point
 - `shared/` - `Result<T>`, `PagedResult`, `Roles`, RFC 7807 handler, and shared security configuration
-- `<feature>/` (assets, inspections, missions, reports, defects, tickets, ai, dashboard, users) - one Spring Modulith module per business capability
+- Current modules: `users`, `assets`, `inspectionrequests`, and `shared`.
+- Planned modules are created with their first runtime slice: `inspections` (WF3), `maintenance` (WF4), `notifications`, `dashboard`, and `infrastructure`.
 - `<feature>/api/` - controllers and request/response records
 - `<feature>/domain/` - entities and domain rules owned by the feature
 - `<feature>/repository/` - persistence repositories
 - `<feature>/service/` - application use cases
-- `infrastructure/` - outbound adapters (MinIO, AI, and notification clients)
+- `infrastructure/` - outbound adapters for feature-owned ports (MinIO, AI, and notification clients)
+
+Each direct package under `com.smartdroneinspection` is a Spring Modulith module.
+The module root is its default Java API; nested packages are internal unless
+exposed with `@NamedInterface`. HTTP `api/` is transport code and must not be
+imported by another module. Use a root facade or a named `events`/`spi` interface
+for cross-module calls. Business modules never import `infrastructure`.
+
+Dependency direction: `users -> shared`, `assets -> shared`,
+`inspectionrequests -> assets, shared`, `inspections -> inspectionrequests, assets,
+shared`, and `maintenance -> inspections, inspectionrequests, shared`.
+Do not create standalone `missions`, `reports`, `defects`, `tickets`, or `ai`
+modules; reports/findings/AI candidates belong in WF3, maintenance tickets in
+`maintenance`, and YOLO adapters in `infrastructure/ai`.
 
 Do not create a top-level `domain/` entity module. User entities belong in
 `com.smartdroneinspection.users.domain`; the domain package is internal to the `users` module.
@@ -31,7 +45,7 @@ Modulith boundaries are enforced at build time by `ModulithArchitectureTest`.
 - DTO records: `XxxRequest` / `XxxResponse`
 - Validation: Jakarta Bean Validation (`@Valid`) on request records
 - Errors: expected -> `Result<T>`; unexpected -> RFC 7807 `ProblemDetail` via `GlobalExceptionHandler`
-- Flyway SQL under `src/main/resources/db/migration` (`V{n}__desc.sql`) when the task includes database schema work; use forward-only migrations.
+- Create or modify Flyway migrations only when the task explicitly includes schema work. Use a new forward migration and never rewrite an applied migration.
 - Auth is owned by the `users` module; shared filter-chain configuration remains under `shared/`
 
 ## Notes
