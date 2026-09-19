@@ -20,32 +20,50 @@ Swagger UI is available at `/swagger-ui.html` in development. OpenAPI is availab
 
 ## Package structure
 
+Each direct package under `com.smartdroneinspection` is a Spring Modulith module.
+The package root is the module's default Java API; nested packages are internal
+unless explicitly exposed with `@NamedInterface`.
+
+Current runtime modules:
+
+- `users` - identity, authentication, and user administration.
+- `assets` - asset catalog, checklist templates, and recurring schedules (WF1).
+- `inspectionrequests` - requests, quotations, service orders, and assignments (WF2).
+- `shared` - minimal cross-cutting contracts and configuration.
+
+Planned modules are created only with their first real runtime slice:
+
+- `inspections` - field execution, evidence, findings, reports, and peer review (WF3).
+- `maintenance` - assessment, quotation, execution, change, and resolution (WF4).
+- `notifications` - supporting delivery capability.
+- `dashboard` - read-only composition.
+- `infrastructure` - outbound adapters for feature-owned ports.
+
+Inside a module, use only the packages the capability needs:
+
 ```text
-com.smartdroneinspection
-├── SmartDroneInspectionApplication   # @Modulithic entry point
-├── shared/                            # Cross-cutting types and security config
-├── users/                             # Authentication and user management module
-│   ├── api/                           # Controllers and public API entry points
-│   │   └── dto/
-│   │       ├── request/               # Feature-owned request records
-│   │       └── response/              # Feature-owned response records
-│   ├── domain/                        # User entities and domain rules
-│   ├── repository/                    # Persistence repositories
-│   ├── security/                      # JWT, password, crypto, and rate limit code
-│   └── service/                       # Authentication and user use cases
-├── <feature>/                         # Other business modules (assets, reports, etc.)
-│   ├── api/
-│   ├── domain/
-│   ├── repository/
-│   └── service/
-└── infrastructure/                    # MinIO, AI, and notification adapters
+<feature>/
+|-- api/             # HTTP controllers and DTOs; internal transport code
+|-- domain/          # feature-owned entities and rules; internal
+|-- repository/      # scoped persistence; internal
+|-- service/         # use-case orchestration; internal
+|-- events/          # public only when marked @NamedInterface("events")
+`-- spi/             # public only when marked @NamedInterface("spi")
 ```
 
-Each direct package under `com.smartdroneinspection` is a Spring Modulith module.
-Keep entities inside the module that owns their use cases, for example
-`com.smartdroneinspection.users.domain.User`. Do not create a global
-`com.smartdroneinspection.domain` entity module; it separates entities from their
-application module and weakens the intended boundary.
+Other modules must not import another module's controllers, HTTP DTOs, entities,
+repositories, or services. Use a facade in the module root or a named interface.
+Keep entities inside the module that owns their use cases; do not create a global
+`com.smartdroneinspection.domain` entity module.
+
+The recommended dependency direction is `users -> shared`, `assets -> shared`,
+`inspectionrequests -> assets, shared`, `inspections -> inspectionrequests, assets,
+shared`, and `maintenance -> inspections, inspectionrequests, shared`.
+`infrastructure` implements feature-owned SPI and shared adapters; business modules
+never import infrastructure. Reports, findings, and AI candidates belong inside
+WF3, maintenance tickets belong inside `maintenance`, and a YOLO client belongs
+under `infrastructure/ai` when that runtime slice is implemented. Do not create
+standalone `missions`, `reports`, `defects`, `tickets`, or `ai` modules.
 
 ## Conventions
 
@@ -53,7 +71,7 @@ application module and weakens the intended boundary.
 - DTO records use `XxxRequest` and `XxxResponse` names.
 - Validate request records with Jakarta Bean Validation.
 - Expected business failures use `Result<T>`; unexpected failures use RFC 7807 `ProblemDetail`.
-- Flyway migrations live under `src/main/resources/db/migration` and are managed sequentially by the team leader.
+- Create or modify Flyway migrations only when the task explicitly includes schema work. Use a new forward migration and never rewrite an applied migration.
 
 ## Authentication
 
