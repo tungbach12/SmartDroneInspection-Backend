@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Locale;
@@ -82,6 +83,10 @@ public class InspectionQuotation {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
+  @Version
+  @Column(name = "row_version", nullable = false)
+  private long rowVersion;
+
   protected InspectionQuotation() {}
 
   public InspectionQuotation(
@@ -156,7 +161,10 @@ public class InspectionQuotation {
   }
 
   public void supersede() {
-    ensureStatus(InspectionQuotationStatus.DRAFT, InspectionQuotationStatus.SENT);
+    ensureStatus(
+        InspectionQuotationStatus.DRAFT,
+        InspectionQuotationStatus.SENT,
+        InspectionQuotationStatus.REVISION_REQUESTED);
     status = InspectionQuotationStatus.SUPERSEDED;
   }
 

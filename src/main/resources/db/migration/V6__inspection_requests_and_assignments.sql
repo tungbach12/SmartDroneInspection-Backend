@@ -29,7 +29,7 @@ CREATE TABLE inspection_requests
         (request_type = 'PERIODIC' AND schedule_id IS NOT NULL AND due_cycle IS NOT NULL)
         OR (request_type = 'AD_HOC' AND schedule_id IS NULL AND due_cycle IS NULL)
     ),
-    CONSTRAINT ck_inspection_requests_scope CHECK (scope = BTRIM(scope) AND LENGTH(BTRIM(scope)) > 0),
+    CONSTRAINT ck_inspection_requests_scope CHECK (LENGTH(BTRIM(scope)) > 0),
     CONSTRAINT ck_inspection_requests_priority CHECK (priority IN ('LOW', 'NORMAL', 'HIGH', 'URGENT')),
     CONSTRAINT ck_inspection_requests_status CHECK (status IN (
         'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'REVISION_REQUIRED', 'QUOTED',
@@ -96,6 +96,7 @@ CREATE TABLE inspection_quotations
     decided_at               TIMESTAMPTZ,
     revision_reason          VARCHAR(2000),
     created_at               TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    row_version              BIGINT       NOT NULL DEFAULT 0,
     CONSTRAINT uq_inspection_quotations_series_version UNIQUE (quotation_series_id, version_number),
     CONSTRAINT ck_inspection_quotations_version CHECK (version_number > 0),
     CONSTRAINT ck_inspection_quotations_currency CHECK (

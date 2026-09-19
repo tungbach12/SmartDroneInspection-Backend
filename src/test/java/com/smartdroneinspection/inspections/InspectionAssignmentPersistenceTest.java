@@ -64,7 +64,7 @@ class InspectionAssignmentPersistenceTest {
                 assignmentRepository.saveAndFlush(
                     new InspectionAssignment(
                         fixture.orderId(),
-                        UUID.randomUUID(),
+                        fixture.otherInspectorId(),
                         fixture.managerId(),
                         Instant.now().plusSeconds(7200),
                         "Access")))
@@ -88,9 +88,32 @@ class InspectionAssignmentPersistenceTest {
                 assignment.getId(), fixture.otherInspectorId()))
         .isEmpty();
     assertThat(
-            assignmentRepository.findByIdAndInspectorUserId(
-                assignment.getId(), fixture.inspectorId()))
-        .contains(assignment);
+            assignmentRepository
+                .findByIdAndInspectorUserId(assignment.getId(), fixture.inspectorId())
+                .map(InspectionAssignment::getId))
+        .contains(assignment.getId());
+  }
+
+  @Test
+  void rejectsSecondAcceptedAssignment() {
+    Fixture fixture = persistFixture();
+    InspectionAssignment accepted =
+        new InspectionAssignment(
+            fixture.orderId(), fixture.inspectorId(), fixture.managerId(), Instant.now(), "Access");
+    accepted.accept();
+    assignmentRepository.saveAndFlush(accepted);
+
+    InspectionAssignment second =
+        new InspectionAssignment(
+            fixture.orderId(),
+            fixture.otherInspectorId(),
+            fixture.managerId(),
+            Instant.now().plusSeconds(3600),
+            "Access");
+    second.accept();
+
+    assertThatThrownBy(() -> assignmentRepository.saveAndFlush(second))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   private Fixture persistFixture() {
@@ -179,7 +202,7 @@ class InspectionAssignmentPersistenceTest {
     InspectionServiceOrder order =
         serviceOrderRepository.saveAndFlush(
             InspectionServiceOrder.fromApprovedQuotation(
-                quotation, "SO-" + suffix, managerId, "Final report"));
+                quotation, "SO-" + suffix, managerId, "{\"report\":\"Final report\"}"));
     return new Fixture(order.getId(), managerId, inspectorId, otherInspectorId);
   }
 

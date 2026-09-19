@@ -102,6 +102,18 @@ class InspectionQuotationTest {
     assertThat(quotation.getDecidedAt()).isNotNull();
   }
 
+  @Test
+  void supersedesRevisionRequestedVersionWithoutLosingSentTime() {
+    InspectionQuotation quotation = newQuotation(1);
+    quotation.send();
+    quotation.requestRevision("Please clarify the access scope");
+
+    quotation.supersede();
+
+    assertThat(quotation.getStatus()).isEqualTo(InspectionQuotationStatus.SUPERSEDED);
+    assertThat(quotation.getSentAt()).isNotNull();
+  }
+
   private InspectionQuotation newQuotation(int version) {
     return new InspectionQuotation(
         UUID.randomUUID(),

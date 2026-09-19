@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.domain.InspectionQuotation;
 import com.smartdroneinspection.inspections.domain.InspectionRequest;
@@ -33,7 +34,7 @@ class InspectionCommercialPersistenceTest {
   @Autowired JdbcTemplate jdbcTemplate;
 
   @Test
-  void reloadsJsonSnapshotsAndNormalizesPersistedCurrency() {
+  void reloadsJsonSnapshotsAndNormalizesPersistedCurrency() throws Exception {
     Fixture fixture = persistFixture();
     InspectionQuotation quotation = persistQuotation(fixture, UUID.randomUUID(), 1, " usd ");
     entityManager.clear();
@@ -41,8 +42,11 @@ class InspectionCommercialPersistenceTest {
     InspectionQuotation reloaded = quotationRepository.findById(quotation.getId()).orElseThrow();
 
     assertThat(reloaded.getCurrency()).isEqualTo("USD");
-    assertThat(reloaded.getPricingDetails()).isEqualTo("{\"items\":[]}");
-    assertThat(reloaded.getScopeSnapshot()).isEqualTo("{\"scope\":\"tower\"}");
+    ObjectMapper objectMapper = new ObjectMapper();
+    assertThat(objectMapper.readTree(reloaded.getPricingDetails()))
+        .isEqualTo(objectMapper.readTree("{\"items\":[]}"));
+    assertThat(objectMapper.readTree(reloaded.getScopeSnapshot()))
+        .isEqualTo(objectMapper.readTree("{\"scope\":\"tower\"}"));
   }
 
   @Test
@@ -89,12 +93,12 @@ class InspectionCommercialPersistenceTest {
 
     InspectionServiceOrder first =
         InspectionServiceOrder.fromApprovedQuotation(
-            quotation, "SO-2026-0001", fixture.userId(), "Final report");
+            quotation, "SO-2026-0001", fixture.userId(), "{\"report\":\"Final report\"}");
     serviceOrderRepository.saveAndFlush(first);
 
     InspectionServiceOrder second =
         InspectionServiceOrder.fromApprovedQuotation(
-            quotation, "SO-2026-0002", fixture.userId(), "Replacement report");
+            quotation, "SO-2026-0002", fixture.userId(), "{\"report\":\"Replacement report\"}");
 
     assertThatThrownBy(() -> serviceOrderRepository.saveAndFlush(second))
         .isInstanceOf(DataIntegrityViolationException.class);
