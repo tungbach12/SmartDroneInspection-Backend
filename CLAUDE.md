@@ -13,13 +13,17 @@ Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, Post
 
 - `SmartDroneInspectionApplication` (`@Modulithic`) - entry point
 - `shared/` - `Result<T>`, `PagedResult`, `Roles`, RFC 7807 handler, and shared security configuration
-- Current modules: `users`, `assets`, `inspectionrequests`, and `shared`.
-- Planned modules are created with their first runtime slice: `inspections` (WF3), `maintenance` (WF4), `notifications`, `dashboard`, and `infrastructure`.
+- Implemented runtime modules: `users`, `assets`, `inspectionrequests`, and `shared`.
+- Scaffolded roots with package metadata only: `inspections` (WF3), `maintenance` (WF4), `notifications`, `dashboard`, and `infrastructure`.
 - `<feature>/api/` - controllers and request/response records
 - `<feature>/domain/` - entities and domain rules owned by the feature
 - `<feature>/repository/` - persistence repositories
 - `<feature>/service/` - application use cases
-- `infrastructure/` - outbound adapters for feature-owned ports (MinIO, AI, and notification clients)
+- `infrastructure/` - scaffolded outbound-adapter boundary; add adapters only with a feature-owned port
+
+Approved capability roots may contain `package-info.java` before runtime code
+exists. Do not add empty nested packages or speculative business types; create
+them with the first vertical slice that owns real code.
 
 Each direct package under `com.smartdroneinspection` is a Spring Modulith module.
 The module root is its default Java API; nested packages are internal unless

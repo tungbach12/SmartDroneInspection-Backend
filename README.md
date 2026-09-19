@@ -24,20 +24,25 @@ Each direct package under `com.smartdroneinspection` is a Spring Modulith module
 The package root is the module's default Java API; nested packages are internal
 unless explicitly exposed with `@NamedInterface`.
 
-Current runtime modules:
+Implemented runtime modules:
 
 - `users` - identity, authentication, and user administration.
 - `assets` - asset catalog, checklist templates, and recurring schedules (WF1).
 - `inspectionrequests` - requests, quotations, service orders, and assignments (WF2).
 - `shared` - minimal cross-cutting contracts and configuration.
 
-Planned modules are created only with their first real runtime slice:
+Scaffolded module roots (package metadata only; runtime slices are pending):
 
 - `inspections` - field execution, evidence, findings, reports, and peer review (WF3).
 - `maintenance` - assessment, quotation, execution, change, and resolution (WF4).
 - `notifications` - supporting delivery capability.
 - `dashboard` - read-only composition.
 - `infrastructure` - outbound adapters for feature-owned ports.
+
+The five scaffolded roots currently contain only `package-info.java` so the
+capability map is visible to the team. Add nested `api`, `domain`, `repository`,
+`service`, `events`, or `spi` packages only with the first vertical slice that
+owns real code.
 
 Inside a module, use only the packages the capability needs:
 
@@ -72,6 +77,7 @@ standalone `missions`, `reports`, `defects`, `tickets`, or `ai` modules.
 - Validate request records with Jakarta Bean Validation.
 - Expected business failures use `Result<T>`; unexpected failures use RFC 7807 `ProblemDetail`.
 - Create or modify Flyway migrations only when the task explicitly includes schema work. Use a new forward migration and never rewrite an applied migration.
+- Approved capability roots may contain `package-info.java` before runtime code exists. Do not add empty nested packages or speculative business types.
 
 ## Authentication
 
