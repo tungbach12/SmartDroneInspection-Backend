@@ -4,13 +4,16 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.clientIp;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.correlationId;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
+import com.smartdroneinspection.users.api.dto.request.ClientRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeRequest;
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.PasswordChangeRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
+import com.smartdroneinspection.users.api.dto.response.ClientRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.service.AuthService;
+import com.smartdroneinspection.users.service.ClientRegistrationService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -18,6 +21,7 @@ import java.util.Arrays;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -34,16 +38,29 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrowserAuthController {
 
   private final AuthService auth;
+  private final ClientRegistrationService registration;
   private final RefreshCookieService cookies;
 
-  public BrowserAuthController(AuthService auth, RefreshCookieService cookies) {
+  public BrowserAuthController(
+      AuthService auth, ClientRegistrationService registration, RefreshCookieService cookies) {
     this.auth = auth;
+    this.registration = registration;
     this.cookies = cookies;
   }
 
   @GetMapping("/csrf")
   public CsrfToken csrf(CsrfToken token) {
     return token;
+  }
+
+  @PostMapping("/register")
+  public ResponseEntity<ClientRegistrationResponse> register(
+      @Valid @RequestBody ClientRegistrationRequest body, HttpServletRequest request) {
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .cacheControl(CacheControl.noStore())
+        .body(
+            registration.register(
+                body, clientIp(request), userAgent(request), correlationId(request)));
   }
 
   @PostMapping("/login")

@@ -5,12 +5,15 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.correlationId;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
 import com.smartdroneinspection.shared.exception.AuthException;
+import com.smartdroneinspection.users.api.dto.request.ClientRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeRequest;
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.RefreshRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
+import com.smartdroneinspection.users.api.dto.response.ClientRegistrationResponse;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.service.AuthService;
+import com.smartdroneinspection.users.service.ClientRegistrationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
@@ -26,9 +29,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class MobileAuthController {
 
   private final AuthService auth;
+  private final ClientRegistrationService registration;
 
-  public MobileAuthController(AuthService auth) {
+  public MobileAuthController(AuthService auth, ClientRegistrationService registration) {
     this.auth = auth;
+    this.registration = registration;
+  }
+
+  @PostMapping("/register")
+  public ResponseEntity<ClientRegistrationResponse> register(
+      @Valid @RequestBody ClientRegistrationRequest body, HttpServletRequest request) {
+    rejectBrowserOrigin(request);
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .cacheControl(CacheControl.noStore())
+        .body(
+            registration.register(
+                body, clientIp(request), userAgent(request), correlationId(request)));
   }
 
   @PostMapping("/login")
