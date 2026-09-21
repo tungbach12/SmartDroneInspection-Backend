@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface OrganizationRepository extends JpaRepository<Organization, UUID> {
 
-  Optional<Organization> findByCode(String code);
+  Optional<Organization> findByCodeIgnoreCase(String code);
 }

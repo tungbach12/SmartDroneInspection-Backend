@@ -27,7 +27,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
       return true;
     }
     String path = request.getRequestURI();
-    return !(path.endsWith("/auth/login") || path.endsWith("/auth/password/setup"));
+    return !(path.endsWith("/auth/login")
+        || path.endsWith("/auth/password/setup")
+        || path.endsWith("/auth/register"));
   }
 
   @Override

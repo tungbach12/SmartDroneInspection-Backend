@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 
 @Entity
@@ -36,7 +37,7 @@ public class Organization {
 
   public Organization(String name, String code, String description) {
     this.name = name;
-    this.code = code;
+    this.code = normalizeCode(code);
     this.description = description;
     this.active = true;
     this.createdAt = Instant.now();
@@ -71,5 +72,9 @@ public class Organization {
   public void activate() {
     active = true;
     updatedAt = Instant.now();
+  }
+
+  public static String normalizeCode(String value) {
+    return value.trim().toUpperCase(Locale.ROOT);
   }
 }

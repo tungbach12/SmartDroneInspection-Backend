@@ -53,6 +53,7 @@ Modulith boundaries are enforced at build time by `ModulithArchitectureTest`.
 - Errors: expected -> `Result<T>`; unexpected -> RFC 7807 `ProblemDetail` via `GlobalExceptionHandler`
 - Create or modify Flyway migrations only when the task explicitly includes schema work. Use a new forward migration and never rewrite an applied migration.
 - Auth is owned by the `users` module; shared filter-chain configuration remains under `shared/`
+- Client onboarding is the only self-registration path: it creates one active organization and its first `CLIENT` account atomically. Privileged and service-workforce accounts remain administrator-managed; do not issue tokens from registration.
 
 ## Notes
 
