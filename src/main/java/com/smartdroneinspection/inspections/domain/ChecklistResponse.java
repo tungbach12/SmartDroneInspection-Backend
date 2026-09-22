@@ -54,6 +54,7 @@ public class ChecklistResponse {
     this.responseValue = responseValue;
     this.notes = notes;
     this.completedByUserId = completedByUserId;
+    this.completedAt = Instant.now();
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
@@ -72,6 +73,22 @@ public class ChecklistResponse {
 
   public String getResponseValue() {
     return responseValue;
+  }
+
+  public String getNotes() {
+    return notes;
+  }
+
+  public UUID getCompletedByUserId() {
+    return completedByUserId;
+  }
+
+  public void update(String responseValue, String notes, UUID completedByUserId) {
+    this.responseValue = responseValue;
+    this.notes = notes;
+    this.completedByUserId = completedByUserId;
+    this.completedAt = Instant.now();
+    this.updatedAt = completedAt;
   }
 
   public Instant getCompletedAt() {

@@ -99,6 +99,18 @@ public class Inspection {
     return status;
   }
 
+  public void start() {
+    if (status == InspectionStatus.IN_PROGRESS) {
+      return;
+    }
+    if (status != InspectionStatus.READY_FOR_INSPECTION) {
+      throw new IllegalStateException("Only ready inspections can be started");
+    }
+    status = InspectionStatus.IN_PROGRESS;
+    startedAt = Instant.now();
+    updatedAt = startedAt;
+  }
+
   public Instant getStartedAt() {
     return startedAt;
   }

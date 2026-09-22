@@ -18,7 +18,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: smartdroneinspection-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -31,7 +31,7 @@ services:
     volumes:
       - smartdroneinspection-minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
       retries: 20
