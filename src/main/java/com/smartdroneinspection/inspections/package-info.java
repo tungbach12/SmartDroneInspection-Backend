@@ -1,4 +1,14 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Inspections",
-    allowedDependencies = {"inspectionrequests", "assets", "shared"})
+    allowedDependencies = {
+      "inspectionrequests::domain",
+      "inspectionrequests::enums",
+      "inspectionrequests::repository",
+      "assets::domain",
+      "assets::enums",
+      "assets::repository",
+      "users",
+      "shared::auth",
+      "shared::exception"
+    })
 package com.smartdroneinspection.inspections;

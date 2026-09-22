@@ -101,6 +101,26 @@ public class ChecklistItem {
     return displayOrder;
   }
 
+  public UUID getTemplateId() {
+    return template.getId();
+  }
+
+  public String getPrompt() {
+    return prompt;
+  }
+
+  public ChecklistResponseType getResponseType() {
+    return responseType;
+  }
+
+  public boolean isRequired() {
+    return required;
+  }
+
+  public String getValidationConfig() {
+    return validationConfig;
+  }
+
   private static String normalizeCode(String value) {
     return value.trim().toUpperCase(Locale.ROOT);
   }

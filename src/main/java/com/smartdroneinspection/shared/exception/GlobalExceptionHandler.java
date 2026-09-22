@@ -23,6 +23,11 @@ public class GlobalExceptionHandler {
     return problem(ex.status(), ex.code(), ex.getMessage(), request);
   }
 
+  @ExceptionHandler(BusinessException.class)
+  public ProblemDetail handleBusiness(BusinessException ex, HttpServletRequest request) {
+    return problem(ex.status(), ex.code(), ex.getMessage(), request);
+  }
+
   @ExceptionHandler(MissingRequestCookieException.class)
   public ProblemDetail handleMissingRefreshCookie(
       MissingRequestCookieException ex, HttpServletRequest request) {
