@@ -82,7 +82,47 @@ public class AiFindingCandidate {
     return evidenceId;
   }
 
+  public String getModelName() {
+    return modelName;
+  }
+
+  public String getModelVersion() {
+    return modelVersion;
+  }
+
+  public String getPredictedLabel() {
+    return predictedLabel;
+  }
+
+  public BigDecimal getConfidence() {
+    return confidence;
+  }
+
+  public String getBoundingBox() {
+    return boundingBox;
+  }
+
   public AiFindingCandidateStatus getStatus() {
     return status;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public void review(AiFindingCandidateStatus decision, UUID reviewerId, String reason) {
+    if (status != AiFindingCandidateStatus.PENDING) {
+      throw new IllegalStateException("Only pending candidates can be reviewed");
+    }
+    if (decision == AiFindingCandidateStatus.PENDING || reviewerId == null) {
+      throw new IllegalArgumentException("A review decision and reviewer are required");
+    }
+    if (decision == AiFindingCandidateStatus.REJECTED && (reason == null || reason.isBlank())) {
+      throw new IllegalArgumentException("A rejection reason is required");
+    }
+    status = decision;
+    reviewedByUserId = reviewerId;
+    reviewedAt = Instant.now();
+    rejectionReason = reason;
   }
 }

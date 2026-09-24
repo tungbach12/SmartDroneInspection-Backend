@@ -59,11 +59,39 @@ public class InspectionReport {
     return inspectionId;
   }
 
+  public UUID getAuthorUserId() {
+    return authorUserId;
+  }
+
   public ReportStatus getStatus() {
     return status;
   }
 
   public int getCurrentVersionNumber() {
     return currentVersionNumber;
+  }
+
+  public void startVersion(int versionNumber) {
+    if (status == ReportStatus.ACCEPTED || immutableVersionExists()) {
+      throw new IllegalStateException("An accepted report cannot be revised");
+    }
+    if (versionNumber != currentVersionNumber + 1) {
+      throw new IllegalArgumentException("Report versions must be sequential");
+    }
+    currentVersionNumber = versionNumber;
+    status = ReportStatus.DRAFT;
+    updatedAt = Instant.now();
+  }
+
+  public void changeStatus(ReportStatus nextStatus) {
+    if (status == ReportStatus.ACCEPTED && nextStatus != ReportStatus.ACCEPTED) {
+      throw new IllegalStateException("An accepted report is immutable");
+    }
+    status = nextStatus;
+    updatedAt = Instant.now();
+  }
+
+  private boolean immutableVersionExists() {
+    return status == ReportStatus.ACCEPTED;
   }
 }

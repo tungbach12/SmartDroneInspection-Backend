@@ -89,6 +89,20 @@ public final class InspectionFixture {
             ActorZone.SERVICE_WORKFORCE,
             null,
             UserRole.INSPECTOR);
+    User otherOrganizationClient =
+        saveUser(
+            "other-client",
+            UserStatus.ACTIVE,
+            ActorZone.CUSTOMER_ORGANIZATION,
+            otherOrganizationId,
+            UserRole.CLIENT);
+    User otherOrganizationInspector =
+        saveUser(
+            "other-organization-inspector",
+            UserStatus.ACTIVE,
+            ActorZone.SERVICE_WORKFORCE,
+            null,
+            UserRole.INSPECTOR);
     User inactiveInspector =
         saveUser(
             "inactive-inspector",
@@ -187,13 +201,81 @@ public final class InspectionFixture {
     assignment.accept();
     assignments.saveAndFlush(assignment);
 
+    Asset otherOrganizationAsset =
+        assets.saveAndFlush(
+            new Asset(
+                otherOrganizationId,
+                category.getId(),
+                "asset-" + otherOrganizationId,
+                "South bridge",
+                "Other organization fixture asset",
+                "District 2",
+                null,
+                null,
+                null,
+                otherOrganizationClient.getId()));
+    InspectionRequest otherOrganizationRequest =
+        InspectionRequest.adHoc(
+            otherOrganizationId,
+            otherOrganizationAsset.getId(),
+            template.getId(),
+            otherOrganizationClient.getId(),
+            "Ad hoc bridge inspection",
+            InspectionRequestPriority.NORMAL,
+            Instant.now().plusSeconds(86_400),
+            null,
+            "Other site contact",
+            null,
+            null,
+            null);
+    otherOrganizationRequest.submit();
+    requests.saveAndFlush(otherOrganizationRequest);
+
+    InspectionQuotation otherOrganizationQuotation =
+        new InspectionQuotation(
+            UUID.randomUUID(),
+            otherOrganizationRequest.getId(),
+            1,
+            null,
+            manager.getId(),
+            "USD",
+            BigDecimal.valueOf(100),
+            BigDecimal.ZERO,
+            BigDecimal.valueOf(100),
+            "{\"items\":[]}",
+            "{\"scope\":\"bridge\"}",
+            BigDecimal.ONE,
+            "NET 30");
+    otherOrganizationQuotation.send();
+    otherOrganizationQuotation.approve(otherOrganizationClient.getId());
+    quotations.saveAndFlush(otherOrganizationQuotation);
+
+    InspectionServiceOrder otherOrganizationOrder =
+        serviceOrders.saveAndFlush(
+            InspectionServiceOrder.fromApprovedQuotation(
+                otherOrganizationQuotation,
+                "SO-" + otherOrganizationId,
+                manager.getId(),
+                "{\"report\":\"Final report\"}"));
+    InspectionAssignment otherOrganizationAssignment =
+        new InspectionAssignment(
+            otherOrganizationOrder.getId(),
+            otherOrganizationInspector.getId(),
+            manager.getId(),
+            Instant.now().plusSeconds(86_400),
+            "Call the other site contact before entry");
+    otherOrganizationAssignment.accept();
+    assignments.saveAndFlush(otherOrganizationAssignment);
+
     return new Data(
         organizationId,
         otherOrganizationId,
         client.getId(),
+        otherOrganizationClient.getId(),
         manager.getId(),
         inspector.getId(),
         otherInspector.getId(),
+        otherOrganizationInspector.getId(),
         inactiveInspector.getId(),
         category.getId(),
         template.getId(),
@@ -201,7 +283,11 @@ public final class InspectionFixture {
         asset.getId(),
         request.getId(),
         order.getId(),
-        assignment.getId());
+        assignment.getId(),
+        otherOrganizationAsset.getId(),
+        otherOrganizationRequest.getId(),
+        otherOrganizationOrder.getId(),
+        otherOrganizationAssignment.getId());
   }
 
   private UUID createOrganization(String label) {
@@ -232,9 +318,11 @@ public final class InspectionFixture {
       UUID organizationId,
       UUID otherOrganizationId,
       UUID clientId,
+      UUID otherOrganizationClientId,
       UUID managerId,
       UUID inspectorId,
       UUID otherInspectorId,
+      UUID otherOrganizationInspectorId,
       UUID inactiveInspectorId,
       UUID categoryId,
       UUID checklistTemplateId,
@@ -242,5 +330,9 @@ public final class InspectionFixture {
       UUID assetId,
       UUID requestId,
       UUID serviceOrderId,
-      UUID assignmentId) {}
+      UUID assignmentId,
+      UUID otherOrganizationAssetId,
+      UUID otherOrganizationRequestId,
+      UUID otherOrganizationOrderId,
+      UUID otherOrganizationAssignmentId) {}
 }

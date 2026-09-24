@@ -109,6 +109,14 @@ public class ChecklistItem {
     return prompt;
   }
 
+  public String getSectionName() {
+    return sectionName;
+  }
+
+  public String getGuidance() {
+    return guidance;
+  }
+
   public ChecklistResponseType getResponseType() {
     return responseType;
   }

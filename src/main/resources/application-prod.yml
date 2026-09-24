@@ -1,6 +1,13 @@
 app:
   auth:
     secure-cookies: true
+  storage:
+    minio:
+      enabled: ${MINIO_ENABLED:true}
+      endpoint: ${MINIO_ENDPOINT}
+      bucket: ${MINIO_BUCKET:inspection-evidence}
+      access-key: ${MINIO_ACCESS_KEY}
+      secret-key: ${MINIO_SECRET_KEY}
 
 springdoc:
   swagger-ui:

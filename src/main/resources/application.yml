@@ -1,6 +1,10 @@
 spring:
   application:
     name: smartdroneinspection
+  servlet:
+    multipart:
+      max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
+      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:10MB}
   datasource:
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdroneinspection}
     username: ${POSTGRES_USER:postgres}
@@ -34,6 +38,22 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 app:
+  evidence:
+    max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
+  storage:
+    minio:
+      enabled: ${MINIO_ENABLED:false}
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      bucket: ${MINIO_BUCKET:inspection-evidence}
+      access-key: ${MINIO_ACCESS_KEY:}
+      secret-key: ${MINIO_SECRET_KEY:}
+  ai:
+    yolo:
+      enabled: ${YOLO_INFERENCE_ENABLED:false}
+      base-url: ${YOLO_INFERENCE_BASE_URL:http://localhost:8000}
+      predict-path: ${YOLO_INFERENCE_PREDICT_PATH:/predict}
+      connect-timeout: ${YOLO_INFERENCE_CONNECT_TIMEOUT:2s}
+      read-timeout: ${YOLO_INFERENCE_READ_TIMEOUT:30s}
   auth:
     issuer: ${AUTH_JWT_ISSUER:smartdroneinspection}
     audience: ${AUTH_JWT_AUDIENCE:smartdroneinspection-api}

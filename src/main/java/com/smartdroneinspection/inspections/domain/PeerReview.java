@@ -62,7 +62,40 @@ public class PeerReview {
     return reportVersionId;
   }
 
+  public UUID getReviewerUserId() {
+    return reviewerUserId;
+  }
+
+  public UUID getAssignedByUserId() {
+    return assignedByUserId;
+  }
+
+  public String getComments() {
+    return comments;
+  }
+
+  public Instant getAssignedAt() {
+    return assignedAt;
+  }
+
+  public Instant getReviewedAt() {
+    return reviewedAt;
+  }
+
   public PeerReviewDecision getDecision() {
     return decision;
+  }
+
+  public void decide(PeerReviewDecision nextDecision, String reviewComments) {
+    if (decision != PeerReviewDecision.PENDING || nextDecision == PeerReviewDecision.PENDING) {
+      throw new IllegalStateException("Only a pending peer review can be decided");
+    }
+    if (nextDecision == PeerReviewDecision.CHANGES_REQUESTED
+        && (reviewComments == null || reviewComments.isBlank())) {
+      throw new IllegalArgumentException("Requested changes require comments");
+    }
+    decision = nextDecision;
+    comments = reviewComments;
+    reviewedAt = Instant.now();
   }
 }

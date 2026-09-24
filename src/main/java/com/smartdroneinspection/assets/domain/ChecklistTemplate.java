@@ -151,6 +151,10 @@ public class ChecklistTemplate {
     return templateKey;
   }
 
+  public String getName() {
+    return name;
+  }
+
   public int getVersionNumber() {
     return versionNumber;
   }
