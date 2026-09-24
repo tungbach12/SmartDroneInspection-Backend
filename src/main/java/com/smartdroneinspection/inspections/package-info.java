@@ -8,6 +8,7 @@
       "assets::enums",
       "assets::repository",
       "users",
+      "shared::api",
       "shared::auth",
       "shared::exception"
     })

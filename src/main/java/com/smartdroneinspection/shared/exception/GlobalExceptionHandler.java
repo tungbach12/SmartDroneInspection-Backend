@@ -1,9 +1,9 @@
 package com.smartdroneinspection.shared.exception;
 
+import com.smartdroneinspection.shared.RequestTraceId;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.time.Instant;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -49,31 +49,29 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception ex, HttpServletRequest request) {
-    String traceId = traceId(request);
+    String traceId = RequestTraceId.from(request);
     LOG.error("Unhandled request failure traceId={}", traceId, ex);
-    var detail =
-        problem(
-            HttpStatus.INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            "An unexpected error occurred.",
-            request);
-    detail.setProperty("traceId", traceId);
-    return detail;
+    return problem(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "INTERNAL_ERROR",
+        "An unexpected error occurred.",
+        request,
+        traceId);
   }
 
   private ProblemDetail problem(
       HttpStatus status, String code, String message, HttpServletRequest request) {
+    return problem(status, code, message, request, RequestTraceId.from(request));
+  }
+
+  private ProblemDetail problem(
+      HttpStatus status, String code, String message, HttpServletRequest request, String traceId) {
     var detail = ProblemDetail.forStatusAndDetail(status, message);
     detail.setTitle(status.getReasonPhrase());
     detail.setInstance(URI.create(request.getRequestURI()));
     detail.setProperty("code", code);
     detail.setProperty("timestamp", Instant.now().toString());
-    detail.setProperty("traceId", traceId(request));
+    detail.setProperty("traceId", traceId);
     return detail;
-  }
-
-  private String traceId(HttpServletRequest request) {
-    String value = request.getHeader("X-Correlation-ID");
-    return value == null || value.isBlank() ? UUID.randomUUID().toString() : value;
   }
 }

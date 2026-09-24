@@ -7,6 +7,7 @@ import com.smartdroneinspection.inspections.api.dto.response.ChecklistResponseRe
 import com.smartdroneinspection.inspections.api.dto.response.InspectionAssignmentResponse;
 import com.smartdroneinspection.inspections.api.dto.response.StartInspectionResponse;
 import com.smartdroneinspection.inspections.service.InspectionService;
+import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,7 +37,7 @@ public class InspectionController {
   }
 
   @GetMapping("/assignments")
-  public List<InspectionAssignmentResponse> assignments(
+  public ApiResponse<List<InspectionAssignmentResponse>> assignments(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "ACCEPTED") InspectionAssignmentStatus status) {
     if (status != InspectionAssignmentStatus.ACCEPTED) {
@@ -45,22 +46,23 @@ public class InspectionController {
           "VALIDATION_FAILED",
           "Only accepted assignments are available to the inspection client.");
     }
-    return inspections.listAcceptedAssignments(subject(jwt));
+    return ApiResponse.success(inspections.listAcceptedAssignments(subject(jwt)));
   }
 
   @PostMapping("/start")
-  public StartInspectionResponse start(
+  public ApiResponse<StartInspectionResponse> start(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody StartInspectionRequest request) {
-    return inspections.start(subject(jwt), request.assignmentId());
+    return ApiResponse.success(inspections.start(subject(jwt), request.assignmentId()));
   }
 
   @PutMapping("/{inspectionId}/checklist-responses/{checklistItemId}")
-  public ChecklistResponseResponse saveChecklistResponse(
+  public ApiResponse<ChecklistResponseResponse> saveChecklistResponse(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID checklistItemId,
       @Valid @RequestBody ChecklistResponseRequest request) {
-    return inspections.saveChecklistResponse(subject(jwt), inspectionId, checklistItemId, request);
+    return ApiResponse.success(
+        inspections.saveChecklistResponse(subject(jwt), inspectionId, checklistItemId, request));
   }
 
   private UUID subject(Jwt jwt) {
