@@ -2,6 +2,7 @@ package com.smartdroneinspection;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.users.domain.Organization;
@@ -105,12 +106,43 @@ class WorkflowBaselineTest {
               .getContentAsString();
 
       JsonNode response = objectMapper.readTree(responseBody);
-      assertThat(response.path("step").asText()).isEqualTo("AUTHENTICATED");
-      assertThat(response.path("accessToken").asText()).isNotBlank();
-      assertThat(response.path("refreshToken").asText()).isNotBlank();
-      assertThat(response.path("user").path("roles").valueStream().map(JsonNode::asText))
+      JsonNode data = response.path("data");
+      assertThat(response.path("success").asBoolean()).isTrue();
+      assertThat(response.path("message").asText()).isEqualTo("Success");
+      assertThat(data.path("step").asText()).isEqualTo("AUTHENTICATED");
+      assertThat(data.path("accessToken").asText()).isNotBlank();
+      assertThat(data.path("refreshToken").asText()).isNotBlank();
+      assertThat(data.path("user").path("roles").valueStream().map(JsonNode::asText))
           .contains(role.value());
     }
+  }
+
+  @Test
+  void mobileLogoutRemainsBodylessAfterAuthSuccessEnvelope() throws Exception {
+    FixtureCredentials fixture = credentials.get(UserRole.INSPECTOR);
+    String loginBody =
+        objectMapper.writeValueAsString(
+            Map.of("email", fixture.email(), "password", fixture.password()));
+    String loginResponse =
+        mockMvc
+            .perform(
+                post("/api/v1/mobile/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String refreshToken =
+        objectMapper.readTree(loginResponse).path("data").path("refreshToken").asText();
+
+    mockMvc
+        .perform(
+            post("/api/v1/mobile/auth/logout")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
   }
 
   private ActorZone zoneFor(UserRole role) {

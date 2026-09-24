@@ -4,6 +4,7 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.clientIp;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.correlationId;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
+import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.users.api.dto.request.ClientRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeRequest;
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
@@ -49,22 +50,23 @@ public class BrowserAuthController {
   }
 
   @GetMapping("/csrf")
-  public CsrfToken csrf(CsrfToken token) {
-    return token;
+  public ApiResponse<CsrfToken> csrf(CsrfToken token) {
+    return ApiResponse.success(token);
   }
 
   @PostMapping("/register")
-  public ResponseEntity<ClientRegistrationResponse> register(
+  public ResponseEntity<ApiResponse<ClientRegistrationResponse>> register(
       @Valid @RequestBody ClientRegistrationRequest body, HttpServletRequest request) {
     return ResponseEntity.status(HttpStatus.CREATED)
         .cacheControl(CacheControl.noStore())
         .body(
-            registration.register(
-                body, clientIp(request), userAgent(request), correlationId(request)));
+            ApiResponse.success(
+                registration.register(
+                    body, clientIp(request), userAgent(request), correlationId(request))));
   }
 
   @PostMapping("/login")
-  public ResponseEntity<AuthFlowResponse> login(
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> login(
       @Valid @RequestBody LoginRequest body, HttpServletRequest request) {
     var result =
         auth.login(
@@ -78,7 +80,7 @@ public class BrowserAuthController {
   }
 
   @PostMapping("/password/setup")
-  public ResponseEntity<AuthFlowResponse> initialPassword(
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> initialPassword(
       @Valid @RequestBody InitialPasswordChangeRequest body, HttpServletRequest request) {
     var result =
         auth.changeInitialPassword(
@@ -93,7 +95,7 @@ public class BrowserAuthController {
   }
 
   @PostMapping("/refresh")
-  public ResponseEntity<AuthFlowResponse> refresh(
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> refresh(
       @CookieValue(name = RefreshCookieService.COOKIE_NAME) String refreshToken,
       HttpServletRequest request) {
     var result =
@@ -131,10 +133,10 @@ public class BrowserAuthController {
   }
 
   @GetMapping("/me")
-  public ResponseEntity<UserResponse> me(@AuthenticationPrincipal Jwt jwt) {
+  public ResponseEntity<ApiResponse<UserResponse>> me(@AuthenticationPrincipal Jwt jwt) {
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(auth.me(UUID.fromString(jwt.getSubject())));
+        .body(ApiResponse.success(auth.me(UUID.fromString(jwt.getSubject()))));
   }
 
   @PostMapping("/password/change")
@@ -155,7 +157,7 @@ public class BrowserAuthController {
         .build();
   }
 
-  private ResponseEntity<AuthFlowResponse> webResponse(AuthService.AuthResult result) {
+  private ResponseEntity<ApiResponse<AuthFlowResponse>> webResponse(AuthService.AuthResult result) {
     var response = result.response();
     var browserSafe =
         new AuthFlowResponse(
@@ -168,7 +170,7 @@ public class BrowserAuthController {
     if (result.refreshToken() != null) {
       builder.header(HttpHeaders.SET_COOKIE, cookies.create(result.refreshToken()).toString());
     }
-    return builder.body(browserSafe);
+    return builder.body(ApiResponse.success(browserSafe));
   }
 
   private String cookieValue(HttpServletRequest request, String name) {

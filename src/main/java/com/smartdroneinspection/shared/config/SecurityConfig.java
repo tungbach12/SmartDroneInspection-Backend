@@ -1,14 +1,17 @@
 package com.smartdroneinspection.shared.config;
 
+import com.smartdroneinspection.shared.RequestTraceId;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URI;
+import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.config.Customizer;
@@ -24,10 +27,17 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
+
+  private final ObjectMapper objectMapper;
+
+  public SecurityConfig(ObjectMapper objectMapper) {
+    this.objectMapper = objectMapper;
+  }
 
   @Bean
   @Order(1)
@@ -41,8 +51,8 @@ public class SecurityConfig {
         .exceptionHandling(
             exceptions ->
                 exceptions
-                    .authenticationEntryPoint(SecurityConfig::writeUnauthorized)
-                    .accessDeniedHandler(SecurityConfig::writeForbidden))
+                    .authenticationEntryPoint(this::writeUnauthorized)
+                    .accessDeniedHandler(this::writeForbidden))
         .authorizeHttpRequests(
             requests ->
                 requests
@@ -77,8 +87,8 @@ public class SecurityConfig {
         .exceptionHandling(
             exceptions ->
                 exceptions
-                    .authenticationEntryPoint(SecurityConfig::writeUnauthorized)
-                    .accessDeniedHandler(SecurityConfig::writeForbidden))
+                    .authenticationEntryPoint(this::writeUnauthorized)
+                    .accessDeniedHandler(this::writeForbidden))
         .authorizeHttpRequests(
             requests ->
                 requests
@@ -122,30 +132,37 @@ public class SecurityConfig {
     return source;
   }
 
-  private static void writeUnauthorized(
+  private void writeUnauthorized(
       HttpServletRequest request, HttpServletResponse response, AuthenticationException exception)
       throws IOException {
-    writeSecurityProblem(response, HttpServletResponse.SC_UNAUTHORIZED, "AUTHENTICATION_REQUIRED");
+    writeSecurityProblem(request, response, HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED");
   }
 
-  private static void writeForbidden(
+  private void writeForbidden(
       HttpServletRequest request, HttpServletResponse response, AccessDeniedException exception)
       throws IOException {
-    writeSecurityProblem(response, HttpServletResponse.SC_FORBIDDEN, "ACCESS_DENIED");
+    writeSecurityProblem(request, response, HttpStatus.FORBIDDEN, "ACCESS_DENIED");
   }
 
-  private static void writeSecurityProblem(HttpServletResponse response, int status, String code)
+  private void writeSecurityProblem(
+      HttpServletRequest request, HttpServletResponse response, HttpStatus status, String code)
       throws IOException {
-    response.setStatus(status);
+    String detail =
+        status == HttpStatus.UNAUTHORIZED ? "Authentication is required." : "Access is denied.";
+    var problem =
+        java.util.Map.of(
+            "type", "about:blank",
+            "title", status.getReasonPhrase(),
+            "status", status.value(),
+            "detail", detail,
+            "instance", URI.create(request.getRequestURI()).toString(),
+            "code", code,
+            "timestamp", Instant.now().toString(),
+            "traceId", RequestTraceId.from(request));
+
+    response.setStatus(status.value());
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
     response.setHeader("Cache-Control", "no-store");
-    response
-        .getWriter()
-        .printf(
-            "{\"type\":\"about:blank\",\"title\":\"%s\",\"status\":%d,\"code\":\"%s\",\"traceId\":\"%s\"}",
-            status == HttpServletResponse.SC_UNAUTHORIZED ? "Unauthorized" : "Forbidden",
-            status,
-            code,
-            UUID.randomUUID());
+    objectMapper.writeValue(response.getOutputStream(), problem);
   }
 }

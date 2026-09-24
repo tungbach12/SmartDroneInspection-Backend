@@ -4,6 +4,7 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.clientIp;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.correlationId;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
+import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.users.api.dto.request.CreateUserRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateRolesRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateStatusRequest;
@@ -38,54 +39,67 @@ public class PlatformUserController {
   }
 
   @PostMapping
-  public ResponseEntity<ProvisionedUserResponse> create(
+  public ResponseEntity<ApiResponse<ProvisionedUserResponse>> create(
       @AuthenticationPrincipal Jwt jwt,
       @Valid @RequestBody CreateUserRequest body,
       HttpServletRequest request) {
     return ResponseEntity.status(201)
         .cacheControl(CacheControl.noStore())
         .body(
-            users.create(
-                subject(jwt), body, clientIp(request), userAgent(request), correlationId(request)));
+            ApiResponse.success(
+                users.create(
+                    subject(jwt),
+                    body,
+                    clientIp(request),
+                    userAgent(request),
+                    correlationId(request))));
   }
 
   @PostMapping("/{userId}/reset-password")
-  public ResponseEntity<ProvisionedUserResponse> resetPassword(
+  public ResponseEntity<ApiResponse<ProvisionedUserResponse>> resetPassword(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID userId, HttpServletRequest request) {
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
         .body(
-            users.resetPassword(
-                subject(jwt),
-                userId,
-                clientIp(request),
-                userAgent(request),
-                correlationId(request)));
+            ApiResponse.success(
+                users.resetPassword(
+                    subject(jwt),
+                    userId,
+                    clientIp(request),
+                    userAgent(request),
+                    correlationId(request))));
   }
 
   @PutMapping("/{userId}/roles")
-  public UserResponse updateRoles(
+  public ApiResponse<UserResponse> updateRoles(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID userId,
       @Valid @RequestBody UpdateRolesRequest body,
       HttpServletRequest request) {
-    return users.updateRoles(
-        subject(jwt), userId, body, clientIp(request), userAgent(request), correlationId(request));
+    return ApiResponse.success(
+        users.updateRoles(
+            subject(jwt),
+            userId,
+            body,
+            clientIp(request),
+            userAgent(request),
+            correlationId(request)));
   }
 
   @PatchMapping("/{userId}/status")
-  public UserResponse updateStatus(
+  public ApiResponse<UserResponse> updateStatus(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID userId,
       @Valid @RequestBody UpdateStatusRequest body,
       HttpServletRequest request) {
-    return users.updateStatus(
-        subject(jwt),
-        userId,
-        body.status(),
-        clientIp(request),
-        userAgent(request),
-        correlationId(request));
+    return ApiResponse.success(
+        users.updateStatus(
+            subject(jwt),
+            userId,
+            body.status(),
+            clientIp(request),
+            userAgent(request),
+            correlationId(request)));
   }
 
   private UUID subject(Jwt jwt) {

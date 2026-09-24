@@ -4,6 +4,7 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.clientIp;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.correlationId;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
+import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.request.ClientRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeRequest;
@@ -37,18 +38,19 @@ public class MobileAuthController {
   }
 
   @PostMapping("/register")
-  public ResponseEntity<ClientRegistrationResponse> register(
+  public ResponseEntity<ApiResponse<ClientRegistrationResponse>> register(
       @Valid @RequestBody ClientRegistrationRequest body, HttpServletRequest request) {
     rejectBrowserOrigin(request);
     return ResponseEntity.status(HttpStatus.CREATED)
         .cacheControl(CacheControl.noStore())
         .body(
-            registration.register(
-                body, clientIp(request), userAgent(request), correlationId(request)));
+            ApiResponse.success(
+                registration.register(
+                    body, clientIp(request), userAgent(request), correlationId(request))));
   }
 
   @PostMapping("/login")
-  public ResponseEntity<AuthFlowResponse> login(
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> login(
       @Valid @RequestBody LoginRequest body, HttpServletRequest request) {
     rejectBrowserOrigin(request);
     return response(
@@ -62,7 +64,7 @@ public class MobileAuthController {
   }
 
   @PostMapping("/password/setup")
-  public ResponseEntity<AuthFlowResponse> initialPassword(
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> initialPassword(
       @Valid @RequestBody InitialPasswordChangeRequest body, HttpServletRequest request) {
     rejectBrowserOrigin(request);
     return response(
@@ -77,7 +79,7 @@ public class MobileAuthController {
   }
 
   @PostMapping("/refresh")
-  public ResponseEntity<AuthFlowResponse> refresh(
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> refresh(
       @Valid @RequestBody RefreshRequest body, HttpServletRequest request) {
     rejectBrowserOrigin(request);
     return response(
@@ -97,8 +99,10 @@ public class MobileAuthController {
     return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
   }
 
-  private ResponseEntity<AuthFlowResponse> response(AuthService.AuthResult result) {
-    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result.response());
+  private ResponseEntity<ApiResponse<AuthFlowResponse>> response(AuthService.AuthResult result) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(ApiResponse.success(result.response()));
   }
 
   private void rejectBrowserOrigin(HttpServletRequest request) {
