@@ -83,6 +83,35 @@ class AssetCatalogApiIntegrationTest {
   }
 
   @Test
+  void categoryNameBeyondDatabaseLimitIsRejectedAsValidationFailure() throws Exception {
+    String tooLongName = "a".repeat(161);
+
+    mockMvc
+        .perform(
+            post("/api/v1/asset-categories")
+                .with(admin(fixture.adminId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"code\":\"long-name\",\"name\":\""
+                        + tooLongName
+                        + "\",\"description\":\"Overlong\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    mockMvc
+        .perform(
+            put("/api/v1/asset-categories/{categoryId}", fixture.categoryId())
+                .with(admin(fixture.adminId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"code\":\"ignored\",\"name\":\""
+                        + tooLongName
+                        + "\",\"description\":\"Overlong\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
   void adminManagesSuggestedFrequencies() throws Exception {
     mockMvc
         .perform(

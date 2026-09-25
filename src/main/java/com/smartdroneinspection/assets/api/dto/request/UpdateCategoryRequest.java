@@ -5,5 +5,5 @@ import jakarta.validation.constraints.Size;
 
 public record UpdateCategoryRequest(
     @NotBlank @Size(max = 64) String code,
-    @NotBlank @Size(max = 200) String name,
+    @NotBlank @Size(max = 160) String name,
     @Size(max = 2000) String description) {}
