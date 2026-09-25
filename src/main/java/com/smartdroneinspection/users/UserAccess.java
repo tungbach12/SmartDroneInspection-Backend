@@ -9,7 +9,11 @@ public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
 
-  record ActiveUser(UUID id, Set<String> roles) {
+  record ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
+
+    public ActiveUser(UUID id, Set<String> roles) {
+      this(id, roles, null);
+    }
 
     public ActiveUser {
       roles = Set.copyOf(roles);

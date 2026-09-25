@@ -15,6 +15,7 @@ class FullDatabaseSchemaSqlContractTest {
     String wf3 = readMigration("V7__inspection_execution_and_reporting.sql");
     String wf4 = readMigration("V8__maintenance_and_billing.sql");
     String support = readMigration("V9__notifications.sql");
+    String reportAudit = readMigration("V10__inspection_report_client_decision_audit.sql");
 
     assertThat(wf3)
         .contains("CREATE TABLE inspections")
@@ -52,6 +53,12 @@ class FullDatabaseSchemaSqlContractTest {
         .contains("status IN ('PENDING', 'SENT', 'FAILED', 'READ')")
         .contains("CREATE INDEX ix_notifications_recipient_status")
         .contains("CREATE INDEX ix_notifications_delivery");
+
+    assertThat(reportAudit)
+        .contains("ADD COLUMN client_decision_by_user_id UUID")
+        .contains("ADD COLUMN client_decision_reason VARCHAR(2000)")
+        .contains("fk_report_version_client_decision_user")
+        .contains("ck_report_version_client_decision_reason");
   }
 
   @Test

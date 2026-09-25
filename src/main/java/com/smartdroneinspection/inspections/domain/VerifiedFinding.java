@@ -92,6 +92,34 @@ public class VerifiedFinding {
       String locationDescription,
       String technicalNotes,
       String recommendedAction) {
+    this(
+        inspectionId,
+        evidenceId,
+        aiCandidateId,
+        createdByUserId,
+        source,
+        findingCode,
+        defectLabel,
+        severity,
+        locationDescription,
+        technicalNotes,
+        recommendedAction,
+        null);
+  }
+
+  public VerifiedFinding(
+      UUID inspectionId,
+      UUID evidenceId,
+      UUID aiCandidateId,
+      UUID createdByUserId,
+      VerifiedFindingSource source,
+      String findingCode,
+      String defectLabel,
+      FindingSeverity severity,
+      String locationDescription,
+      String technicalNotes,
+      String recommendedAction,
+      String boundingBox) {
     this.inspectionId = inspectionId;
     this.evidenceId = evidenceId;
     this.aiCandidateId = aiCandidateId;
@@ -101,6 +129,7 @@ public class VerifiedFinding {
     this.defectLabel = defectLabel;
     this.severity = severity;
     this.locationDescription = locationDescription;
+    this.boundingBox = boundingBox;
     this.technicalNotes = technicalNotes;
     this.recommendedAction = recommendedAction;
     this.status = VerifiedFindingStatus.OPEN;
@@ -114,6 +143,50 @@ public class VerifiedFinding {
 
   public UUID getInspectionId() {
     return inspectionId;
+  }
+
+  public UUID getEvidenceId() {
+    return evidenceId;
+  }
+
+  public UUID getAiCandidateId() {
+    return aiCandidateId;
+  }
+
+  public UUID getCreatedByUserId() {
+    return createdByUserId;
+  }
+
+  public VerifiedFindingSource getSource() {
+    return source;
+  }
+
+  public String getFindingCode() {
+    return findingCode;
+  }
+
+  public String getDefectLabel() {
+    return defectLabel;
+  }
+
+  public FindingSeverity getSeverity() {
+    return severity;
+  }
+
+  public String getLocationDescription() {
+    return locationDescription;
+  }
+
+  public String getBoundingBox() {
+    return boundingBox;
+  }
+
+  public String getTechnicalNotes() {
+    return technicalNotes;
+  }
+
+  public String getRecommendedAction() {
+    return recommendedAction;
   }
 
   public VerifiedFindingStatus getStatus() {

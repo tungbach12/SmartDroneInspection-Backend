@@ -23,6 +23,9 @@ public class UserAccessService implements UserAccess {
     return users
         .findDetailedById(userId)
         .filter(user -> user.active())
-        .map(user -> new ActiveUser(user.getId(), Set.copyOf(user.roleValues())));
+        .map(
+            user ->
+                new ActiveUser(
+                    user.getId(), Set.copyOf(user.roleValues()), user.getOrganizationId()));
   }
 }

@@ -16,6 +16,7 @@ import com.smartdroneinspection.inspectionrequests.repository.InspectionServiceO
 import com.smartdroneinspection.inspections.api.dto.request.ChecklistResponseRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ChecklistResponseResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionAssignmentResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionChecklistItemResponse;
 import com.smartdroneinspection.inspections.api.dto.response.StartInspectionResponse;
 import com.smartdroneinspection.inspections.domain.ChecklistResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -165,6 +166,54 @@ public class InspectionService {
     return toChecklistResponse(response);
   }
 
+  @Transactional(readOnly = true)
+  public List<InspectionChecklistItemResponse> listChecklist(UUID inspectorId, UUID inspectionId) {
+    requireActiveInspector(inspectorId);
+    Inspection inspection =
+        inspections
+            .findByIdAndAuthorUserId(inspectionId, inspectorId)
+            .orElseThrow(this::scopeDenied);
+    InspectionAssignment assignment =
+        assignments
+            .findByIdAndInspectorUserId(inspection.getAcceptedAssignmentId(), inspectorId)
+            .filter(value -> value.getStatus() == InspectionAssignmentStatus.ACCEPTED)
+            .orElseThrow(this::scopeDenied);
+    if (!assignment.getInspectorUserId().equals(inspectorId)) {
+      throw scopeDenied();
+    }
+    if (inspection.getStatus() != InspectionStatus.IN_PROGRESS) {
+      throw stateConflict("Checklist responses are available only for an in-progress inspection.");
+    }
+    ChecklistTemplate template =
+        checklistTemplates
+            .findDetailedById(inspection.getChecklistTemplateId())
+            .orElseThrow(this::inspectionNotFound);
+    java.util.Map<UUID, ChecklistResponse> savedResponses =
+        responses.findByInspectionId(inspectionId).stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    ChecklistResponse::getChecklistItemId, response -> response));
+    return template.getItems().stream()
+        .map(
+            item -> {
+              ChecklistResponse response = savedResponses.get(item.getId());
+              return new InspectionChecklistItemResponse(
+                  item.getId(),
+                  item.getItemCode(),
+                  item.getSectionName(),
+                  item.getPrompt(),
+                  item.getResponseType().name(),
+                  item.isRequired(),
+                  item.getDisplayOrder(),
+                  item.getGuidance(),
+                  item.getValidationConfig(),
+                  response == null ? null : parseResponse(response.getResponseValue()),
+                  response == null ? null : response.getNotes(),
+                  response == null ? null : response.getCompletedAt());
+            })
+        .toList();
+  }
+
   private InspectionAssignmentResponse toAssignmentResponse(InspectionAssignment assignment) {
     InspectionServiceOrder order =
         serviceOrders
@@ -286,6 +335,14 @@ public class InspectionService {
       return objectMapper.writeValueAsString(value);
     } catch (JacksonException exception) {
       throw invalidChecklistResponse();
+    }
+  }
+
+  private JsonNode parseResponse(String value) {
+    try {
+      return objectMapper.readTree(value);
+    } catch (JacksonException exception) {
+      throw new IllegalStateException("Stored checklist response is not valid JSON", exception);
     }
   }
 

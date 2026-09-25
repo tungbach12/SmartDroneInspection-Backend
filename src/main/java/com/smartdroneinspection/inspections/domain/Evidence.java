@@ -88,6 +88,40 @@ public class Evidence {
       String objectKey,
       EvidenceSource source,
       UploadStatus uploadStatus) {
+    this(
+        inspectionId,
+        maintenanceWorkLogId,
+        uploadedByUserId,
+        evidenceKind,
+        fileName,
+        contentType,
+        sizeBytes,
+        checksumSha256,
+        objectKey,
+        null,
+        source,
+        null,
+        null,
+        null,
+        uploadStatus);
+  }
+
+  public Evidence(
+      UUID inspectionId,
+      UUID maintenanceWorkLogId,
+      UUID uploadedByUserId,
+      EvidenceKind evidenceKind,
+      String fileName,
+      String contentType,
+      long sizeBytes,
+      String checksumSha256,
+      String objectKey,
+      Instant captureTime,
+      EvidenceSource source,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String externalReference,
+      UploadStatus uploadStatus) {
     this.inspectionId = inspectionId;
     this.maintenanceWorkLogId = maintenanceWorkLogId;
     this.uploadedByUserId = uploadedByUserId;
@@ -97,7 +131,11 @@ public class Evidence {
     this.sizeBytes = sizeBytes;
     this.checksumSha256 = checksumSha256;
     this.objectKey = objectKey;
+    this.captureTime = captureTime;
     this.source = source;
+    this.latitude = latitude;
+    this.longitude = longitude;
+    this.externalReference = externalReference;
     this.uploadStatus = uploadStatus;
     this.createdAt = Instant.now();
   }
@@ -110,11 +148,63 @@ public class Evidence {
     return inspectionId;
   }
 
+  public UUID getUploadedByUserId() {
+    return uploadedByUserId;
+  }
+
+  public EvidenceKind getEvidenceKind() {
+    return evidenceKind;
+  }
+
+  public String getFileName() {
+    return fileName;
+  }
+
+  public String getContentType() {
+    return contentType;
+  }
+
+  public long getSizeBytes() {
+    return sizeBytes;
+  }
+
+  public String getChecksumSha256() {
+    return checksumSha256;
+  }
+
+  public String getObjectKey() {
+    return objectKey;
+  }
+
+  public Instant getCaptureTime() {
+    return captureTime;
+  }
+
+  public EvidenceSource getSource() {
+    return source;
+  }
+
+  public BigDecimal getLatitude() {
+    return latitude;
+  }
+
+  public BigDecimal getLongitude() {
+    return longitude;
+  }
+
+  public String getExternalReference() {
+    return externalReference;
+  }
+
   public UUID getMaintenanceWorkLogId() {
     return maintenanceWorkLogId;
   }
 
   public UploadStatus getUploadStatus() {
     return uploadStatus;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
   }
 }

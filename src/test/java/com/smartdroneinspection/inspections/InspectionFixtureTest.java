@@ -39,13 +39,28 @@ class InspectionFixtureTest {
 
     assertThat(assets.findById(data.assetId()).orElseThrow().getOrganizationId())
         .isEqualTo(data.organizationId());
+    assertThat(assets.findById(data.otherOrganizationAssetId()).orElseThrow().getOrganizationId())
+        .isEqualTo(data.otherOrganizationId());
     assertThat(requests.findById(data.requestId()).orElseThrow().getOrganizationId())
         .isEqualTo(data.organizationId());
+    assertThat(
+            requests.findById(data.otherOrganizationRequestId()).orElseThrow().getOrganizationId())
+        .isEqualTo(data.otherOrganizationId());
     assertThat(assignments.findById(data.assignmentId()).orElseThrow().getInspectorUserId())
         .isEqualTo(data.inspectorId());
+    assertThat(
+            assignments
+                .findById(data.otherOrganizationAssignmentId())
+                .orElseThrow()
+                .getInspectorUserId())
+        .isEqualTo(data.otherOrganizationInspectorId());
     assertThat(data.otherOrganizationId()).isNotEqualTo(data.organizationId());
     assertThat(users.findById(data.inspectorId()).orElseThrow().roleValues())
         .containsExactly("INSPECTOR");
+    assertThat(users.findById(data.clientId()).orElseThrow().getOrganizationId())
+        .isEqualTo(data.organizationId());
+    assertThat(users.findById(data.otherOrganizationClientId()).orElseThrow().getOrganizationId())
+        .isEqualTo(data.otherOrganizationId());
   }
 
   private InspectionFixture fixture() {

@@ -54,6 +54,12 @@ public class ReportVersion {
   @Column(name = "accepted_at")
   private Instant acceptedAt;
 
+  @Column(name = "client_decision_by_user_id")
+  private UUID clientDecisionByUserId;
+
+  @Column(name = "client_decision_reason", length = 2000)
+  private String clientDecisionReason;
+
   @Column(nullable = false)
   private boolean immutable;
 
@@ -85,11 +91,94 @@ public class ReportVersion {
     return reportId;
   }
 
+  public UUID getSourceVersionId() {
+    return sourceVersionId;
+  }
+
+  public UUID getCreatedByUserId() {
+    return createdByUserId;
+  }
+
+  public String getContentSnapshot() {
+    return contentSnapshot;
+  }
+
   public int getVersionNumber() {
     return versionNumber;
   }
 
   public ReportStatus getStatus() {
     return status;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public Instant getReleasedAt() {
+    return releasedAt;
+  }
+
+  public Instant getAcceptedAt() {
+    return acceptedAt;
+  }
+
+  public UUID getClientDecisionByUserId() {
+    return clientDecisionByUserId;
+  }
+
+  public String getClientDecisionReason() {
+    return clientDecisionReason;
+  }
+
+  public boolean isImmutable() {
+    return immutable;
+  }
+
+  public void submitForReview() {
+    requireStatus(ReportStatus.DRAFT);
+    status = ReportStatus.AWAITING_PEER_REVIEW;
+    submittedAt = Instant.now();
+  }
+
+  public void approve() {
+    requireStatus(ReportStatus.AWAITING_PEER_REVIEW);
+    status = ReportStatus.TECHNICALLY_APPROVED;
+    technicallyApprovedAt = Instant.now();
+  }
+
+  public void requestChanges() {
+    requireStatus(ReportStatus.AWAITING_PEER_REVIEW);
+    status = ReportStatus.CHANGES_REQUESTED;
+  }
+
+  public void release() {
+    requireStatus(ReportStatus.TECHNICALLY_APPROVED);
+    status = ReportStatus.RELEASED;
+    releasedAt = Instant.now();
+  }
+
+  public void accept(UUID clientUserId) {
+    requireStatus(ReportStatus.RELEASED);
+    status = ReportStatus.ACCEPTED;
+    acceptedAt = Instant.now();
+    clientDecisionByUserId = clientUserId;
+    immutable = true;
+  }
+
+  public void requestClientRevision(UUID clientUserId, String reason) {
+    requireStatus(ReportStatus.RELEASED);
+    if (clientUserId == null || reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A Client revision decision and reason are required");
+    }
+    status = ReportStatus.REVISION_REQUESTED;
+    clientDecisionByUserId = clientUserId;
+    clientDecisionReason = reason.trim();
+  }
+
+  private void requireStatus(ReportStatus expected) {
+    if (immutable || status != expected) {
+      throw new IllegalStateException("Invalid report version transition from " + status);
+    }
   }
 }

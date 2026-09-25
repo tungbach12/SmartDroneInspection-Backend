@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Infrastructure",
-    allowedDependencies = {"shared"})
+    allowedDependencies = {"inspections::spi", "shared"})
 package com.smartdroneinspection.infrastructure;
