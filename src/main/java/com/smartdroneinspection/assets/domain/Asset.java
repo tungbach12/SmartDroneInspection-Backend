@@ -186,6 +186,23 @@ public class Asset {
     return asset;
   }
 
+  public void update(
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation) {
+    validateCoordinates(latitude, longitude);
+    if (name != null) this.name = name;
+    if (description != null) this.description = description;
+    if (locationText != null) this.locationText = locationText;
+    if (latitude != null) this.latitude = latitude;
+    if (longitude != null) this.longitude = longitude;
+    if (ownershipInformation != null) this.ownershipInformation = ownershipInformation;
+    updatedAt = Instant.now();
+  }
+
   public void approveReview() {
     if (status != AssetStatus.PENDING_REVIEW) {
       throw new IllegalStateException("Only pending assets can be approved");
@@ -216,6 +233,34 @@ public class Asset {
 
   public AssetStatus getStatus() {
     return status;
+  }
+
+  public UUID getCategoryId() {
+    return categoryId;
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public String getDescription() {
+    return description;
+  }
+
+  public String getLocationText() {
+    return locationText;
+  }
+
+  public BigDecimal getLatitude() {
+    return latitude;
+  }
+
+  public BigDecimal getLongitude() {
+    return longitude;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
   }
 
   public List<AssetDocument> getDocuments() {
