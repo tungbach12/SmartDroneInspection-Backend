@@ -356,6 +356,12 @@ public class InspectionReportService {
       report.changeStatus(ReportStatus.ACCEPTED);
       versions.saveAndFlush(version);
       reports.saveAndFlush(report);
+
+      Inspection inspection =
+          inspections.findById(report.getInspectionId()).orElseThrow(this::inspectionNotFound);
+      inspection.complete();
+      inspections.saveAndFlush(inspection);
+
       events.publishEvent(
           new ReportAcceptedEvent(
               report.getId(),
@@ -681,6 +687,11 @@ public class InspectionReportService {
 
   private BusinessException reportNotFound() {
     return new BusinessException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Report was not found.");
+  }
+
+  private BusinessException inspectionNotFound() {
+    return new BusinessException(
+        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection resource was not found.");
   }
 
   private BusinessException reportStateConflict(String message) {

@@ -111,6 +111,19 @@ public class Inspection {
     updatedAt = startedAt;
   }
 
+  public void complete() {
+    if (status == InspectionStatus.COMPLETED) {
+      return;
+    }
+    if (status != InspectionStatus.IN_PROGRESS && status != InspectionStatus.AWAITING_REPORT) {
+      throw new IllegalStateException(
+          "Only in-progress or awaiting-report inspections can be completed");
+    }
+    status = InspectionStatus.COMPLETED;
+    completedAt = Instant.now();
+    updatedAt = completedAt;
+  }
+
   public Instant getStartedAt() {
     return startedAt;
   }

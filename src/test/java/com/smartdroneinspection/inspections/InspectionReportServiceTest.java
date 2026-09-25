@@ -163,6 +163,26 @@ class InspectionReportServiceTest {
     assertThat(version.isImmutable()).isTrue();
     assertThat(version.getClientDecisionByUserId()).isEqualTo(clientId);
     verify(events).publishEvent(any(ReportAcceptedEvent.class));
+    verify(inspections, Mockito.times(1)).saveAndFlush(any(Inspection.class));
+  }
+
+  @Test
+  void clientAcceptanceMarksInspectionCompletedAtomically() {
+    when(users.findActiveUser(clientId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(clientId, Set.of("CLIENT"), organizationId)));
+    var accept = new ClientReportDecisionRequest(ClientReportDecisionRequest.Decision.ACCEPT, null);
+
+    service.clientDecision(clientId, reportId, versionId, accept);
+
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    assertThat(inspection.getStatus())
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED);
+    assertThat(inspection.getCompletedAt()).isNotNull();
+
+    var handoffOrder = Mockito.inOrder(inspections, events);
+    handoffOrder.verify(inspections).saveAndFlush(inspection);
+    handoffOrder.verify(events).publishEvent(any(ReportAcceptedEvent.class));
   }
 
   @Test
