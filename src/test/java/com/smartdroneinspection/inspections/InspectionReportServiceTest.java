@@ -134,6 +134,8 @@ class InspectionReportServiceTest {
     InspectionServiceOrder order = Mockito.mock(InspectionServiceOrder.class);
     InspectionRequest request = Mockito.mock(InspectionRequest.class);
     when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(inspections.findForUpdateByIdAndAuthorUserId(inspectionId, inspectorId))
+        .thenReturn(Optional.of(inspection));
     when(serviceOrders.findById(serviceOrderId)).thenReturn(Optional.of(order));
     when(order.getInspectionRequestId()).thenReturn(requestId);
     when(inspectionRequests.findById(requestId)).thenReturn(Optional.of(request));
@@ -183,6 +185,37 @@ class InspectionReportServiceTest {
     var handoffOrder = Mockito.inOrder(inspections, events);
     handoffOrder.verify(inspections).saveAndFlush(inspection);
     handoffOrder.verify(events).publishEvent(any(ReportAcceptedEvent.class));
+  }
+
+  @Test
+  void acceptedRetryCompletesInspectionWithoutMutatingAcceptedReportOrRepublishing() {
+    report.changeStatus(ReportStatus.ACCEPTED);
+    version.accept(clientId);
+    var acceptedAt = version.getAcceptedAt();
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    when(users.findActiveUser(clientId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(clientId, Set.of("CLIENT"), organizationId)));
+
+    var retry =
+        service.clientDecision(
+            clientId,
+            reportId,
+            versionId,
+            new ClientReportDecisionRequest(ClientReportDecisionRequest.Decision.ACCEPT, null));
+
+    assertThat(retry.versionStatus()).isEqualTo(ReportStatus.ACCEPTED);
+    assertThat(inspection.getStatus())
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED);
+    assertThat(inspection.getCompletedAt()).isNotNull();
+    assertThat(version.getAcceptedAt()).isEqualTo(acceptedAt);
+    assertThat(version.getClientDecisionByUserId()).isEqualTo(clientId);
+    assertThat(version.isImmutable()).isTrue();
+    verify(versions, never()).saveAndFlush(any(ReportVersion.class));
+    verify(reports, never()).saveAndFlush(any(InspectionReport.class));
+    verify(events, never()).publishEvent(any(ReportAcceptedEvent.class));
+    verify(inspections).findForUpdateByIdAndAuthorUserId(inspectionId, inspectorId);
+    verify(inspections).saveAndFlush(inspection);
   }
 
   @Test

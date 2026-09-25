@@ -125,10 +125,9 @@ public class InspectionService {
       UUID inspectorId, UUID inspectionId, UUID checklistItemId, ChecklistResponseRequest request) {
     requireActiveInspector(inspectorId);
     Inspection inspection =
-        inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
-    if (!inspection.getAuthorUserId().equals(inspectorId)) {
-      throw scopeDenied();
-    }
+        inspections
+            .findForUpdateByIdAndAuthorUserId(inspectionId, inspectorId)
+            .orElseThrow(this::scopeDenied);
     InspectionAssignment assignment =
         assignments
             .findByIdAndInspectorUserId(inspection.getAcceptedAssignmentId(), inspectorId)

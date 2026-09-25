@@ -343,6 +343,7 @@ public class InspectionReportService {
     ReportVersion version = requireCurrentVersion(report, versionId, true);
     if (version.getStatus() == ReportStatus.ACCEPTED
         && report.getStatus() == ReportStatus.ACCEPTED) {
+      completeInspection(report);
       return toResponse(report, version, client);
     }
     if (request == null || request.decision() == null) {
@@ -357,10 +358,7 @@ public class InspectionReportService {
       versions.saveAndFlush(version);
       reports.saveAndFlush(report);
 
-      Inspection inspection =
-          inspections.findById(report.getInspectionId()).orElseThrow(this::inspectionNotFound);
-      inspection.complete();
-      inspections.saveAndFlush(inspection);
+      completeInspection(report);
 
       events.publishEvent(
           new ReportAcceptedEvent(
@@ -637,6 +635,17 @@ public class InspectionReportService {
   private InspectionReport requireReport(UUID reportId, boolean lock) {
     return (lock ? reports.findForUpdateById(reportId) : reports.findById(reportId))
         .orElseThrow(this::reportNotFound);
+  }
+
+  private void completeInspection(InspectionReport report) {
+    Inspection inspection =
+        inspections
+            .findForUpdateByIdAndAuthorUserId(report.getInspectionId(), report.getAuthorUserId())
+            .orElseThrow(this::inspectionNotFound);
+    if (inspection.getStatus() != InspectionStatus.COMPLETED) {
+      inspection.complete();
+      inspections.saveAndFlush(inspection);
+    }
   }
 
   private Inspection requireAssignedInspection(
