@@ -16,12 +16,27 @@ public record ReportSnapshot(
     Instant generatedAt,
     List<ChecklistEntry> checklist,
     List<EvidenceEntry> evidence,
-    List<FindingEntry> findings) {
+    List<FindingEntry> findings,
+    String aiDraftNarrative) {
 
   public ReportSnapshot {
-    checklist = List.copyOf(checklist);
-    evidence = List.copyOf(evidence);
-    findings = List.copyOf(findings);
+    checklist = checklist == null ? List.of() : List.copyOf(checklist);
+    evidence = evidence == null ? List.of() : List.copyOf(evidence);
+    findings = findings == null ? List.of() : List.copyOf(findings);
+  }
+
+  public ReportSnapshot withAiDraftNarrative(String narrative) {
+    return new ReportSnapshot(
+        inspectionId,
+        serviceOrderId,
+        assetId,
+        checklistTemplateId,
+        checklistName,
+        generatedAt,
+        checklist,
+        evidence,
+        findings,
+        narrative);
   }
 
   public record ChecklistEntry(

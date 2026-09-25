@@ -534,7 +534,8 @@ public class InspectionReportService {
         Instant.now(),
         checklist,
         evidenceEntries,
-        findingEntries);
+        findingEntries,
+        null);
   }
 
   private ReportSnapshot.FindingEntry toFindingEntry(VerifiedFinding finding) {

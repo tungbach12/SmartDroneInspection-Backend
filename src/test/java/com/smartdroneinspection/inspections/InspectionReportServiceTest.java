@@ -110,7 +110,8 @@ class InspectionReportServiceTest {
             Instant.now(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            null);
     report = Mockito.spy(new InspectionReport(inspectionId, inspectorId));
     report.startVersion(1);
     report.changeStatus(ReportStatus.RELEASED);
