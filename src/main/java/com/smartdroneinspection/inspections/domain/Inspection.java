@@ -112,12 +112,8 @@ public class Inspection {
   }
 
   public void complete() {
-    if (status == InspectionStatus.COMPLETED) {
-      return;
-    }
-    if (status != InspectionStatus.IN_PROGRESS && status != InspectionStatus.AWAITING_REPORT) {
-      throw new IllegalStateException(
-          "Only in-progress or awaiting-report inspections can be completed");
+    if (status != InspectionStatus.IN_PROGRESS) {
+      throw new IllegalStateException("Only in-progress inspections can be completed");
     }
     status = InspectionStatus.COMPLETED;
     completedAt = Instant.now();

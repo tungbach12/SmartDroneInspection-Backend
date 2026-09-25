@@ -46,6 +46,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -216,6 +217,29 @@ class InspectionReportServiceTest {
     verify(events, never()).publishEvent(any(ReportAcceptedEvent.class));
     verify(inspections).findForUpdateByIdAndAuthorUserId(inspectionId, inspectorId);
     verify(inspections).saveAndFlush(inspection);
+  }
+
+  @Test
+  void awaitingReportInspectionCannotBeCompletedOnClientAcceptance() {
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    ReflectionTestUtils.setField(
+        inspection,
+        "status",
+        com.smartdroneinspection.inspections.domain.enums.InspectionStatus.AWAITING_REPORT);
+    when(users.findActiveUser(clientId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(clientId, Set.of("CLIENT"), organizationId)));
+
+    assertThatThrownBy(
+            () ->
+                service.clientDecision(
+                    clientId,
+                    reportId,
+                    versionId,
+                    new ClientReportDecisionRequest(
+                        ClientReportDecisionRequest.Decision.ACCEPT, null)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Only in-progress inspections can be completed");
   }
 
   @Test
