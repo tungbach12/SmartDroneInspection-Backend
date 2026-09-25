@@ -159,6 +159,49 @@ public class Asset {
     updatedAt = Instant.now();
   }
 
+  public static Asset clientCreate(
+      UUID organizationId,
+      UUID categoryId,
+      String code,
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      UUID createdByUserId) {
+    Asset asset =
+        new Asset(
+            organizationId,
+            categoryId,
+            code,
+            name,
+            description,
+            locationText,
+            latitude,
+            longitude,
+            ownershipInformation,
+            createdByUserId);
+    asset.status = AssetStatus.PENDING_REVIEW;
+    return asset;
+  }
+
+  public void approveReview() {
+    if (status != AssetStatus.PENDING_REVIEW) {
+      throw new IllegalStateException("Only pending assets can be approved");
+    }
+    status = AssetStatus.ACTIVE;
+    updatedAt = Instant.now();
+  }
+
+  public void rejectReview() {
+    if (status != AssetStatus.PENDING_REVIEW) {
+      throw new IllegalStateException("Only pending assets can be rejected");
+    }
+    status = AssetStatus.REJECTED;
+    updatedAt = Instant.now();
+  }
+
   public UUID getId() {
     return id;
   }
