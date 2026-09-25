@@ -3,6 +3,8 @@ package com.smartdroneinspection.inspections;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.smartdroneinspection.inspections.api.dto.response.ReportSnapshot;
+import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
+import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingSource;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -69,9 +71,38 @@ class ReportSnapshotSerializationTest {
             UUID.randomUUID(),
             "Bridge Checklist",
             Instant.parse("2026-09-25T10:00:00Z"),
-            List.of(),
-            List.of(),
-            List.of(),
+            List.of(
+                new ReportSnapshot.ChecklistEntry(
+                    UUID.randomUUID(),
+                    "C-1",
+                    "Inspect deck",
+                    true,
+                    "PASS",
+                    "No issues",
+                    Instant.EPOCH)),
+            List.of(
+                new ReportSnapshot.EvidenceEntry(
+                    UUID.randomUUID(),
+                    "deck.jpg",
+                    "image/jpeg",
+                    1024,
+                    "checksum",
+                    "UPLOAD",
+                    Instant.EPOCH,
+                    null,
+                    null)),
+            List.of(
+                new ReportSnapshot.FindingEntry(
+                    UUID.randomUUID(),
+                    "F-1",
+                    null,
+                    VerifiedFindingSource.MANUAL,
+                    "Surface wear",
+                    FindingSeverity.LOW,
+                    "Deck",
+                    "Minor wear",
+                    "Monitor",
+                    null)),
             null);
 
     ReportSnapshot updated = original.withAiDraftNarrative("Updated narrative text");
@@ -82,6 +113,9 @@ class ReportSnapshotSerializationTest {
     assertThat(updated.checklistTemplateId()).isEqualTo(original.checklistTemplateId());
     assertThat(updated.checklistName()).isEqualTo(original.checklistName());
     assertThat(updated.generatedAt()).isEqualTo(original.generatedAt());
+    assertThat(updated.checklist()).isEqualTo(original.checklist());
+    assertThat(updated.evidence()).isEqualTo(original.evidence());
+    assertThat(updated.findings()).isEqualTo(original.findings());
     assertThat(updated.aiDraftNarrative()).isEqualTo("Updated narrative text");
   }
 }
