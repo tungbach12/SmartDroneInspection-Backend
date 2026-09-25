@@ -155,7 +155,7 @@ class AssetApiIntegrationTest {
   }
 
   @Test
-  void managerCannotCreateAssets() throws Exception {
+  void managerCannotCreateOrListAssets() throws Exception {
     mockMvc
         .perform(
             post("/api/v1/assets")
@@ -166,6 +166,71 @@ class AssetApiIntegrationTest {
                         + fixture.categoryId()
                         + "\",\"locationText\":\"X\"}"))
         .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(get("/api/v1/assets").with(manager(fixture.managerId())))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void createRejectsUnknownAndInactiveCategories() throws Exception {
+    String unknownCategoryBody =
+        "{\"code\":\"BR-UNKNOWN\",\"name\":\"Bridge\",\"categoryId\":\""
+            + UUID.randomUUID()
+            + "\",\"locationText\":\"District 1\"}";
+    mockMvc
+        .perform(
+            post("/api/v1/assets")
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(unknownCategoryBody))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    var inactiveCategory =
+        categories.saveAndFlush(
+            new com.smartdroneinspection.assets.domain.AssetCategory(
+                "inactive-" + UUID.randomUUID(), "Inactive", "Inactive category", false));
+    String inactiveCategoryBody =
+        "{\"code\":\"BR-INACTIVE\",\"name\":\"Bridge\",\"categoryId\":\""
+            + inactiveCategory.getId()
+            + "\",\"locationText\":\"District 1\"}";
+    mockMvc
+        .perform(
+            post("/api/v1/assets")
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(inactiveCategoryBody))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void rejectedAssetCannotBeUpdated() throws Exception {
+    var asset =
+        assets.saveAndFlush(
+            com.smartdroneinspection.assets.domain.Asset.clientCreate(
+                fixture.organizationId(),
+                fixture.categoryId(),
+                "BR-REJECTED",
+                "Rejected bridge",
+                null,
+                "District 1",
+                null,
+                null,
+                null,
+                fixture.clientId()));
+    asset.rejectReview();
+    assets.saveAndFlush(asset);
+
+    mockMvc
+        .perform(
+            put("/api/v1/assets/{id}", asset.getId())
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Should not update\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INVALID_STATE"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {

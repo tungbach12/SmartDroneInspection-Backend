@@ -41,7 +41,7 @@ public class AssetController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SERVICE_MANAGER')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
   public ApiResponse<AssetPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -51,7 +51,7 @@ public class AssetController {
   }
 
   @GetMapping("/{assetId}")
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SERVICE_MANAGER')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
