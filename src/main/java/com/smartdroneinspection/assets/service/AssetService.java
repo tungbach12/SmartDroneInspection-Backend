@@ -72,9 +72,11 @@ public class AssetService {
     UUID organizationId = requireOrganization(actor);
     int safePage = Math.max(page, 1);
     int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    PageRequest pageRequest = PageRequest.of(safePage - 1, safePageSize, Sort.by("name"));
     Page<Asset> result =
-        assets.findByOrganizationId(
-            organizationId, PageRequest.of(safePage - 1, safePageSize, Sort.by("name")));
+        search == null || search.isBlank()
+            ? assets.findByOrganizationId(organizationId, pageRequest)
+            : assets.searchByOrganizationId(organizationId, search.trim(), pageRequest);
     return new AssetPageResponse(
         result.getContent().stream().map(this::toResponse).toList(),
         safePage,

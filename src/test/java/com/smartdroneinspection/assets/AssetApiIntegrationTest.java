@@ -97,6 +97,26 @@ class AssetApiIntegrationTest {
   }
 
   @Test
+  void searchFiltersAssetsWithinTheAuthenticatedOrganization() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/assets")
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"code\":\"BR-SOUTH\",\"name\":\"South bridge\",\"categoryId\":\""
+                        + fixture.categoryId()
+                        + "\",\"locationText\":\"District 3\"}"))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(get("/api/v1/assets?search=south").with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalCount").value(1))
+        .andExpect(jsonPath("$.data.items[0].code").value("BR-SOUTH"));
+  }
+
+  @Test
   void crossOrganizationReadAndUpdateAreDenied() throws Exception {
     MvcResult created =
         mockMvc
