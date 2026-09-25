@@ -14,28 +14,26 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
+// Exercises the MinIO SDK adapter against S3Mock's S3 API subset, not MinIO server internals.
 class MinioEvidenceObjectStoreIntegrationTest {
 
   private static final String ACCESS_KEY = "wf3-test-access";
   private static final String SECRET_KEY = "wf3-test-secret-key-123";
-  private static GenericContainer<?> minio;
+  private static GenericContainer<?> s3Mock;
 
   @BeforeAll
-  static void startMinio() {
-    minio =
-        new GenericContainer<>(DockerImageName.parse("quay.io/minio/minio:latest"))
-            .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
-            .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
-            .withCommand("server", "/data", "--console-address", ":9001")
-            .withExposedPorts(9000)
-            .waitingFor(Wait.forHttp("/minio/health/ready").forPort(9000).forStatusCode(200));
-    minio.start();
+  static void startS3Mock() {
+    s3Mock =
+        new GenericContainer<>(DockerImageName.parse("adobe/s3mock:5.2.3"))
+            .withExposedPorts(9090)
+            .waitingFor(Wait.forHttp("/favicon.ico").forPort(9090).forStatusCode(200));
+    s3Mock.start();
   }
 
   @AfterAll
-  static void stopMinio() {
-    if (minio != null) {
-      minio.stop();
+  static void stopS3Mock() {
+    if (s3Mock != null) {
+      s3Mock.stop();
     }
   }
 
@@ -43,12 +41,12 @@ class MinioEvidenceObjectStoreIntegrationTest {
   void createsBucketAndRoundTripsThenDeletesEvidenceBytes() throws Exception {
     MinioClient client =
         MinioClient.builder()
-            .endpoint("http://" + minio.getHost() + ":" + minio.getMappedPort(9000))
+            .endpoint("http://" + s3Mock.getHost() + ":" + s3Mock.getMappedPort(9090))
             .credentials(ACCESS_KEY, SECRET_KEY)
             .build();
     String bucket = "wf3-test-" + UUID.randomUUID().toString().substring(0, 8);
     MinioEvidenceObjectStore store = new MinioEvidenceObjectStore(client, bucket);
-    byte[] content = "minio-evidence-round-trip".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    byte[] content = "s3-evidence-round-trip".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     String objectKey = "inspections/test/" + UUID.randomUUID();
 
     store.put(

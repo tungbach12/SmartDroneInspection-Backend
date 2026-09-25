@@ -41,20 +41,18 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
+// S3Mock provides the S3 endpoint for API tests; it does not emulate MinIO-specific behavior.
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @Transactional
 class EvidenceApiIntegrationTest {
 
-  private static final String MINIO_ACCESS_KEY = "wf3-test-access";
-  private static final String MINIO_SECRET_KEY = "wf3-test-secret-key-123";
-  private static final GenericContainer<?> MINIO =
-      new GenericContainer<>(DockerImageName.parse("quay.io/minio/minio:latest"))
-          .withEnv("MINIO_ROOT_USER", MINIO_ACCESS_KEY)
-          .withEnv("MINIO_ROOT_PASSWORD", MINIO_SECRET_KEY)
-          .withCommand("server", "/data", "--console-address", ":9001")
-          .withExposedPorts(9000)
-          .waitingFor(Wait.forHttp("/minio/health/ready").forPort(9000).forStatusCode(200));
+  private static final String STORAGE_ACCESS_KEY = "wf3-test-access";
+  private static final String STORAGE_SECRET_KEY = "wf3-test-secret-key-123";
+  private static final GenericContainer<?> S3_MOCK =
+      new GenericContainer<>(DockerImageName.parse("adobe/s3mock:5.2.3"))
+          .withExposedPorts(9090)
+          .waitingFor(Wait.forHttp("/favicon.ico").forPort(9090).forStatusCode(200));
 
   private static final byte[] ONE_PIXEL_PNG =
       Base64.getDecoder()
@@ -78,20 +76,20 @@ class EvidenceApiIntegrationTest {
   private MockMvc mockMvc;
 
   @DynamicPropertySource
-  static void minioProperties(DynamicPropertyRegistry registry) {
-    MINIO.start();
+  static void s3MockProperties(DynamicPropertyRegistry registry) {
+    S3_MOCK.start();
     registry.add("app.storage.minio.enabled", () -> true);
     registry.add(
         "app.storage.minio.endpoint",
-        () -> "http://" + MINIO.getHost() + ":" + MINIO.getMappedPort(9000));
+        () -> "http://" + S3_MOCK.getHost() + ":" + S3_MOCK.getMappedPort(9090));
     registry.add("app.storage.minio.bucket", () -> "evidence-api-test");
-    registry.add("app.storage.minio.access-key", () -> MINIO_ACCESS_KEY);
-    registry.add("app.storage.minio.secret-key", () -> MINIO_SECRET_KEY);
+    registry.add("app.storage.minio.access-key", () -> STORAGE_ACCESS_KEY);
+    registry.add("app.storage.minio.secret-key", () -> STORAGE_SECRET_KEY);
   }
 
   @AfterAll
-  static void stopMinio() {
-    MINIO.stop();
+  static void stopS3Mock() {
+    S3_MOCK.stop();
   }
 
   @BeforeEach
