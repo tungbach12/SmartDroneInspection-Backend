@@ -63,6 +63,12 @@ public class ScheduleProposalService {
     ScheduleProposal proposal =
         proposals.findWithLockById(proposalId).orElseThrow(() -> notFound(proposalId));
     if ("APPROVE".equals(request.action())) {
+      if ((request.frequencyUnit() == null) != (request.frequencyInterval() == null)) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "VALIDATION_FAILED",
+            "frequencyUnit and frequencyInterval must be provided together");
+      }
       if (request.frequencyUnit() != null && request.frequencyInterval() != null) {
         proposal.managerAdjust(request.frequencyUnit(), request.frequencyInterval());
       }
@@ -81,6 +87,7 @@ public class ScheduleProposalService {
     ScheduleProposal proposal =
         proposals.findWithLockById(proposalId).orElseThrow(() -> notFound(proposalId));
     Asset asset = requireOwnedAsset(clientId, proposal.getAssetId());
+    assets.findWithLockById(asset.getId()).orElseThrow(() -> notFound(asset.getId()));
 
     boolean alreadyScheduled =
         schedules.findByAssetIdOrderByNextDueAt(asset.getId()).stream()
