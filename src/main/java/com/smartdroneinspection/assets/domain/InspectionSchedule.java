@@ -81,6 +81,25 @@ public class InspectionSchedule {
     this.updatedAt = createdAt;
   }
 
+  public static InspectionSchedule fromSelectedProposal(
+      UUID assetId,
+      UUID checklistTemplateId,
+      String frequencyUnit,
+      int frequencyInterval,
+      Instant nextDueAt,
+      UUID createdByUserId) {
+    InspectionSchedule schedule =
+        new InspectionSchedule(
+            assetId,
+            checklistTemplateId,
+            InspectionFrequencyUnit.valueOf(frequencyUnit),
+            frequencyInterval,
+            nextDueAt,
+            createdByUserId);
+    schedule.activate(AssetStatus.ACTIVE, ChecklistTemplateStatus.ACTIVE);
+    return schedule;
+  }
+
   public void activate(AssetStatus assetStatus, ChecklistTemplateStatus checklistTemplateStatus) {
     if (assetStatus != AssetStatus.ACTIVE
         || checklistTemplateStatus != ChecklistTemplateStatus.ACTIVE) {
@@ -130,6 +149,14 @@ public class InspectionSchedule {
 
   public InspectionScheduleStatus getStatus() {
     return status;
+  }
+
+  public InspectionFrequencyUnit getFrequencyUnit() {
+    return frequencyUnit;
+  }
+
+  public int getFrequencyInterval() {
+    return frequencyInterval;
   }
 
   public Instant getNextDueAt() {
