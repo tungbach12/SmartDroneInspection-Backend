@@ -1,9 +1,12 @@
 package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateAssetRequest;
+import com.smartdroneinspection.assets.api.dto.request.ReviewAssetRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
+import com.smartdroneinspection.assets.api.dto.response.AssetReviewResponse;
+import com.smartdroneinspection.assets.service.AssetReviewService;
 import com.smartdroneinspection.assets.service.AssetService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -27,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AssetController {
 
   private final AssetService assets;
+  private final AssetReviewService assetReview;
 
-  public AssetController(AssetService assets) {
+  public AssetController(AssetService assets, AssetReviewService assetReview) {
     this.assets = assets;
+    this.assetReview = assetReview;
   }
 
   @PostMapping
@@ -64,6 +69,15 @@ public class AssetController {
       @PathVariable UUID assetId,
       @Valid @RequestBody UpdateAssetRequest request) {
     return ApiResponse.success(assets.update(subject(jwt), assetId, request));
+  }
+
+  @PostMapping("/{assetId}/review")
+  @PreAuthorize("hasRole('SERVICE_MANAGER')")
+  public ApiResponse<AssetReviewResponse> review(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID assetId,
+      @Valid @RequestBody ReviewAssetRequest request) {
+    return ApiResponse.success(assetReview.review(subject(jwt), assetId, request));
   }
 
   private static UUID subject(Jwt jwt) {
