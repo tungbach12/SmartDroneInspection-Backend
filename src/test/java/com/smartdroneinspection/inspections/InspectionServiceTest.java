@@ -74,8 +74,7 @@ class InspectionServiceTest {
             users,
             objectMapper);
     inspection =
-        new Inspection(
-            UUID.randomUUID(), assignmentId, UUID.randomUUID(), inspectorId, templateId);
+        new Inspection(UUID.randomUUID(), assignmentId, UUID.randomUUID(), inspectorId, templateId);
     inspection.start();
     when(users.findActiveUser(inspectorId))
         .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
@@ -117,8 +116,7 @@ class InspectionServiceTest {
     when(item.isRequired()).thenReturn(true);
     when(responses.findByInspectionIdAndChecklistItemId(inspectionId, checklistItemId))
         .thenReturn(Optional.empty());
-    when(responses.saveAndFlush(any()))
-        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(responses.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
     var responseValue = objectMapper.readTree("{\"value\":\"PASS\"}");
 
     service.saveChecklistResponse(

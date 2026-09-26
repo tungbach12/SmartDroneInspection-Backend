@@ -332,7 +332,10 @@ class InspectionReportServiceTest {
 
     assertThatThrownBy(() -> service.generateAiDraft(inspectorId, reportId, versionId))
         .isInstanceOf(BusinessException.class)
-        .satisfies(error -> assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_UNAVAILABLE"));
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("REPORT_DRAFT_UNAVAILABLE"));
     verify(versions, never()).saveAndFlush(any(ReportVersion.class));
   }
 
@@ -343,9 +346,11 @@ class InspectionReportServiceTest {
 
     ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
     when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
-    when(objectMapper.writeValueAsString(any())).thenReturn("{\"aiDraftNarrative\":\"Human edited\"}");
+    when(objectMapper.writeValueAsString(any()))
+        .thenReturn("{\"aiDraftNarrative\":\"Human edited\"}");
 
-    var response = service.updateNarrative(inspectorId, reportId, versionId, "Human edited narrative.");
+    var response =
+        service.updateNarrative(inspectorId, reportId, versionId, "Human edited narrative.");
 
     assertThat(response).isNotNull();
     verify(versions).saveAndFlush(draftVersion);
@@ -358,7 +363,9 @@ class InspectionReportServiceTest {
 
     assertThatThrownBy(() -> service.updateNarrative(inspectorId, reportId, versionId, "Text"))
         .isInstanceOf(BusinessException.class)
-        .satisfies(error -> assertThat(((BusinessException) error).code()).isEqualTo("REPORT_STATE_CONFLICT"));
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_STATE_CONFLICT"));
   }
 
   @Test
@@ -370,11 +377,15 @@ class InspectionReportServiceTest {
 
     assertThatThrownBy(() -> service.updateNarrative(inspectorId, reportId, versionId, "   "))
         .isInstanceOf(BusinessException.class)
-        .satisfies(error -> assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
     assertThatThrownBy(
             () -> service.updateNarrative(inspectorId, reportId, versionId, "x".repeat(10001)))
         .isInstanceOf(BusinessException.class)
-        .satisfies(error -> assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
     verify(versions, never()).saveAndFlush(any(ReportVersion.class));
   }
 
@@ -384,9 +395,10 @@ class InspectionReportServiceTest {
     when(users.findActiveUser(otherInspectorId))
         .thenReturn(Optional.of(new UserAccess.ActiveUser(otherInspectorId, Set.of("INSPECTOR"))));
 
-    assertThatThrownBy(
-            () -> service.updateNarrative(otherInspectorId, reportId, versionId, "Text"))
+    assertThatThrownBy(() -> service.updateNarrative(otherInspectorId, reportId, versionId, "Text"))
         .isInstanceOf(BusinessException.class)
-        .satisfies(error -> assertThat(((BusinessException) error).code()).isEqualTo("REPORT_SCOPE_DENIED"));
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_SCOPE_DENIED"));
   }
 }
