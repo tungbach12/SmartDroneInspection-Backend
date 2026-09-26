@@ -297,6 +297,225 @@ class InspectionReportApiIntegrationTest {
     assertThat(applicationEvents.stream(ReportAcceptedEvent.class).count()).isEqualTo(1);
   }
 
+  @Test
+  void allowsAuthorToUpdateNarrativeAndDeniesUnauthorizedActors() throws Exception {
+    MvcResult draftResult =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/report", inspectionId)
+                    .with(inspector(fixture.inspectorId())))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID reportId = uuid(draftResult, "$.data.reportId");
+    UUID versionId = uuid(draftResult, "$.data.versionId");
+
+    // Author can update narrative
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"Concrete deck in good condition.\"}")
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(
+            jsonPath("$.data.contentSnapshot.aiDraftNarrative")
+                .value("Concrete deck in good condition."));
+
+    // Other inspector is denied
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"Hacked narrative.\"}")
+                .with(inspector(fixture.otherInspectorId())))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REPORT_SCOPE_DENIED"));
+
+    // Blank narrative is rejected at the controller boundary
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"   \"}")
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void clientAcceptanceMarksInspectionStatusCompletedInDatabase() throws Exception {
+    MvcResult draftResult =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/report", inspectionId)
+                    .with(inspector(fixture.inspectorId())))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID reportId = uuid(draftResult, "$.data.reportId");
+    UUID versionId = uuid(draftResult, "$.data.versionId");
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
+                .with(manager(fixture.managerId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
+                    reportId,
+                    versionId)
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"decision\":\"APPROVED\"}")
+                .with(inspector(fixture.otherInspectorId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/reports/{reportId}/versions/{versionId}/release", reportId, versionId)
+                .with(manager(fixture.managerId())))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/reports/{reportId}/versions/{versionId}/client-decision",
+                    reportId,
+                    versionId)
+                .contentType("application/json")
+                .content("{\"decision\":\"ACCEPT\"}")
+                .with(client(fixture.clientId())))
+        .andExpect(status().isOk());
+
+    String inspectionStatus =
+        jdbcTemplate.queryForObject(
+            "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId);
+    assertThat(inspectionStatus).isEqualTo("COMPLETED");
+  }
+
+  @Test
+  void rejectsNarrativeUpdateAndAiDraftOnNonDraftVersion() throws Exception {
+    MvcResult draftResult =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/report", inspectionId)
+                    .with(inspector(fixture.inspectorId())))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID reportId = uuid(draftResult, "$.data.reportId");
+    UUID versionId = uuid(draftResult, "$.data.versionId");
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
+                .with(manager(fixture.managerId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
+                    reportId,
+                    versionId)
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"Late narrative.\"}")
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
+    mockMvc
+        .perform(
+            post("/api/v1/reports/{reportId}/versions/{versionId}/ai-draft", reportId, versionId)
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
+  }
+
+  @Test
+  void revisionOmmitsNarrativeFromRecomposedSnapshot() throws Exception {
+    MvcResult draftResult =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/report", inspectionId)
+                    .with(inspector(fixture.inspectorId())))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID reportId = uuid(draftResult, "$.data.reportId");
+    UUID versionId = uuid(draftResult, "$.data.versionId");
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"Draft narrative pinned to version 1.\"}")
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.contentSnapshot.aiDraftNarrative")
+                .value("Draft narrative pinned to version 1."));
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
+                .with(manager(fixture.managerId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
+                    reportId,
+                    versionId)
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"decision\":\"APPROVED\"}")
+                .with(inspector(fixture.otherInspectorId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/reports/{reportId}/versions/{versionId}/release", reportId, versionId)
+                .with(manager(fixture.managerId())))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/reports/{reportId}/versions/{versionId}/client-decision",
+                    reportId,
+                    versionId)
+                .contentType("application/json")
+                .content(
+                    "{\"decision\":\"REQUEST_REVISION\","
+                        + "\"reason\":\"Clarify the surface rating\"}")
+                .with(client(fixture.clientId())))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/v1/reports/{reportId}/versions", reportId)
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.versionNumber").value(2))
+        .andExpect(jsonPath("$.data.contentSnapshot.aiDraftNarrative").doesNotExist());
+  }
+
   private UUID uuid(MvcResult result, String expression) throws Exception {
     return UUID.fromString(
         com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), expression)
