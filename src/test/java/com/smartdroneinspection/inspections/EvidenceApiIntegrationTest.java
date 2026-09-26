@@ -162,7 +162,7 @@ class EvidenceApiIntegrationTest {
                 .file(new MockMultipartFile("file", "bridge.png", "image/png", "bad".getBytes()))
                 .param("source", "WEB_UPLOAD")
                 .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isUnprocessableEntity())
+        .andExpect(status().isUnprocessableContent())
         .andExpect(jsonPath("$.code").value("EVIDENCE_INVALID"));
 
     assertThat(evidence.findAll()).isEmpty();

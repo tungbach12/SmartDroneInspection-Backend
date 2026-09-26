@@ -273,7 +273,7 @@ public class InspectionService {
     if (value == null || value.isNull()) {
       throw invalidChecklistResponse();
     }
-    if (item.isRequired() && value.isTextual() && value.asText().isBlank()) {
+    if (item.isRequired() && value.isString() && value.stringValue().isBlank()) {
       throw invalidChecklistResponse();
     }
 
@@ -292,17 +292,17 @@ public class InspectionService {
       }
       case CHOICE -> {
         requireTextValue(value);
-        validateConfiguredChoice(item, value.asText());
+        validateConfiguredChoice(item, value.stringValue());
       }
     }
   }
 
   private void requireTextValue(JsonNode value, String... allowedValues) {
-    if (!value.isTextual() || value.asText().isBlank()) {
+    if (!value.isString() || value.stringValue().isBlank()) {
       throw invalidChecklistResponse();
     }
     if (allowedValues.length > 0) {
-      String normalized = value.asText().trim().toUpperCase(Locale.ROOT);
+      String normalized = value.stringValue().trim().toUpperCase(Locale.ROOT);
       boolean allowed =
           java.util.Arrays.stream(allowedValues)
               .anyMatch(candidate -> candidate.equals(normalized));
@@ -321,7 +321,7 @@ public class InspectionService {
       JsonNode choices = objectMapper.readTree(config).path("choices");
       if (choices.isArray()
           && java.util.stream.StreamSupport.stream(choices.spliterator(), false)
-              .noneMatch(choice -> choice.isTextual() && choice.asText().equals(value))) {
+              .noneMatch(choice -> choice.isString() && choice.stringValue().equals(value))) {
         throw invalidChecklistResponse();
       }
     } catch (JacksonException exception) {
@@ -389,7 +389,7 @@ public class InspectionService {
 
   private BusinessException invalidChecklistResponse() {
     return new BusinessException(
-        HttpStatus.UNPROCESSABLE_ENTITY,
+        HttpStatus.UNPROCESSABLE_CONTENT,
         "CHECKLIST_RESPONSE_INVALID",
         "The checklist response is invalid for this item.");
   }

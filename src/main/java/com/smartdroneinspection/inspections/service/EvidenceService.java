@@ -214,7 +214,7 @@ public class EvidenceService {
     }
     if (file.getSize() > maxFileSizeBytes) {
       throw new BusinessException(
-          HttpStatus.PAYLOAD_TOO_LARGE,
+          HttpStatus.CONTENT_TOO_LARGE,
           "EVIDENCE_TOO_LARGE",
           "Evidence file exceeds the configured size limit.");
     }
@@ -353,7 +353,7 @@ public class EvidenceService {
   }
 
   private BusinessException invalidEvidence(String message) {
-    return new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "EVIDENCE_INVALID", message);
+    return new BusinessException(HttpStatus.UNPROCESSABLE_CONTENT, "EVIDENCE_INVALID", message);
   }
 
   public record EvidenceContent(

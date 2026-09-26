@@ -482,7 +482,7 @@ public class InspectionReportService {
     }
     if (narrative.length() > maxNarrativeChars) {
       throw new BusinessException(
-          HttpStatus.UNPROCESSABLE_ENTITY,
+          HttpStatus.UNPROCESSABLE_CONTENT,
           "REPORT_DRAFT_INVALID",
           "Generated narrative cannot exceed " + maxNarrativeChars + " characters.");
     }
@@ -507,7 +507,7 @@ public class InspectionReportService {
     }
     if (narrative == null || narrative.isBlank() || narrative.length() > maxNarrativeChars) {
       throw new BusinessException(
-          HttpStatus.UNPROCESSABLE_ENTITY,
+          HttpStatus.UNPROCESSABLE_CONTENT,
           "REPORT_DRAFT_INVALID",
           "Narrative text is required and cannot exceed " + maxNarrativeChars + " characters.");
     }
@@ -825,7 +825,7 @@ public class InspectionReportService {
 
   private BusinessException invalidReviewer(String message) {
     return new BusinessException(
-        HttpStatus.UNPROCESSABLE_ENTITY, "REPORT_REVIEWER_INVALID", message);
+        HttpStatus.UNPROCESSABLE_CONTENT, "REPORT_REVIEWER_INVALID", message);
   }
 
   private BusinessException storageUnavailable() {
