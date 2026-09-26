@@ -99,6 +99,34 @@ public class AssetDocument {
     return id;
   }
 
+  public String getDocumentType() {
+    return documentType;
+  }
+
+  public String getFileName() {
+    return fileName;
+  }
+
+  public String getContentType() {
+    return contentType;
+  }
+
+  public long getSizeBytes() {
+    return sizeBytes;
+  }
+
+  public String getObjectKey() {
+    return objectKey;
+  }
+
+  public LocalDate getDocumentDate() {
+    return documentDate;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
   public String getChecksumSha256() {
     return checksumSha256;
   }

@@ -1,6 +1,6 @@
 package com.smartdroneinspection.infrastructure.storage;
 
-import com.smartdroneinspection.inspections.spi.EvidenceObjectStore;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
