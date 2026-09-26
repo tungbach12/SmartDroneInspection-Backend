@@ -108,11 +108,11 @@ class WorkflowBaselineTest {
       JsonNode response = objectMapper.readTree(responseBody);
       JsonNode data = response.path("data");
       assertThat(response.path("success").asBoolean()).isTrue();
-      assertThat(response.path("message").asText()).isEqualTo("Success");
-      assertThat(data.path("step").asText()).isEqualTo("AUTHENTICATED");
-      assertThat(data.path("accessToken").asText()).isNotBlank();
-      assertThat(data.path("refreshToken").asText()).isNotBlank();
-      assertThat(data.path("user").path("roles").valueStream().map(JsonNode::asText))
+      assertThat(response.path("message").stringValue()).isEqualTo("Success");
+      assertThat(data.path("step").stringValue()).isEqualTo("AUTHENTICATED");
+      assertThat(data.path("accessToken").stringValue()).isNotBlank();
+      assertThat(data.path("refreshToken").stringValue()).isNotBlank();
+      assertThat(data.path("user").path("roles").valueStream().map(JsonNode::stringValue))
           .contains(role.value());
     }
   }
@@ -134,7 +134,7 @@ class WorkflowBaselineTest {
             .getResponse()
             .getContentAsString();
     String refreshToken =
-        objectMapper.readTree(loginResponse).path("data").path("refreshToken").asText();
+        objectMapper.readTree(loginResponse).path("data").path("refreshToken").stringValue();
 
     mockMvc
         .perform(

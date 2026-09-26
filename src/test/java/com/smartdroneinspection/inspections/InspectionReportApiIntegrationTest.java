@@ -471,7 +471,7 @@ class InspectionReportApiIntegrationTest {
                 .contentType("application/json")
                 .content("{\"text\":\"" + "x".repeat(10001) + "\"}")
                 .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isUnprocessableEntity())
+        .andExpect(status().isUnprocessableContent())
         .andExpect(jsonPath("$.code").value("REPORT_DRAFT_INVALID"));
   }
 
