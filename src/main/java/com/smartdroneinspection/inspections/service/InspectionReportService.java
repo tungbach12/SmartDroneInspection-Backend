@@ -749,7 +749,12 @@ public class InspectionReportService {
             .findForUpdateByIdAndAuthorUserId(report.getInspectionId(), report.getAuthorUserId())
             .orElseThrow(this::inspectionNotFound);
     if (inspection.getStatus() != InspectionStatus.COMPLETED) {
-      inspection.complete();
+      try {
+        inspection.complete();
+      } catch (IllegalStateException exception) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", exception.getMessage());
+      }
       inspections.saveAndFlush(inspection);
     }
   }

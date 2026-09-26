@@ -240,8 +240,16 @@ class InspectionReportServiceTest {
                     versionId,
                     new ClientReportDecisionRequest(
                         ClientReportDecisionRequest.Decision.ACCEPT, null)))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("Only in-progress inspections can be completed");
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error -> {
+              BusinessException businessError = (BusinessException) error;
+              assertThat(businessError.code()).isEqualTo("INSPECTION_STATE_CONFLICT");
+              assertThat(businessError.status())
+                  .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+              assertThat(businessError.getMessage())
+                  .isEqualTo("Only in-progress inspections can be completed");
+            });
   }
 
   @Test
