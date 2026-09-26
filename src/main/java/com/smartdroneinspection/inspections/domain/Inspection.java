@@ -111,6 +111,15 @@ public class Inspection {
     updatedAt = startedAt;
   }
 
+  public void complete() {
+    if (status != InspectionStatus.IN_PROGRESS) {
+      throw new IllegalStateException("Only in-progress inspections can be completed");
+    }
+    status = InspectionStatus.COMPLETED;
+    completedAt = Instant.now();
+    updatedAt = completedAt;
+  }
+
   public Instant getStartedAt() {
     return startedAt;
   }

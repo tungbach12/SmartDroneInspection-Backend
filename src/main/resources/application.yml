@@ -54,6 +54,12 @@ app:
       predict-path: ${YOLO_INFERENCE_PREDICT_PATH:/predict}
       connect-timeout: ${YOLO_INFERENCE_CONNECT_TIMEOUT:2s}
       read-timeout: ${YOLO_INFERENCE_READ_TIMEOUT:30s}
+  report-draft:
+    enabled: ${REPORT_DRAFT_ENABLED:false}
+    base-url: ${REPORT_DRAFT_BASE_URL:http://localhost:11434}
+    api-key: ${REPORT_DRAFT_API_KEY:}
+    model: ${REPORT_DRAFT_MODEL:llama3}
+    timeout: ${REPORT_DRAFT_TIMEOUT:60s}
   auth:
     issuer: ${AUTH_JWT_ISSUER:smartdroneinspection}
     audience: ${AUTH_JWT_AUDIENCE:smartdroneinspection-api}
