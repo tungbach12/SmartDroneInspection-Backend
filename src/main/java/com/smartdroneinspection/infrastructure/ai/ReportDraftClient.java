@@ -23,6 +23,11 @@ public class ReportDraftClient implements ReportDraftPort {
   }
 
   @Override
+  public String modelName() {
+    return model;
+  }
+
+  @Override
   public String generateDraft(DraftContext context) throws IOException {
     String prompt = buildPrompt(context);
     Map<String, Object> requestPayload =

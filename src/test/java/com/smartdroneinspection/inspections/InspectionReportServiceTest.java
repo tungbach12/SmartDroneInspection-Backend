@@ -41,6 +41,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -85,24 +86,7 @@ class InspectionReportServiceTest {
 
   @BeforeEach
   void setUp() throws Exception {
-    service =
-        new InspectionReportService(
-            inspections,
-            assignments,
-            reports,
-            versions,
-            reviews,
-            templates,
-            checklistResponses,
-            evidence,
-            findings,
-            serviceOrders,
-            inspectionRequests,
-            users,
-            Optional.empty(),
-            Optional.empty(),
-            objectMapper,
-            events);
+    service = reportService(Optional.empty(), 10000);
     snapshot =
         new ReportSnapshot(
             inspectionId,
@@ -114,6 +98,7 @@ class InspectionReportServiceTest {
             List.of(),
             List.of(),
             List.of(),
+            null,
             null);
     report = Mockito.spy(new InspectionReport(inspectionId, inspectorId));
     report.startVersion(1);
@@ -301,24 +286,7 @@ class InspectionReportServiceTest {
     when(draftPort.generateDraft(any(ReportDraftPort.DraftContext.class)))
         .thenReturn("AI Draft: Inspection identified minor concrete wear.");
 
-    service =
-        new InspectionReportService(
-            inspections,
-            assignments,
-            reports,
-            versions,
-            reviews,
-            templates,
-            checklistResponses,
-            evidence,
-            findings,
-            serviceOrders,
-            inspectionRequests,
-            users,
-            Optional.empty(),
-            Optional.of(draftPort),
-            objectMapper,
-            events);
+    service = reportService(Optional.of(draftPort), 10000);
 
     ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
     when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
@@ -408,5 +376,96 @@ class InspectionReportServiceTest {
         .satisfies(
             error ->
                 assertThat(((BusinessException) error).code()).isEqualTo("REPORT_SCOPE_DENIED"));
+  }
+
+  @Test
+  void updateNarrativeAcceptsTextAtTheConfiguredLimit() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+    service = reportService(Optional.empty(), 25);
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+
+    var response = service.updateNarrative(inspectorId, reportId, versionId, "x".repeat(25));
+
+    assertThat(response).isNotNull();
+    verify(versions).saveAndFlush(draftVersion);
+  }
+
+  @Test
+  void updateNarrativeRejectsTextAboveTheConfiguredLimit() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+    service = reportService(Optional.empty(), 25);
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+
+    assertThatThrownBy(
+            () -> service.updateNarrative(inspectorId, reportId, versionId, "x".repeat(26)))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
+    verify(versions, never()).saveAndFlush(any(ReportVersion.class));
+  }
+
+  @Test
+  void generateAiDraftRecordsTheGeneratingModelOnTheSnapshot() throws Exception {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+    ReportDraftPort draftPort = Mockito.mock(ReportDraftPort.class);
+    when(draftPort.modelName()).thenReturn("llama3.1:8b");
+    when(draftPort.generateDraft(any(ReportDraftPort.DraftContext.class)))
+        .thenReturn("AI Draft narrative.");
+    service = reportService(Optional.of(draftPort), 10000);
+
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+    ArgumentCaptor<ReportSnapshot> captured = ArgumentCaptor.forClass(ReportSnapshot.class);
+
+    service.generateAiDraft(inspectorId, reportId, versionId);
+
+    verify(objectMapper).writeValueAsString(captured.capture());
+    assertThat(captured.getValue().aiDraftModel()).isEqualTo("llama3.1:8b");
+    assertThat(captured.getValue().aiDraftNarrative()).isEqualTo("AI Draft narrative.");
+  }
+
+  @Test
+  void humanNarrativeEditKeepsTheProvenanceOfTheDraftItReplaces() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+
+    service.updateNarrative(inspectorId, reportId, versionId, "Human corrected narrative.");
+
+    ArgumentCaptor<ReportSnapshot> captured = ArgumentCaptor.forClass(ReportSnapshot.class);
+    verify(objectMapper).writeValueAsString(captured.capture());
+    assertThat(captured.getValue().aiDraftNarrative()).isEqualTo("Human corrected narrative.");
+    assertThat(captured.getValue().aiDraftModel()).isNull();
+  }
+
+  private InspectionReportService reportService(
+      Optional<ReportDraftPort> draftPort, int maxNarrativeChars) {
+    InspectionReportService created =
+        new InspectionReportService(
+            inspections,
+            assignments,
+            reports,
+            versions,
+            reviews,
+            templates,
+            checklistResponses,
+            evidence,
+            findings,
+            serviceOrders,
+            inspectionRequests,
+            users,
+            Optional.empty(),
+            draftPort,
+            objectMapper,
+            events,
+            maxNarrativeChars);
+    return created;
   }
 }

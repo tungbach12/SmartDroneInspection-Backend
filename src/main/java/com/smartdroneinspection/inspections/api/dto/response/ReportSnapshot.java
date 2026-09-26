@@ -17,7 +17,8 @@ public record ReportSnapshot(
     List<ChecklistEntry> checklist,
     List<EvidenceEntry> evidence,
     List<FindingEntry> findings,
-    String aiDraftNarrative) {
+    String aiDraftNarrative,
+    String aiDraftModel) {
 
   public ReportSnapshot {
     checklist = checklist == null ? List.of() : List.copyOf(checklist);
@@ -25,7 +26,12 @@ public record ReportSnapshot(
     findings = findings == null ? List.of() : List.copyOf(findings);
   }
 
+  /** Records a human-written narrative. Any previous AI provenance no longer describes the text. */
   public ReportSnapshot withAiDraftNarrative(String narrative) {
+    return withAiDraftProvenance(narrative, null);
+  }
+
+  public ReportSnapshot withAiDraftProvenance(String narrative, String model) {
     return new ReportSnapshot(
         inspectionId,
         serviceOrderId,
@@ -36,7 +42,8 @@ public record ReportSnapshot(
         checklist,
         evidence,
         findings,
-        narrative);
+        narrative,
+        model);
   }
 
   public record ChecklistEntry(

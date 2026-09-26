@@ -52,13 +52,108 @@ class ReportSnapshotSerializationTest {
             List.of(),
             List.of(),
             List.of(),
-            "AI draft text: Surface inspection indicates superficial wear.");
+            "AI draft text: Surface inspection indicates superficial wear.",
+            null);
 
     String json = objectMapper.writeValueAsString(original);
     ReportSnapshot roundTrip = objectMapper.readValue(json, ReportSnapshot.class);
 
     assertThat(roundTrip.aiDraftNarrative())
         .isEqualTo("AI draft text: Surface inspection indicates superficial wear.");
+  }
+
+  @Test
+  void deserializesJsonPersistedBeforeAiProvenanceExisted() throws Exception {
+    String json =
+        """
+        {
+          "inspectionId": "11111111-1111-1111-1111-111111111111",
+          "serviceOrderId": "22222222-2222-2222-2222-222222222222",
+          "assetId": "33333333-3333-3333-3333-333333333333",
+          "checklistTemplateId": "44444444-4444-4444-4444-444444444444",
+          "checklistName": "Structural Deck Inspection",
+          "generatedAt": "2026-09-24T12:00:00Z",
+          "checklist": [],
+          "evidence": [],
+          "findings": [],
+          "aiDraftNarrative": "Narrative written before provenance was recorded."
+        }
+        """;
+
+    ReportSnapshot snapshot = objectMapper.readValue(json, ReportSnapshot.class);
+
+    assertThat(snapshot.aiDraftNarrative())
+        .isEqualTo("Narrative written before provenance was recorded.");
+    assertThat(snapshot.aiDraftModel()).isNull();
+  }
+
+  @Test
+  void serializesAndDeserializesWithAiDraftModel() throws Exception {
+    ReportSnapshot original =
+        new ReportSnapshot(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "Bridge Checklist",
+            Instant.parse("2026-09-25T10:00:00Z"),
+            List.of(),
+            List.of(),
+            List.of(),
+            "AI draft text.",
+            "gpt-4o-mini");
+
+    String json = objectMapper.writeValueAsString(original);
+    ReportSnapshot roundTrip = objectMapper.readValue(json, ReportSnapshot.class);
+
+    assertThat(roundTrip.aiDraftModel()).isEqualTo("gpt-4o-mini");
+    assertThat(roundTrip.aiDraftNarrative()).isEqualTo("AI draft text.");
+  }
+
+  @Test
+  void withAiDraftNarrativeClearsStaleProvenanceWhenTheTextIsHumanWritten() {
+    ReportSnapshot aiGenerated =
+        new ReportSnapshot(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "Bridge Checklist",
+            Instant.parse("2026-09-25T10:00:00Z"),
+            List.of(),
+            List.of(),
+            List.of(),
+            "AI draft text.",
+            "gpt-4o-mini");
+
+    ReportSnapshot humanEdited = aiGenerated.withAiDraftNarrative("Human corrected text.");
+
+    assertThat(humanEdited.aiDraftNarrative()).isEqualTo("Human corrected text.");
+    assertThat(humanEdited.aiDraftModel()).isNull();
+    assertThat(humanEdited.inspectionId()).isEqualTo(aiGenerated.inspectionId());
+  }
+
+  @Test
+  void withAiDraftProvenanceRecordsTheGeneratingModel() {
+    ReportSnapshot original =
+        new ReportSnapshot(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "Bridge Checklist",
+            Instant.parse("2026-09-25T10:00:00Z"),
+            List.of(),
+            List.of(),
+            List.of(),
+            null,
+            null);
+
+    ReportSnapshot generated = original.withAiDraftProvenance("AI text.", "llama3.1:8b");
+
+    assertThat(generated.aiDraftNarrative()).isEqualTo("AI text.");
+    assertThat(generated.aiDraftModel()).isEqualTo("llama3.1:8b");
+    assertThat(generated.generatedAt()).isEqualTo(original.generatedAt());
   }
 
   @Test
@@ -103,6 +198,7 @@ class ReportSnapshotSerializationTest {
                     "Minor wear",
                     "Monitor",
                     null)),
+            null,
             null);
 
     ReportSnapshot updated = original.withAiDraftNarrative("Updated narrative text");
