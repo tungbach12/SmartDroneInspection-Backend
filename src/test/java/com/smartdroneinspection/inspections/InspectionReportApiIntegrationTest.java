@@ -320,7 +320,8 @@ class InspectionReportApiIntegrationTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(
             jsonPath("$.data.contentSnapshot.aiDraftNarrative")
-                .value("Concrete deck in good condition."));
+                .value("Concrete deck in good condition."))
+        .andExpect(jsonPath("$.data.contentSnapshot.aiDraftModel").doesNotExist());
 
     // Other inspector is denied
     mockMvc
@@ -445,6 +446,36 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void appliesTheConfiguredNarrativeLimitAtTheApiBoundary() throws Exception {
+    MvcResult draftResult =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/report", inspectionId)
+                    .with(inspector(fixture.inspectorId())))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID reportId = uuid(draftResult, "$.data.reportId");
+    UUID versionId = uuid(draftResult, "$.data.versionId");
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"" + "x".repeat(10000) + "\"}")
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            put("/api/v1/reports/{reportId}/versions/{versionId}/narrative", reportId, versionId)
+                .contentType("application/json")
+                .content("{\"text\":\"" + "x".repeat(10001) + "\"}")
+                .with(inspector(fixture.inspectorId())))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("REPORT_DRAFT_INVALID"));
+  }
+
+  @Test
   void revisionOmmitsNarrativeFromRecomposedSnapshot() throws Exception {
     MvcResult draftResult =
         mockMvc
@@ -513,7 +544,8 @@ class InspectionReportApiIntegrationTest {
                 .with(inspector(fixture.inspectorId())))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.versionNumber").value(2))
-        .andExpect(jsonPath("$.data.contentSnapshot.aiDraftNarrative").doesNotExist());
+        .andExpect(jsonPath("$.data.contentSnapshot.aiDraftNarrative").doesNotExist())
+        .andExpect(jsonPath("$.data.contentSnapshot.aiDraftModel").doesNotExist());
   }
 
   private UUID uuid(MvcResult result, String expression) throws Exception {

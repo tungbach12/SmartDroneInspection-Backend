@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -75,6 +76,7 @@ public class InspectionReportService {
   private final Optional<ReportDraftPort> reportDraftPort;
   private final ObjectMapper objectMapper;
   private final ApplicationEventPublisher events;
+  private final int maxNarrativeChars;
 
   public InspectionReportService(
       InspectionRepository inspections,
@@ -92,7 +94,8 @@ public class InspectionReportService {
       Optional<EvidenceObjectStore> objectStore,
       Optional<ReportDraftPort> reportDraftPort,
       ObjectMapper objectMapper,
-      ApplicationEventPublisher events) {
+      ApplicationEventPublisher events,
+      @Value("${app.report.narrative-max-chars:10000}") int maxNarrativeChars) {
     this.inspections = inspections;
     this.assignments = assignments;
     this.reports = reports;
@@ -109,6 +112,7 @@ public class InspectionReportService {
     this.reportDraftPort = reportDraftPort;
     this.objectMapper = objectMapper;
     this.events = events;
+    this.maxNarrativeChars = maxNarrativeChars;
   }
 
   @Transactional(readOnly = true)
@@ -476,14 +480,14 @@ public class InspectionReportService {
           "REPORT_DRAFT_UNAVAILABLE",
           "Generated narrative is blank.");
     }
-    if (narrative.length() > 10000) {
+    if (narrative.length() > maxNarrativeChars) {
       throw new BusinessException(
           HttpStatus.UNPROCESSABLE_ENTITY,
           "REPORT_DRAFT_INVALID",
-          "Generated narrative cannot exceed 10000 characters.");
+          "Generated narrative cannot exceed " + maxNarrativeChars + " characters.");
     }
 
-    ReportSnapshot updatedSnapshot = snapshot.withAiDraftNarrative(narrative);
+    ReportSnapshot updatedSnapshot = snapshot.withAiDraftProvenance(narrative, port.modelName());
     version = updateVersionSnapshot(version, updatedSnapshot);
     versions.saveAndFlush(version);
     return toResponse(report, version, actor);
@@ -501,11 +505,11 @@ public class InspectionReportService {
     if (version.getStatus() != ReportStatus.DRAFT) {
       throw reportStateConflict("Narrative can only be updated for draft versions.");
     }
-    if (narrative == null || narrative.isBlank() || narrative.length() > 10000) {
+    if (narrative == null || narrative.isBlank() || narrative.length() > maxNarrativeChars) {
       throw new BusinessException(
           HttpStatus.UNPROCESSABLE_ENTITY,
           "REPORT_DRAFT_INVALID",
-          "Narrative text is required and cannot exceed 10000 characters.");
+          "Narrative text is required and cannot exceed " + maxNarrativeChars + " characters.");
     }
 
     ReportSnapshot snapshot = versionSnapshot(version);
@@ -645,6 +649,7 @@ public class InspectionReportService {
         checklist,
         evidenceEntries,
         findingEntries,
+        null,
         null);
   }
 

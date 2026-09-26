@@ -40,6 +40,8 @@ springdoc:
 app:
   evidence:
     max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
+  report:
+    narrative-max-chars: ${REPORT_NARRATIVE_MAX_CHARS:10000}
   storage:
     minio:
       enabled: ${MINIO_ENABLED:false}

@@ -6,6 +6,9 @@ import java.util.List;
 /** Outbound port for generating draft report narratives from sanitized inspection data. */
 public interface ReportDraftPort {
 
+  /** Identifies the model that produced a draft, so a report can disclose its provenance. */
+  String modelName();
+
   String generateDraft(DraftContext context) throws IOException;
 
   record DraftContext(
