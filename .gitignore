@@ -27,6 +27,7 @@ Thumbs.db
 # Env
 .env
 .env.*
+!.env.example
 
 # Agent planning scratch
 .superpowers/
