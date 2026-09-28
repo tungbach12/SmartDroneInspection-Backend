@@ -30,6 +30,7 @@ import com.smartdroneinspection.inspections.repository.PeerReviewRepository;
 import com.smartdroneinspection.inspections.repository.ReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.service.InspectionReportService;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
@@ -46,6 +47,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -98,6 +100,7 @@ class InspectionReportServiceTest {
             inspectionRequests,
             users,
             Optional.empty(),
+            Optional.empty(),
             objectMapper,
             events);
     snapshot =
@@ -110,7 +113,8 @@ class InspectionReportServiceTest {
             Instant.now(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            null);
     report = Mockito.spy(new InspectionReport(inspectionId, inspectorId));
     report.startVersion(1);
     report.changeStatus(ReportStatus.RELEASED);
@@ -133,6 +137,8 @@ class InspectionReportServiceTest {
     InspectionServiceOrder order = Mockito.mock(InspectionServiceOrder.class);
     InspectionRequest request = Mockito.mock(InspectionRequest.class);
     when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(inspections.findForUpdateByIdAndAuthorUserId(inspectionId, inspectorId))
+        .thenReturn(Optional.of(inspection));
     when(serviceOrders.findById(serviceOrderId)).thenReturn(Optional.of(order));
     when(order.getInspectionRequestId()).thenReturn(requestId);
     when(inspectionRequests.findById(requestId)).thenReturn(Optional.of(request));
@@ -162,6 +168,88 @@ class InspectionReportServiceTest {
     assertThat(version.isImmutable()).isTrue();
     assertThat(version.getClientDecisionByUserId()).isEqualTo(clientId);
     verify(events).publishEvent(any(ReportAcceptedEvent.class));
+    verify(inspections, Mockito.times(1)).saveAndFlush(any(Inspection.class));
+  }
+
+  @Test
+  void clientAcceptanceMarksInspectionCompletedAtomically() {
+    when(users.findActiveUser(clientId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(clientId, Set.of("CLIENT"), organizationId)));
+    var accept = new ClientReportDecisionRequest(ClientReportDecisionRequest.Decision.ACCEPT, null);
+
+    service.clientDecision(clientId, reportId, versionId, accept);
+
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    assertThat(inspection.getStatus())
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED);
+    assertThat(inspection.getCompletedAt()).isNotNull();
+
+    var handoffOrder = Mockito.inOrder(inspections, events);
+    handoffOrder.verify(inspections).saveAndFlush(inspection);
+    handoffOrder.verify(events).publishEvent(any(ReportAcceptedEvent.class));
+  }
+
+  @Test
+  void acceptedRetryCompletesInspectionWithoutMutatingAcceptedReportOrRepublishing() {
+    report.changeStatus(ReportStatus.ACCEPTED);
+    version.accept(clientId);
+    var acceptedAt = version.getAcceptedAt();
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    when(users.findActiveUser(clientId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(clientId, Set.of("CLIENT"), organizationId)));
+
+    var retry =
+        service.clientDecision(
+            clientId,
+            reportId,
+            versionId,
+            new ClientReportDecisionRequest(ClientReportDecisionRequest.Decision.ACCEPT, null));
+
+    assertThat(retry.versionStatus()).isEqualTo(ReportStatus.ACCEPTED);
+    assertThat(inspection.getStatus())
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED);
+    assertThat(inspection.getCompletedAt()).isNotNull();
+    assertThat(version.getAcceptedAt()).isEqualTo(acceptedAt);
+    assertThat(version.getClientDecisionByUserId()).isEqualTo(clientId);
+    assertThat(version.isImmutable()).isTrue();
+    verify(versions, never()).saveAndFlush(any(ReportVersion.class));
+    verify(reports, never()).saveAndFlush(any(InspectionReport.class));
+    verify(events, never()).publishEvent(any(ReportAcceptedEvent.class));
+    verify(inspections).findForUpdateByIdAndAuthorUserId(inspectionId, inspectorId);
+    verify(inspections).saveAndFlush(inspection);
+  }
+
+  @Test
+  void awaitingReportInspectionCannotBeCompletedOnClientAcceptance() {
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    ReflectionTestUtils.setField(
+        inspection,
+        "status",
+        com.smartdroneinspection.inspections.domain.enums.InspectionStatus.AWAITING_REPORT);
+    when(users.findActiveUser(clientId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(clientId, Set.of("CLIENT"), organizationId)));
+
+    assertThatThrownBy(
+            () ->
+                service.clientDecision(
+                    clientId,
+                    reportId,
+                    versionId,
+                    new ClientReportDecisionRequest(
+                        ClientReportDecisionRequest.Decision.ACCEPT, null)))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error -> {
+              BusinessException businessError = (BusinessException) error;
+              assertThat(businessError.code()).isEqualTo("INSPECTION_STATE_CONFLICT");
+              assertThat(businessError.status())
+                  .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+              assertThat(businessError.getMessage())
+                  .isEqualTo("Only in-progress inspections can be completed");
+            });
   }
 
   @Test
@@ -203,5 +291,122 @@ class InspectionReportServiceTest {
             error ->
                 assertThat(((BusinessException) error).code()).isEqualTo("REPORT_SCOPE_DENIED"));
     verify(reviews, never()).findForUpdateByReportVersionId(versionId);
+  }
+
+  @Test
+  void generateAiDraftMergesNarrativeIntoDraftSnapshot() throws Exception {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+    ReportDraftPort draftPort = Mockito.mock(ReportDraftPort.class);
+    when(draftPort.generateDraft(any(ReportDraftPort.DraftContext.class)))
+        .thenReturn("AI Draft: Inspection identified minor concrete wear.");
+
+    service =
+        new InspectionReportService(
+            inspections,
+            assignments,
+            reports,
+            versions,
+            reviews,
+            templates,
+            checklistResponses,
+            evidence,
+            findings,
+            serviceOrders,
+            inspectionRequests,
+            users,
+            Optional.empty(),
+            Optional.of(draftPort),
+            objectMapper,
+            events);
+
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+    when(objectMapper.writeValueAsString(any())).thenReturn("{\"aiDraftNarrative\":\"AI Draft\"}");
+
+    var response = service.generateAiDraft(inspectorId, reportId, versionId);
+
+    assertThat(response).isNotNull();
+    verify(versions).saveAndFlush(draftVersion);
+  }
+
+  @Test
+  void generateAiDraftThrowsWhenPortUnavailableOrFails() throws Exception {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+
+    assertThatThrownBy(() -> service.generateAiDraft(inspectorId, reportId, versionId))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("REPORT_DRAFT_UNAVAILABLE"));
+    verify(versions, never()).saveAndFlush(any(ReportVersion.class));
+  }
+
+  @Test
+  void updateNarrativeUpdatesDraftSnapshot() throws Exception {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+    when(objectMapper.writeValueAsString(any()))
+        .thenReturn("{\"aiDraftNarrative\":\"Human edited\"}");
+
+    var response =
+        service.updateNarrative(inspectorId, reportId, versionId, "Human edited narrative.");
+
+    assertThat(response).isNotNull();
+    verify(versions).saveAndFlush(draftVersion);
+  }
+
+  @Test
+  void updateNarrativeRejectsNonDraftVersion() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+
+    assertThatThrownBy(() -> service.updateNarrative(inspectorId, reportId, versionId, "Text"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_STATE_CONFLICT"));
+  }
+
+  @Test
+  void updateNarrativeRejectsBlankAndOversizedText() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+    ReportVersion draftVersion = new ReportVersion(reportId, 1, null, inspectorId, "{}");
+    when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(draftVersion));
+
+    assertThatThrownBy(() -> service.updateNarrative(inspectorId, reportId, versionId, "   "))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
+    assertThatThrownBy(
+            () -> service.updateNarrative(inspectorId, reportId, versionId, "x".repeat(10001)))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_DRAFT_INVALID"));
+    verify(versions, never()).saveAndFlush(any(ReportVersion.class));
+  }
+
+  @Test
+  void updateNarrativeRejectsNonAuthor() {
+    UUID otherInspectorId = UUID.randomUUID();
+    when(users.findActiveUser(otherInspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(otherInspectorId, Set.of("INSPECTOR"))));
+
+    assertThatThrownBy(() -> service.updateNarrative(otherInspectorId, reportId, versionId, "Text"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("REPORT_SCOPE_DENIED"));
   }
 }

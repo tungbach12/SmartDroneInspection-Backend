@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections.api;
 import com.smartdroneinspection.inspections.api.dto.request.AssignPeerReviewerRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ClientReportDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.PeerReviewDecisionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateReportNarrativeRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ReportVersionResponse;
 import com.smartdroneinspection.inspections.service.InspectionReportService;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -72,6 +73,27 @@ public class InspectionReportController {
   public ApiResponse<ReportVersionResponse> createRevision(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID reportId) {
     return ApiResponse.success(reports.createRevision(subject(jwt), reportId));
+  }
+
+  @PostMapping("/reports/{reportId}/versions/{versionId}/ai-draft")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<ReportVersionResponse> generateAiDraft(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID reportId, @PathVariable UUID versionId) {
+    return ApiResponse.success(reports.generateAiDraft(subject(jwt), reportId, versionId));
+  }
+
+  @PutMapping("/reports/{reportId}/versions/{versionId}/narrative")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<ReportVersionResponse> updateNarrative(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID reportId,
+      @PathVariable UUID versionId,
+      @RequestBody UpdateReportNarrativeRequest request) {
+    if (request.text() == null || request.text().isBlank()) {
+      throw new IllegalArgumentException("Narrative text must not be blank.");
+    }
+    return ApiResponse.success(
+        reports.updateNarrative(subject(jwt), reportId, versionId, request.text()));
   }
 
   @PutMapping("/reports/{reportId}/versions/{versionId}/reviewer")

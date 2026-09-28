@@ -103,6 +103,11 @@ public class ReportVersion {
     return contentSnapshot;
   }
 
+  public void updateContentSnapshot(String newSnapshot) {
+    requireStatus(ReportStatus.DRAFT);
+    this.contentSnapshot = newSnapshot;
+  }
+
   public int getVersionNumber() {
     return versionNumber;
   }

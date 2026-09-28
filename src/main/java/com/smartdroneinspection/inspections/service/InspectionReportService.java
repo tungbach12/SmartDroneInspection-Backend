@@ -32,6 +32,7 @@ import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.PeerReviewRepository;
 import com.smartdroneinspection.inspections.repository.ReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -71,6 +72,7 @@ public class InspectionReportService {
   private final InspectionRequestRepository inspectionRequests;
   private final UserAccess users;
   private final Optional<EvidenceObjectStore> objectStore;
+  private final Optional<ReportDraftPort> reportDraftPort;
   private final ObjectMapper objectMapper;
   private final ApplicationEventPublisher events;
 
@@ -88,6 +90,7 @@ public class InspectionReportService {
       InspectionRequestRepository inspectionRequests,
       UserAccess users,
       Optional<EvidenceObjectStore> objectStore,
+      Optional<ReportDraftPort> reportDraftPort,
       ObjectMapper objectMapper,
       ApplicationEventPublisher events) {
     this.inspections = inspections;
@@ -103,6 +106,7 @@ public class InspectionReportService {
     this.inspectionRequests = inspectionRequests;
     this.users = users;
     this.objectStore = objectStore;
+    this.reportDraftPort = reportDraftPort;
     this.objectMapper = objectMapper;
     this.events = events;
   }
@@ -343,6 +347,7 @@ public class InspectionReportService {
     ReportVersion version = requireCurrentVersion(report, versionId, true);
     if (version.getStatus() == ReportStatus.ACCEPTED
         && report.getStatus() == ReportStatus.ACCEPTED) {
+      completeInspection(report);
       return toResponse(report, version, client);
     }
     if (request == null || request.decision() == null) {
@@ -356,6 +361,9 @@ public class InspectionReportService {
       report.changeStatus(ReportStatus.ACCEPTED);
       versions.saveAndFlush(version);
       reports.saveAndFlush(report);
+
+      completeInspection(report);
+
       events.publishEvent(
           new ReportAcceptedEvent(
               report.getId(),
@@ -408,6 +416,108 @@ public class InspectionReportService {
     } catch (IOException exception) {
       throw storageUnavailable();
     }
+  }
+
+  @Transactional
+  public ReportVersionResponse generateAiDraft(UUID actorId, UUID reportId, UUID versionId) {
+    UserAccess.ActiveUser actor = requireActiveRole(actorId, Roles.INSPECTOR);
+    InspectionReport report = requireReport(reportId, true);
+    ReportVersion version = requireCurrentVersion(report, versionId, true);
+    if (!report.getAuthorUserId().equals(actorId)) {
+      throw reportScopeDenied();
+    }
+    if (version.getStatus() != ReportStatus.DRAFT) {
+      throw reportStateConflict("AI drafts can only be generated for draft versions.");
+    }
+    ReportDraftPort port =
+        reportDraftPort.orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "REPORT_DRAFT_UNAVAILABLE",
+                    "Report draft generation is not configured."));
+
+    ReportSnapshot snapshot = versionSnapshot(version);
+    ReportDraftPort.DraftContext context =
+        new ReportDraftPort.DraftContext(
+            snapshot.checklist().stream()
+                .map(
+                    item ->
+                        new ReportDraftPort.ChecklistEntrySummary(
+                            item.prompt(), item.responseValue(), item.notes()))
+                .toList(),
+            snapshot.findings().stream()
+                .map(
+                    finding ->
+                        new ReportDraftPort.FindingSummary(
+                            finding.defectLabel(),
+                            finding.severity().name(),
+                            finding.technicalNotes()))
+                .toList(),
+            snapshot.evidence().stream()
+                .map(
+                    item ->
+                        new ReportDraftPort.EvidenceSummary(item.fileName(), item.contentType()))
+                .toList());
+
+    String narrative;
+    try {
+      narrative = port.generateDraft(context);
+    } catch (IOException exception) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "REPORT_DRAFT_UNAVAILABLE",
+          "Report draft generation failed. Please try again.");
+    }
+
+    if (narrative == null || narrative.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "REPORT_DRAFT_UNAVAILABLE",
+          "Generated narrative is blank.");
+    }
+    if (narrative.length() > 10000) {
+      throw new BusinessException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "REPORT_DRAFT_INVALID",
+          "Generated narrative cannot exceed 10000 characters.");
+    }
+
+    ReportSnapshot updatedSnapshot = snapshot.withAiDraftNarrative(narrative);
+    version = updateVersionSnapshot(version, updatedSnapshot);
+    versions.saveAndFlush(version);
+    return toResponse(report, version, actor);
+  }
+
+  @Transactional
+  public ReportVersionResponse updateNarrative(
+      UUID actorId, UUID reportId, UUID versionId, String narrative) {
+    UserAccess.ActiveUser actor = requireActiveRole(actorId, Roles.INSPECTOR);
+    InspectionReport report = requireReport(reportId, true);
+    ReportVersion version = requireCurrentVersion(report, versionId, true);
+    if (!report.getAuthorUserId().equals(actorId)) {
+      throw reportScopeDenied();
+    }
+    if (version.getStatus() != ReportStatus.DRAFT) {
+      throw reportStateConflict("Narrative can only be updated for draft versions.");
+    }
+    if (narrative == null || narrative.isBlank() || narrative.length() > 10000) {
+      throw new BusinessException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "REPORT_DRAFT_INVALID",
+          "Narrative text is required and cannot exceed 10000 characters.");
+    }
+
+    ReportSnapshot snapshot = versionSnapshot(version);
+    ReportSnapshot updatedSnapshot = snapshot.withAiDraftNarrative(narrative.trim());
+    version = updateVersionSnapshot(version, updatedSnapshot);
+    versions.saveAndFlush(version);
+    return toResponse(report, version, actor);
+  }
+
+  private ReportVersion updateVersionSnapshot(ReportVersion version, ReportSnapshot snapshot) {
+    version.updateContentSnapshot(serialize(snapshot));
+    return version;
   }
 
   private Optional<ReportVersion> versionForViewer(
@@ -534,7 +644,8 @@ public class InspectionReportService {
         Instant.now(),
         checklist,
         evidenceEntries,
-        findingEntries);
+        findingEntries,
+        null);
   }
 
   private ReportSnapshot.FindingEntry toFindingEntry(VerifiedFinding finding) {
@@ -632,6 +743,22 @@ public class InspectionReportService {
         .orElseThrow(this::reportNotFound);
   }
 
+  private void completeInspection(InspectionReport report) {
+    Inspection inspection =
+        inspections
+            .findForUpdateByIdAndAuthorUserId(report.getInspectionId(), report.getAuthorUserId())
+            .orElseThrow(this::inspectionNotFound);
+    if (inspection.getStatus() != InspectionStatus.COMPLETED) {
+      try {
+        inspection.complete();
+      } catch (IllegalStateException exception) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", exception.getMessage());
+      }
+      inspections.saveAndFlush(inspection);
+    }
+  }
+
   private Inspection requireAssignedInspection(
       UserAccess.ActiveUser actor, UUID inspectionId, boolean lock) {
     Inspection inspection =
@@ -680,6 +807,11 @@ public class InspectionReportService {
 
   private BusinessException reportNotFound() {
     return new BusinessException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Report was not found.");
+  }
+
+  private BusinessException inspectionNotFound() {
+    return new BusinessException(
+        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection resource was not found.");
   }
 
   private BusinessException reportStateConflict(String message) {
