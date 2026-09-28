@@ -55,6 +55,15 @@ public class AssetController {
     return ApiResponse.success(assets.list(subject(jwt), page, pageSize, search));
   }
 
+  @GetMapping("/pending-review")
+  @PreAuthorize("hasRole('SERVICE_MANAGER')")
+  public ApiResponse<AssetPageResponse> pendingReview(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "20") int pageSize) {
+    return ApiResponse.success(assets.listPendingReview(subject(jwt), page, pageSize));
+  }
+
   @GetMapping("/{assetId}")
   @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
   public ApiResponse<AssetResponse> get(

@@ -85,6 +85,22 @@ public class AssetService {
         result.getTotalPages());
   }
 
+  /** Platform-scoped review queue: the Service Manager is not bound to one organization. */
+  @Transactional(readOnly = true)
+  public AssetPageResponse listPendingReview(UUID actorId, int page, int pageSize) {
+    requireActive(actorId);
+    int safePage = Math.max(page, 1);
+    int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    PageRequest pageRequest = PageRequest.of(safePage - 1, safePageSize, Sort.by("createdAt"));
+    Page<Asset> result = assets.findByStatus(AssetStatus.PENDING_REVIEW, pageRequest);
+    return new AssetPageResponse(
+        result.getContent().stream().map(this::toResponse).toList(),
+        safePage,
+        safePageSize,
+        result.getTotalElements(),
+        result.getTotalPages());
+  }
+
   @Transactional(readOnly = true)
   public AssetResponse get(UUID actorId, UUID assetId) {
     return toResponse(requireOwnedAsset(actorId, assetId));

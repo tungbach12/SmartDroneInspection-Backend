@@ -1,6 +1,7 @@
 package com.smartdroneinspection.assets.repository;
 
 import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +26,8 @@ public interface AssetRepository extends JpaRepository<Asset, UUID> {
   boolean existsByOrganizationIdAndCode(UUID organizationId, String code);
 
   Page<Asset> findByOrganizationId(UUID organizationId, Pageable pageable);
+
+  Page<Asset> findByStatus(AssetStatus status, Pageable pageable);
 
   @Query(
       "select a from Asset a where a.organizationId = :organizationId "

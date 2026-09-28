@@ -46,7 +46,11 @@ public class AssetReviewService {
                 () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
 
     if ("REJECT".equals(request.action())) {
-      asset.rejectReview();
+      try {
+        asset.rejectReview();
+      } catch (IllegalStateException ex) {
+        throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATE", ex.getMessage());
+      }
       assets.saveAndFlush(asset);
       return new AssetReviewResponse(assetId, asset.getStatus().name(), 0);
     }
