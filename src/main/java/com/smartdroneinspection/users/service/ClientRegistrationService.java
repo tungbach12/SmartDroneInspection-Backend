@@ -70,7 +70,8 @@ public class ClientRegistrationService {
             ActorZone.CUSTOMER_ORGANIZATION,
             organization.getId());
     client.addRole(UserRole.CLIENT);
-    client = users.save(client);
+    // Flush before the audit insert: SecurityAuditService writes raw SQL with an FK to users.
+    client = users.saveAndFlush(client);
 
     audit.record(
         null,

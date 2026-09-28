@@ -54,7 +54,7 @@ class ClientRegistrationServiceTest {
     when(savedOrganization.getName()).thenReturn("Acme Infrastructure");
     when(savedOrganization.getCode()).thenReturn("ACME");
     when(passwords.encode("a sufficiently long passphrase")).thenReturn("{argon2}encoded-password");
-    when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(users.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     var response =
         registration.register(
@@ -68,7 +68,7 @@ class ClientRegistrationServiceTest {
             "JUnit",
             "test-correlation");
 
-    verify(users).save(userCaptor.capture());
+    verify(users).saveAndFlush(userCaptor.capture());
     User created = userCaptor.getValue();
     assertThat(created.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(created.getActorZone()).isEqualTo(ActorZone.CUSTOMER_ORGANIZATION);
