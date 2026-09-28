@@ -4,9 +4,31 @@ Modular monolith built with Spring Boot 4.1, Java 21, Spring Modulith, PostgreSQ
 
 ## Quickstart
 
+### 1. Full Stack Deployment (Docker Compose)
+
+Deploy the entire stack (PostgreSQL, MinIO, Backend, and Web Nginx reverse proxy) with a single command:
+
 ```bash
-# Start PostgreSQL (pgvector) and MinIO
-docker compose up -d
+# 1. Configure environment variables (first time only)
+cp .env.example .env
+# Edit .env to set AUTH_JWT_SECRET and AUTH_REFRESH_TOKEN_PEPPER (Base64 >= 32 bytes)
+
+# 2. Build and start all services
+docker compose up -d --build
+
+# 3. Check service health
+docker compose ps
+```
+
+The Web UI and API proxy will be available at `http://localhost/` (or port configured in `WEB_PORT`). Backend direct API (bound to loopback `127.0.0.1:8080`) is accessible for mobile emulators or debugging.
+
+### 2. Local Development Workflow
+
+Run infrastructure in containers while running the application directly on your host:
+
+```bash
+# Start PostgreSQL (pgvector) and MinIO only
+docker compose up -d postgres minio
 
 # Verify formatting, tests, coverage, and Modulith boundaries
 ./mvnw verify
