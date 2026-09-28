@@ -65,7 +65,8 @@ public class AdminUserService {
     for (var role : request.roles()) {
       user.addRole(role);
     }
-    user = users.save(user);
+    // Flush before the audit insert: SecurityAuditService writes raw SQL with an FK to users.
+    user = users.saveAndFlush(user);
     audit.record(
         actorId, user.getId(), "USER_CREATED", "SUCCESS", ipAddress, userAgent, correlationId);
     return new ProvisionedUserResponse(toResponse(user), temporaryPassword);
