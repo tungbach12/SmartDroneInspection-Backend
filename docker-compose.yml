@@ -66,19 +66,13 @@ services:
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-}
       AUTH_BOOTSTRAP_FULL_NAME: ${AUTH_BOOTSTRAP_FULL_NAME:-Admin}
       REPORT_NARRATIVE_MAX_CHARS: ${REPORT_NARRATIVE_MAX_CHARS:-10000}
-    ports:
-      - "${BACKEND_HOST_BIND:-127.0.0.1}:${SERVER_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      start_period: 40s
-      retries: 5
+    ports:
+      - "${BACKEND_HOST_BIND:-127.0.0.1}:${SERVER_PORT:-8080}:8080"
     networks:
       - smartdroneinspection-network
 
@@ -94,12 +88,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
-      interval: 10s
-      timeout: 5s
-      start_period: 5s
-      retries: 3
     networks:
       - smartdroneinspection-network
 
