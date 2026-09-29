@@ -69,6 +69,11 @@ public class AssetCategory {
     return active;
   }
 
+  public void update(String newName, String newDescription) {
+    this.name = newName;
+    this.description = newDescription;
+  }
+
   private static String normalizeCode(String value) {
     return value.trim().toUpperCase(Locale.ROOT);
   }

@@ -1,4 +1,10 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Assets",
-    allowedDependencies = {"shared"})
+    allowedDependencies = {
+      "shared",
+      "shared::api",
+      "shared::exception",
+      "users",
+      "shared::storage"
+    })
 package com.smartdroneinspection.assets;

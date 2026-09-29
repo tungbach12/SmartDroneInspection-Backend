@@ -1,6 +1,6 @@
 package com.smartdroneinspection.infrastructure.storage;
 
-import com.smartdroneinspection.inspections.spi.EvidenceObjectStore;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import io.minio.MinioClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
