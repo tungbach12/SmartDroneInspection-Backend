@@ -1,6 +1,7 @@
 package com.smartdroneinspection.assets.repository;
 
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.assets.domain.enums.ChecklistTemplateStatus;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -12,4 +13,7 @@ public interface ChecklistTemplateRepository extends JpaRepository<ChecklistTemp
 
   Optional<ChecklistTemplate> findByTemplateKeyAndVersionNumber(
       String templateKey, int versionNumber);
+
+  Optional<ChecklistTemplate> findFirstByAssetCategoryIdAndStatusOrderByVersionNumberDesc(
+      UUID assetCategoryId, ChecklistTemplateStatus status);
 }

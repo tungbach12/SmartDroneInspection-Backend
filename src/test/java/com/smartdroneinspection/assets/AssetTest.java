@@ -38,6 +38,58 @@ class AssetTest {
   }
 
   @Test
+  void clientCreateStartsPendingReviewAndCanBeApproved() {
+    Asset asset =
+        Asset.clientCreate(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "bridge-02",
+            "River Bridge",
+            null,
+            "District 2",
+            null,
+            null,
+            null,
+            UUID.randomUUID());
+
+    assertThat(asset.getCode()).isEqualTo("BRIDGE-02");
+    assertThat(asset.getStatus()).isEqualTo(AssetStatus.PENDING_REVIEW);
+
+    asset.approveReview();
+
+    assertThat(asset.getStatus()).isEqualTo(AssetStatus.ACTIVE);
+    assertThatThrownBy(asset::approveReview)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Only pending assets can be approved");
+  }
+
+  @Test
+  void pendingAssetCanBeRejectedButRejectedAssetCannotBeReviewedAgain() {
+    Asset asset =
+        Asset.clientCreate(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "bridge-03",
+            "River Bridge",
+            null,
+            "District 3",
+            null,
+            null,
+            null,
+            UUID.randomUUID());
+
+    asset.rejectReview();
+
+    assertThat(asset.getStatus()).isEqualTo(AssetStatus.REJECTED);
+    assertThatThrownBy(asset::rejectReview)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Only pending assets can be rejected");
+    assertThatThrownBy(asset::approveReview)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Only pending assets can be approved");
+  }
+
+  @Test
   void rejectsInvalidCoordinates() {
     assertThatThrownBy(
             () ->

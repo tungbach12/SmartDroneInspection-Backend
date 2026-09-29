@@ -28,7 +28,7 @@ import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.ReportVersionRepository;
 import com.smartdroneinspection.inspections.service.InspectionService;
-import com.smartdroneinspection.inspections.spi.EvidenceObjectStore;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.ByteArrayInputStream;
 import java.util.Base64;

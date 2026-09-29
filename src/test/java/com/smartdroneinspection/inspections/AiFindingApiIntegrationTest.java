@@ -24,7 +24,7 @@ import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.service.InspectionService;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
-import com.smartdroneinspection.inspections.spi.EvidenceObjectStore;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;

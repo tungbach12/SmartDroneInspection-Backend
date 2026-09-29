@@ -2,7 +2,7 @@ package com.smartdroneinspection.infrastructure.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.smartdroneinspection.inspections.spi.EvidenceObjectStore;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
