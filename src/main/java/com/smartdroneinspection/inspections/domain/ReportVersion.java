@@ -142,7 +142,7 @@ public class ReportVersion {
 
   /**
    * Author verification (MF3-07): the authoring Inspector signs off the completed draft so the
-   * Provider Manager can release it (MF3-09).
+   * Provider Manager can release it (MF3-08).
    */
   public void verify() {
     requireStatus(ReportStatus.DRAFT);
