@@ -92,6 +92,7 @@ public class ClientRegistrationService {
             client.getFullName(),
             client.roleValues(),
             client.getActorZone().name(),
-            client.getOrganizationId()));
+            client.getOrganizationId(),
+            client.getProviderId()));
   }
 }

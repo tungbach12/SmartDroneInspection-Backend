@@ -16,4 +16,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
   Optional<User> findDetailedById(UUID id);
 
   boolean existsByRoleAssignments_Role(UserRole role);
+
+  Optional<User> findByActivationTokenHash(String activationTokenHash);
 }

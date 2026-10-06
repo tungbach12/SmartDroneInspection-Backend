@@ -94,7 +94,7 @@ class CutListMigrationOnPopulatedDatabaseTest {
 
       migrate(url, null);
 
-      assertThat(lastOf(appliedVersions(statement))).isEqualTo("22");
+      assertThat(lastOf(appliedVersions(statement))).isEqualTo("23");
       List<String> tables =
           queryStrings(
               statement,
@@ -142,7 +142,7 @@ class CutListMigrationOnPopulatedDatabaseTest {
 
       migrate(url, null);
 
-      assertThat(lastOf(appliedVersions(statement))).isEqualTo("22");
+      assertThat(lastOf(appliedVersions(statement))).isEqualTo("23");
       assertThat(
               singleString(
                   statement,

@@ -68,6 +68,12 @@ public class User {
   @Column(name = "last_login_ip", length = 45)
   private String lastLoginIp;
 
+  @Column(name = "activation_token_hash", length = 128)
+  private String activationTokenHash;
+
+  @Column(name = "activation_expires_at")
+  private Instant activationExpiresAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -213,7 +219,44 @@ public class User {
 
   public void activate() {
     this.status = UserStatus.ACTIVE;
+    clearActivationToken();
     this.updatedAt = Instant.now();
+  }
+
+  public String getActivationTokenHash() {
+    return activationTokenHash;
+  }
+
+  public void setActivationTokenHash(String activationTokenHash) {
+    this.activationTokenHash = activationTokenHash;
+    this.updatedAt = Instant.now();
+  }
+
+  public Instant getActivationExpiresAt() {
+    return activationExpiresAt;
+  }
+
+  public void setActivationExpiresAt(Instant activationExpiresAt) {
+    this.activationExpiresAt = activationExpiresAt;
+    this.updatedAt = Instant.now();
+  }
+
+  public void setActivationToken(String hash, Instant expiresAt) {
+    this.activationTokenHash = hash;
+    this.activationExpiresAt = expiresAt;
+    this.updatedAt = Instant.now();
+  }
+
+  public void clearActivationToken() {
+    this.activationTokenHash = null;
+    this.activationExpiresAt = null;
+    this.updatedAt = Instant.now();
+  }
+
+  public boolean isActivationTokenValid(Instant now) {
+    return activationTokenHash != null
+        && activationExpiresAt != null
+        && activationExpiresAt.isAfter(now);
   }
 
   public void disable(UserStatus nextStatus) {
