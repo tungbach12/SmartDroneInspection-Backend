@@ -199,7 +199,7 @@ class AssetWorkflowIntegrationTest {
                 .content("{\"code\":\"c\",\"name\":\"c\"}"))
         .andExpect(status().isForbidden());
 
-    // ADMIN cannot select proposals (Client-only action)
+    // PLATFORM_ADMIN cannot select proposals (Client-only action)
     mockMvc
         .perform(
             post("/api/v1/schedule-proposals/{id}/select", otherProposal.getId())
@@ -325,11 +325,11 @@ class AssetWorkflowIntegrationTest {
   }
 
   private RequestPostProcessor manager(UUID id) {
-    return jwt().jwt(token -> token.subject(id.toString())).authorities(role("SERVICE_MANAGER"));
+    return jwt().jwt(token -> token.subject(id.toString())).authorities(role("PROVIDER_MANAGER"));
   }
 
   private RequestPostProcessor admin(UUID id) {
-    return jwt().jwt(token -> token.subject(id.toString())).authorities(role("ADMIN"));
+    return jwt().jwt(token -> token.subject(id.toString())).authorities(role("PLATFORM_ADMIN"));
   }
 
   private SimpleGrantedAuthority role(String name) {

@@ -16,7 +16,9 @@ public class RolePolicy {
 
     switch (zone) {
       case PLATFORM -> {
-        if (organizationId != null || roles.size() != 1 || !roles.contains(UserRole.ADMIN)) {
+        if (organizationId != null
+            || roles.size() != 1
+            || !roles.contains(UserRole.PLATFORM_ADMIN)) {
           throw new IllegalArgumentException("Platform users must have only the Admin role.");
         }
       }

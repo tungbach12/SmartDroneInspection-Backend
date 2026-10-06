@@ -34,7 +34,7 @@ public class AssetDocumentController {
   }
 
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN')")
   public ApiResponse<AssetDocumentResponse> upload(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,
@@ -48,14 +48,14 @@ public class AssetDocumentController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SERVICE_MANAGER')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN', 'PROVIDER_MANAGER')")
   public ApiResponse<List<AssetDocumentResponse>> list(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(documents.list(UUID.fromString(jwt.getSubject()), assetId));
   }
 
   @GetMapping("/{documentId}/content")
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN', 'SERVICE_MANAGER')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN', 'PROVIDER_MANAGER')")
   public ResponseEntity<InputStreamResource> content(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId, @PathVariable UUID documentId) {
     AssetDocumentService.DocumentContent content =

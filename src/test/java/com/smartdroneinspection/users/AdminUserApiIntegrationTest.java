@@ -104,13 +104,13 @@ class AdminUserApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    admin.addRole(UserRole.ADMIN);
+    admin.addRole(UserRole.PLATFORM_ADMIN);
     return users.saveAndFlush(admin);
   }
 
   private RequestPostProcessor admin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"));
   }
 }

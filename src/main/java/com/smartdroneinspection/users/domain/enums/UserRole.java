@@ -3,11 +3,12 @@ package com.smartdroneinspection.users.domain.enums;
 import com.smartdroneinspection.shared.auth.Roles;
 
 public enum UserRole {
-  ADMIN(Roles.ADMIN),
+  PLATFORM_ADMIN(Roles.PLATFORM_ADMIN),
   CLIENT(Roles.CLIENT),
-  SERVICE_MANAGER(Roles.SERVICE_MANAGER),
+  PROVIDER_MANAGER(Roles.PROVIDER_MANAGER),
   INSPECTOR(Roles.INSPECTOR),
-  MAINTENANCE_ENGINEER(Roles.MAINTENANCE_ENGINEER);
+  MAINTENANCE_ENGINEER(Roles.MAINTENANCE_ENGINEER),
+  PLATFORM_OPERATOR(Roles.PLATFORM_OPERATOR);
 
   private final String value;
 
@@ -20,6 +21,6 @@ public enum UserRole {
   }
 
   public boolean serviceRole() {
-    return this == SERVICE_MANAGER || this == INSPECTOR || this == MAINTENANCE_ENGINEER;
+    return this == PROVIDER_MANAGER || this == INSPECTOR || this == MAINTENANCE_ENGINEER;
   }
 }

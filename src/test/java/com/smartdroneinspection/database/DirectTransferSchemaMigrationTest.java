@@ -23,7 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Applies the V12..V18 direct-transfer migrations over BOTH an empty database and a database seeded
+ * Applies the V12..V20 direct-transfer migrations over BOTH an empty database and a database seeded
  * with V11-era rows, and exercises the fail-closed pre-checks.
  *
  * <p>Every case runs against its own throwaway database created inside the shared Testcontainers
@@ -55,7 +55,7 @@ class DirectTransferSchemaMigrationTest {
   }
 
   @Test
-  void emptyDatabaseAppliesEveryMigrationThroughV18() throws Exception {
+  void emptyDatabaseAppliesEveryMigrationThroughV20() throws Exception {
     String url = freshDatabase("mig_empty");
     migrate(url, null);
 
@@ -68,7 +68,7 @@ class DirectTransferSchemaMigrationTest {
       assertThat(versions)
           .containsExactly(
               "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
-              "17", "18");
+              "17", "18", "19", "20");
 
       List<String> tables =
           queryStrings(

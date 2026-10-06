@@ -140,21 +140,15 @@ public class ReportVersion {
     return immutable;
   }
 
-  public void submitForReview() {
+  /**
+   * Author verification (MF3-07): the authoring Inspector signs off the completed draft so the
+   * Provider Manager can release it (MF3-09).
+   */
+  public void verify() {
     requireStatus(ReportStatus.DRAFT);
-    status = ReportStatus.AWAITING_PEER_REVIEW;
-    submittedAt = Instant.now();
-  }
-
-  public void approve() {
-    requireStatus(ReportStatus.AWAITING_PEER_REVIEW);
     status = ReportStatus.TECHNICALLY_APPROVED;
-    technicallyApprovedAt = Instant.now();
-  }
-
-  public void requestChanges() {
-    requireStatus(ReportStatus.AWAITING_PEER_REVIEW);
-    status = ReportStatus.CHANGES_REQUESTED;
+    submittedAt = Instant.now();
+    technicallyApprovedAt = submittedAt;
   }
 
   public void release() {

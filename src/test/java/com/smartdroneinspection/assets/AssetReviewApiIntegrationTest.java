@@ -158,13 +158,14 @@ class AssetReviewApiIntegrationTest {
         .jwt(token -> token.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_SERVICE_MANAGER"));
+                "ROLE_PROVIDER_MANAGER"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor admin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                "ROLE_PLATFORM_ADMIN"));
   }
 }

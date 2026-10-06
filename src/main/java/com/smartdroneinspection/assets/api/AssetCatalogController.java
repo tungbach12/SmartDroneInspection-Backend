@@ -39,14 +39,14 @@ public class AssetCatalogController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('PLATFORM_ADMIN')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<CategoryResponse> create(@Valid @RequestBody CreateCategoryRequest request) {
     return ApiResponse.success(catalog.createCategory(request));
   }
 
   @PutMapping("/{categoryId}")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('PLATFORM_ADMIN')")
   public ApiResponse<CategoryResponse> update(
       @PathVariable UUID categoryId, @Valid @RequestBody UpdateCategoryRequest request) {
     return ApiResponse.success(catalog.updateCategory(categoryId, request));
@@ -60,7 +60,7 @@ public class AssetCatalogController {
   }
 
   @PostMapping("/{categoryId}/suggested-frequencies")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('PLATFORM_ADMIN')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<SuggestedFrequencyResponse> addFrequency(
       @PathVariable UUID categoryId, @Valid @RequestBody SuggestedFrequencyRequest request) {
@@ -68,7 +68,7 @@ public class AssetCatalogController {
   }
 
   @DeleteMapping("/{categoryId}/suggested-frequencies/{frequencyId}")
-  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasRole('PLATFORM_ADMIN')")
   public ApiResponse<Void> deleteFrequency(
       @PathVariable UUID categoryId, @PathVariable UUID frequencyId) {
     catalog.deleteFrequency(categoryId, frequencyId);

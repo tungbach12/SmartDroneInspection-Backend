@@ -147,7 +147,7 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void enforcesPeerReviewReleaseClientScopeAndImmutableAcceptance() throws Exception {
+  void enforcesReleaseClientScopeAndImmutableAcceptance() throws Exception {
     MvcResult draftResult =
         mockMvc
             .perform(
@@ -168,14 +168,13 @@ class InspectionReportApiIntegrationTest {
 
     mockMvc
         .perform(
-            put(
-                    "/api/v1/reports/{reportId}/versions/{versionId}/reviewer",
+            post(
+                    "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
                     reportId,
                     firstVersionId)
-                .contentType("application/json")
-                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
-                .with(manager(fixture.managerId())))
-        .andExpect(status().isOk());
+                .with(inspector(fixture.otherInspectorId())))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("REPORT_SCOPE_DENIED"));
     mockMvc
         .perform(
             post(
@@ -183,22 +182,6 @@ class InspectionReportApiIntegrationTest {
                     reportId,
                     firstVersionId)
                 .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.versionStatus").value("AWAITING_PEER_REVIEW"));
-    mockMvc
-        .perform(
-            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, firstVersionId)
-                .contentType("application/json")
-                .content("{\"decision\":\"APPROVED\"}")
-                .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("REPORT_SCOPE_DENIED"));
-    mockMvc
-        .perform(
-            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, firstVersionId)
-                .contentType("application/json")
-                .content("{\"decision\":\"APPROVED\"}")
-                .with(inspector(fixture.otherInspectorId())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.versionStatus").value("TECHNICALLY_APPROVED"));
     mockMvc
@@ -213,8 +196,7 @@ class InspectionReportApiIntegrationTest {
 
     mockMvc
         .perform(get("/api/v1/reports/{reportId}", reportId).with(client(fixture.clientId())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.review").doesNotExist());
+        .andExpect(status().isOk());
     UUID evidenceId = evidence.findAll().getFirst().getId();
     mockMvc
         .perform(
@@ -254,25 +236,11 @@ class InspectionReportApiIntegrationTest {
     UUID revisionId = uuid(revisionResult, "$.data.versionId");
     mockMvc
         .perform(
-            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, revisionId)
-                .contentType("application/json")
-                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
-                .with(manager(fixture.managerId())))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
             post(
                     "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
                     reportId,
                     revisionId)
                 .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
-            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, revisionId)
-                .contentType("application/json")
-                .content("{\"decision\":\"APPROVED\"}")
-                .with(inspector(fixture.otherInspectorId())))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -358,25 +326,11 @@ class InspectionReportApiIntegrationTest {
 
     mockMvc
         .perform(
-            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, versionId)
-                .contentType("application/json")
-                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
-                .with(manager(fixture.managerId())))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
             post(
                     "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
                     reportId,
                     versionId)
                 .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
-            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, versionId)
-                .contentType("application/json")
-                .content("{\"decision\":\"APPROVED\"}")
-                .with(inspector(fixture.otherInspectorId())))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -413,13 +367,6 @@ class InspectionReportApiIntegrationTest {
     UUID reportId = uuid(draftResult, "$.data.reportId");
     UUID versionId = uuid(draftResult, "$.data.versionId");
 
-    mockMvc
-        .perform(
-            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, versionId)
-                .contentType("application/json")
-                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
-                .with(manager(fixture.managerId())))
-        .andExpect(status().isOk());
     mockMvc
         .perform(
             post(
@@ -500,25 +447,11 @@ class InspectionReportApiIntegrationTest {
 
     mockMvc
         .perform(
-            put("/api/v1/reports/{reportId}/versions/{versionId}/reviewer", reportId, versionId)
-                .contentType("application/json")
-                .content("{\"reviewerId\":\"" + fixture.otherInspectorId() + "\"}")
-                .with(manager(fixture.managerId())))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
             post(
                     "/api/v1/reports/{reportId}/versions/{versionId}/submit-review",
                     reportId,
                     versionId)
                 .with(inspector(fixture.inspectorId())))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
-            post("/api/v1/reports/{reportId}/versions/{versionId}/review", reportId, versionId)
-                .contentType("application/json")
-                .content("{\"decision\":\"APPROVED\"}")
-                .with(inspector(fixture.otherInspectorId())))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -567,7 +500,7 @@ class InspectionReportApiIntegrationTest {
         .jwt(token -> token.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_SERVICE_MANAGER"));
+                "ROLE_PROVIDER_MANAGER"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {
