@@ -222,7 +222,7 @@ public class InspectionReportService {
       throw reportStateConflict("Only a draft version can be verified and submitted.");
     }
     ensureComplete(version);
-    version.verify();
+    version.verify(actorId, version.getContentSnapshot());
     report.changeStatus(ReportStatus.TECHNICALLY_APPROVED);
     versions.saveAndFlush(version);
     reports.saveAndFlush(report);
@@ -238,7 +238,22 @@ public class InspectionReportService {
       throw reportStateConflict("Only a technically approved version can be released.");
     }
     ensureComplete(version);
+    // MF3-08: record the Provider Manager completeness check, then start the contractual review
+    // clock from the release instant using the order's snapshotted review period.
+    version.markCompletenessChecked(actorId);
     version.release();
+    Inspection inspectionForClock = inspections.findById(report.getInspectionId()).orElse(null);
+    if (inspectionForClock != null) {
+      InspectionServiceOrder order =
+          serviceOrders.findById(inspectionForClock.getServiceOrderId()).orElse(null);
+      if (order != null && order.getLockedReviewPeriodDays() != null) {
+        order.setClientReviewEndsAt(
+            version
+                .getReleasedAt()
+                .plus(java.time.Duration.ofDays(order.getLockedReviewPeriodDays())));
+        serviceOrders.saveAndFlush(order);
+      }
+    }
     report.changeStatus(ReportStatus.RELEASED);
     versions.saveAndFlush(version);
     reports.saveAndFlush(report);
@@ -602,7 +617,22 @@ public class InspectionReportService {
         version.getReleasedAt(),
         version.getAcceptedAt(),
         version.getClientDecisionByUserId(),
-        version.getClientDecisionReason());
+        version.getClientDecisionReason(),
+        version.getAuthorVerifiedByUserId(),
+        version.getAuthorVerifiedAt(),
+        version.getCompletenessCheckedByUserId(),
+        version.getCompletenessCheckedAt(),
+        clientReviewEndsAt(report));
+  }
+
+  private java.time.Instant clientReviewEndsAt(InspectionReport report) {
+    Inspection inspection = inspections.findById(report.getInspectionId()).orElse(null);
+    if (inspection == null) {
+      return null;
+    }
+    InspectionServiceOrder order =
+        serviceOrders.findById(inspection.getServiceOrderId()).orElse(null);
+    return order == null ? null : order.getClientReviewEndsAt();
   }
 
   private ReportVersion requireCurrentVersion(InspectionReport report, boolean lock) {

@@ -60,6 +60,25 @@ public class ReportVersion {
   @Column(name = "client_decision_reason", length = 2000)
   private String clientDecisionReason;
 
+  @Column(name = "author_verified_by_user_id")
+  private UUID authorVerifiedByUserId;
+
+  @Column(name = "author_verified_at")
+  private Instant authorVerifiedAt;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "author_verification_snapshot", columnDefinition = "jsonb")
+  private String authorVerificationSnapshot;
+
+  @Column(name = "completeness_checked_by_user_id")
+  private UUID completenessCheckedByUserId;
+
+  @Column(name = "completeness_checked_at")
+  private Instant completenessCheckedAt;
+
+  @Column(name = "completeness_return_reason", length = 2000)
+  private String completenessReturnReason;
+
   @Column(nullable = false)
   private boolean immutable;
 
@@ -140,15 +159,53 @@ public class ReportVersion {
     return immutable;
   }
 
-  /**
-   * Author verification (MF3-07): the authoring Inspector signs off the completed draft so the
-   * Provider Manager can release it (MF3-08).
-   */
-  public void verify() {
+  public UUID getAuthorVerifiedByUserId() {
+    return authorVerifiedByUserId;
+  }
+
+  public Instant getAuthorVerifiedAt() {
+    return authorVerifiedAt;
+  }
+
+  public String getAuthorVerificationSnapshot() {
+    return authorVerificationSnapshot;
+  }
+
+  public UUID getCompletenessCheckedByUserId() {
+    return completenessCheckedByUserId;
+  }
+
+  public Instant getCompletenessCheckedAt() {
+    return completenessCheckedAt;
+  }
+
+  public String getCompletenessReturnReason() {
+    return completenessReturnReason;
+  }
+
+  /** Completeness gate passed: record which Provider Manager ran it and when. */
+  public void markCompletenessChecked(UUID actorId) {
+    this.completenessCheckedByUserId = actorId;
+    this.completenessCheckedAt = Instant.now();
+  }
+
+  /** Completeness gate failure reason recorded by the Provider Manager at release. */
+  public void recordCompletenessFailure(UUID actorId, String reason) {
+    requireStatus(ReportStatus.TECHNICALLY_APPROVED);
+    this.completenessCheckedByUserId = actorId;
+    this.completenessCheckedAt = Instant.now();
+    this.completenessReturnReason = reason;
+  }
+
+  /** MF3-07: the authoring Inspector signs off the completed draft. */
+  public void verify(UUID authorId, String snapshot) {
     requireStatus(ReportStatus.DRAFT);
     status = ReportStatus.TECHNICALLY_APPROVED;
     submittedAt = Instant.now();
     technicallyApprovedAt = submittedAt;
+    this.authorVerifiedByUserId = authorId;
+    this.authorVerifiedAt = submittedAt;
+    this.authorVerificationSnapshot = snapshot;
   }
 
   public void release() {

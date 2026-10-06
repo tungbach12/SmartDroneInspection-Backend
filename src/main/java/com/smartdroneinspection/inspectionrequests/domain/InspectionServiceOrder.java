@@ -31,6 +31,18 @@ public class InspectionServiceOrder {
   @Column(name = "inspection_request_id", nullable = false)
   private UUID inspectionRequestId;
 
+  @Column(name = "provider_id")
+  private UUID providerId;
+
+  @Column(name = "flight_permit_no", length = 128)
+  private String flightPermitNo;
+
+  @Column(name = "locked_review_period_days")
+  private Integer lockedReviewPeriodDays;
+
+  @Column(name = "client_review_ends_at")
+  private Instant clientReviewEndsAt;
+
   @Column(name = "confirmed_by_user_id", nullable = false)
   private UUID confirmedByUserId;
 
@@ -89,6 +101,7 @@ public class InspectionServiceOrder {
     order.orderNumber = orderNumber;
     order.approvedQuotationId = quotation.getId();
     order.inspectionRequestId = quotation.getInspectionRequestId();
+    order.providerId = quotation.getProviderId();
     order.confirmedByUserId = Objects.requireNonNull(confirmedByUserId, "Confirmer is required");
     order.confirmedAt = Instant.now();
     order.scopeSnapshot = quotation.getScopeSnapshot();
@@ -108,8 +121,56 @@ public class InspectionServiceOrder {
     updatedAt = Instant.now();
   }
 
+  /** MF2-06: PROVIDER_MANAGER mission plan approval moves the order to READY_FOR_FLIGHT. */
+  public void markReadyForFlight() {
+    if (status != InspectionOrderStatus.CONFIRMED
+        && status != InspectionOrderStatus.ASSIGNMENT_PENDING
+        && status != InspectionOrderStatus.READY_FOR_INSPECTION) {
+      throw new IllegalStateException(
+          "Only a confirmed or awaiting-assignment order can go READY_FOR_FLIGHT");
+    }
+    status = InspectionOrderStatus.READY_FOR_FLIGHT;
+    updatedAt = Instant.now();
+  }
+
   public UUID getId() {
     return id;
+  }
+
+  public UUID getProviderId() {
+    return providerId;
+  }
+
+  public void setProviderId(UUID providerId) {
+    this.providerId = providerId;
+    this.updatedAt = Instant.now();
+  }
+
+  public String getFlightPermitNo() {
+    return flightPermitNo;
+  }
+
+  public void setFlightPermitNo(String flightPermitNo) {
+    this.flightPermitNo = flightPermitNo;
+    this.updatedAt = Instant.now();
+  }
+
+  public Integer getLockedReviewPeriodDays() {
+    return lockedReviewPeriodDays;
+  }
+
+  public void setLockedReviewPeriodDays(Integer lockedReviewPeriodDays) {
+    this.lockedReviewPeriodDays = lockedReviewPeriodDays;
+    this.updatedAt = Instant.now();
+  }
+
+  public Instant getClientReviewEndsAt() {
+    return clientReviewEndsAt;
+  }
+
+  public void setClientReviewEndsAt(Instant clientReviewEndsAt) {
+    this.clientReviewEndsAt = clientReviewEndsAt;
+    this.updatedAt = Instant.now();
   }
 
   public String getOrderNumber() {
