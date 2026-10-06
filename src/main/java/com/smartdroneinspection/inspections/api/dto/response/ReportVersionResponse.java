@@ -18,4 +18,9 @@ public record ReportVersionResponse(
     Instant releasedAt,
     Instant acceptedAt,
     UUID clientDecisionByUserId,
-    String clientDecisionReason) {}
+    String clientDecisionReason,
+    UUID authorVerifiedByUserId,
+    Instant authorVerifiedAt,
+    UUID completenessCheckedByUserId,
+    Instant completenessCheckedAt,
+    Instant clientReviewEndsAt) {}

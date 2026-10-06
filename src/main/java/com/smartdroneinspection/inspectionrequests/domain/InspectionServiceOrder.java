@@ -37,6 +37,12 @@ public class InspectionServiceOrder {
   @Column(name = "flight_permit_no", length = 128)
   private String flightPermitNo;
 
+  @Column(name = "locked_review_period_days")
+  private Integer lockedReviewPeriodDays;
+
+  @Column(name = "client_review_ends_at")
+  private Instant clientReviewEndsAt;
+
   @Column(name = "confirmed_by_user_id", nullable = false)
   private UUID confirmedByUserId;
 
@@ -146,6 +152,24 @@ public class InspectionServiceOrder {
 
   public void setFlightPermitNo(String flightPermitNo) {
     this.flightPermitNo = flightPermitNo;
+    this.updatedAt = Instant.now();
+  }
+
+  public Integer getLockedReviewPeriodDays() {
+    return lockedReviewPeriodDays;
+  }
+
+  public void setLockedReviewPeriodDays(Integer lockedReviewPeriodDays) {
+    this.lockedReviewPeriodDays = lockedReviewPeriodDays;
+    this.updatedAt = Instant.now();
+  }
+
+  public Instant getClientReviewEndsAt() {
+    return clientReviewEndsAt;
+  }
+
+  public void setClientReviewEndsAt(Instant clientReviewEndsAt) {
+    this.clientReviewEndsAt = clientReviewEndsAt;
     this.updatedAt = Instant.now();
   }
 

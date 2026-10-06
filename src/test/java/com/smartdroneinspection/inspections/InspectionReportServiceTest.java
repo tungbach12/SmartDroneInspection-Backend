@@ -102,7 +102,7 @@ class InspectionReportServiceTest {
     report.changeStatus(ReportStatus.RELEASED);
     Mockito.doReturn(reportId).when(report).getId();
     version = new ReportVersion(reportId, 1, null, inspectorId, "{}");
-    version.verify();
+    version.verify(inspectorId, "{}");
     version.release();
     version = Mockito.spy(version);
     Mockito.doReturn(versionId).when(version).getId();
