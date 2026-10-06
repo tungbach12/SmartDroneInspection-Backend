@@ -208,7 +208,7 @@ public class InspectionReportService {
 
   /**
    * MF3-07 author verification: the authoring Inspector signs off the completed draft. The report
-   * becomes technically approved and can then be released by a Provider Manager (MF3-09).
+   * becomes technically approved and can then be released by a Provider Manager (MF3-08).
    */
   @Transactional
   public ReportVersionResponse submitForReview(UUID actorId, UUID reportId, UUID versionId) {
