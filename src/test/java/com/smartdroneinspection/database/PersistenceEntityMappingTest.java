@@ -7,7 +7,6 @@ import com.smartdroneinspection.inspections.domain.ChecklistResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.domain.PeerReview;
 import com.smartdroneinspection.inspections.domain.ReportVersion;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.maintenance.domain.Invoice;
@@ -43,7 +42,6 @@ class PersistenceEntityMappingTest {
           VerifiedFinding.class,
           InspectionReport.class,
           ReportVersion.class,
-          PeerReview.class,
           MaintenanceTicket.class,
           MaintenanceAssignment.class,
           MaintenanceAssessment.class,

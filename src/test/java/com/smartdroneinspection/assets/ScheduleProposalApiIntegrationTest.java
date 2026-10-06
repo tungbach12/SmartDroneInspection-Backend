@@ -226,6 +226,6 @@ class ScheduleProposalApiIntegrationTest {
         .jwt(token -> token.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_SERVICE_MANAGER"));
+                "ROLE_PROVIDER_MANAGER"));
   }
 }

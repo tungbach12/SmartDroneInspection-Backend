@@ -1,8 +1,6 @@
 package com.smartdroneinspection.inspections.api;
 
-import com.smartdroneinspection.inspections.api.dto.request.AssignPeerReviewerRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ClientReportDecisionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.PeerReviewDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateReportNarrativeRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ReportVersionResponse;
 import com.smartdroneinspection.inspections.service.InspectionReportService;
@@ -40,13 +38,13 @@ public class InspectionReportController {
   }
 
   @GetMapping("/reports")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'SERVICE_MANAGER', 'CLIENT')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'PROVIDER_MANAGER', 'CLIENT')")
   public ApiResponse<List<ReportVersionResponse>> listReports(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(reports.listReports(subject(jwt)));
   }
 
   @GetMapping("/reports/{reportId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'SERVICE_MANAGER', 'CLIENT')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'PROVIDER_MANAGER', 'CLIENT')")
   public ApiResponse<ReportVersionResponse> getReport(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID reportId) {
     return ApiResponse.success(reports.getReport(subject(jwt), reportId));
@@ -96,17 +94,6 @@ public class InspectionReportController {
         reports.updateNarrative(subject(jwt), reportId, versionId, request.text()));
   }
 
-  @PutMapping("/reports/{reportId}/versions/{versionId}/reviewer")
-  @PreAuthorize("hasRole('SERVICE_MANAGER')")
-  public ApiResponse<ReportVersionResponse> assignReviewer(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID reportId,
-      @PathVariable UUID versionId,
-      @Valid @RequestBody AssignPeerReviewerRequest request) {
-    return ApiResponse.success(
-        reports.assignReviewer(subject(jwt), reportId, versionId, request.reviewerId()));
-  }
-
   @PostMapping("/reports/{reportId}/versions/{versionId}/submit-review")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<ReportVersionResponse> submitForReview(
@@ -114,18 +101,8 @@ public class InspectionReportController {
     return ApiResponse.success(reports.submitForReview(subject(jwt), reportId, versionId));
   }
 
-  @PostMapping("/reports/{reportId}/versions/{versionId}/review")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<ReportVersionResponse> review(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID reportId,
-      @PathVariable UUID versionId,
-      @Valid @RequestBody PeerReviewDecisionRequest request) {
-    return ApiResponse.success(reports.review(subject(jwt), reportId, versionId, request));
-  }
-
   @PostMapping("/reports/{reportId}/versions/{versionId}/release")
-  @PreAuthorize("hasRole('SERVICE_MANAGER')")
+  @PreAuthorize("hasRole('PROVIDER_MANAGER')")
   public ApiResponse<ReportVersionResponse> release(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID reportId, @PathVariable UUID versionId) {
     return ApiResponse.success(reports.release(subject(jwt), reportId, versionId));

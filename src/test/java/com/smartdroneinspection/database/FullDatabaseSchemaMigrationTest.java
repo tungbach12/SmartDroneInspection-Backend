@@ -55,7 +55,6 @@ class FullDatabaseSchemaMigrationTest {
             "verified_findings",
             "inspection_reports",
             "report_versions",
-            "peer_reviews",
             "maintenance_tickets",
             "maintenance_ticket_findings",
             "maintenance_assessments",
@@ -66,7 +65,15 @@ class FullDatabaseSchemaMigrationTest {
             "maintenance_change_requests",
             "invoices",
             "notifications",
-            "event_publication");
+            "event_publication",
+            "provider_organizations",
+            "provider_capabilities",
+            "provider_capability_evidence",
+            "provider_vetting_decisions",
+            "platform_configurations",
+            "drone_mission_plans",
+            "mission_shot_items",
+            "dispute_tickets");
 
     assertThat(names.stream().collect(Collectors.toSet())).containsAll(expected);
   }

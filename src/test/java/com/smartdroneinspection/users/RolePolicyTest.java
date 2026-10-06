@@ -30,7 +30,7 @@ class RolePolicyTest {
     assertThatThrownBy(
             () ->
                 policy.validate(
-                    ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
+                    ActorZone.PLATFORM, null, Set.of(UserRole.PLATFORM_ADMIN, UserRole.INSPECTOR)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

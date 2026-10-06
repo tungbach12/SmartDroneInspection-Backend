@@ -12,10 +12,15 @@ import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,14 +81,31 @@ class WorkflowBaselineTest {
   }
 
   @Test
-  void cleanBaselineAppliesMigrations() {
+  void cleanBaselineAppliesMigrations() throws IOException {
     List<String> versions =
         jdbcTemplate.query(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank",
             (resultSet, rowNumber) -> resultSet.getString(1));
 
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("11");
-    assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+    // The migration set on disk IS the expected history: head = the highest version file, applied
+    // versions = exactly 1..N with no gap. A new V-file moves the expectation with it, while a
+    // missing version can never hide behind that move - both the head check and the 1..N list fail.
+    int migrationCount;
+    try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+      migrationCount =
+          (int)
+              migrations
+                  .map(path -> path.getFileName().toString())
+                  .filter(name -> name.matches("V\\d+__.*\\.sql"))
+                  .count();
+    }
+    List<String> expectedVersions =
+        IntStream.rangeClosed(1, migrationCount).mapToObj(String::valueOf).toList();
+
+    assertThat(migrationCount).isGreaterThanOrEqualTo(11);
+    assertThat(flyway.info().current().getVersion().getVersion())
+        .isEqualTo(String.valueOf(migrationCount));
+    assertThat(versions).containsExactlyElementsOf(expectedVersions);
   }
 
   @Test
@@ -146,7 +168,7 @@ class WorkflowBaselineTest {
   }
 
   private ActorZone zoneFor(UserRole role) {
-    return role == UserRole.ADMIN ? ActorZone.PLATFORM : ActorZone.SERVICE_WORKFORCE;
+    return role == UserRole.PLATFORM_ADMIN ? ActorZone.PLATFORM : ActorZone.SERVICE_WORKFORCE;
   }
 
   private record FixtureCredentials(String email, String password) {}

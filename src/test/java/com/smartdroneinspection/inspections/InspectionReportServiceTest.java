@@ -15,7 +15,6 @@ import com.smartdroneinspection.inspectionrequests.repository.InspectionAssignme
 import com.smartdroneinspection.inspectionrequests.repository.InspectionRequestRepository;
 import com.smartdroneinspection.inspectionrequests.repository.InspectionServiceOrderRepository;
 import com.smartdroneinspection.inspections.api.dto.request.ClientReportDecisionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.PeerReviewDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSnapshot;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
@@ -26,7 +25,6 @@ import com.smartdroneinspection.inspections.repository.ChecklistResponseReposito
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.PeerReviewRepository;
 import com.smartdroneinspection.inspections.repository.ReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.service.InspectionReportService;
@@ -59,7 +57,6 @@ class InspectionReportServiceTest {
   @Mock InspectionAssignmentRepository assignments;
   @Mock InspectionReportRepository reports;
   @Mock ReportVersionRepository versions;
-  @Mock PeerReviewRepository reviews;
   @Mock com.smartdroneinspection.assets.repository.ChecklistTemplateRepository templates;
   @Mock ChecklistResponseRepository checklistResponses;
   @Mock EvidenceRepository evidence;
@@ -105,8 +102,7 @@ class InspectionReportServiceTest {
     report.changeStatus(ReportStatus.RELEASED);
     Mockito.doReturn(reportId).when(report).getId();
     version = new ReportVersion(reportId, 1, null, inspectorId, "{}");
-    version.submitForReview();
-    version.approve();
+    version.verify();
     version.release();
     version = Mockito.spy(version);
     Mockito.doReturn(versionId).when(version).getId();
@@ -130,7 +126,6 @@ class InspectionReportServiceTest {
     when(request.getOrganizationId()).thenReturn(organizationId);
     when(reports.findForUpdateById(reportId)).thenReturn(Optional.of(report));
     when(versions.findForUpdateById(versionId)).thenReturn(Optional.of(version));
-    when(reviews.findByReportVersionId(versionId)).thenReturn(Optional.empty());
     when(objectMapper.readValue(anyString(), eq(ReportSnapshot.class))).thenReturn(snapshot);
     when(versions.saveAndFlush(any(ReportVersion.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
@@ -259,23 +254,17 @@ class InspectionReportServiceTest {
   }
 
   @Test
-  void reportAuthorCannotReviewTheirOwnVersion() {
-    when(users.findActiveUser(inspectorId))
-        .thenReturn(Optional.of(new UserAccess.ActiveUser(inspectorId, Set.of("INSPECTOR"))));
+  void nonAuthorInspectorCannotVerifyAnotherAuthorsVersion() {
+    UUID otherInspectorId = UUID.randomUUID();
+    when(users.findActiveUser(otherInspectorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(otherInspectorId, Set.of("INSPECTOR"))));
 
-    assertThatThrownBy(
-            () ->
-                service.review(
-                    inspectorId,
-                    reportId,
-                    versionId,
-                    new PeerReviewDecisionRequest(
-                        PeerReviewDecisionRequest.Decision.APPROVED, null)))
+    assertThatThrownBy(() -> service.submitForReview(otherInspectorId, reportId, versionId))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
                 assertThat(((BusinessException) error).code()).isEqualTo("REPORT_SCOPE_DENIED"));
-    verify(reviews, never()).findForUpdateByReportVersionId(versionId);
+    verify(versions, never()).saveAndFlush(any(ReportVersion.class));
   }
 
   @Test
@@ -453,7 +442,6 @@ class InspectionReportServiceTest {
             assignments,
             reports,
             versions,
-            reviews,
             templates,
             checklistResponses,
             evidence,

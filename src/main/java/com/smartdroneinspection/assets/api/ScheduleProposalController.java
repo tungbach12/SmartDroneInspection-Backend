@@ -34,7 +34,7 @@ public class ScheduleProposalController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('CLIENT', 'SERVICE_MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PROVIDER_MANAGER', 'PLATFORM_ADMIN')")
   public ApiResponse<List<ScheduleProposalResponse>> list(
       @AuthenticationPrincipal Jwt jwt, @RequestParam UUID assetId) {
     UUID actorId = UUID.fromString(jwt.getSubject());
@@ -44,14 +44,14 @@ public class ScheduleProposalController {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.hasRole("SERVICE_MANAGER") || actor.hasRole("ADMIN")) {
+    if (actor.hasRole("PROVIDER_MANAGER") || actor.hasRole("PLATFORM_ADMIN")) {
       return ApiResponse.success(proposals.listForManager(assetId));
     }
     return ApiResponse.success(proposals.listForClient(actorId, assetId));
   }
 
   @PostMapping("/{proposalId}/review")
-  @PreAuthorize("hasRole('SERVICE_MANAGER')")
+  @PreAuthorize("hasRole('PROVIDER_MANAGER')")
   public ApiResponse<ScheduleProposalResponse> review(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID proposalId,

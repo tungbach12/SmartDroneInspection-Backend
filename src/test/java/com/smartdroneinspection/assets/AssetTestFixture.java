@@ -60,8 +60,9 @@ public final class AssetTestFixture {
             UserStatus.ACTIVE,
             ActorZone.SERVICE_WORKFORCE,
             null,
-            UserRole.SERVICE_MANAGER);
-    User admin = saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, null, UserRole.ADMIN);
+            UserRole.PROVIDER_MANAGER);
+    User admin =
+        saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, null, UserRole.PLATFORM_ADMIN);
 
     AssetCategory category =
         categories.saveAndFlush(

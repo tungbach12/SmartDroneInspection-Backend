@@ -46,7 +46,7 @@ public class AssetController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN')")
   public ApiResponse<AssetPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -56,7 +56,7 @@ public class AssetController {
   }
 
   @GetMapping("/pending-review")
-  @PreAuthorize("hasRole('SERVICE_MANAGER')")
+  @PreAuthorize("hasRole('PROVIDER_MANAGER')")
   public ApiResponse<AssetPageResponse> pendingReview(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -65,7 +65,7 @@ public class AssetController {
   }
 
   @GetMapping("/{assetId}")
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN')")
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
@@ -81,7 +81,7 @@ public class AssetController {
   }
 
   @PostMapping("/{assetId}/review")
-  @PreAuthorize("hasRole('SERVICE_MANAGER')")
+  @PreAuthorize("hasRole('PROVIDER_MANAGER')")
   public ApiResponse<AssetReviewResponse> review(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,

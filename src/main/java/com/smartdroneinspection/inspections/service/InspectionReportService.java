@@ -10,18 +10,15 @@ import com.smartdroneinspection.inspectionrequests.repository.InspectionAssignme
 import com.smartdroneinspection.inspectionrequests.repository.InspectionRequestRepository;
 import com.smartdroneinspection.inspectionrequests.repository.InspectionServiceOrderRepository;
 import com.smartdroneinspection.inspections.api.dto.request.ClientReportDecisionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.PeerReviewDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSnapshot;
 import com.smartdroneinspection.inspections.api.dto.response.ReportVersionResponse;
 import com.smartdroneinspection.inspections.domain.ChecklistResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.domain.PeerReview;
 import com.smartdroneinspection.inspections.domain.ReportVersion;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.PeerReviewDecision;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.events.ReportAcceptedEvent;
@@ -29,7 +26,6 @@ import com.smartdroneinspection.inspections.repository.ChecklistResponseReposito
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.PeerReviewRepository;
 import com.smartdroneinspection.inspections.repository.ReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
@@ -40,8 +36,6 @@ import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,7 +58,6 @@ public class InspectionReportService {
   private final InspectionAssignmentRepository assignments;
   private final InspectionReportRepository reports;
   private final ReportVersionRepository versions;
-  private final PeerReviewRepository reviews;
   private final ChecklistTemplateRepository checklistTemplates;
   private final ChecklistResponseRepository checklistResponses;
   private final EvidenceRepository evidence;
@@ -83,7 +76,6 @@ public class InspectionReportService {
       InspectionAssignmentRepository assignments,
       InspectionReportRepository reports,
       ReportVersionRepository versions,
-      PeerReviewRepository reviews,
       ChecklistTemplateRepository checklistTemplates,
       ChecklistResponseRepository checklistResponses,
       EvidenceRepository evidence,
@@ -100,7 +92,6 @@ public class InspectionReportService {
     this.assignments = assignments;
     this.reports = reports;
     this.versions = versions;
-    this.reviews = reviews;
     this.checklistTemplates = checklistTemplates;
     this.checklistResponses = checklistResponses;
     this.evidence = evidence;
@@ -119,20 +110,10 @@ public class InspectionReportService {
   public List<ReportVersionResponse> listReports(UUID actorId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
     List<InspectionReport> visible;
-    if (actor.hasRole(Roles.SERVICE_MANAGER)) {
+    if (actor.hasRole(Roles.PROVIDER_MANAGER)) {
       visible = reports.findAllByOrderByUpdatedAtDesc();
     } else if (actor.hasRole(Roles.INSPECTOR)) {
-      Map<UUID, InspectionReport> unique = new LinkedHashMap<>();
-      reports
-          .findByAuthorUserIdOrderByUpdatedAtDesc(actorId)
-          .forEach(report -> unique.put(report.getId(), report));
-      reviews.findByReviewerUserIdOrderByAssignedAtDesc(actorId).stream()
-          .map(review -> versions.findById(review.getReportVersionId()).orElse(null))
-          .filter(version -> version != null)
-          .map(version -> reports.findById(version.getReportId()).orElse(null))
-          .filter(report -> report != null)
-          .forEach(report -> unique.putIfAbsent(report.getId(), report));
-      visible = new ArrayList<>(unique.values());
+      visible = reports.findByAuthorUserIdOrderByUpdatedAtDesc(actorId);
     } else if (actor.hasRole(Roles.CLIENT) && actor.organizationId() != null) {
       visible =
           reports.findVisibleToOrganization(
@@ -147,7 +128,7 @@ public class InspectionReportService {
         .map(
             report ->
                 versionForViewer(report, actor)
-                    .map(version -> toResponse(report, version, actor))
+                    .map(version -> toResponse(report, version))
                     .orElse(null))
         .filter(response -> response != null)
         .toList();
@@ -159,7 +140,7 @@ public class InspectionReportService {
     InspectionReport report = reports.findById(reportId).orElseThrow(this::reportNotFound);
     requireReportAccess(actor, report);
     ReportVersion version = versionForViewer(report, actor).orElseThrow(this::reportNotFound);
-    return toResponse(report, version, actor);
+    return toResponse(report, version);
   }
 
   @Transactional(readOnly = true)
@@ -169,7 +150,7 @@ public class InspectionReportService {
         reports.findByInspectionId(inspectionId).orElseThrow(this::reportNotFound);
     requireReportAccess(actor, report);
     ReportVersion version = versionForViewer(report, actor).orElseThrow(this::reportNotFound);
-    return toResponse(report, version, actor);
+    return toResponse(report, version);
   }
 
   @Transactional
@@ -183,7 +164,7 @@ public class InspectionReportService {
         throw reportScopeDenied();
       }
       ReportVersion current = requireCurrentVersion(report, false);
-      return toResponse(report, current, actor);
+      return toResponse(report, current);
     }
 
     ReportSnapshot snapshot = composeSnapshot(inspection);
@@ -193,7 +174,7 @@ public class InspectionReportService {
             new ReportVersion(report.getId(), 1, null, actorId, serialize(snapshot)));
     report.startVersion(1);
     reports.saveAndFlush(report);
-    return toResponse(report, version, actor);
+    return toResponse(report, version);
   }
 
   @Transactional
@@ -222,124 +203,46 @@ public class InspectionReportService {
                 serialize(composeSnapshot(inspection))));
     report.startVersion(revision.getVersionNumber());
     reports.saveAndFlush(report);
-    return toResponse(report, revision, actor);
+    return toResponse(report, revision);
   }
 
-  @Transactional
-  public ReportVersionResponse assignReviewer(
-      UUID actorId, UUID reportId, UUID versionId, UUID reviewerId) {
-    UserAccess.ActiveUser manager = requireActiveRole(actorId, Roles.SERVICE_MANAGER);
-    InspectionReport report = requireReport(reportId, true);
-    ReportVersion version = requireCurrentVersion(report, versionId, true);
-    if (version.getStatus() != ReportStatus.DRAFT) {
-      throw reportStateConflict("A reviewer can only be assigned to a draft version.");
-    }
-    if (reviewerId.equals(report.getAuthorUserId())) {
-      throw invalidReviewer("The report author cannot review their own report.");
-    }
-    UserAccess.ActiveUser reviewer =
-        users
-            .findActiveUser(reviewerId)
-            .filter(user -> user.hasRole(Roles.INSPECTOR))
-            .orElseThrow(() -> invalidReviewer("The reviewer must be an active Inspector."));
-    if (reviewer.id().equals(report.getAuthorUserId())) {
-      throw invalidReviewer("The report author cannot review their own report.");
-    }
-    if (reviews.findByReportVersionId(versionId).isPresent()) {
-      throw reportStateConflict("A reviewer has already been assigned to this version.");
-    }
-    reviews.saveAndFlush(new PeerReview(versionId, reviewer.id(), manager.id(), Instant.now()));
-    return toResponse(report, version, manager);
-  }
-
+  /**
+   * MF3-07 author verification: the authoring Inspector signs off the completed draft. The report
+   * becomes technically approved and can then be released by a Provider Manager (MF3-09).
+   */
   @Transactional
   public ReportVersionResponse submitForReview(UUID actorId, UUID reportId, UUID versionId) {
-    UserAccess.ActiveUser actor = requireActiveRole(actorId, Roles.INSPECTOR);
+    requireActiveRole(actorId, Roles.INSPECTOR);
     InspectionReport report = requireReport(reportId, true);
     ReportVersion version = requireCurrentVersion(report, versionId, true);
     if (!report.getAuthorUserId().equals(actorId)) {
       throw reportScopeDenied();
     }
     if (version.getStatus() != ReportStatus.DRAFT) {
-      throw reportStateConflict("Only a draft version can be submitted for peer review.");
-    }
-    if (reviews
-        .findByReportVersionId(versionId)
-        .filter(review -> review.getDecision() == PeerReviewDecision.PENDING)
-        .isEmpty()) {
-      throw reportStateConflict("Assign a peer reviewer before submitting the report.");
+      throw reportStateConflict("Only a draft version can be verified and submitted.");
     }
     ensureComplete(version);
-    version.submitForReview();
-    report.changeStatus(ReportStatus.AWAITING_PEER_REVIEW);
+    version.verify();
+    report.changeStatus(ReportStatus.TECHNICALLY_APPROVED);
     versions.saveAndFlush(version);
     reports.saveAndFlush(report);
-    return toResponse(report, version, actor);
-  }
-
-  @Transactional
-  public ReportVersionResponse review(
-      UUID actorId, UUID reportId, UUID versionId, PeerReviewDecisionRequest request) {
-    UserAccess.ActiveUser actor = requireActiveRole(actorId, Roles.INSPECTOR);
-    InspectionReport report = requireReport(reportId, true);
-    ReportVersion version = requireCurrentVersion(report, versionId, true);
-    if (report.getAuthorUserId().equals(actorId)) {
-      throw reportScopeDenied();
-    }
-    if (request == null || request.decision() == null) {
-      throw reportStateConflict("A peer-review decision is required.");
-    }
-    PeerReview review =
-        reviews
-            .findForUpdateByReportVersionId(versionId)
-            .filter(value -> value.getReviewerUserId().equals(actorId))
-            .orElseThrow(this::reportScopeDenied);
-    if (version.getStatus() != ReportStatus.AWAITING_PEER_REVIEW
-        || review.getDecision() != PeerReviewDecision.PENDING) {
-      throw reportStateConflict("This report version is not awaiting this review decision.");
-    }
-    PeerReviewDecision decision =
-        request.decision() == PeerReviewDecisionRequest.Decision.APPROVED
-            ? PeerReviewDecision.APPROVED
-            : PeerReviewDecision.CHANGES_REQUESTED;
-    if (decision == PeerReviewDecision.CHANGES_REQUESTED
-        && (request.comments() == null || request.comments().isBlank())) {
-      throw reportStateConflict("A request for changes must include comments.");
-    }
-    review.decide(decision, request.comments());
-    if (decision == PeerReviewDecision.APPROVED) {
-      version.approve();
-      report.changeStatus(ReportStatus.TECHNICALLY_APPROVED);
-    } else {
-      version.requestChanges();
-      report.changeStatus(ReportStatus.CHANGES_REQUESTED);
-    }
-    reviews.saveAndFlush(review);
-    versions.saveAndFlush(version);
-    reports.saveAndFlush(report);
-    return toResponse(report, version, actor);
+    return toResponse(report, version);
   }
 
   @Transactional
   public ReportVersionResponse release(UUID actorId, UUID reportId, UUID versionId) {
-    UserAccess.ActiveUser manager = requireActiveRole(actorId, Roles.SERVICE_MANAGER);
+    requireActiveRole(actorId, Roles.PROVIDER_MANAGER);
     InspectionReport report = requireReport(reportId, true);
     ReportVersion version = requireCurrentVersion(report, versionId, true);
-    PeerReview review =
-        reviews
-            .findByReportVersionId(versionId)
-            .filter(value -> value.getDecision() == PeerReviewDecision.APPROVED)
-            .orElseThrow(
-                () -> reportStateConflict("Only a technically approved version can be released."));
-    if (review.getReviewerUserId().equals(report.getAuthorUserId())) {
-      throw reportStateConflict("A report author cannot approve their own version.");
+    if (version.getStatus() != ReportStatus.TECHNICALLY_APPROVED) {
+      throw reportStateConflict("Only a technically approved version can be released.");
     }
     ensureComplete(version);
     version.release();
     report.changeStatus(ReportStatus.RELEASED);
     versions.saveAndFlush(version);
     reports.saveAndFlush(report);
-    return toResponse(report, version, manager);
+    return toResponse(report, version);
   }
 
   @Transactional
@@ -352,7 +255,7 @@ public class InspectionReportService {
     if (version.getStatus() == ReportStatus.ACCEPTED
         && report.getStatus() == ReportStatus.ACCEPTED) {
       completeInspection(report);
-      return toResponse(report, version, client);
+      return toResponse(report, version);
     }
     if (request == null || request.decision() == null) {
       throw reportStateConflict("A Client report decision is required.");
@@ -386,7 +289,7 @@ public class InspectionReportService {
       versions.saveAndFlush(version);
       reports.saveAndFlush(report);
     }
-    return toResponse(report, version, client);
+    return toResponse(report, version);
   }
 
   @Transactional(readOnly = true)
@@ -424,7 +327,7 @@ public class InspectionReportService {
 
   @Transactional
   public ReportVersionResponse generateAiDraft(UUID actorId, UUID reportId, UUID versionId) {
-    UserAccess.ActiveUser actor = requireActiveRole(actorId, Roles.INSPECTOR);
+    requireActiveRole(actorId, Roles.INSPECTOR);
     InspectionReport report = requireReport(reportId, true);
     ReportVersion version = requireCurrentVersion(report, versionId, true);
     if (!report.getAuthorUserId().equals(actorId)) {
@@ -490,13 +393,13 @@ public class InspectionReportService {
     ReportSnapshot updatedSnapshot = snapshot.withAiDraftProvenance(narrative, port.modelName());
     version = updateVersionSnapshot(version, updatedSnapshot);
     versions.saveAndFlush(version);
-    return toResponse(report, version, actor);
+    return toResponse(report, version);
   }
 
   @Transactional
   public ReportVersionResponse updateNarrative(
       UUID actorId, UUID reportId, UUID versionId, String narrative) {
-    UserAccess.ActiveUser actor = requireActiveRole(actorId, Roles.INSPECTOR);
+    requireActiveRole(actorId, Roles.INSPECTOR);
     InspectionReport report = requireReport(reportId, true);
     ReportVersion version = requireCurrentVersion(report, versionId, true);
     if (!report.getAuthorUserId().equals(actorId)) {
@@ -516,7 +419,7 @@ public class InspectionReportService {
     ReportSnapshot updatedSnapshot = snapshot.withAiDraftNarrative(narrative.trim());
     version = updateVersionSnapshot(version, updatedSnapshot);
     versions.saveAndFlush(version);
-    return toResponse(report, version, actor);
+    return toResponse(report, version);
   }
 
   private ReportVersion updateVersionSnapshot(ReportVersion version, ReportSnapshot snapshot) {
@@ -537,19 +440,11 @@ public class InspectionReportService {
   }
 
   private void requireReportAccess(UserAccess.ActiveUser actor, InspectionReport report) {
-    if (actor.hasRole(Roles.SERVICE_MANAGER)) {
+    if (actor.hasRole(Roles.PROVIDER_MANAGER)) {
       return;
     }
     if (actor.hasRole(Roles.INSPECTOR)) {
       if (report.getAuthorUserId().equals(actor.id())) {
-        return;
-      }
-      boolean assignedReviewer =
-          versions.findByReportIdOrderByVersionNumberDesc(report.getId()).stream()
-              .map(version -> reviews.findByReportVersionId(version.getId()).orElse(null))
-              .filter(review -> review != null)
-              .anyMatch(review -> review.getReviewerUserId().equals(actor.id()));
-      if (assignedReviewer) {
         return;
       }
     }
@@ -692,19 +587,7 @@ public class InspectionReportService {
     }
   }
 
-  private ReportVersionResponse toResponse(
-      InspectionReport report, ReportVersion version, UserAccess.ActiveUser actor) {
-    Optional<PeerReview> review = reviews.findByReportVersionId(version.getId());
-    ReportVersionResponse.ReviewSummary reviewSummary =
-        review
-            .map(
-                value ->
-                    new ReportVersionResponse.ReviewSummary(
-                        value.getReviewerUserId(),
-                        value.getDecision(),
-                        actor.hasRole(Roles.CLIENT) ? null : value.getComments(),
-                        value.getReviewedAt()))
-            .orElse(null);
+  private ReportVersionResponse toResponse(InspectionReport report, ReportVersion version) {
     return new ReportVersionResponse(
         report.getId(),
         version.getId(),
@@ -715,7 +598,6 @@ public class InspectionReportService {
         report.getStatus(),
         version.getStatus(),
         versionSnapshot(version),
-        actor.hasRole(Roles.CLIENT) ? null : reviewSummary,
         version.getCreatedAt(),
         version.getReleasedAt(),
         version.getAcceptedAt(),
@@ -821,11 +703,6 @@ public class InspectionReportService {
 
   private BusinessException reportStateConflict(String message) {
     return new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", message);
-  }
-
-  private BusinessException invalidReviewer(String message) {
-    return new BusinessException(
-        HttpStatus.UNPROCESSABLE_CONTENT, "REPORT_REVIEWER_INVALID", message);
   }
 
   private BusinessException storageUnavailable() {

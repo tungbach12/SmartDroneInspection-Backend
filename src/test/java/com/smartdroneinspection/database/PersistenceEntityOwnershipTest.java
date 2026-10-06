@@ -56,10 +56,6 @@ class PersistenceEntityOwnershipTest {
             "report_versions",
             "com.smartdroneinspection.inspections.domain.ReportVersion"),
         Arguments.of(
-            "inspections",
-            "peer_reviews",
-            "com.smartdroneinspection.inspections.domain.PeerReview"),
-        Arguments.of(
             "maintenance",
             "maintenance_tickets",
             "com.smartdroneinspection.maintenance.domain.MaintenanceTicket"),

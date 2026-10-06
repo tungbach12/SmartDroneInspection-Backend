@@ -78,7 +78,7 @@ public final class InspectionFixture {
             UserStatus.ACTIVE,
             ActorZone.SERVICE_WORKFORCE,
             null,
-            UserRole.SERVICE_MANAGER);
+            UserRole.PROVIDER_MANAGER);
     User inspector =
         saveUser(
             "inspector", UserStatus.ACTIVE, ActorZone.SERVICE_WORKFORCE, null, UserRole.INSPECTOR);

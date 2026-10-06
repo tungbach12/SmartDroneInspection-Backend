@@ -36,7 +36,7 @@ public class BootstrapAdministrator implements ApplicationRunner {
   @Override
   @Transactional
   public void run(ApplicationArguments args) {
-    if (users.existsByRoleAssignments_Role(UserRole.ADMIN)) {
+    if (users.existsByRoleAssignments_Role(UserRole.PLATFORM_ADMIN)) {
       return;
     }
     var bootstrap = properties.getBootstrap();
@@ -56,7 +56,7 @@ public class BootstrapAdministrator implements ApplicationRunner {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    administrator.addRole(UserRole.ADMIN);
+    administrator.addRole(UserRole.PLATFORM_ADMIN);
     administrator.requirePasswordChange();
     users.save(administrator);
   }

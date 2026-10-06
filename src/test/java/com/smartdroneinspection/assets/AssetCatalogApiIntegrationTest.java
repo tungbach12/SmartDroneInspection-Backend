@@ -145,7 +145,8 @@ class AssetCatalogApiIntegrationTest {
     return jwt()
         .jwt(t -> t.subject(id.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                "ROLE_PLATFORM_ADMIN"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {

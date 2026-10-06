@@ -26,7 +26,7 @@ public class InspectionScheduleController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('CLIENT', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN')")
   public ApiResponse<List<InspectionScheduleResponse>> list(
       @AuthenticationPrincipal Jwt jwt, @RequestParam UUID assetId) {
     return ApiResponse.success(schedules.listForClient(UUID.fromString(jwt.getSubject()), assetId));
