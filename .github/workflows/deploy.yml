@@ -1,0 +1,53 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS2 (smartdroneinspection.duckdns.org)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTH_KEY }}
+          tags: tag:ci
+          ping: 100.120.66.114
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 100.120.66.114 >> ~/.ssh/known_hosts
+
+      - name: Deploy backend + web (docker compose)
+        run: |
+          ssh -i ~/.ssh/deploy_key -p 2222 -o StrictHostKeyChecking=no ubuntu@100.120.66.114 '
+            set -e
+            cd ~/repos/backend
+            git fetch --depth 1 origin main
+            git reset --hard origin/main
+            # Sync frontend repo that the BE compose build references (../SmartDroneInspection-frontend)
+            cd ~/repos/frontend
+            git fetch --depth 1 origin main || true
+            git reset --hard origin/main || true
+            cd ~/repos/backend
+            docker compose up -d --build
+            docker image prune -f
+            echo "Deployed at $(date -u +%FT%TZ)"
+          '
+
+      - name: Smoke check
+        run: |
+          ssh -i ~/.ssh/deploy_key -p 2222 -o StrictHostKeyChecking=no ubuntu@100.120.66.114 '
+            sleep 5
+            curl -fsS -o /dev/null -w "web HTTP %{http_code}\n" http://127.0.0.1:18080/
+            curl -fsS http://127.0.0.1:18081/actuator/health | head -c 200; echo
+          '
