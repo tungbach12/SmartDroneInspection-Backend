@@ -55,7 +55,7 @@ class DirectTransferSchemaMigrationTest {
   }
 
   @Test
-  void emptyDatabaseAppliesEveryMigrationThroughV22() throws Exception {
+  void emptyDatabaseAppliesEveryMigrationThroughV23() throws Exception {
     String url = freshDatabase("mig_empty");
     migrate(url, null);
 
@@ -68,7 +68,7 @@ class DirectTransferSchemaMigrationTest {
       assertThat(versions)
           .containsExactly(
               "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
-              "17", "18", "19", "20", "21", "22");
+              "17", "18", "19", "20", "21", "22", "23");
 
       List<String> tables =
           queryStrings(
