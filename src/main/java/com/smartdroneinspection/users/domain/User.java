@@ -47,6 +47,9 @@ public class User {
   @Column(name = "organization_id")
   private UUID organizationId;
 
+  @Column(name = "provider_id")
+  private UUID providerId;
+
   @Column(name = "auth_version", nullable = false)
   private int authVersion;
 
@@ -98,6 +101,18 @@ public class User {
     this.updatedAt = this.createdAt;
   }
 
+  public User(
+      String email,
+      String fullName,
+      String passwordHash,
+      UserStatus status,
+      ActorZone actorZone,
+      UUID organizationId,
+      UUID providerId) {
+    this(email, fullName, passwordHash, status, actorZone, organizationId);
+    this.providerId = providerId;
+  }
+
   public static String normalizeEmail(String value) {
     return value.trim().toLowerCase(java.util.Locale.ROOT);
   }
@@ -128,6 +143,15 @@ public class User {
 
   public UUID getOrganizationId() {
     return organizationId;
+  }
+
+  public UUID getProviderId() {
+    return providerId;
+  }
+
+  public void setProviderId(UUID providerId) {
+    this.providerId = providerId;
+    this.updatedAt = Instant.now();
   }
 
   public int getAuthVersion() {

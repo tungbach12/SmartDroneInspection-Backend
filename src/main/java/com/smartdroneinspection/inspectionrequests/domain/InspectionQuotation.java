@@ -38,6 +38,9 @@ public class InspectionQuotation {
   @Column(name = "prepared_by_user_id", nullable = false)
   private UUID preparedByUserId;
 
+  @Column(name = "provider_id")
+  private UUID providerId;
+
   @JdbcTypeCode(SqlTypes.CHAR)
   @Column(nullable = false, length = 3, columnDefinition = "char(3)")
   private String currency;
@@ -136,6 +139,14 @@ public class InspectionQuotation {
     this.paymentTerms = paymentTerms;
     this.status = InspectionQuotationStatus.DRAFT;
     this.createdAt = Instant.now();
+  }
+
+  public UUID getProviderId() {
+    return providerId;
+  }
+
+  public void setProviderId(UUID providerId) {
+    this.providerId = providerId;
   }
 
   public void send() {
