@@ -39,6 +39,11 @@ public class MaintenanceQuotation {
   @Column(name = "prepared_by_user_id", nullable = false)
   private UUID preparedByUserId;
 
+  @Column(name = "provider_id")
+  private UUID providerId;
+
+  @jakarta.persistence.Transient private Integer lockedWarrantyDays;
+
   @JdbcTypeCode(SqlTypes.CHAR)
   @Column(nullable = false, length = 3)
   private String currency;
@@ -128,11 +133,121 @@ public class MaintenanceQuotation {
     return id;
   }
 
+  public UUID getQuotationSeriesId() {
+    return quotationSeriesId;
+  }
+
   public UUID getMaintenanceTicketId() {
     return maintenanceTicketId;
   }
 
+  public UUID getMaintenanceAssessmentId() {
+    return maintenanceAssessmentId;
+  }
+
+  public int getVersionNumber() {
+    return versionNumber;
+  }
+
+  public UUID getPreviousVersionId() {
+    return previousVersionId;
+  }
+
+  public UUID getPreparedByUserId() {
+    return preparedByUserId;
+  }
+
+  public UUID getProviderId() {
+    return providerId;
+  }
+
+  public void setProviderId(UUID providerId) {
+    this.providerId = providerId;
+  }
+
+  public Integer getLockedWarrantyDays() {
+    return lockedWarrantyDays;
+  }
+
+  public void setLockedWarrantyDays(Integer lockedWarrantyDays) {
+    this.lockedWarrantyDays = lockedWarrantyDays;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
+  public BigDecimal getSubtotal() {
+    return subtotal;
+  }
+
+  public BigDecimal getTaxAmount() {
+    return taxAmount;
+  }
+
+  public BigDecimal getTotalAmount() {
+    return totalAmount;
+  }
+
+  public String getPricingDetails() {
+    return pricingDetails;
+  }
+
+  public String getScopeSnapshot() {
+    return scopeSnapshot;
+  }
+
+  public BigDecimal getEstimatedDurationHours() {
+    return estimatedDurationHours;
+  }
+
+  public String getPaymentTerms() {
+    return paymentTerms;
+  }
+
   public MaintenanceQuotationStatus getStatus() {
     return status;
+  }
+
+  public Instant getSentAt() {
+    return sentAt;
+  }
+
+  public UUID getDecidedByUserId() {
+    return decidedByUserId;
+  }
+
+  public Instant getDecidedAt() {
+    return decidedAt;
+  }
+
+  public String getRevisionReason() {
+    return revisionReason;
+  }
+
+  public void send(Instant sendInstant) {
+    this.status = MaintenanceQuotationStatus.SENT;
+    this.sentAt = sendInstant;
+  }
+
+  public void approve(UUID clientUserId, Instant decisionInstant) {
+    this.status = MaintenanceQuotationStatus.APPROVED;
+    this.decidedByUserId = clientUserId;
+    this.decidedAt = decisionInstant;
+  }
+
+  public void reject(UUID clientUserId, String reason, Instant decisionInstant) {
+    this.status = MaintenanceQuotationStatus.REJECTED;
+    this.decidedByUserId = clientUserId;
+    this.revisionReason = reason;
+    this.decidedAt = decisionInstant;
+  }
+
+  public void supersede() {
+    this.status = MaintenanceQuotationStatus.SUPERSEDED;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
   }
 }

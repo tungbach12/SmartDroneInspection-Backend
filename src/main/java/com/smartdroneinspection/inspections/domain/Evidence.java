@@ -200,6 +200,10 @@ public class Evidence {
     return maintenanceWorkLogId;
   }
 
+  public void attachMaintenanceWorkLog(UUID maintenanceWorkLogId) {
+    this.maintenanceWorkLogId = maintenanceWorkLogId;
+  }
+
   public UploadStatus getUploadStatus() {
     return uploadStatus;
   }

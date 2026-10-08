@@ -97,7 +97,67 @@ public class MaintenanceChangeRequest {
     return maintenanceTicketId;
   }
 
+  public UUID getWorkLogId() {
+    return workLogId;
+  }
+
+  public UUID getCurrentOrderId() {
+    return currentOrderId;
+  }
+
+  public UUID getRequestedByUserId() {
+    return requestedByUserId;
+  }
+
+  public String getReason() {
+    return reason;
+  }
+
+  public String getAdditionalScope() {
+    return additionalScope;
+  }
+
+  public BigDecimal getEstimatedCostDelta() {
+    return estimatedCostDelta;
+  }
+
+  public void setEstimatedCostDelta(BigDecimal estimatedCostDelta, String currency) {
+    this.estimatedCostDelta = estimatedCostDelta;
+    this.currency = currency;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
   public ChangeRequestStatus getStatus() {
     return status;
+  }
+
+  public UUID getDecidedByUserId() {
+    return decidedByUserId;
+  }
+
+  public Instant getDecidedAt() {
+    return decidedAt;
+  }
+
+  public String getDecisionReason() {
+    return decisionReason;
+  }
+
+  public void approve(UUID clientUserId, Instant decisionInstant) {
+    this.status = ChangeRequestStatus.APPROVED;
+    this.decidedByUserId = clientUserId;
+    this.decidedAt = decisionInstant;
+    this.updatedAt = decisionInstant;
+  }
+
+  public void reject(UUID clientUserId, String reason, Instant decisionInstant) {
+    this.status = ChangeRequestStatus.REJECTED;
+    this.decidedByUserId = clientUserId;
+    this.decisionReason = reason;
+    this.decidedAt = decisionInstant;
+    this.updatedAt = decisionInstant;
   }
 }

@@ -5,5 +5,8 @@ public enum MaintenanceOrderStatus {
   IN_PROGRESS,
   COMPLETED,
   SUPERSEDED,
-  CANCELLED
+  CANCELLED,
+  AWAITING_PAYMENT,
+  PAID,
+  DISPUTED
 }

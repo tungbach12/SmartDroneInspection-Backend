@@ -99,4 +99,16 @@ public class Invoice {
   public InvoiceStatus getStatus() {
     return status;
   }
+
+  public void issue() {
+    this.status = InvoiceStatus.ISSUED;
+    this.issuedAt = Instant.now();
+    this.updatedAt = issuedAt;
+  }
+
+  public void markPaid(Instant paidInstant) {
+    this.status = InvoiceStatus.PAID;
+    this.paidAt = paidInstant;
+    this.updatedAt = paidInstant;
+  }
 }

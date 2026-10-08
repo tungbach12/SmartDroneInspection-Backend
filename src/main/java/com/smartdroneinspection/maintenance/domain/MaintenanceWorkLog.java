@@ -69,6 +69,12 @@ public class MaintenanceWorkLog {
   @Column(name = "verified_at")
   private Instant verifiedAt;
 
+  @Column(name = "before_evidence_id")
+  private UUID beforeEvidenceId;
+
+  @Column(name = "after_evidence_id")
+  private UUID afterEvidenceId;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -112,7 +118,93 @@ public class MaintenanceWorkLog {
     return maintenanceTicketId;
   }
 
+  public UUID getExecutionAssignmentId() {
+    return executionAssignmentId;
+  }
+
+  public UUID getEngineerUserId() {
+    return engineerUserId;
+  }
+
+  public Instant getStartedAt() {
+    return startedAt;
+  }
+
+  public Instant getEndedAt() {
+    return endedAt;
+  }
+
+  public BigDecimal getProgressPercent() {
+    return progressPercent;
+  }
+
+  public String getWorkSummary() {
+    return workSummary;
+  }
+
+  public String getMaterialsUsed() {
+    return materialsUsed;
+  }
+
+  public BigDecimal getLaborHours() {
+    return laborHours;
+  }
+
+  public BigDecimal getActualCost() {
+    return actualCost;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
   public WorkLogStatus getStatus() {
     return status;
+  }
+
+  public Instant getSubmittedAt() {
+    return submittedAt;
+  }
+
+  public UUID getVerifiedByUserId() {
+    return verifiedByUserId;
+  }
+
+  public Instant getVerifiedAt() {
+    return verifiedAt;
+  }
+
+  public UUID getBeforeEvidenceId() {
+    return beforeEvidenceId;
+  }
+
+  public UUID getAfterEvidenceId() {
+    return afterEvidenceId;
+  }
+
+  public void setEvidencePair(UUID beforeEvidenceId, UUID afterEvidenceId) {
+    if (beforeEvidenceId != null && beforeEvidenceId.equals(afterEvidenceId)) {
+      throw new IllegalArgumentException("Before and after evidence must be distinct");
+    }
+    this.beforeEvidenceId = beforeEvidenceId;
+    this.afterEvidenceId = afterEvidenceId;
+    this.updatedAt = Instant.now();
+  }
+
+  public void submit(Instant submitInstant) {
+    this.status = WorkLogStatus.SUBMITTED;
+    this.submittedAt = submitInstant;
+    this.updatedAt = submitInstant;
+  }
+
+  public void verify(UUID verifierUserId, Instant verifyInstant) {
+    this.status = WorkLogStatus.VERIFIED;
+    this.verifiedByUserId = verifierUserId;
+    this.verifiedAt = verifyInstant;
+    this.updatedAt = verifyInstant;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
   }
 }

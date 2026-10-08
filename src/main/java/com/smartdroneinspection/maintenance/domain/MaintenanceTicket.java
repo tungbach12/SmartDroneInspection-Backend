@@ -50,6 +50,15 @@ public class MaintenanceTicket {
   @Column(name = "resolution_decision", length = 32)
   private ResolutionDecision resolutionDecision;
 
+  @Column(name = "accepted_at")
+  private Instant acceptedAt;
+
+  @Column(name = "warranty_started_at")
+  private Instant warrantyStartedAt;
+
+  @Column(name = "warranty_ends_at")
+  private Instant warrantyEndsAt;
+
   @Column(name = "released_at")
   private Instant releasedAt;
 
@@ -104,7 +113,76 @@ public class MaintenanceTicket {
     return acceptedReportVersionId;
   }
 
+  public UUID getCreatedByUserId() {
+    return createdByUserId;
+  }
+
+  public MaintenancePriority getPriority() {
+    return priority;
+  }
+
+  public Instant getPreferredDeadline() {
+    return preferredDeadline;
+  }
+
+  public String getInstructions() {
+    return instructions;
+  }
+
   public MaintenanceTicketStatus getStatus() {
     return status;
+  }
+
+  public ResolutionDecision getResolutionDecision() {
+    return resolutionDecision;
+  }
+
+  public Instant getAcceptedAt() {
+    return acceptedAt;
+  }
+
+  public Instant getWarrantyStartedAt() {
+    return warrantyStartedAt;
+  }
+
+  public Instant getWarrantyEndsAt() {
+    return warrantyEndsAt;
+  }
+
+  public Instant getReleasedAt() {
+    return releasedAt;
+  }
+
+  public Instant getClosedAt() {
+    return closedAt;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
+  }
+
+  public void transitionTo(MaintenanceTicketStatus nextStatus) {
+    this.status = nextStatus;
+    this.updatedAt = Instant.now();
+  }
+
+  public void recordAcceptance(Instant acceptanceInstant, int lockedWarrantyDays) {
+    this.acceptedAt = acceptanceInstant;
+    if (lockedWarrantyDays > 0) {
+      this.warrantyStartedAt = acceptanceInstant;
+      this.warrantyEndsAt = acceptanceInstant.plusSeconds(lockedWarrantyDays * 86400L);
+    }
+    this.resolutionDecision = ResolutionDecision.ACCEPT_RESOLUTION;
+    this.updatedAt = acceptanceInstant;
+  }
+
+  public void close(Instant closeInstant) {
+    this.status = MaintenanceTicketStatus.CLOSED;
+    this.closedAt = closeInstant;
+    this.updatedAt = closeInstant;
   }
 }

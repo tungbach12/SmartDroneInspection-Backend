@@ -66,6 +66,27 @@ public class MaintenanceOrder {
   @Column(name = "approved_at", nullable = false)
   private Instant approvedAt;
 
+  @Column(name = "provider_id")
+  private UUID providerId;
+
+  @Column(name = "locked_warranty_days")
+  private Integer lockedWarrantyDays;
+
+  @Column(name = "warranty_end_date")
+  private Instant warrantyEndDate;
+
+  @Column(name = "payment_invoice_issued_at")
+  private Instant paymentInvoiceIssuedAt;
+
+  @Column(name = "paid_at")
+  private Instant paidAt;
+
+  @Column(name = "provider_bank_account_number", length = 64)
+  private String providerBankAccountNumber;
+
+  @Column(name = "provider_bank_name", length = 128)
+  private String providerBankName;
+
   @Column(name = "started_at")
   private Instant startedAt;
 
@@ -120,11 +141,150 @@ public class MaintenanceOrder {
     return id;
   }
 
+  public UUID getOrderSeriesId() {
+    return orderSeriesId;
+  }
+
+  public String getOrderNumber() {
+    return orderNumber;
+  }
+
   public UUID getMaintenanceTicketId() {
     return maintenanceTicketId;
   }
 
+  public UUID getApprovedQuotationId() {
+    return approvedQuotationId;
+  }
+
+  public UUID getChangeRequestId() {
+    return changeRequestId;
+  }
+
+  public int getVersionNumber() {
+    return versionNumber;
+  }
+
+  public UUID getPreviousVersionId() {
+    return previousVersionId;
+  }
+
+  public String getScopeSnapshot() {
+    return scopeSnapshot;
+  }
+
+  public BigDecimal getApprovedAmount() {
+    return approvedAmount;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
+  public String getPaymentTerms() {
+    return paymentTerms;
+  }
+
   public MaintenanceOrderStatus getStatus() {
     return status;
+  }
+
+  public UUID getApprovedByUserId() {
+    return approvedByUserId;
+  }
+
+  public Instant getApprovedAt() {
+    return approvedAt;
+  }
+
+  public UUID getProviderId() {
+    return providerId;
+  }
+
+  public void setProviderId(UUID providerId) {
+    this.providerId = providerId;
+  }
+
+  public Integer getLockedWarrantyDays() {
+    return lockedWarrantyDays;
+  }
+
+  public void setLockedWarrantyDays(Integer lockedWarrantyDays) {
+    this.lockedWarrantyDays = lockedWarrantyDays;
+  }
+
+  public Instant getWarrantyEndDate() {
+    return warrantyEndDate;
+  }
+
+  public void setWarrantyEndDate(Instant warrantyEndDate) {
+    this.warrantyEndDate = warrantyEndDate;
+  }
+
+  public Instant getPaymentInvoiceIssuedAt() {
+    return paymentInvoiceIssuedAt;
+  }
+
+  public void setPaymentInvoiceIssuedAt(Instant paymentInvoiceIssuedAt) {
+    this.paymentInvoiceIssuedAt = paymentInvoiceIssuedAt;
+  }
+
+  public Instant getPaidAt() {
+    return paidAt;
+  }
+
+  public String getProviderBankAccountNumber() {
+    return providerBankAccountNumber;
+  }
+
+  public void setProviderBankAccountNumber(String providerBankAccountNumber) {
+    this.providerBankAccountNumber = providerBankAccountNumber;
+  }
+
+  public String getProviderBankName() {
+    return providerBankName;
+  }
+
+  public void setProviderBankName(String providerBankName) {
+    this.providerBankName = providerBankName;
+  }
+
+  public Instant getStartedAt() {
+    return startedAt;
+  }
+
+  public Instant getCompletedAt() {
+    return completedAt;
+  }
+
+  public void markInProgress() {
+    if (this.status != MaintenanceOrderStatus.CONFIRMED) {
+      throw new IllegalStateException("Only confirmed orders can move to in progress");
+    }
+    this.status = MaintenanceOrderStatus.IN_PROGRESS;
+    this.startedAt = Instant.now();
+    this.updatedAt = startedAt;
+  }
+
+  public void markAwaitingPayment(Instant completionInstant, Instant warrantyEnd) {
+    this.status = MaintenanceOrderStatus.AWAITING_PAYMENT;
+    this.completedAt = completionInstant;
+    this.warrantyEndDate = warrantyEnd;
+    this.updatedAt = completionInstant;
+  }
+
+  public void markPaid(Instant paidAt) {
+    this.status = MaintenanceOrderStatus.PAID;
+    this.paidAt = paidAt;
+    this.updatedAt = paidAt;
+  }
+
+  public void markSuperseded() {
+    this.status = MaintenanceOrderStatus.SUPERSEDED;
+    this.updatedAt = Instant.now();
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
   }
 }

@@ -96,4 +96,30 @@ public class MaintenanceAssignment {
   public MaintenanceAssignmentStatus getStatus() {
     return status;
   }
+
+  public UUID getEngineerUserId() {
+    return engineerUserId;
+  }
+
+  public Instant getDeadline() {
+    return deadline;
+  }
+
+  public void accept(Instant respondInstant) {
+    this.status = MaintenanceAssignmentStatus.ACCEPTED;
+    this.respondedAt = respondInstant;
+    this.updatedAt = respondInstant;
+  }
+
+  public void reject(String reason, Instant respondInstant) {
+    this.status = MaintenanceAssignmentStatus.REJECTED;
+    this.rejectionReason = reason;
+    this.respondedAt = respondInstant;
+    this.updatedAt = respondInstant;
+  }
+
+  public void complete() {
+    this.status = MaintenanceAssignmentStatus.COMPLETED;
+    this.updatedAt = Instant.now();
+  }
 }

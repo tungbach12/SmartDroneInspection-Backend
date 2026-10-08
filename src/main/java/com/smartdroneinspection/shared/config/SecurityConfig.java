@@ -94,7 +94,7 @@ public class SecurityConfig {
                 requests
                     .requestMatchers("/api/v1/mobile/auth/**", "/actuator/health/**", "/error")
                     .permitAll()
-                    .requestMatchers("/swagger-ui/**", "/v3/api-docs/**")
+                    .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html")
                     .permitAll()
                     .anyRequest()
                     .authenticated())
