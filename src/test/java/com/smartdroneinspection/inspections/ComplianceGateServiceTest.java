@@ -296,8 +296,77 @@ class ComplianceGateServiceTest {
                 assertThat(((BusinessException) error).code()).isEqualTo("PERMIT_SCOPE_DENIED"));
   }
 
+  @Test
+  void anInspectorCannotLinkPermitEvenWithinTheirOrganization() {
+    UUID inspectorId = createInspector();
+    FlightPermit permit = grantedPermit(plannedStart, plannedStart.plus(1, ChronoUnit.DAYS));
+
+    assertThatThrownBy(
+            () ->
+                service.linkPermitReferences(
+                    inspectorId,
+                    inspectionId,
+                    new LinkPermitReferencesRequest(List.of(permit.getId()))))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(error -> assertThat(((BusinessException) error).code()).isEqualTo("FORBIDDEN"));
+  }
+
+  @Test
+  void aPermitForAnotherAssetInTheSameOrganizationCannotBeLinked() {
+    UUID otherAssetId = createAsset("ASSET-" + UUID.randomUUID(), "Other bridge");
+    FlightPermit permit =
+        permits.saveAndFlush(new FlightPermit(organizationId, otherAssetId, "UAV", null, "CAAC"));
+
+    assertThatThrownBy(
+            () ->
+                service.linkPermitReferences(
+                    adminId,
+                    inspectionId,
+                    new LinkPermitReferencesRequest(List.of(permit.getId()))))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("PERMIT_ASSET_MISMATCH"));
+  }
+
+  @Test
+  void anActivePermitDoesNotHideAnotherExpiredApplicablePermit() {
+    FlightPermit active =
+        grantedPermit(
+            plannedStart.minus(1, ChronoUnit.DAYS), plannedStart.plus(1, ChronoUnit.DAYS));
+    FlightPermit expired = grantedPermit(plannedStart, plannedStart.plus(1, ChronoUnit.DAYS));
+    expired.defineValidity(
+        plannedStart.minus(10, ChronoUnit.DAYS), plannedStart.minus(1, ChronoUnit.DAYS));
+
+    ComplianceGateResponse gate = service.evaluate(adminId, inspectionId);
+
+    assertThat(gate.linkedPermitIds()).contains(active.getId());
+    assertThat(gate.blockers())
+        .anySatisfy(blocker -> assertThat(blocker.code()).isEqualTo("PERMIT_OUTSIDE_VALIDITY"));
+  }
+
   private UUID createInspector() {
     return createUser(organizationId, UserRole.INSPECTOR);
+  }
+
+  private UUID createAsset(String code, String name) {
+    return assets
+        .saveAndFlush(
+            new Asset(
+                organizationId,
+                categories
+                    .findById(assets.findById(assetId).orElseThrow().getCategoryId())
+                    .orElseThrow()
+                    .getId(),
+                code,
+                name,
+                null,
+                null,
+                null,
+                null,
+                null,
+                adminId))
+        .getId();
   }
 
   private UUID createUser(UUID ownerOrganizationId, UserRole role) {

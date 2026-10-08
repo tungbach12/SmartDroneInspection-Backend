@@ -76,14 +76,21 @@ public class ComplianceGateService {
     Inspection inspection = requireScopedInspection(inspectionId, organizationId);
 
     for (UUID permitId : request.permitIds()) {
-      permits
-          .findByIdAndOrganizationId(permitId, organizationId)
-          .orElseThrow(
-              () ->
-                  new BusinessException(
-                      HttpStatus.FORBIDDEN,
-                      "PERMIT_SCOPE_DENIED",
-                      "One of the linked permits belongs to another organization."));
+      FlightPermit permit =
+          permits
+              .findByIdAndOrganizationId(permitId, organizationId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.FORBIDDEN,
+                          "PERMIT_SCOPE_DENIED",
+                          "One of the linked permits belongs to another organization."));
+      if (permit.getAssetId() != null && !permit.getAssetId().equals(inspection.getAssetId())) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "PERMIT_ASSET_MISMATCH",
+            "A permit for another asset cannot be linked to this inspection.");
+      }
     }
 
     InspectionPreparation preparation =
@@ -96,7 +103,10 @@ public class ComplianceGateService {
                         "Prepare the mission before linking compliance documents."));
 
     try {
-      preparation.recordPermitDocumentReferences(request.permitIds().toString());
+      preparation.recordPermitDocumentReferences(
+          request.permitIds().stream()
+              .map(permitId -> "\"" + permitId + "\"")
+              .collect(java.util.stream.Collectors.joining(",", "[", "]")));
     } catch (IllegalStateException exception) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "PREPARATION_NOT_EDITABLE", exception.getMessage());
@@ -284,6 +294,10 @@ public class ComplianceGateService {
     if (actor.organizationId() == null) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "User has no organization scope");
+    }
+    if (!actor.hasRole(Roles.ORG_ADMIN)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Role " + Roles.ORG_ADMIN + " is required");
     }
     return actor.organizationId();
   }
