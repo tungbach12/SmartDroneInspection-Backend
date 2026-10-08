@@ -15,17 +15,23 @@ public class Organization {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(nullable = false, length = 200)
-  private String name;
+  @Column(name = "legal_name", nullable = false, length = 250)
+  private String legalName;
 
-  @Column(nullable = false, unique = true, length = 64)
-  private String code;
+  @Column(name = "display_name", nullable = false, length = 200)
+  private String displayName;
 
-  @Column(length = 2000)
-  private String description;
+  @Column(name = "registration_code", nullable = false, unique = true, length = 64)
+  private String registrationCode;
 
-  @Column(nullable = false)
-  private boolean active;
+  @Column(nullable = false, length = 64)
+  private String timezone;
+
+  @Column(nullable = false, length = 24)
+  private String status;
+
+  @Column(name = "row_version", nullable = false)
+  private long rowVersion;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -36,10 +42,11 @@ public class Organization {
   protected Organization() {}
 
   public Organization(String name, String code, String description) {
-    this.name = name;
-    this.code = normalizeCode(code);
-    this.description = description;
-    this.active = true;
+    this.legalName = name;
+    this.displayName = name;
+    this.registrationCode = normalizeCode(code);
+    this.timezone = "Asia/Ho_Chi_Minh";
+    this.status = "ACTIVE";
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
@@ -49,28 +56,24 @@ public class Organization {
   }
 
   public String getName() {
-    return name;
+    return displayName;
   }
 
   public String getCode() {
-    return code;
+    return registrationCode;
   }
 
-  public String getDescription() {
-    return description;
-  }
-
-  public boolean isActive() {
-    return active;
+  public String getStatus() {
+    return status;
   }
 
   public void deactivate() {
-    active = false;
+    status = "SUSPENDED";
     updatedAt = Instant.now();
   }
 
   public void activate() {
-    active = true;
+    status = "ACTIVE";
     updatedAt = Instant.now();
   }
 

@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Dashboard",
-    allowedDependencies = {"users", "assets", "inspectionrequests", "inspections", "maintenance"})
+    allowedDependencies = {"users", "assets", "inspections", "maintenance", "shared"})
 package com.smartdroneinspection.dashboard;

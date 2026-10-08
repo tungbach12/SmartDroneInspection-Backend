@@ -26,9 +26,6 @@ public class UserAccessService implements UserAccess {
         .map(
             user ->
                 new ActiveUser(
-                    user.getId(),
-                    Set.copyOf(user.roleValues()),
-                    user.getOrganizationId(),
-                    user.getProviderId()));
+                    user.getId(), Set.copyOf(user.roleValues()), user.getOrganizationId()));
   }
 }

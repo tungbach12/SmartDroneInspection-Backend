@@ -47,9 +47,6 @@ public class User {
   @Column(name = "organization_id")
   private UUID organizationId;
 
-  @Column(name = "provider_id")
-  private UUID providerId;
-
   @Column(name = "auth_version", nullable = false)
   private int authVersion;
 
@@ -67,12 +64,6 @@ public class User {
 
   @Column(name = "last_login_ip", length = 45)
   private String lastLoginIp;
-
-  @Column(name = "activation_token_hash", length = 128)
-  private String activationTokenHash;
-
-  @Column(name = "activation_expires_at")
-  private Instant activationExpiresAt;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -107,18 +98,6 @@ public class User {
     this.updatedAt = this.createdAt;
   }
 
-  public User(
-      String email,
-      String fullName,
-      String passwordHash,
-      UserStatus status,
-      ActorZone actorZone,
-      UUID organizationId,
-      UUID providerId) {
-    this(email, fullName, passwordHash, status, actorZone, organizationId);
-    this.providerId = providerId;
-  }
-
   public static String normalizeEmail(String value) {
     return value.trim().toLowerCase(java.util.Locale.ROOT);
   }
@@ -149,15 +128,6 @@ public class User {
 
   public UUID getOrganizationId() {
     return organizationId;
-  }
-
-  public UUID getProviderId() {
-    return providerId;
-  }
-
-  public void setProviderId(UUID providerId) {
-    this.providerId = providerId;
-    this.updatedAt = Instant.now();
   }
 
   public int getAuthVersion() {
@@ -219,44 +189,7 @@ public class User {
 
   public void activate() {
     this.status = UserStatus.ACTIVE;
-    clearActivationToken();
     this.updatedAt = Instant.now();
-  }
-
-  public String getActivationTokenHash() {
-    return activationTokenHash;
-  }
-
-  public void setActivationTokenHash(String activationTokenHash) {
-    this.activationTokenHash = activationTokenHash;
-    this.updatedAt = Instant.now();
-  }
-
-  public Instant getActivationExpiresAt() {
-    return activationExpiresAt;
-  }
-
-  public void setActivationExpiresAt(Instant activationExpiresAt) {
-    this.activationExpiresAt = activationExpiresAt;
-    this.updatedAt = Instant.now();
-  }
-
-  public void setActivationToken(String hash, Instant expiresAt) {
-    this.activationTokenHash = hash;
-    this.activationExpiresAt = expiresAt;
-    this.updatedAt = Instant.now();
-  }
-
-  public void clearActivationToken() {
-    this.activationTokenHash = null;
-    this.activationExpiresAt = null;
-    this.updatedAt = Instant.now();
-  }
-
-  public boolean isActivationTokenValid(Instant now) {
-    return activationTokenHash != null
-        && activationExpiresAt != null
-        && activationExpiresAt.isAfter(now);
   }
 
   public void disable(UserStatus nextStatus) {

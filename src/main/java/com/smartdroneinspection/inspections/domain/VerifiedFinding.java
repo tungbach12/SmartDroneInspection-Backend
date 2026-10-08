@@ -4,20 +4,16 @@ import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingSource;
 import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingStatus;
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-@Entity
-@Table(name = "verified_findings")
 public class VerifiedFinding {
 
   @Id @GeneratedValue private UUID id;

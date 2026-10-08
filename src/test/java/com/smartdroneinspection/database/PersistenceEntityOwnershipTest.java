@@ -25,73 +25,28 @@ class PersistenceEntityOwnershipTest {
 
   private static Stream<Arguments> entityMappings() {
     return Stream.of(
+        Arguments.of("assets", "assets", "com.smartdroneinspection.assets.domain.Asset"),
+        Arguments.of(
+            "assets", "asset_categories", "com.smartdroneinspection.assets.domain.AssetCategory"),
+        Arguments.of(
+            "assets", "asset_documents", "com.smartdroneinspection.assets.domain.AssetDocument"),
+        Arguments.of(
+            "assets", "checklist_items", "com.smartdroneinspection.assets.domain.ChecklistItem"),
+        Arguments.of(
+            "assets",
+            "checklist_templates",
+            "com.smartdroneinspection.assets.domain.ChecklistTemplate"),
+        Arguments.of(
+            "notifications",
+            "notifications",
+            "com.smartdroneinspection.notifications.domain.Notification"),
+        Arguments.of("users", "auth_sessions", "com.smartdroneinspection.users.domain.AuthSession"),
         Arguments.of(
             "users", "organizations", "com.smartdroneinspection.users.domain.Organization"),
         Arguments.of(
-            "users",
-            "security_audit_events",
-            "com.smartdroneinspection.users.domain.SecurityAuditEvent"),
+            "users", "refresh_tokens", "com.smartdroneinspection.users.domain.RefreshToken"),
+        Arguments.of("users", "users", "com.smartdroneinspection.users.domain.User"),
         Arguments.of(
-            "inspections", "inspections", "com.smartdroneinspection.inspections.domain.Inspection"),
-        Arguments.of(
-            "inspections",
-            "checklist_responses",
-            "com.smartdroneinspection.inspections.domain.ChecklistResponse"),
-        Arguments.of(
-            "inspections", "evidence", "com.smartdroneinspection.inspections.domain.Evidence"),
-        Arguments.of(
-            "inspections",
-            "ai_finding_candidates",
-            "com.smartdroneinspection.inspections.domain.AiFindingCandidate"),
-        Arguments.of(
-            "inspections",
-            "verified_findings",
-            "com.smartdroneinspection.inspections.domain.VerifiedFinding"),
-        Arguments.of(
-            "inspections",
-            "inspection_reports",
-            "com.smartdroneinspection.inspections.domain.InspectionReport"),
-        Arguments.of(
-            "inspections",
-            "report_versions",
-            "com.smartdroneinspection.inspections.domain.ReportVersion"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_tickets",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceTicket"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_assignments",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceAssignment"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_assessments",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceAssessment"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_quotations",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceQuotation"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_orders",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceOrder"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_work_logs",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_change_requests",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceChangeRequest"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_ticket_findings",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceTicketFinding"),
-        Arguments.of(
-            "maintenance", "invoices", "com.smartdroneinspection.maintenance.domain.Invoice"),
-        Arguments.of(
-            "notifications",
-            "notifications",
-            "com.smartdroneinspection.notifications.domain.Notification"));
+            "users", "user_roles", "com.smartdroneinspection.users.domain.UserRoleAssignment"));
   }
 }

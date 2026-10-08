@@ -44,9 +44,6 @@ public class AccessTokenService {
     if (user.getOrganizationId() != null) {
       claims.claim("org_id", user.getOrganizationId().toString());
     }
-    if (user.getProviderId() != null) {
-      claims.claim("provider_id", user.getProviderId().toString());
-    }
     var header = JwsHeader.with(MacAlgorithm.HS256).type("at+jwt").build();
     String token =
         encoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();

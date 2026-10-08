@@ -289,8 +289,7 @@ public class AuthService {
         user.getFullName(),
         user.roleValues(),
         user.getActorZone().name(),
-        user.getOrganizationId(),
-        user.getProviderId());
+        user.getOrganizationId());
   }
 
   public void revokeAllSessions(UUID userId, String reason) {

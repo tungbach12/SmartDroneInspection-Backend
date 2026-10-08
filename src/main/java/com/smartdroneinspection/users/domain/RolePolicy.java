@@ -16,22 +16,21 @@ public class RolePolicy {
 
     switch (zone) {
       case PLATFORM -> {
-        if (organizationId != null
-            || roles.size() != 1
-            || !roles.contains(UserRole.PLATFORM_ADMIN)) {
+        if (organizationId != null || roles.size() != 1 || !roles.contains(UserRole.ADMIN)) {
           throw new IllegalArgumentException("Platform users must have only the Admin role.");
         }
       }
       case CUSTOMER_ORGANIZATION -> {
-        if (organizationId == null || roles.size() != 1 || !roles.contains(UserRole.CLIENT)) {
+        if (organizationId == null
+            || roles.isEmpty()
+            || roles.stream()
+                .anyMatch(
+                    role ->
+                        role != UserRole.ORG_ADMIN
+                            && role != UserRole.INSPECTOR
+                            && role != UserRole.MAINTENANCE_ENGINEER)) {
           throw new IllegalArgumentException(
-              "Customer users must belong to an organization and have the Client role.");
-        }
-      }
-      case SERVICE_WORKFORCE -> {
-        if (organizationId != null || roles.stream().anyMatch(role -> !role.serviceRole())) {
-          throw new IllegalArgumentException(
-              "Service workforce users may only combine service roles.");
+              "Customer users must belong to an organization and carry an org-scoped role.");
         }
       }
     }

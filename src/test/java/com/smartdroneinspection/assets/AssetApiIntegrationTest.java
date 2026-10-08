@@ -53,7 +53,7 @@ class AssetApiIntegrationTest {
   }
 
   @Test
-  void clientCreatesAssetInPendingReviewState() throws Exception {
+  void orgAdminCreatesActiveAssetWithoutReviewWorkflow() throws Exception {
     mockMvc
         .perform(
             post("/api/v1/assets")
@@ -66,7 +66,15 @@ class AssetApiIntegrationTest {
                         + "\",\"locationText\":\"District 1\"}"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.status").value("PENDING_REVIEW"));
+        .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+
+    String persistedLocation =
+        jdbcTemplate.queryForObject(
+            "SELECT location->>'label' FROM assets WHERE organization_id = ? AND asset_code = ?",
+            String.class,
+            fixture.organizationId(),
+            "BR-01");
+    org.assertj.core.api.Assertions.assertThat(persistedLocation).isEqualTo("District 1");
   }
 
   @Test
@@ -144,6 +152,7 @@ class AssetApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Hijacked\",\"locationText\":\"Elsewhere\"}"))
         .andExpect(status().isNotFound());
+
     mockMvc
         .perform(
             put("/api/v1/assets/{id}", assetId)
@@ -152,24 +161,37 @@ class AssetApiIntegrationTest {
                 .content("{\"name\":\"Renamed\",\"locationText\":\"District 2\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.name").value("Renamed"));
+
+    var activeAsset = assets.findById(assetId).orElseThrow();
+    activeAsset.retire();
+    assets.saveAndFlush(activeAsset);
+    mockMvc
+        .perform(
+            put("/api/v1/assets/{id}", assetId)
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Cannot rename\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INVALID_STATE"));
   }
 
   @Test
-  void managerCannotCreateOrListAssets() throws Exception {
+  void organizationAdminCanCreateAndListAssetsWithinItsOrganization() throws Exception {
     mockMvc
         .perform(
             post("/api/v1/assets")
                 .with(manager(fixture.managerId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    "{\"code\":\"NO\",\"name\":\"Nope\",\"categoryId\":\""
+                    "{\"code\":\"ORG-ADMIN-ASSET\",\"name\":\"Own tenant asset\",\"categoryId\":\""
                         + fixture.categoryId()
                         + "\",\"locationText\":\"X\"}"))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isCreated());
 
     mockMvc
         .perform(get("/api/v1/assets").with(manager(fixture.managerId())))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalCount").value(1));
   }
 
   @Test
@@ -205,39 +227,12 @@ class AssetApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
 
-  @Test
-  void rejectedAssetCannotBeUpdated() throws Exception {
-    var asset =
-        assets.saveAndFlush(
-            com.smartdroneinspection.assets.domain.Asset.clientCreate(
-                fixture.organizationId(),
-                fixture.categoryId(),
-                "BR-REJECTED",
-                "Rejected bridge",
-                null,
-                "District 1",
-                null,
-                null,
-                null,
-                fixture.clientId()));
-    asset.rejectReview();
-    assets.saveAndFlush(asset);
-
-    mockMvc
-        .perform(
-            put("/api/v1/assets/{id}", asset.getId())
-                .with(client(fixture.clientId()))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Should not update\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("INVALID_STATE"));
-  }
-
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CLIENT"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                "ROLE_ORG_ADMIN"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor manager(UUID id) {
@@ -245,6 +240,6 @@ class AssetApiIntegrationTest {
         .jwt(token -> token.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_PROVIDER_MANAGER"));
+                "ROLE_ORG_ADMIN"));
   }
 }

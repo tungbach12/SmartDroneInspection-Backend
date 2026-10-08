@@ -110,7 +110,7 @@ class AssetDocumentApiIntegrationTest {
   }
 
   @Test
-  void unsupportedTypeOversizeAndPendingAssetsAreRejected() throws Exception {
+  void unsupportedTypeOversizeAndInactiveAssetsAreRejected() throws Exception {
     UUID assetId = seedActiveAsset();
     mockMvc
         .perform(
@@ -131,10 +131,10 @@ class AssetDocumentApiIntegrationTest {
                 .with(client(fixture.clientId())))
         .andExpect(status().isPayloadTooLarge());
 
-    UUID pendingId = seedPendingAsset();
+    UUID inactiveId = seedInactiveAsset();
     mockMvc
         .perform(
-            multipart("/api/v1/assets/{id}/documents", pendingId)
+            multipart("/api/v1/assets/{id}/documents", inactiveId)
                 .file(new MockMultipartFile("file", "ok.png", "image/png", PNG))
                 .param("documentType", "PERMIT")
                 .with(client(fixture.clientId())))
@@ -160,27 +160,28 @@ class AssetDocumentApiIntegrationTest {
         .getId();
   }
 
-  private UUID seedPendingAsset() {
-    return assets
-        .saveAndFlush(
-            Asset.clientCreate(
-                fixture.organizationId(),
-                fixture.categoryId(),
-                "PA-" + UUID.randomUUID(),
-                "Pending asset",
-                null,
-                "District 1",
-                null,
-                null,
-                null,
-                fixture.clientId()))
-        .getId();
+  private UUID seedInactiveAsset() {
+    Asset asset =
+        new Asset(
+            fixture.organizationId(),
+            fixture.categoryId(),
+            "IN-" + UUID.randomUUID(),
+            "Inactive asset",
+            null,
+            "District 1",
+            null,
+            null,
+            null,
+            fixture.clientId());
+    asset.deactivate();
+    return assets.saveAndFlush(asset).getId();
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CLIENT"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                "ROLE_ORG_ADMIN"));
   }
 }
