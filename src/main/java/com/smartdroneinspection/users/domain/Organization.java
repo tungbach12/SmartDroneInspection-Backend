@@ -30,6 +30,9 @@ public class Organization {
   @Column(nullable = false, length = 24)
   private String status;
 
+  @Column(name = "created_by_user_id")
+  private UUID createdByUserId;
+
   @Column(name = "row_version", nullable = false)
   private long rowVersion;
 
@@ -65,6 +68,16 @@ public class Organization {
 
   public String getStatus() {
     return status;
+  }
+
+  public UUID getCreatedByUserId() {
+    return createdByUserId;
+  }
+
+  /** Records the initial ORG_ADMIN as the organization creator, per database-design.md §6.1. */
+  public void attributeToCreator(UUID creatorUserId) {
+    this.createdByUserId = creatorUserId;
+    this.updatedAt = Instant.now();
   }
 
   public void deactivate() {

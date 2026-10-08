@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -78,7 +79,16 @@ class OrganizationRegistrationApiIntegrationTest {
     User user = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(user.roleValues()).containsExactly("ORG_ADMIN");
     assertThat(user.getOrganizationId()).isNotNull();
-    assertThat(organizations.findById(user.getOrganizationId())).isPresent();
+
+    Organization organization = organizations.findById(user.getOrganizationId()).orElseThrow();
+    assertThat(organization.getStatus()).isEqualTo("ACTIVE");
+    // database-design.md §6.1: the organization records the ORG_ADMIN who created it.
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT created_by_user_id FROM organizations WHERE id = ?",
+                UUID.class,
+                organization.getId()))
+        .isEqualTo(user.getId());
 
     Integer auditRows =
         jdbcTemplate.queryForObject(

@@ -41,7 +41,7 @@ class V24TargetSchemaAlignmentTest {
         .contains("PLATFORM_OPERATOR")
         .contains("SERVICE_WORKFORCE")
         .contains("provider_id")
-        .contains("duplicate target role");
+        .contains("r.role IN ('PROVIDER_MANAGER', 'PLATFORM_OPERATOR')");
     assertThat(v24.indexOf("ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS ck_user_roles_role"))
         .isLessThan(v24.indexOf("UPDATE user_roles\nSET role"));
   }

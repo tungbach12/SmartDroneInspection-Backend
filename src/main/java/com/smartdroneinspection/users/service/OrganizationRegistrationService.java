@@ -74,6 +74,9 @@ public class OrganizationRegistrationService {
     orgAdmin.addRole(UserRole.ORG_ADMIN);
     orgAdmin = users.saveAndFlush(orgAdmin);
 
+    organization.attributeToCreator(orgAdmin.getId());
+    organizations.saveAndFlush(organization);
+
     audit.record(
         null,
         orgAdmin.getId(),

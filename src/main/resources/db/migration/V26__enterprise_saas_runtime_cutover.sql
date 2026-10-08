@@ -163,6 +163,37 @@ ALTER TABLE evidence
         OR maintenance_task_id IS NOT NULL
     );
 
+-- Carry historical security audit rows into the target audit log BEFORE the legacy table is
+-- dropped. SRS 3.1.4 requires consequential transitions to stay attributable, and security
+-- history (login success/failure, role changes, password resets) is compliance evidence that
+-- cannot be reconstructed after the cutover.
+--
+-- Column mapping: event_type -> action, outcome -> after_status, occurred_at -> created_at.
+-- The legacy IP address and user agent have no target column, so they are preserved as safe
+-- metadata rather than discarded. aggregate_type is 'USER' because the legacy table could only
+-- reference a subject user. This is a data copy, not a reinterpretation of the recorded events.
+INSERT INTO audit_events
+    (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+     after_status, trace_id, safe_metadata, created_at)
+SELECT
+    subject.organization_id,
+    legacy.actor_user_id,
+    legacy.event_type,
+    'USER',
+    COALESCE(legacy.subject_user_id, legacy.actor_user_id),
+    legacy.outcome,
+    legacy.correlation_id,
+    jsonb_strip_nulls(
+        jsonb_build_object(
+            'ip_address', NULLIF(legacy.ip_address, ''),
+            'user_agent', NULLIF(legacy.user_agent, ''),
+            'legacy_table', 'security_audit_events'
+        )
+    ),
+    legacy.occurred_at
+FROM security_audit_events legacy
+LEFT JOIN users subject ON subject.id = legacy.subject_user_id;
+
 -- Retire every non-target marketplace, old-client, and MF5 application table explicitly.
 DROP TABLE IF EXISTS inspection_request_attachments;
 DROP TABLE IF EXISTS inspection_assignments;
