@@ -31,6 +31,7 @@ class RuntimePersistenceInventoryTest {
           "drones",
           "flight_permits",
           "inspection_preparations",
+          "inspection_readiness_decisions",
           "inspections",
           "notifications",
           "organizations",
