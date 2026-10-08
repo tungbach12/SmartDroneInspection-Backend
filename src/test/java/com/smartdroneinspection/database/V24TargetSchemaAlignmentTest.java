@@ -58,7 +58,16 @@ class V24TargetSchemaAlignmentTest {
         .contains("DROP COLUMN IF EXISTS provider_id");
   }
 
+  /**
+   * Reads a migration with line endings normalised to {@code \n}.
+   *
+   * <p>The assertions below include multi-line snippets, and a repository file carries whichever
+   * line ending its editor last wrote. Matching raw bytes made the ordering assertion below fail on
+   * a correctly ordered migration whenever the file was stored as CRLF, because the search string
+   * used {@code \n}. Normalising here keeps the assertions about SQL rather than about encoding.
+   */
   private String readMigration(String filename) throws IOException {
-    return Files.readString(Path.of("src/main/resources/db/migration", filename));
+    return Files.readString(Path.of("src/main/resources/db/migration", filename))
+        .replace("\r\n", "\n");
   }
 }
