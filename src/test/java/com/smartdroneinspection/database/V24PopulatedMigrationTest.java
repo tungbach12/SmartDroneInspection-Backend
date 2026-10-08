@@ -110,15 +110,10 @@ class V24PopulatedMigrationTest {
   }
 
   @Test
-  void refusesRoleCollapseCollisionBeforeChangingAssignments() {
+  void refusesLegacyPlatformOperatorInsteadOfGrantingFullAdmin() {
     migrateThroughV23();
     UUID userId = UUID.randomUUID();
     insertUser(userId, "PLATFORM", null);
-    jdbcTemplate.update(
-        "INSERT INTO " + schema + ".user_roles (id, user_id, role) VALUES (?, ?, ?)",
-        UUID.randomUUID(),
-        userId,
-        "PLATFORM_ADMIN");
     jdbcTemplate.update(
         "INSERT INTO " + schema + ".user_roles (id, user_id, role) VALUES (?, ?, ?)",
         UUID.randomUUID(),
@@ -127,18 +122,20 @@ class V24PopulatedMigrationTest {
 
     Flyway configured = configureFlyway(schema, null);
 
+    // A marketplace operator had commercial/vetting duties, not platform user administration.
+    // Collapsing it into ADMIN would silently grant user management, so the migration must stop.
     assertThatThrownBy(configured::migrate)
         .satisfies(
             failure ->
                 assertThat(causalText(failure))
-                    .contains("duplicate target role")
+                    .contains("V24 precheck failed")
                     .contains(userId.toString()));
     assertThat(
-            jdbcTemplate.queryForList(
-                "SELECT role FROM " + schema + ".user_roles WHERE user_id = ? ORDER BY role",
+            jdbcTemplate.queryForObject(
+                "SELECT role FROM " + schema + ".user_roles WHERE user_id = ?",
                 String.class,
                 userId))
-        .containsExactly("PLATFORM_ADMIN", "PLATFORM_OPERATOR");
+        .isEqualTo("PLATFORM_OPERATOR");
   }
 
   private String causalText(Throwable failure) {

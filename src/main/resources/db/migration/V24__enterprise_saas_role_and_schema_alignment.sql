@@ -5,6 +5,11 @@
 
 -- Provider identities have no deterministic customer-organization successor. Refuse the migration
 -- before any mutation while provider linkage, service-workforce zones, or provider-manager roles remain.
+--
+-- PLATFORM_OPERATOR is refused for the same fail-closed reason, but for a different one: it carried
+-- marketplace vetting and commercial duties, not platform user administration. Collapsing it into
+-- ADMIN would silently widen an operator's privileges to include creating, resetting and re-scoping
+-- every platform account, so the migration stops and requires an explicit human decision instead.
 DO $$
 DECLARE
     unmapped_identities TEXT;
@@ -19,7 +24,7 @@ BEGIN
             LEFT JOIN user_roles r ON r.user_id = u.id
            WHERE u.provider_id IS NOT NULL
               OR u.actor_zone = 'SERVICE_WORKFORCE'
-              OR r.role = 'PROVIDER_MANAGER'
+              OR r.role IN ('PROVIDER_MANAGER', 'PLATFORM_OPERATOR')
            GROUP BY u.id, u.email, u.actor_zone, u.provider_id
            ORDER BY u.email
            LIMIT 20
@@ -27,45 +32,15 @@ BEGIN
 
     IF unmapped_identities IS NOT NULL THEN
         RAISE EXCEPTION
-            'V24 precheck failed: provider/workforce identities cannot be mapped to a customer organization without an approved deterministic mapping. Resolve or deactivate these identities before retrying: %',
+            'V24 precheck failed: provider/workforce identities have no deterministic customer-organization successor, and PLATFORM_OPERATOR must not be promoted to ADMIN without an explicit decision. Resolve or deactivate these identities before retrying: %',
             unmapped_identities;
     END IF;
 END $$;
 
--- Roles that collapse to one target role must not create duplicate (user_id, role) keys.
-DO $$
-DECLARE
-    collisions TEXT;
-BEGIN
-    SELECT string_agg(offender.label, '; ' ORDER BY offender.label)
-      INTO collisions
-      FROM (
-          SELECT u.email || ' (id=' || u.id || ', duplicate target role=' ||
-                 CASE r.role
-                   WHEN 'PLATFORM_ADMIN' THEN 'ADMIN'
-                   WHEN 'PLATFORM_OPERATOR' THEN 'ADMIN'
-                   WHEN 'CLIENT' THEN 'ORG_ADMIN'
-                 END || ')' AS label
-            FROM users u
-            JOIN user_roles r ON r.user_id = u.id
-           WHERE r.role IN ('PLATFORM_ADMIN', 'PLATFORM_OPERATOR', 'CLIENT')
-           GROUP BY u.id, u.email,
-                 CASE r.role
-                   WHEN 'PLATFORM_ADMIN' THEN 'ADMIN'
-                   WHEN 'PLATFORM_OPERATOR' THEN 'ADMIN'
-                   WHEN 'CLIENT' THEN 'ORG_ADMIN'
-                 END
-          HAVING count(*) > 1
-           ORDER BY u.email
-           LIMIT 20
-      ) offender;
-
-    IF collisions IS NOT NULL THEN
-        RAISE EXCEPTION
-            'V24 precheck failed: duplicate target role would violate uq_user_roles. Resolve these assignments explicitly before retrying: %',
-            collisions;
-    END IF;
-END $$;
+-- No role-collision precheck is needed here: PLATFORM_ADMIN maps to ADMIN and CLIENT maps to
+-- ORG_ADMIN, which are distinct target roles, and uq_user_roles already prevents duplicate
+-- (user_id, role) source rows. Re-add such a guard only if a future migration makes two
+-- source roles collapse onto one target key.
 
 -- All target customer roles require an organization scope; ADMIN must be platform-scoped.
 DO $$
@@ -123,11 +98,10 @@ ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS ck_user_roles_role;
 UPDATE user_roles
 SET role = CASE role
     WHEN 'PLATFORM_ADMIN' THEN 'ADMIN'
-    WHEN 'PLATFORM_OPERATOR' THEN 'ADMIN'
     WHEN 'CLIENT' THEN 'ORG_ADMIN'
     ELSE role
 END
-WHERE role IN ('PLATFORM_ADMIN', 'PLATFORM_OPERATOR', 'CLIENT');
+WHERE role IN ('PLATFORM_ADMIN', 'CLIENT');
 ALTER TABLE user_roles
     ADD CONSTRAINT ck_user_roles_role CHECK (role IN ('ADMIN', 'ORG_ADMIN', 'INSPECTOR', 'MAINTENANCE_ENGINEER'));
 COMMENT ON CONSTRAINT ck_user_roles_role ON user_roles IS
