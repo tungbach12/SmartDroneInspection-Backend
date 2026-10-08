@@ -2,25 +2,17 @@ package com.smartdroneinspection.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.smartdroneinspection.inspections.domain.AiFindingCandidate;
-import com.smartdroneinspection.inspections.domain.ChecklistResponse;
-import com.smartdroneinspection.inspections.domain.Evidence;
-import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.domain.ReportVersion;
-import com.smartdroneinspection.inspections.domain.VerifiedFinding;
-import com.smartdroneinspection.maintenance.domain.Invoice;
-import com.smartdroneinspection.maintenance.domain.MaintenanceAssessment;
-import com.smartdroneinspection.maintenance.domain.MaintenanceAssignment;
-import com.smartdroneinspection.maintenance.domain.MaintenanceChangeRequest;
-import com.smartdroneinspection.maintenance.domain.MaintenanceOrder;
-import com.smartdroneinspection.maintenance.domain.MaintenanceQuotation;
-import com.smartdroneinspection.maintenance.domain.MaintenanceTicket;
-import com.smartdroneinspection.maintenance.domain.MaintenanceTicketFinding;
-import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
+import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.AssetCategory;
+import com.smartdroneinspection.assets.domain.AssetDocument;
+import com.smartdroneinspection.assets.domain.ChecklistItem;
+import com.smartdroneinspection.assets.domain.ChecklistTemplate;
 import com.smartdroneinspection.notifications.domain.Notification;
+import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.Organization;
-import com.smartdroneinspection.users.domain.SecurityAuditEvent;
+import com.smartdroneinspection.users.domain.RefreshToken;
+import com.smartdroneinspection.users.domain.User;
+import com.smartdroneinspection.users.domain.UserRoleAssignment;
 import java.util.List;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
@@ -33,25 +25,17 @@ class PersistenceEntityMappingTest {
 
   private static final List<Class<?>> FEATURE_ENTITIES =
       List.of(
+          Asset.class,
+          AssetCategory.class,
+          AssetDocument.class,
+          ChecklistItem.class,
+          ChecklistTemplate.class,
+          Notification.class,
+          AuthSession.class,
           Organization.class,
-          SecurityAuditEvent.class,
-          Inspection.class,
-          ChecklistResponse.class,
-          Evidence.class,
-          AiFindingCandidate.class,
-          VerifiedFinding.class,
-          InspectionReport.class,
-          ReportVersion.class,
-          MaintenanceTicket.class,
-          MaintenanceAssignment.class,
-          MaintenanceAssessment.class,
-          MaintenanceQuotation.class,
-          MaintenanceOrder.class,
-          MaintenanceWorkLog.class,
-          MaintenanceChangeRequest.class,
-          MaintenanceTicketFinding.class,
-          Invoice.class,
-          Notification.class);
+          RefreshToken.class,
+          User.class,
+          UserRoleAssignment.class);
 
   @Test
   void allFeatureEntitiesBuildValidHibernateMetadataWithoutDatabaseAccess() {

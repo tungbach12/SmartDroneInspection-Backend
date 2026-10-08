@@ -10,10 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +38,7 @@ import org.springframework.web.context.WebApplicationContext;
 class AdminUserApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
+  @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -51,17 +54,20 @@ class AdminUserApiIntegrationTest {
   void createPersistsUserAndAuditEventInOneTransaction() throws Exception {
     User admin = saveAdmin();
     String unique = UUID.randomUUID().toString().replace("-", "");
+    Organization organization =
+        organizations.saveAndFlush(
+            new Organization("Engineer organization", "ENG-" + unique, "Test fixture"));
     String body =
         """
         {
           "email": "engineer-%s@example.test",
           "fullName": "Maintenance Engineer",
-          "actorZone": "SERVICE_WORKFORCE",
-          "organizationId": null,
+          "actorZone": "CUSTOMER_ORGANIZATION",
+          "organizationId": "%s",
           "roles": ["MAINTENANCE_ENGINEER"]
         }
         """
-            .formatted(unique);
+            .formatted(unique, organization.getId());
 
     var result =
         mockMvc
@@ -84,9 +90,9 @@ class AdminUserApiIntegrationTest {
     Integer auditRows =
         jdbcTemplate.queryForObject(
             """
-            SELECT count(*) FROM security_audit_events
-            WHERE actor_user_id = ? AND subject_user_id = ?
-              AND event_type = 'USER_CREATED' AND outcome = 'SUCCESS'
+            SELECT count(*) FROM audit_events
+            WHERE actor_user_id = ? AND aggregate_id = ?
+              AND action = 'USER_CREATED' AND after_status = 'SUCCESS'
             """,
             Integer.class,
             admin.getId(),
@@ -104,13 +110,13 @@ class AdminUserApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    admin.addRole(UserRole.PLATFORM_ADMIN);
+    admin.addRole(UserRole.ADMIN);
     return users.saveAndFlush(admin);
   }
 
   private RequestPostProcessor admin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
   }
 }

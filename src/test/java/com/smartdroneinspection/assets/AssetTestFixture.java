@@ -46,23 +46,22 @@ public final class AssetTestFixture {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId,
-            UserRole.CLIENT);
+            UserRole.ORG_ADMIN);
     User otherClient =
         saveUser(
             "other-client",
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             otherOrganizationId,
-            UserRole.CLIENT);
+            UserRole.ORG_ADMIN);
     User manager =
         saveUser(
             "manager",
             UserStatus.ACTIVE,
-            ActorZone.SERVICE_WORKFORCE,
-            null,
-            UserRole.PROVIDER_MANAGER);
-    User admin =
-        saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, null, UserRole.PLATFORM_ADMIN);
+            ActorZone.CUSTOMER_ORGANIZATION,
+            organizationId,
+            UserRole.ORG_ADMIN);
+    User admin = saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, null, UserRole.ADMIN);
 
     AssetCategory category =
         categories.saveAndFlush(
@@ -101,8 +100,12 @@ public final class AssetTestFixture {
   private UUID createOrganization(String label) {
     UUID organizationId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO organizations (id, name, code) VALUES (?, ?, ?)",
+        """
+        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
+        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        """,
         organizationId,
+        label + " organization " + organizationId,
         label + " organization " + organizationId,
         "ORG-" + organizationId);
     return organizationId;

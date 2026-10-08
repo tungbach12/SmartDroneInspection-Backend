@@ -15,7 +15,7 @@ class FullDatabaseSchemaSqlContractTest {
     String wf3 = readMigration("V7__inspection_execution_and_reporting.sql");
     String wf4 = readMigration("V8__maintenance_and_billing.sql");
     String support = readMigration("V9__notifications.sql");
-    String reportAudit = readMigration("V10__inspection_report_client_decision_audit.sql");
+    String reportAudit = readMigration("V22__report_author_verification_and_completeness.sql");
 
     assertThat(wf3)
         .contains("CREATE TABLE inspections")
@@ -25,12 +25,10 @@ class FullDatabaseSchemaSqlContractTest {
         .contains("CREATE TABLE verified_findings")
         .contains("CREATE TABLE inspection_reports")
         .contains("CREATE TABLE report_versions")
-        .contains("CREATE TABLE peer_reviews")
         .contains("CONSTRAINT ck_evidence_parent CHECK")
         .contains("CREATE UNIQUE INDEX uq_evidence_inspection_checksum")
         .contains("CREATE UNIQUE INDEX uq_evidence_work_log_checksum")
-        .contains("CONSTRAINT uq_report_versions_number UNIQUE")
-        .contains("CONSTRAINT uq_peer_reviews_version UNIQUE");
+        .contains("CONSTRAINT uq_report_versions_number UNIQUE");
 
     assertThat(wf4)
         .contains("CREATE TABLE maintenance_tickets")
@@ -55,10 +53,13 @@ class FullDatabaseSchemaSqlContractTest {
         .contains("CREATE INDEX ix_notifications_delivery");
 
     assertThat(reportAudit)
-        .contains("ADD COLUMN client_decision_by_user_id UUID")
-        .contains("ADD COLUMN client_decision_reason VARCHAR(2000)")
-        .contains("fk_report_version_client_decision_user")
-        .contains("ck_report_version_client_decision_reason");
+        .contains("ADD COLUMN IF NOT EXISTS author_verified_by_user_id UUID REFERENCES users(id)")
+        .contains("ADD COLUMN IF NOT EXISTS author_verified_at TIMESTAMPTZ")
+        .contains("ADD COLUMN IF NOT EXISTS author_verification_snapshot JSONB")
+        .contains(
+            "ADD COLUMN IF NOT EXISTS completeness_checked_by_user_id UUID REFERENCES users(id)")
+        .contains("ADD COLUMN IF NOT EXISTS completeness_checked_at TIMESTAMPTZ")
+        .contains("ADD COLUMN IF NOT EXISTS completeness_return_reason VARCHAR(2000)");
   }
 
   @Test
@@ -89,7 +90,6 @@ class FullDatabaseSchemaSqlContractTest {
             "verified_findings",
             "inspection_reports",
             "report_versions",
-            "peer_reviews",
             "maintenance_tickets",
             "maintenance_ticket_findings",
             "maintenance_assessments",

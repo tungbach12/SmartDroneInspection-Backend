@@ -9,5 +9,4 @@ public record UserResponse(
     String fullName,
     List<String> roles,
     String actorZone,
-    UUID organizationId,
-    UUID providerId) {}
+    UUID organizationId) {}

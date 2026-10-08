@@ -1,12 +1,9 @@
 package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateAssetRequest;
-import com.smartdroneinspection.assets.api.dto.request.ReviewAssetRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
-import com.smartdroneinspection.assets.api.dto.response.AssetReviewResponse;
-import com.smartdroneinspection.assets.service.AssetReviewService;
 import com.smartdroneinspection.assets.service.AssetService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -30,15 +27,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AssetController {
 
   private final AssetService assets;
-  private final AssetReviewService assetReview;
 
-  public AssetController(AssetService assets, AssetReviewService assetReview) {
+  public AssetController(AssetService assets) {
     this.assets = assets;
-    this.assetReview = assetReview;
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('CLIENT')")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<AssetResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateAssetRequest request) {
@@ -46,7 +41,7 @@ public class AssetController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
   public ApiResponse<AssetPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -55,38 +50,20 @@ public class AssetController {
     return ApiResponse.success(assets.list(subject(jwt), page, pageSize, search));
   }
 
-  @GetMapping("/pending-review")
-  @PreAuthorize("hasRole('PROVIDER_MANAGER')")
-  public ApiResponse<AssetPageResponse> pendingReview(
-      @AuthenticationPrincipal Jwt jwt,
-      @RequestParam(defaultValue = "1") int page,
-      @RequestParam(defaultValue = "20") int pageSize) {
-    return ApiResponse.success(assets.listPendingReview(subject(jwt), page, pageSize));
-  }
-
   @GetMapping("/{assetId}")
-  @PreAuthorize("hasAnyRole('CLIENT', 'PLATFORM_ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
   }
 
   @PutMapping("/{assetId}")
-  @PreAuthorize("hasRole('CLIENT')")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
   public ApiResponse<AssetResponse> update(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,
       @Valid @RequestBody UpdateAssetRequest request) {
     return ApiResponse.success(assets.update(subject(jwt), assetId, request));
-  }
-
-  @PostMapping("/{assetId}/review")
-  @PreAuthorize("hasRole('PROVIDER_MANAGER')")
-  public ApiResponse<AssetReviewResponse> review(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID assetId,
-      @Valid @RequestBody ReviewAssetRequest request) {
-    return ApiResponse.success(assetReview.review(subject(jwt), assetId, request));
   }
 
   private static UUID subject(Jwt jwt) {

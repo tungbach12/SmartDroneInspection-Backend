@@ -9,14 +9,10 @@ public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
 
-  record ActiveUser(UUID id, Set<String> roles, UUID organizationId, UUID providerId) {
-
-    public ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
-      this(id, roles, organizationId, null);
-    }
+  record ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null);
+      this(id, roles, null);
     }
 
     public ActiveUser {
@@ -25,11 +21,6 @@ public interface UserAccess {
 
     public boolean hasRole(String role) {
       return roles.contains(role);
-    }
-
-    /** The provider this identity speaks for, or null. Never derived from the roles. */
-    public boolean hasProviderScope() {
-      return providerId != null;
     }
   }
 }

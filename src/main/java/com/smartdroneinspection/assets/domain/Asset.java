@@ -25,7 +25,7 @@ import java.util.UUID;
 @Entity
 @Table(
     name = "assets",
-    uniqueConstraints = @UniqueConstraint(columnNames = {"organization_id", "code"}))
+    uniqueConstraints = @UniqueConstraint(columnNames = {"organization_id", "asset_code"}))
 public class Asset {
 
   private static final BigDecimal MINIMUM_LATITUDE = BigDecimal.valueOf(-90);
@@ -41,7 +41,7 @@ public class Asset {
   @Column(name = "category_id", nullable = false)
   private UUID categoryId;
 
-  @Column(nullable = false, length = 64)
+  @Column(name = "asset_code", nullable = false, length = 64)
   private String code;
 
   @Column(nullable = false, length = 200)
@@ -50,7 +50,8 @@ public class Asset {
   @Column(length = 2000)
   private String description;
 
-  @Column(name = "location_text", nullable = false, length = 500)
+  @Column(name = "location", nullable = false, columnDefinition = "jsonb")
+  @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
   private String locationText;
 
   @Column(precision = 9, scale = 6)
@@ -59,15 +60,13 @@ public class Asset {
   @Column(precision = 9, scale = 6)
   private BigDecimal longitude;
 
-  @Column(name = "ownership_information", length = 1000)
+  @Column(name = "technical_profile", columnDefinition = "jsonb")
+  @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
   private String ownershipInformation;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
   private AssetStatus status;
-
-  @Column(name = "created_by_user_id", nullable = false)
-  private UUID createdByUserId;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -106,14 +105,33 @@ public class Asset {
     this.code = normalizeCode(code);
     this.name = name;
     this.description = description;
-    this.locationText = locationText;
+    this.locationText = toLocationJson(locationText, latitude, longitude);
     this.latitude = latitude;
     this.longitude = longitude;
     this.ownershipInformation = ownershipInformation;
     this.status = AssetStatus.ACTIVE;
-    this.createdByUserId = createdByUserId;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
+  }
+
+  private static String toLocationJson(
+      String locationText, BigDecimal latitude, BigDecimal longitude) {
+    StringBuilder location = new StringBuilder("{");
+    boolean hasValue = false;
+    if (locationText != null) {
+      location.append("\"label\":\"").append(escapeJson(locationText)).append('"');
+      hasValue = true;
+    }
+    if (latitude != null && longitude != null) {
+      if (hasValue) location.append(',');
+      location.append("\"latitude\":").append(latitude);
+      location.append(",\"longitude\":").append(longitude);
+    }
+    return location.append('}').toString();
+  }
+
+  private static String escapeJson(String value) {
+    return value.replace("\\", "\\\\").replace("\"", "\\\"");
   }
 
   public AssetDocument addDocument(
@@ -159,33 +177,6 @@ public class Asset {
     updatedAt = Instant.now();
   }
 
-  public static Asset clientCreate(
-      UUID organizationId,
-      UUID categoryId,
-      String code,
-      String name,
-      String description,
-      String locationText,
-      BigDecimal latitude,
-      BigDecimal longitude,
-      String ownershipInformation,
-      UUID createdByUserId) {
-    Asset asset =
-        new Asset(
-            organizationId,
-            categoryId,
-            code,
-            name,
-            description,
-            locationText,
-            latitude,
-            longitude,
-            ownershipInformation,
-            createdByUserId);
-    asset.status = AssetStatus.PENDING_REVIEW;
-    return asset;
-  }
-
   public void update(
       String name,
       String description,
@@ -196,26 +187,10 @@ public class Asset {
     validateCoordinates(latitude, longitude);
     if (name != null) this.name = name;
     if (description != null) this.description = description;
-    if (locationText != null) this.locationText = locationText;
+    if (locationText != null) this.locationText = toLocationJson(locationText, latitude, longitude);
     if (latitude != null) this.latitude = latitude;
     if (longitude != null) this.longitude = longitude;
     if (ownershipInformation != null) this.ownershipInformation = ownershipInformation;
-    updatedAt = Instant.now();
-  }
-
-  public void approveReview() {
-    if (status != AssetStatus.PENDING_REVIEW) {
-      throw new IllegalStateException("Only pending assets can be approved");
-    }
-    status = AssetStatus.ACTIVE;
-    updatedAt = Instant.now();
-  }
-
-  public void rejectReview() {
-    if (status != AssetStatus.PENDING_REVIEW) {
-      throw new IllegalStateException("Only pending assets can be rejected");
-    }
-    status = AssetStatus.REJECTED;
     updatedAt = Instant.now();
   }
 

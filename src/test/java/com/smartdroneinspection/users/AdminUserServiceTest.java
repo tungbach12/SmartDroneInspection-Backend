@@ -53,7 +53,7 @@ class AdminUserServiceTest {
             new CreateUserRequest(
                 "engineer@example.com",
                 "Maintenance Engineer",
-                ActorZone.SERVICE_WORKFORCE,
+                ActorZone.CUSTOMER_ORGANIZATION,
                 null,
                 Set.of(UserRole.MAINTENANCE_ENGINEER)),
             "127.0.0.1",

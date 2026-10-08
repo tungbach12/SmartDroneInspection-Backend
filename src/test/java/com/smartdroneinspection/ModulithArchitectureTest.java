@@ -15,16 +15,20 @@ class ModulithArchitectureTest {
   }
 
   @Test
-  void discoversInspectionRequestsCapability() {
-    assertThat(modules.getModuleByName("inspectionrequests")).isPresent();
-  }
-
-  @Test
-  void discoversApprovedScaffoldedCapabilityRoots() {
+  void discoversTargetModuleRoots() {
     assertThat(modules.getModuleByName("inspections")).isPresent();
     assertThat(modules.getModuleByName("maintenance")).isPresent();
     assertThat(modules.getModuleByName("notifications")).isPresent();
     assertThat(modules.getModuleByName("dashboard")).isPresent();
     assertThat(modules.getModuleByName("infrastructure")).isPresent();
+    assertThat(modules.getModuleByName("assets")).isPresent();
+    assertThat(modules.getModuleByName("users")).isPresent();
+    assertThat(modules.getModuleByName("subscriptions")).isPresent();
+    assertThat(modules.getModuleByName("workforce")).isPresent();
+  }
+
+  @Test
+  void doesNotDiscoverInspectionRequests() {
+    assertThat(modules.getModuleByName("inspectionrequests")).isEmpty();
   }
 }

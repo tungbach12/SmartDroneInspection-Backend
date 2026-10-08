@@ -46,7 +46,7 @@ public class AssetDocumentService {
   public AssetDocumentResponse upload(
       UUID actorId, UUID assetId, MultipartFile file, String documentType, LocalDate documentDate) {
     Asset asset = requireOwnedAsset(actorId, assetId);
-    if (asset.getStatus() != AssetStatus.ACTIVE && asset.getStatus() != AssetStatus.INACTIVE) {
+    if (asset.getStatus() != AssetStatus.ACTIVE) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Documents can only be added to active assets");
     }

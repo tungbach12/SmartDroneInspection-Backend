@@ -158,8 +158,12 @@ class AssetPersistenceTest {
     UUID organizationId = UUID.randomUUID();
     String suffix = organizationId.toString();
     jdbcTemplate.update(
-        "INSERT INTO organizations (id, name, code) VALUES (?, ?, ?)",
+        """
+        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
+        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        """,
         organizationId,
+        "Organization " + suffix,
         "Organization " + suffix,
         "ORG-" + suffix);
     return organizationId;

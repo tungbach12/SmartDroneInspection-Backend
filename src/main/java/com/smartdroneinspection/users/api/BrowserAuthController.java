@@ -5,19 +5,16 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.correlationId;
 import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
 import com.smartdroneinspection.shared.api.ApiResponse;
-import com.smartdroneinspection.users.api.dto.request.ClientRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeRequest;
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
+import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.PasswordChangeRequest;
-import com.smartdroneinspection.users.api.dto.request.ProviderRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
-import com.smartdroneinspection.users.api.dto.response.ClientRegistrationResponse;
-import com.smartdroneinspection.users.api.dto.response.ProviderRegistrationResponse;
+import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.service.AuthService;
-import com.smartdroneinspection.users.service.ClientRegistrationService;
-import com.smartdroneinspection.users.service.ProviderRegistrationService;
+import com.smartdroneinspection.users.service.OrganizationRegistrationService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -25,7 +22,6 @@ import java.util.Arrays;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -42,18 +38,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrowserAuthController {
 
   private final AuthService auth;
-  private final ClientRegistrationService registration;
-  private final ProviderRegistrationService providerRegistration;
+  private final OrganizationRegistrationService registration;
   private final RefreshCookieService cookies;
 
   public BrowserAuthController(
       AuthService auth,
-      ClientRegistrationService registration,
-      ProviderRegistrationService providerRegistration,
+      OrganizationRegistrationService registration,
       RefreshCookieService cookies) {
     this.auth = auth;
     this.registration = registration;
-    this.providerRegistration = providerRegistration;
     this.cookies = cookies;
   }
 
@@ -63,37 +56,13 @@ public class BrowserAuthController {
   }
 
   @PostMapping("/register")
-  public ResponseEntity<ApiResponse<ClientRegistrationResponse>> register(
-      @Valid @RequestBody ClientRegistrationRequest body, HttpServletRequest request) {
-    return ResponseEntity.status(HttpStatus.CREATED)
+  public ResponseEntity<ApiResponse<OrganizationRegistrationResponse>> register(
+      @Valid @RequestBody OrganizationRegistrationRequest body, HttpServletRequest request) {
+    var response =
+        registration.register(body, clientIp(request), userAgent(request), correlationId(request));
+    return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
         .cacheControl(CacheControl.noStore())
-        .body(
-            ApiResponse.success(
-                registration.register(
-                    body, clientIp(request), userAgent(request), correlationId(request))));
-  }
-
-  public record ProviderActivationRequest(@jakarta.validation.constraints.NotBlank String token) {}
-
-  @PostMapping("/provider/register")
-  public ResponseEntity<ApiResponse<ProviderRegistrationResponse>> providerRegister(
-      @Valid @RequestBody ProviderRegistrationRequest body, HttpServletRequest request) {
-    return ResponseEntity.status(HttpStatus.CREATED)
-        .cacheControl(CacheControl.noStore())
-        .body(
-            ApiResponse.success(
-                providerRegistration.register(
-                    body, clientIp(request), userAgent(request), correlationId(request))));
-  }
-
-  @PostMapping("/provider/activate")
-  public ResponseEntity<ApiResponse<java.util.Map<String, String>>> providerActivate(
-      @Valid @RequestBody ProviderActivationRequest body, HttpServletRequest request) {
-    providerRegistration.activate(
-        body.token(), clientIp(request), userAgent(request), correlationId(request));
-    return ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore())
-        .body(ApiResponse.success(java.util.Map.of("message", "activated")));
+        .body(ApiResponse.success(response));
   }
 
   @PostMapping("/login")

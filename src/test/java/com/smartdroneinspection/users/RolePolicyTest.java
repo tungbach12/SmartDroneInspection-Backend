@@ -15,12 +15,12 @@ class RolePolicyTest {
   private final RolePolicy policy = new RolePolicy();
 
   @Test
-  void permitsMultipleServiceRoles() {
+  void permitsMultipleServiceRolesWithinAnOrganization() {
     assertThatCode(
             () ->
                 policy.validate(
-                    ActorZone.SERVICE_WORKFORCE,
-                    null,
+                    ActorZone.CUSTOMER_ORGANIZATION,
+                    UUID.randomUUID(),
                     Set.of(UserRole.INSPECTOR, UserRole.MAINTENANCE_ENGINEER)))
         .doesNotThrowAnyException();
   }
@@ -30,20 +30,21 @@ class RolePolicyTest {
     assertThatThrownBy(
             () ->
                 policy.validate(
-                    ActorZone.PLATFORM, null, Set.of(UserRole.PLATFORM_ADMIN, UserRole.INSPECTOR)))
+                    ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void requiresOrganizationForClient() {
     assertThatThrownBy(
-            () -> policy.validate(ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.CLIENT)))
+            () ->
+                policy.validate(ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.ORG_ADMIN)))
         .isInstanceOf(IllegalArgumentException.class);
 
     assertThatCode(
             () ->
                 policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.CLIENT)))
+                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.ORG_ADMIN)))
         .doesNotThrowAnyException();
   }
 }

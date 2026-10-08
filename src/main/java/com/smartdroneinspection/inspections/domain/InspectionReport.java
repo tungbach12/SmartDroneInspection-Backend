@@ -2,18 +2,14 @@ package com.smartdroneinspection.inspections.domain;
 
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
-@Entity
-@Table(name = "inspection_reports")
 public class InspectionReport {
 
   @Id @GeneratedValue private UUID id;

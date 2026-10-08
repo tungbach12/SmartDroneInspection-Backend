@@ -150,7 +150,6 @@ public class AdminUserService {
         user.getFullName(),
         user.roleValues(),
         user.getActorZone().name(),
-        user.getOrganizationId(),
-        user.getProviderId());
+        user.getOrganizationId());
   }
 }

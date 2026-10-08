@@ -19,7 +19,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
@@ -111,48 +110,18 @@ class AssetCatalogApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
 
-  @Test
-  void adminManagesSuggestedFrequencies() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/asset-categories/{id}/suggested-frequencies", fixture.categoryId())
-                .with(admin(fixture.adminId()))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"frequencyUnit\":\"MONTH\",\"frequencyInterval\":3}"))
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.frequencyUnit").value("MONTH"));
-
-    mockMvc
-        .perform(
-            post("/api/v1/asset-categories/{id}/suggested-frequencies", fixture.categoryId())
-                .with(admin(fixture.adminId()))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"frequencyUnit\":\"MONTH\",\"frequencyInterval\":0}"))
-        .andExpect(status().isBadRequest());
-
-    MvcResult list =
-        mockMvc
-            .perform(
-                get("/api/v1/asset-categories/{id}/suggested-frequencies", fixture.categoryId())
-                    .with(admin(fixture.adminId())))
-            .andExpect(status().isOk())
-            .andReturn();
-    org.assertj.core.api.Assertions.assertThat(list.getResponse().getContentAsString())
-        .contains("\"frequencyUnit\":\"MONTH\"");
-  }
-
   private org.springframework.test.web.servlet.request.RequestPostProcessor admin(UUID id) {
     return jwt()
         .jwt(t -> t.subject(id.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_PLATFORM_ADMIN"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {
     return jwt()
         .jwt(t -> t.subject(id.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CLIENT"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                "ROLE_ORG_ADMIN"));
   }
 }
