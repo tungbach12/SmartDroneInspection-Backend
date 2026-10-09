@@ -76,7 +76,7 @@ public class UserAccessService implements UserAccess {
       String userAgent,
       String correlationId) {
     User actor = requireActiveOrganizationAdmin(actorId);
-    if (!actor.getOrganizationId().equals(organizationId)) {
+    if (!actor.getOrganizationId().equals(organizationId) || !isWorkforceRoles(roles)) {
       throw workforceAccessDenied();
     }
     rolePolicy.validate(ActorZone.CUSTOMER_ORGANIZATION, organizationId, toEnumRoles(roles));
@@ -113,6 +113,7 @@ public class UserAccessService implements UserAccess {
       String correlationId) {
     UUID organizationId = requireActiveOrganizationAdmin(actorId).getOrganizationId();
     requireSameOrganizationAsActor(organizationId, userId);
+    requireWorkforceUser(userId, organizationId);
     var response =
         adminUsers.updateStatus(
             actorId, userId, UserStatus.valueOf(status), ipAddress, userAgent, correlationId);
@@ -134,8 +135,11 @@ public class UserAccessService implements UserAccess {
       String userAgent,
       String correlationId) {
     UUID organizationId = requireActiveOrganizationAdmin(actorId).getOrganizationId();
+    if (!isWorkforceRoles(roles)) {
+      throw workforceAccessDenied();
+    }
     requireSameOrganizationAsActor(organizationId, userId);
-    User subject = requireUser(userId);
+    User subject = requireWorkforceUser(userId, organizationId);
     var response =
         adminUsers.updateRoles(
             actorId,
@@ -154,13 +158,23 @@ public class UserAccessService implements UserAccess {
         response.organizationId());
   }
 
-  private User requireUser(UUID userId) {
+  private User requireWorkforceUser(UUID userId, UUID organizationId) {
     return users
         .findDetailedById(userId)
+        .filter(user -> organizationId.equals(user.getOrganizationId()))
+        .filter(user -> isWorkforceRoles(Set.copyOf(user.roleValues())))
         .orElseThrow(
             () ->
                 new AuthException(
                     HttpStatus.NOT_FOUND, "WORKFORCE_USER_NOT_FOUND", "User was not found."));
+  }
+
+  private static boolean isWorkforceRoles(Set<String> roles) {
+    return roles != null
+        && !roles.isEmpty()
+        && roles.stream()
+            .allMatch(
+                role -> Roles.INSPECTOR.equals(role) || Roles.MAINTENANCE_ENGINEER.equals(role));
   }
 
   /**

@@ -231,6 +231,146 @@ class WorkforceApiIntegrationTest {
   }
 
   @Test
+  void usersFacadeCannotProvisionOrganizationAdministratorDirectly() {
+    long[] counts = lifecycleCounts();
+
+    assertThatThrownBy(
+            () ->
+                userAccess.provisionWorkforceUser(
+                    orgAdmin.getId(),
+                    organizationA.getId(),
+                    "facade-org-admin-" + UUID.randomUUID() + "@example.test",
+                    "Escalated Admin",
+                    java.util.Set.of("ORG_ADMIN"),
+                    "127.0.0.1",
+                    "JUnit",
+                    "facade-test"))
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            failure ->
+                assertThat(((AuthException) failure).status())
+                    .isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
+
+    assertLifecycleCountsUnchanged(counts);
+  }
+
+  @Test
+  void usersFacadeCannotProvisionPlatformAdministratorDirectly() {
+    long[] counts = lifecycleCounts();
+
+    assertThatThrownBy(
+            () ->
+                userAccess.provisionWorkforceUser(
+                    orgAdmin.getId(),
+                    organizationA.getId(),
+                    "facade-platform-admin-" + UUID.randomUUID() + "@example.test",
+                    "Escalated Platform Admin",
+                    java.util.Set.of("ADMIN"),
+                    "127.0.0.1",
+                    "JUnit",
+                    "facade-test"))
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            failure ->
+                assertThat(((AuthException) failure).status())
+                    .isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
+
+    assertLifecycleCountsUnchanged(counts);
+  }
+
+  @Test
+  void usersFacadeCannotPromoteWorkforceMemberToOrganizationAdministratorDirectly() {
+    User inspector =
+        saveUser("facade-promote", organizationA.getId(), UserRole.INSPECTOR, UserStatus.ACTIVE);
+    long[] counts = lifecycleCounts();
+    var beforeRoles = users.findDetailedById(inspector.getId()).orElseThrow().roleValues();
+
+    assertThatThrownBy(
+            () ->
+                userAccess.updateWorkforceRoles(
+                    orgAdmin.getId(),
+                    inspector.getId(),
+                    java.util.Set.of("ORG_ADMIN"),
+                    "127.0.0.1",
+                    "JUnit",
+                    "facade-test"))
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            failure ->
+                assertThat(((AuthException) failure).status())
+                    .isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
+
+    assertLifecycleCountsUnchanged(counts);
+    assertThat(users.findDetailedById(inspector.getId()).orElseThrow().roleValues())
+        .containsExactlyElementsOf(beforeRoles);
+  }
+
+  @Test
+  void usersFacadeCannotChangePeerOrganizationAdministratorStatus() {
+    User peerAdmin =
+        saveUser(
+            "facade-peer-admin-status",
+            organizationA.getId(),
+            UserRole.ORG_ADMIN,
+            UserStatus.ACTIVE);
+    UUID sessionId = insertSession(peerAdmin.getId());
+    long[] counts = lifecycleCounts();
+
+    assertThatThrownBy(
+            () ->
+                userAccess.updateWorkforceStatus(
+                    orgAdmin.getId(),
+                    peerAdmin.getId(),
+                    "SUSPENDED",
+                    "127.0.0.1",
+                    "JUnit",
+                    "facade-test"))
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            failure ->
+                assertThat(((AuthException) failure).status())
+                    .isEqualTo(org.springframework.http.HttpStatus.NOT_FOUND));
+
+    assertLifecycleCountsUnchanged(counts);
+    assertThat(users.findDetailedById(peerAdmin.getId()).orElseThrow().getStatus())
+        .isEqualTo(UserStatus.ACTIVE);
+    assertThat(revokedAt(sessionId)).isNull();
+  }
+
+  @Test
+  void usersFacadeCannotChangePeerOrganizationAdministratorRoles() {
+    User peerAdmin =
+        saveUser(
+            "facade-peer-admin-roles",
+            organizationA.getId(),
+            UserRole.ORG_ADMIN,
+            UserStatus.ACTIVE);
+    var beforeRoles = users.findDetailedById(peerAdmin.getId()).orElseThrow().roleValues();
+    UUID sessionId = insertSession(peerAdmin.getId());
+    long[] counts = lifecycleCounts();
+
+    assertThatThrownBy(
+            () ->
+                userAccess.updateWorkforceRoles(
+                    orgAdmin.getId(),
+                    peerAdmin.getId(),
+                    java.util.Set.of("INSPECTOR"),
+                    "127.0.0.1",
+                    "JUnit",
+                    "facade-test"))
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            failure ->
+                assertThat(((AuthException) failure).status())
+                    .isEqualTo(org.springframework.http.HttpStatus.NOT_FOUND));
+
+    assertLifecycleCountsUnchanged(counts);
+    assertThat(users.findDetailedById(peerAdmin.getId()).orElseThrow().roleValues())
+        .containsExactlyElementsOf(beforeRoles);
+    assertThat(revokedAt(sessionId)).isNull();
+  }
+
+  @Test
   void usersFacadeRejectsInspectorStatusChangeWithoutLifecycleChanges() {
     User inspector =
         saveUser("facade-inspector", organizationA.getId(), UserRole.INSPECTOR, UserStatus.ACTIVE);
