@@ -1,5 +1,6 @@
 package com.smartdroneinspection.users;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -8,6 +9,36 @@ import java.util.UUID;
 public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
+
+  Optional<WorkforceMember> findWorkforceMember(UUID userId, UUID organizationId);
+
+  List<WorkforceMember> listWorkforceMembers(UUID organizationId);
+
+  ProvisionedWorkforceMember provisionWorkforceUser(
+      UUID actorId,
+      UUID organizationId,
+      String email,
+      String fullName,
+      Set<String> roles,
+      String ipAddress,
+      String userAgent,
+      String correlationId);
+
+  WorkforceMember updateWorkforceStatus(
+      UUID actorId,
+      UUID userId,
+      String status,
+      String ipAddress,
+      String userAgent,
+      String correlationId);
+
+  WorkforceMember updateWorkforceRoles(
+      UUID actorId,
+      UUID userId,
+      Set<String> roles,
+      String ipAddress,
+      String userAgent,
+      String correlationId);
 
   record ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
 
@@ -27,4 +58,24 @@ public interface UserAccess {
       return roles.contains(role);
     }
   }
+
+  /** Organization-scoped projection of a workforce user, free of persistence types. */
+  record WorkforceMember(
+      UUID id,
+      String email,
+      String fullName,
+      Set<String> roles,
+      String status,
+      UUID organizationId) {
+
+    public WorkforceMember {
+      roles = Set.copyOf(roles);
+    }
+  }
+
+  /**
+   * A newly provisioned workforce user together with its one-time temporary password. The password
+   * is returned once, at creation time only, and is never logged or persisted in plain text.
+   */
+  record ProvisionedWorkforceMember(WorkforceMember member, String temporaryPassword) {}
 }
