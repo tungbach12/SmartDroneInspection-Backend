@@ -46,6 +46,13 @@ public class Inspection {
   @Column(length = 1000)
   private String objective;
 
+  @Column(name = "schedule_id")
+  private UUID scheduleId;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "scope", columnDefinition = "jsonb")
+  private String scope;
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "component_scope", columnDefinition = "jsonb")
   private String componentScope;
@@ -115,6 +122,14 @@ public class Inspection {
     return objective;
   }
 
+  public UUID getScheduleId() {
+    return scheduleId;
+  }
+
+  public String getScope() {
+    return scope;
+  }
+
   public String getComponentScope() {
     return componentScope;
   }
@@ -166,6 +181,13 @@ public class Inspection {
    * <p>Only the vocabulary the CHECK constraint allows can be reached, and an unchanged transition
    * is refused so a caller cannot quietly restate a status it did not earn.
    */
+  public void startPreparation() {
+    if (status != InspectionStatus.ASSIGNED) {
+      throw new IllegalStateException("Only an assigned inspection can start preparation");
+    }
+    moveTo(InspectionStatus.PREPARING);
+  }
+
   public void moveTo(InspectionStatus nextStatus) {
     Objects.requireNonNull(nextStatus, "Inspection status is required");
     if (nextStatus == this.status) {

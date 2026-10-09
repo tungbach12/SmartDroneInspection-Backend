@@ -29,6 +29,7 @@ class RuntimePersistenceInventoryTest {
           "checklist_items",
           "checklist_templates",
           "drones",
+          "drone_documents",
           "flight_permits",
           "inspection_preparations",
           "inspection_readiness_decisions",
@@ -37,7 +38,8 @@ class RuntimePersistenceInventoryTest {
           "organizations",
           "refresh_tokens",
           "user_roles",
-          "users");
+          "users",
+          "workforce_credentials");
 
   private static final Set<String> TARGET_APPLICATION_TABLES =
       Set.of(

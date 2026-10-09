@@ -22,6 +22,15 @@ public interface AssetPairAssignmentRepository extends JpaRepository<AssetPairAs
 
   Optional<AssetPairAssignment> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
+  @Query(
+      "select pairing from AssetPairAssignment pairing "
+          + "where pairing.organizationId = :organizationId "
+          + "and pairing.id = :pairId and pairing.assetId = :assetId")
+  Optional<AssetPairAssignment> findForReadiness(
+      @Param("organizationId") UUID organizationId,
+      @Param("pairId") UUID pairId,
+      @Param("assetId") UUID assetId);
+
   /** The single live pairing for an asset, mirroring uq_asset_pair_assignments_active_asset. */
   Optional<AssetPairAssignment> findByOrganizationIdAndAssetIdAndStatus(
       UUID organizationId, UUID assetId, AssetPairAssignmentStatus status);

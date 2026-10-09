@@ -137,6 +137,17 @@ public class ComplianceGateService {
    */
   @Transactional(readOnly = true)
   public ComplianceGateResponse evaluate(UUID actorId, UUID inspectionId) {
+    ComplianceGateEvaluation evaluation = evaluateReadiness(actorId, inspectionId);
+    return new ComplianceGateResponse(
+        evaluation.inspectionId(),
+        evaluation.plannedStartAt(),
+        evaluation.blockers(),
+        evaluation.linkedPermitIds(),
+        evaluation.requiresHumanVerification());
+  }
+
+  @Transactional(readOnly = true)
+  public ComplianceGateEvaluation evaluateReadiness(UUID actorId, UUID inspectionId) {
     UUID organizationId = requireComplianceOfficer(actorId);
     Inspection inspection = requireScopedInspection(inspectionId, organizationId);
 
@@ -178,13 +189,59 @@ public class ComplianceGateService {
 
     addDroneBlocker(inspection, organizationId, blockers);
 
-    return new ComplianceGateResponse(
+    return new ComplianceGateEvaluation(
         inspection.getId(),
         plannedStart,
         List.copyOf(blockers),
+        applicable.stream().map(this::toPermitSummary).toList(),
         List.copyOf(linked),
-        requiresHumanVerification);
+        requiresHumanVerification,
+        applicable.stream()
+            .filter(permit -> permit.getStatus() == FlightPermitStatus.NOT_APPLICABLE)
+            .map(FlightPermit::getReviewReason)
+            .filter(reason -> reason != null && !reason.isBlank())
+            .sorted()
+            .toList());
   }
+
+  private PermitReadinessSource toPermitSummary(FlightPermit permit) {
+    return new PermitReadinessSource(
+        permit.getId(),
+        permit.getOrganizationId(),
+        permit.getAssetId(),
+        permit.getPermitType(),
+        permit.getIssuingAuthority(),
+        permit.getPermitReference(),
+        permit.getAreaReference(),
+        permit.getGeographicScope(),
+        permit.getValidFrom(),
+        permit.getValidUntil(),
+        permit.getStatus().name(),
+        permit.getReviewReason());
+  }
+
+  public record PermitReadinessSource(
+      UUID id,
+      UUID organizationId,
+      UUID assetId,
+      String permitType,
+      String issuingAuthority,
+      String permitReference,
+      String areaReference,
+      String geographicScope,
+      Instant validFrom,
+      Instant validUntil,
+      String status,
+      String legalBasis) {}
+
+  public record ComplianceGateEvaluation(
+      UUID inspectionId,
+      Instant plannedStartAt,
+      List<ComplianceGateResponse.Blocker> blockers,
+      List<PermitReadinessSource> permits,
+      List<UUID> linkedPermitIds,
+      boolean requiresHumanVerification,
+      List<String> humanVerificationBasis) {}
 
   /**
    * One permit's verdict, or {@code null} when it supports the mission.

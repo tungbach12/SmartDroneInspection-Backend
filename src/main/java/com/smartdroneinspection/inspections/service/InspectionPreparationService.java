@@ -6,11 +6,15 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparati
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -35,6 +39,8 @@ public class InspectionPreparationService {
   private final InspectionRepository inspections;
   private final UserAccess userAccess;
 
+  @PersistenceContext private EntityManager entityManager;
+
   public InspectionPreparationService(
       InspectionPreparationRepository preparations,
       InspectionRepository inspections,
@@ -55,7 +61,11 @@ public class InspectionPreparationService {
   public InspectionPreparationResponse prepareShotList(
       UUID inspectorId, UUID inspectionId, PrepareShotListRequest request) {
     UserAccess.ActiveUser inspector = requireInspector(inspectorId);
-    Inspection inspection = requireScopedInspection(inspectionId, inspector.organizationId());
+    Inspection inspection =
+        inspections
+            .findWithLockByIdAndOrganizationId(inspectionId, requireOrganization(inspector))
+            .orElseThrow(InspectionPreparationService::inspectionNotFound);
+    refreshInspection(inspection);
 
     if (!inspection.isInspectedBy(inspectorId)) {
       throw new BusinessException(
@@ -64,9 +74,22 @@ public class InspectionPreparationService {
           "This inspection is not assigned to you.");
     }
 
-    InspectionPreparation preparation =
-        openDraft(inspectionId, inspectorId)
-            .orElseGet(() -> startFirstVersion(inspection, inspectorId));
+    java.util.Optional<InspectionPreparation> openDraft = openDraft(inspectionId, inspectorId);
+    InspectionPreparation preparation;
+    if (openDraft.isPresent()) {
+      if (inspection.getStatus() != InspectionStatus.PREPARING) {
+        throw preparationNotAllowed();
+      }
+      preparation = openDraft.orElseThrow();
+    } else {
+      try {
+        inspection.startPreparation();
+      } catch (IllegalStateException exception) {
+        throw preparationNotAllowed();
+      }
+      preparation = startFirstVersion(inspection, inspectorId);
+      inspections.save(inspection);
+    }
 
     try {
       preparation.recordShotList(request.shotList());
@@ -93,16 +116,34 @@ public class InspectionPreparationService {
     UserAccess.ActiveUser inspector = requireInspector(inspectorId);
     UUID organizationId = requireOrganization(inspector);
 
-    InspectionPreparation preparation =
+    InspectionPreparation scopedPreparation =
         preparations
             .findByIdAndOrganizationId(preparationId, organizationId)
             .orElseThrow(InspectionPreparationService::preparationNotFound);
+    Inspection inspection =
+        inspections
+            .findWithLockByIdAndOrganizationId(scopedPreparation.getInspectionId(), organizationId)
+            .orElseThrow(InspectionPreparationService::inspectionNotFound);
+    InspectionPreparation preparation =
+        preparations
+            .findWithLockByIdAndInspectionId(preparationId, inspection.getId())
+            .orElseThrow(InspectionPreparationService::preparationNotFound);
+    refreshInspection(inspection);
 
     if (!preparation.getInspectorUserId().equals(inspectorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "PREPARATION_SCOPE_DENIED",
           "This preparation belongs to another inspector.");
+    }
+    if (!inspection.isInspectedBy(inspectorId)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "PREPARATION_SCOPE_DENIED",
+          "This inspection is not assigned to you.");
+    }
+    if (inspection.getStatus() != InspectionStatus.PREPARING) {
+      throw preparationNotAllowed();
     }
 
     if (!preparation.isEditable()) {
@@ -126,7 +167,10 @@ public class InspectionPreparationService {
   @Transactional(readOnly = true)
   public List<InspectionPreparationResponse> listPreparations(UUID inspectorId, UUID inspectionId) {
     UserAccess.ActiveUser inspector = requireInspector(inspectorId);
-    requireScopedInspection(inspectionId, requireOrganization(inspector));
+    UUID organizationId = requireOrganization(inspector);
+    inspections
+        .findWithLockByIdAndOrganizationId(inspectionId, organizationId)
+        .orElseThrow(InspectionPreparationService::inspectionNotFound);
 
     return preparations.findByInspectionIdOrderByPreparationVersionDesc(inspectionId).stream()
         .map(this::toResponse)
@@ -157,6 +201,10 @@ public class InspectionPreparationService {
         .findFirst();
   }
 
+  private void refreshInspection(Inspection inspection) {
+    entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
+  }
+
   private InspectionPreparation startFirstVersion(Inspection inspection, UUID inspectorId) {
     return new InspectionPreparation(
         inspection.getId(), inspectorId, nextVersion(inspection.getId()));
@@ -167,15 +215,6 @@ public class InspectionPreparationService {
         .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
         .map(preparation -> preparation.getPreparationVersion() + 1)
         .orElse(1);
-  }
-
-  private Inspection requireScopedInspection(UUID inspectionId, UUID organizationId) {
-    return inspections
-        .findByIdAndOrganizationId(inspectionId, organizationId)
-        .orElseThrow(
-            () ->
-                new BusinessException(
-                    HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
   }
 
   private InspectionPreparationResponse toResponse(InspectionPreparation preparation) {
@@ -215,6 +254,18 @@ public class InspectionPreparationService {
           HttpStatus.FORBIDDEN, "FORBIDDEN", "User has no organization scope");
     }
     return actor.organizationId();
+  }
+
+  private static BusinessException inspectionNotFound() {
+    return new BusinessException(
+        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found.");
+  }
+
+  private static BusinessException preparationNotAllowed() {
+    return new BusinessException(
+        HttpStatus.CONFLICT,
+        "PREPARATION_NOT_ALLOWED",
+        "Preparation can only start for an assigned inspection or continue while preparing.");
   }
 
   private static BusinessException preparationNotFound() {

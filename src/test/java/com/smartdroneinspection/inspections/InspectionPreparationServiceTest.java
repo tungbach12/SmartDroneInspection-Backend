@@ -13,6 +13,7 @@ import com.smartdroneinspection.inspections.api.dto.request.PrepareShotListReque
 import com.smartdroneinspection.inspections.api.dto.request.SubmitPreparationRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparationResponse;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.service.InspectionPreparationService;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.domain.User;
@@ -114,6 +115,80 @@ class InspectionPreparationServiceTest {
     assertThat(submitted.status()).isEqualTo(InspectionPreparationStatus.SUBMITTED);
     assertThat(submitted.submittedAt()).isNotNull();
     assertThat(submitted.preparationVersion()).isEqualTo(1);
+  }
+
+  @Test
+  void startingTheFirstPreparationMovesAssignedInspectionToPreparing() {
+    InspectionPreparationResponse drafted =
+        service.prepareShotList(
+            inspectorId,
+            inspectionId,
+            new PrepareShotListRequest(SPAN_SHOTS, null, null, "Live 110V near pier 3"));
+
+    assertThat(drafted.status()).isEqualTo(InspectionPreparationStatus.DRAFT);
+    assertThat(inspectionStatus()).isEqualTo(InspectionStatus.PREPARING);
+  }
+
+  @Test
+  void editingAnExistingDraftKeepsInspectionPreparing() {
+    service.prepareShotList(
+        inspectorId,
+        inspectionId,
+        new PrepareShotListRequest(SPAN_SHOTS, null, null, "Initial hazard"));
+
+    InspectionPreparationResponse edited =
+        service.prepareShotList(
+            inspectorId,
+            inspectionId,
+            new PrepareShotListRequest(SPAN_SHOTS, null, null, "Updated hazard"));
+
+    assertThat(edited.safetyObservations()).isEqualTo("Updated hazard");
+    assertThat(inspectionStatus()).isEqualTo(InspectionStatus.PREPARING);
+  }
+
+  @Test
+  void readyInspectionCannotStartPreparationAndRemainsUnchanged() {
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'READY_FOR_FLIGHT' WHERE id = ?", inspectionId);
+
+    assertThatThrownBy(
+            () ->
+                service.prepareShotList(
+                    inspectorId,
+                    inspectionId,
+                    new PrepareShotListRequest(SPAN_SHOTS, null, null, "Live 110V")))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("PREPARATION_NOT_ALLOWED"));
+
+    assertThat(inspectionStatus()).isEqualTo(InspectionStatus.READY_FOR_FLIGHT);
+  }
+
+  @Test
+  void readyInspectionCannotSubmitAnExistingDraft() {
+    InspectionPreparationResponse drafted =
+        service.prepareShotList(
+            inspectorId,
+            inspectionId,
+            new PrepareShotListRequest(SPAN_SHOTS, null, null, "No hazards"));
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'READY_FOR_FLIGHT' WHERE id = ?", inspectionId);
+
+    assertThatThrownBy(
+            () ->
+                service.submitPreparation(
+                    inspectorId, drafted.id(), new SubmitPreparationRequest(null)))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("PREPARATION_NOT_ALLOWED"));
+
+    assertThat(inspectionStatus()).isEqualTo(InspectionStatus.READY_FOR_FLIGHT);
+    assertThat(service.getPreparation(inspectorId, drafted.id()).status())
+        .isEqualTo(InspectionPreparationStatus.DRAFT);
   }
 
   @Test
@@ -264,6 +339,12 @@ class InspectionPreparationServiceTest {
             error ->
                 assertThat(((BusinessException) error).code())
                     .isEqualTo("PREPARATION_NOT_EDITABLE"));
+  }
+
+  private InspectionStatus inspectionStatus() {
+    return InspectionStatus.valueOf(
+        jdbcTemplate.queryForObject(
+            "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId));
   }
 
   private UUID createInspector(UUID ownerOrganizationId) {
