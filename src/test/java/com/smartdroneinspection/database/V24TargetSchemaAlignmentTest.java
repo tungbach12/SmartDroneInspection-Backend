@@ -34,6 +34,7 @@ class V24TargetSchemaAlignmentTest {
   @Test
   void v24PrechecksUnmappableRowsAndDropsTheOldRoleCheckBeforeRewrite() throws IOException {
     String v24 = readMigration("V24__enterprise_saas_role_and_schema_alignment.sql");
+    v24 = v24.replace("\r\n", "\n");
 
     assertThat(v24)
         .contains("V24 precheck failed")

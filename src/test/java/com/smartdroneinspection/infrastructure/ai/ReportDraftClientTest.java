@@ -72,6 +72,8 @@ class ReportDraftClientTest {
     assertThat(authHeader.get()).isEqualTo("Bearer test-secret-key");
     assertThat(requestBody.get())
         .contains("Surface Crack")
+        // Streaming must stay off, otherwise a compatible endpoint answers with SSE frames.
+        .contains("\"stream\":false")
         .doesNotContain("latitude")
         .doesNotContain("longitude")
         .doesNotContain("uploader")
