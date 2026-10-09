@@ -1,10 +1,16 @@
 package com.smartdroneinspection.inspections.domain.enums;
 
+/** Target inspection lifecycle from Report 3 business-flows section VI. */
 public enum InspectionStatus {
-  READY_FOR_INSPECTION,
+  DRAFT,
+  ASSIGNED,
+  PREPARING,
+  READY_FOR_FLIGHT,
   IN_PROGRESS,
-  AWAITING_AI_REVIEW,
-  AWAITING_REPORT,
+  FIELD_COMPLETED,
+  REPORT_DRAFT,
+  REPORT_PUBLISHED,
+  REPAIR_PENDING,
   COMPLETED,
   CANCELLED
 }

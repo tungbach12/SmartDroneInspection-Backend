@@ -31,7 +31,16 @@ class RuntimePersistenceInventoryTest {
           "organizations",
           "refresh_tokens",
           "user_roles",
-          "users");
+          "users",
+          // MF3 inspection slice: evidence, advisory detection, human findings and report versions.
+          "inspections",
+          "field_sessions",
+          "evidence",
+          "evidence_quality_decisions",
+          "ai_finding_candidates",
+          "verified_findings",
+          "inspection_reports",
+          "inspection_report_versions");
 
   private static final Set<String> TARGET_APPLICATION_TABLES =
       Set.of(

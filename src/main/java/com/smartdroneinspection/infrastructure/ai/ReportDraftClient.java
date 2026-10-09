@@ -34,6 +34,10 @@ public class ReportDraftClient implements ReportDraftPort {
         Map.of(
             "model",
             model,
+            // Some compatible endpoints stream server-sent events unless this is set explicitly,
+            // which would leave this client parsing SSE frames as a JSON body.
+            "stream",
+            false,
             "messages",
             List.of(
                 Map.of(

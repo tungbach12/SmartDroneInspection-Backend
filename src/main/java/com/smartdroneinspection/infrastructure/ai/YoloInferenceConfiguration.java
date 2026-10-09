@@ -9,6 +9,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 @Configuration(proxyBeanMethods = false)
+@org.springframework.context.annotation.Conditional(SingleAiInferenceProviderCondition.class)
 @EnableConfigurationProperties(YoloInferenceProperties.class)
 @ConditionalOnProperty(prefix = "app.ai.yolo", name = "enabled", havingValue = "true")
 class YoloInferenceConfiguration {

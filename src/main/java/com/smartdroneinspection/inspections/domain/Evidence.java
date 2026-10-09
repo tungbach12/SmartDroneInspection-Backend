@@ -4,25 +4,43 @@ import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+/**
+ * Evidence metadata only; the file bytes live in object storage behind the shared object-store
+ * port. The checksum is computed server-side and a repeated inspection plus checksum pair is
+ * idempotent.
+ */
+@Entity
+@Table(name = "evidence")
 public class Evidence {
 
   @Id @GeneratedValue private UUID id;
 
+  @Column(name = "organization_id", nullable = false)
+  private UUID organizationId;
+
   @Column(name = "inspection_id")
   private UUID inspectionId;
 
-  @Column(name = "maintenance_work_log_id")
-  private UUID maintenanceWorkLogId;
+  @Column(name = "field_session_id")
+  private UUID fieldSessionId;
+
+  @Column(name = "maintenance_work_order_id")
+  private UUID maintenanceWorkOrderId;
+
+  @Column(name = "maintenance_task_id")
+  private UUID maintenanceTaskId;
 
   @Column(name = "uploaded_by_user_id", nullable = false)
   private UUID uploadedByUserId;
@@ -44,7 +62,7 @@ public class Evidence {
   @Column(name = "checksum_sha256", nullable = false, length = 64)
   private String checksumSha256;
 
-  @Column(name = "object_key", nullable = false, length = 1000, unique = true)
+  @Column(name = "object_key", nullable = false, length = 1000)
   private String objectKey;
 
   @Column(name = "capture_time")
@@ -67,44 +85,22 @@ public class Evidence {
   @Column(name = "upload_status", nullable = false, length = 24)
   private UploadStatus uploadStatus;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "capture_metadata", columnDefinition = "jsonb")
+  private String captureMetadata;
+
+  @Column(name = "immutable_original", nullable = false)
+  private boolean immutableOriginal;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
   protected Evidence() {}
 
   public Evidence(
+      UUID organizationId,
       UUID inspectionId,
-      UUID maintenanceWorkLogId,
-      UUID uploadedByUserId,
-      EvidenceKind evidenceKind,
-      String fileName,
-      String contentType,
-      long sizeBytes,
-      String checksumSha256,
-      String objectKey,
-      EvidenceSource source,
-      UploadStatus uploadStatus) {
-    this(
-        inspectionId,
-        maintenanceWorkLogId,
-        uploadedByUserId,
-        evidenceKind,
-        fileName,
-        contentType,
-        sizeBytes,
-        checksumSha256,
-        objectKey,
-        null,
-        source,
-        null,
-        null,
-        null,
-        uploadStatus);
-  }
-
-  public Evidence(
-      UUID inspectionId,
-      UUID maintenanceWorkLogId,
+      UUID fieldSessionId,
       UUID uploadedByUserId,
       EvidenceKind evidenceKind,
       String fileName,
@@ -117,9 +113,10 @@ public class Evidence {
       BigDecimal latitude,
       BigDecimal longitude,
       String externalReference,
-      UploadStatus uploadStatus) {
+      String captureMetadata) {
+    this.organizationId = organizationId;
     this.inspectionId = inspectionId;
-    this.maintenanceWorkLogId = maintenanceWorkLogId;
+    this.fieldSessionId = fieldSessionId;
     this.uploadedByUserId = uploadedByUserId;
     this.evidenceKind = evidenceKind;
     this.fileName = fileName;
@@ -132,16 +129,30 @@ public class Evidence {
     this.latitude = latitude;
     this.longitude = longitude;
     this.externalReference = externalReference;
-    this.uploadStatus = uploadStatus;
+    this.captureMetadata = captureMetadata;
+    this.immutableOriginal = true;
+    this.uploadStatus = UploadStatus.AVAILABLE;
     this.createdAt = Instant.now();
+  }
+
+  public boolean isImage() {
+    return contentType != null && contentType.startsWith("image/");
   }
 
   public UUID getId() {
     return id;
   }
 
+  public UUID getOrganizationId() {
+    return organizationId;
+  }
+
   public UUID getInspectionId() {
     return inspectionId;
+  }
+
+  public UUID getFieldSessionId() {
+    return fieldSessionId;
   }
 
   public UUID getUploadedByUserId() {
@@ -192,8 +203,8 @@ public class Evidence {
     return externalReference;
   }
 
-  public UUID getMaintenanceWorkLogId() {
-    return maintenanceWorkLogId;
+  public String getCaptureMetadata() {
+    return captureMetadata;
   }
 
   public UploadStatus getUploadStatus() {

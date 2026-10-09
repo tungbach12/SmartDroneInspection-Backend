@@ -56,6 +56,12 @@ app:
       predict-path: ${YOLO_INFERENCE_PREDICT_PATH:/predict}
       connect-timeout: ${YOLO_INFERENCE_CONNECT_TIMEOUT:2s}
       read-timeout: ${YOLO_INFERENCE_READ_TIMEOUT:30s}
+    compatible-vision:
+      enabled: ${COMPATIBLE_VISION_ENABLED:false}
+      base-url: ${COMPATIBLE_VISION_BASE_URL:}
+      model: ${COMPATIBLE_VISION_MODEL:}
+      api-key: ${COMPATIBLE_VISION_API_KEY:}
+      timeout: ${COMPATIBLE_VISION_TIMEOUT:60s}
   report-draft:
     enabled: ${REPORT_DRAFT_ENABLED:false}
     base-url: ${REPORT_DRAFT_BASE_URL:http://localhost:11434}

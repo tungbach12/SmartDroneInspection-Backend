@@ -47,6 +47,34 @@ class PersistenceEntityOwnershipTest {
             "users", "refresh_tokens", "com.smartdroneinspection.users.domain.RefreshToken"),
         Arguments.of("users", "users", "com.smartdroneinspection.users.domain.User"),
         Arguments.of(
-            "users", "user_roles", "com.smartdroneinspection.users.domain.UserRoleAssignment"));
+            "users", "user_roles", "com.smartdroneinspection.users.domain.UserRoleAssignment"),
+        Arguments.of(
+            "inspections", "inspections", "com.smartdroneinspection.inspections.domain.Inspection"),
+        Arguments.of(
+            "inspections",
+            "field_sessions",
+            "com.smartdroneinspection.inspections.domain.FieldSession"),
+        Arguments.of(
+            "inspections", "evidence", "com.smartdroneinspection.inspections.domain.Evidence"),
+        Arguments.of(
+            "inspections",
+            "evidence_quality_decisions",
+            "com.smartdroneinspection.inspections.domain.EvidenceQualityDecision"),
+        Arguments.of(
+            "inspections",
+            "ai_finding_candidates",
+            "com.smartdroneinspection.inspections.domain.AiFindingCandidate"),
+        Arguments.of(
+            "inspections",
+            "verified_findings",
+            "com.smartdroneinspection.inspections.domain.VerifiedFinding"),
+        Arguments.of(
+            "inspections",
+            "inspection_reports",
+            "com.smartdroneinspection.inspections.domain.InspectionReport"),
+        Arguments.of(
+            "inspections",
+            "inspection_report_versions",
+            "com.smartdroneinspection.inspections.domain.InspectionReportVersion"));
   }
 }
