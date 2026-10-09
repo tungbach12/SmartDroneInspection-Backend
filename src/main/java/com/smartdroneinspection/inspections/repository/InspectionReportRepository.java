@@ -10,5 +10,7 @@ public interface InspectionReportRepository extends JpaRepository<InspectionRepo
 
   Optional<InspectionReport> findByInspectionId(UUID inspectionId);
 
+  List<InspectionReport> findByInspectionIdIn(List<UUID> inspectionIds);
+
   List<InspectionReport> findByAuthorUserIdOrderByUpdatedAtDesc(UUID authorUserId);
 }
