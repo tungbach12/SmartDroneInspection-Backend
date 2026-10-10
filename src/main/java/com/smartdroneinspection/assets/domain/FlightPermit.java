@@ -15,13 +15,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/**
- * An aviation permit, approval or equivalent authorization record (MF1-07).
- *
- * <p>This records what an authority issued or refused. The platform never grants permission: an
- * organization attaches the permit reference it holds, and MF2-05 checks the reference's status and
- * validity window rather than deciding whether flight is lawful.
- */
+/** Organization-recorded permit data used by MF1 management and MF2 readiness checks. */
 @Entity
 @Table(name = "flight_permits")
 public class FlightPermit {
@@ -88,6 +82,7 @@ public class FlightPermit {
 
   protected FlightPermit() {}
 
+  /** MF2 constructor retained for the existing authorization/readiness domain path. */
   public FlightPermit(
       UUID organizationId,
       UUID assetId,
@@ -95,9 +90,7 @@ public class FlightPermit {
       String permitReference,
       String issuingAuthority) {
     this.organizationId = Objects.requireNonNull(organizationId, "Permit organization is required");
-    if (permitType == null || permitType.isBlank()) {
-      throw new IllegalArgumentException("Permit type must not be blank");
-    }
+    requirePermitType(permitType);
     this.assetId = assetId;
     this.permitType = permitType;
     this.permitReference = permitReference;
@@ -105,6 +98,124 @@ public class FlightPermit {
     this.status = FlightPermitStatus.APPLICATION;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
+  }
+
+  /** MF1 constructor for the organization's own transcription of permit/compliance data. */
+  public FlightPermit(
+      UUID organizationId,
+      UUID assetId,
+      String areaReference,
+      String permitType,
+      String issuingAuthority,
+      String permitReference,
+      String geographicScope,
+      Instant validFrom,
+      Instant validUntil,
+      String conditions,
+      com.smartdroneinspection.assets.domain.enums.PermitStatus initialStatus,
+      UUID sourceEvidenceId) {
+    this.organizationId = Objects.requireNonNull(organizationId, "Permit organization is required");
+    requirePermitType(permitType);
+    requireValidity(validFrom, validUntil);
+    this.assetId = assetId;
+    this.areaReference = areaReference;
+    this.permitType = permitType.trim();
+    this.issuingAuthority = issuingAuthority;
+    this.permitReference = permitReference;
+    this.geographicScope = geographicScope;
+    this.validFrom = validFrom;
+    this.validUntil = validUntil;
+    this.conditions = conditions;
+    this.status =
+        FlightPermitStatus.valueOf(
+            (initialStatus == null
+                    ? com.smartdroneinspection.assets.domain.enums.PermitStatus.APPLICATION
+                    : initialStatus)
+                .name());
+    this.sourceEvidenceId = sourceEvidenceId;
+    this.createdAt = Instant.now();
+    this.updatedAt = createdAt;
+  }
+
+  private static void requirePermitType(String permitType) {
+    if (permitType == null || permitType.isBlank()) {
+      throw new IllegalArgumentException("Permit type must not be blank");
+    }
+  }
+
+  private static void requireValidity(Instant from, Instant until) {
+    if (from != null && until != null && !until.isAfter(from)) {
+      throw new IllegalArgumentException("Permit validity must end after it starts");
+    }
+  }
+
+  /** MF1 API vocabulary; persisted values remain the MF2 enum for compatibility. */
+  public com.smartdroneinspection.assets.domain.enums.PermitStatus getStatus() {
+    return com.smartdroneinspection.assets.domain.enums.PermitStatus.valueOf(status.name());
+  }
+
+  /** Status type retained for existing MF2 readiness consumers. */
+  public FlightPermitStatus getReadinessStatus() {
+    return status;
+  }
+
+  public void recordInternalReview(
+      com.smartdroneinspection.assets.domain.enums.PermitStatus target,
+      UUID reviewerId,
+      Instant reviewTime,
+      String reason) {
+    status = FlightPermitStatus.valueOf(target.name());
+    reviewedByUserId = reviewerId;
+    reviewedAt = reviewTime;
+    reviewReason = reason;
+    updatedAt = Instant.now();
+  }
+
+  public void defineValidity(Instant from, Instant until) {
+    requireValidity(from, until);
+    validFrom = from;
+    validUntil = until;
+    updatedAt = Instant.now();
+  }
+
+  public void grant(String reference, String authority, Instant from, Instant until) {
+    if (reference == null || reference.isBlank()) {
+      throw new IllegalArgumentException("Granted permit requires a reference");
+    }
+    permitReference = reference;
+    issuingAuthority = authority;
+    defineValidity(from, until);
+    status = FlightPermitStatus.ACTIVE;
+    updatedAt = Instant.now();
+  }
+
+  public void markNotApplicable(String legalBasis) {
+    status = FlightPermitStatus.NOT_APPLICABLE;
+    reviewReason = legalBasis;
+    updatedAt = Instant.now();
+  }
+
+  public void refuse(FlightPermitStatus outcome, String reason, Instant decidedAt) {
+    if (outcome != FlightPermitStatus.REJECTED && outcome != FlightPermitStatus.REVOKED) {
+      throw new IllegalArgumentException("A permit may only be rejected or revoked here");
+    }
+    status = outcome;
+    reviewReason = reason;
+    updatedAt = decidedAt;
+  }
+
+  /**
+   * Evaluates stored readiness fields only; it makes no determination about legal flight authority.
+   */
+  public boolean authorizesAt(Instant instant) {
+    if (status == FlightPermitStatus.NOT_APPLICABLE) return true;
+    if (status != FlightPermitStatus.ACTIVE
+        || permitReference == null
+        || permitReference.isBlank()) {
+      return false;
+    }
+    if (validFrom != null && instant.isBefore(validFrom)) return false;
+    return validUntil == null || !instant.isAfter(validUntil);
   }
 
   public UUID getId() {
@@ -151,10 +262,6 @@ public class FlightPermit {
     return conditions;
   }
 
-  public FlightPermitStatus getStatus() {
-    return status;
-  }
-
   public UUID getSourceEvidenceId() {
     return sourceEvidenceId;
   }
@@ -179,54 +286,12 @@ public class FlightPermit {
     return updatedAt;
   }
 
-  public void defineValidity(Instant from, Instant until) {
-    if (from != null && until != null && !until.isAfter(from)) {
-      throw new IllegalArgumentException("Permit validity must end after it starts");
-    }
-    this.validFrom = from;
-    this.validUntil = until;
-    this.updatedAt = Instant.now();
-  }
-
-  public void grant(String reference, String authority, Instant validFrom, Instant validUntil) {
-    if (reference == null || reference.isBlank()) {
-      throw new IllegalArgumentException("Granted permit requires a reference");
-    }
-    this.permitReference = reference;
-    this.issuingAuthority = authority;
-    defineValidity(validFrom, validUntil);
-    this.status = FlightPermitStatus.ACTIVE;
-    this.updatedAt = Instant.now();
-  }
-
-  public void markNotApplicable(String legalBasis) {
-    this.status = FlightPermitStatus.NOT_APPLICABLE;
-    this.reviewReason = legalBasis;
-    this.updatedAt = Instant.now();
-  }
-
-  public void refuse(FlightPermitStatus outcome, String reason, Instant decidedAt) {
-    if (outcome != FlightPermitStatus.REJECTED && outcome != FlightPermitStatus.REVOKED) {
-      throw new IllegalArgumentException("A permit may only be rejected or revoked here");
-    }
-    this.status = outcome;
-    this.reviewReason = reason;
-    this.updatedAt = decidedAt;
-  }
-
-  /** Whether this record satisfies an MF2-05 authorization check at the given instant. */
-  public boolean authorizesAt(Instant instant) {
-    if (status == FlightPermitStatus.NOT_APPLICABLE) {
-      return true;
-    }
-    if (status != FlightPermitStatus.ACTIVE
-        || permitReference == null
-        || permitReference.isBlank()) {
-      return false;
-    }
-    if (validFrom != null && instant.isBefore(validFrom)) {
-      return false;
-    }
-    return validUntil == null || !instant.isAfter(validUntil);
+  public enum PermitStatus {
+    APPLICATION,
+    ACTIVE,
+    EXPIRED,
+    REJECTED,
+    REVOKED,
+    NOT_APPLICABLE
   }
 }

@@ -37,8 +37,7 @@ class RuntimePersistenceInventoryTest {
           "notifications",
           "organizations",
           "refresh_tokens",
-          // MF1 credential records; the entitlement subscription itself is mapped read-only by
-          // Task 1 but is a runtime entity, so it belongs in this inventory too.
+          // MF1 entitlement, workforce credential, Drone/document and permit runtime entities.
           "subscriptions",
           "user_roles",
           "users",
