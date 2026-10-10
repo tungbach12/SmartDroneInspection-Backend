@@ -190,6 +190,117 @@ public class MaintenanceWorkOrder {
     this.updatedAt = Instant.now();
   }
 
+  /** MF4-09: approved work is released to the team to begin. */
+  public void markReady() {
+    requireStatus(WorkOrderStatus.APPROVED);
+    this.status = WorkOrderStatus.READY;
+    this.updatedAt = Instant.now();
+  }
+
+  /** MF4-10: the lead confirms the team has started. */
+  public void markInProgress() {
+    requireStatus(WorkOrderStatus.READY);
+    this.status = WorkOrderStatus.IN_PROGRESS;
+    this.updatedAt = Instant.now();
+  }
+
+  /**
+   * MF4-14: the team declares the physical work done. This is explicitly not acceptance; closure
+   * still requires an independent reviewer under MF4-18.
+   */
+  public void markWorkCompleted() {
+    requireStatus(WorkOrderStatus.IN_PROGRESS);
+    this.status = WorkOrderStatus.WORK_COMPLETED;
+    this.updatedAt = Instant.now();
+  }
+
+  /** MF4-17: the report author submits the completion report for review. */
+  public void markSubmittedForAcceptance() {
+    requireStatus(WorkOrderStatus.WORK_COMPLETED);
+    this.status = WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE;
+    this.updatedAt = Instant.now();
+  }
+
+  /**
+   * MF4-18: only the designated independent reviewer may accept, and never a member of the
+   * executing team. Separation of duties is a domain invariant, not only a service check.
+   */
+  public void accept(UUID reviewingUserId) {
+    requireStatus(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    UUID reviewer = require(reviewingUserId, "reviewingUserId");
+    requireIndependent(reviewer);
+    this.status = WorkOrderStatus.ACCEPTED;
+    this.updatedAt = Instant.now();
+  }
+
+  /** MF4-18: rework sends accepted work back into execution with the reviewer's reason. */
+  public void requireReworkAfterAcceptance(UUID reviewingUserId, String reason) {
+    requireStatus(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    UUID reviewer = require(reviewingUserId, "reviewingUserId");
+    requireIndependent(reviewer);
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A rework decision requires a reason");
+    }
+    this.status = WorkOrderStatus.REWORK_REQUIRED;
+    this.updatedAt = Instant.now();
+  }
+
+  /**
+   * MF4-18: the reviewer requires an independent re-inspection. This records the decision and makes
+   * the order resumable; dispatching the linked MF1 inspection is MF1's responsibility.
+   */
+  public void requireReinspection(UUID reviewingUserId, String reason) {
+    requireStatus(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    UUID reviewer = require(reviewingUserId, "reviewingUserId");
+    requireIndependent(reviewer);
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A re-inspection decision requires a reason");
+    }
+    this.status = WorkOrderStatus.REINSPECTION_REQUIRED;
+    this.updatedAt = Instant.now();
+  }
+
+  /** MF4-20: reconciliation is a separate recorded decision, not a side effect of acceptance. */
+  public void markCostsReconciled() {
+    requireStatus(WorkOrderStatus.ACCEPTED);
+    this.status = WorkOrderStatus.COST_RECONCILED;
+    this.updatedAt = Instant.now();
+  }
+
+  /** MF4-21: closure requires reconciliation first. */
+  public void close() {
+    requireStatus(WorkOrderStatus.COST_RECONCILED);
+    this.status = WorkOrderStatus.CLOSED;
+    this.updatedAt = Instant.now();
+  }
+
+  /**
+   * Rework returned by the reviewer resumes execution rather than approval: the scope was already
+   * approved, only the physical work must be redone.
+   */
+  public void resumeExecutionAfterRework() {
+    requireStatus(WorkOrderStatus.REWORK_REQUIRED);
+    this.status = WorkOrderStatus.IN_PROGRESS;
+    this.updatedAt = Instant.now();
+  }
+
+  /** MF4-18: re-inspection clears once the verifying inspection is recorded. */
+  public void resumeAfterReinspection() {
+    requireStatus(WorkOrderStatus.REINSPECTION_REQUIRED);
+    this.status = WorkOrderStatus.IN_PROGRESS;
+    this.updatedAt = Instant.now();
+  }
+
+  private void requireIndependent(UUID reviewer) {
+    if (!reviewer.equals(acceptingReviewerUserId)) {
+      throw new IllegalStateException(
+          "Only the designated independent reviewer may decide acceptance");
+    }
+    if (reviewer.equals(teamLeadUserId) || reviewer.equals(reportAuthorUserId)) {
+      throw new IllegalStateException("The executing team cannot accept its own work");
+    }
+  }
+
   private void requireStatus(WorkOrderStatus... allowed) {
     for (WorkOrderStatus candidate : allowed) {
       if (status == candidate) {
