@@ -289,7 +289,7 @@ class InspectionFieldSessionServiceTest {
         service.start(
             inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
 
-    service.postpone(inspectorId, session.getId(), "High wind above 10 m/s");
+    service.postpone(inspectorId, inspectionId, session.getId(), "High wind above 10 m/s");
 
     assertThat(sessionStatus(session.getId())).isEqualTo("POSTPONED");
     assertThat(
@@ -311,7 +311,7 @@ class InspectionFieldSessionServiceTest {
         service.start(
             inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
 
-    service.abort(inspectorId, session.getId(), "Structure found unsafe on site");
+    service.abort(inspectorId, inspectionId, session.getId(), "Structure found unsafe on site");
 
     assertThat(sessionStatus(session.getId())).isEqualTo("ABORTED");
     assertThat(
@@ -335,7 +335,7 @@ class InspectionFieldSessionServiceTest {
         service.start(
             inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
 
-    assertThatThrownBy(() -> service.abort(inspectorId, session.getId(), "  "))
+    assertThatThrownBy(() -> service.abort(inspectorId, inspectionId, session.getId(), "  "))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -348,7 +348,7 @@ class InspectionFieldSessionServiceTest {
     FieldSession first =
         service.start(
             inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
-    service.postpone(inspectorId, first.getId(), "High wind above 10 m/s");
+    service.postpone(inspectorId, inspectionId, first.getId(), "High wind above 10 m/s");
 
     FieldSession second =
         service.start(
@@ -365,7 +365,7 @@ class InspectionFieldSessionServiceTest {
         service.start(
             inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
 
-    assertThatThrownBy(() -> service.postpone(inspectorId, session.getId(), "  "))
+    assertThatThrownBy(() -> service.postpone(inspectorId, inspectionId, session.getId(), "  "))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -381,12 +381,61 @@ class InspectionFieldSessionServiceTest {
             inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
-    assertThatThrownBy(() -> service.postpone(otherInspectorId, session.getId(), "Wind"))
+    assertThatThrownBy(
+            () -> service.postpone(otherInspectorId, inspectionId, session.getId(), "Wind"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
                 assertThat(((BusinessException) error).code()).isEqualTo("SESSION_SCOPE_DENIED"));
     assertThat(sessionStatus(session.getId())).isEqualTo("IN_PROGRESS");
+  }
+
+  /**
+   * MF2-12 hands MF3 a list of this inspection's sessions, so the list must be scoped to the
+   * assigned Inspector rather than the whole organization: an Inspector sees their own field work,
+   * not a colleague's.
+   */
+  @Test
+  void listingSessionsReturnsOnlyTheCallersOwnWork() {
+    service.start(inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
+
+    assertThat(service.listSessions(inspectorId, inspectionId)).hasSize(1);
+    assertThat(service.listSessions(otherInspectorId, inspectionId)).isEmpty();
+  }
+
+  @Test
+  void listingSessionsOfAnotherOrganizationSeesNothing() {
+    service.start(inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    UUID outsiderId = createUser(otherOrganizationId, UserRole.INSPECTOR, "outsider");
+
+    assertThatThrownBy(() -> service.listSessions(outsiderId, inspectionId))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("INSPECTION_NOT_FOUND"));
+  }
+
+  /**
+   * The session id alone must not be enough to close a session: it has to belong to the inspection
+   * the caller named. Otherwise a session id belonging to a different inspection could be closed
+   * through this inspection's URL, and the scope check would look at the wrong record.
+   */
+  @Test
+  void closingASessionOfAnotherInspectionIsRefused() {
+    UUID sessionId = startSession("Confirmed bridge is accessible").getId();
+    UUID unrelatedInspectionId = UUID.randomUUID();
+
+    assertThatThrownBy(
+            () -> service.postpone(inspectorId, unrelatedInspectionId, sessionId, "Wind"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error -> assertThat(((BusinessException) error).code()).isEqualTo("SESSION_NOT_FOUND"));
+    assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
+  }
+
+  private FieldSession startSession(String preFlightNote) {
+    return service.start(inspectorId, inspectionId, checklistTemplateId, preFlightNote);
   }
 
   private void assertNoSessionStarted() {

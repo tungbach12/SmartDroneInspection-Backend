@@ -14,6 +14,7 @@ import com.smartdroneinspection.users.UserAccess;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -115,6 +116,30 @@ public class InspectionFieldSessionService {
   }
 
   /**
+   * The sessions of one inspection that this Inspector is assigned to.
+   *
+   * <p>Scoped to the caller rather than the organization: an Inspector sees their own field work,
+   * not a colleague's, even inside the same tenant. A caller from another organization gets {@code
+   * INSPECTION_NOT_FOUND} rather than an empty list, because an empty list would confirm the
+   * inspection exists.
+   */
+  @Transactional(readOnly = true)
+  public List<FieldSession> listSessions(UUID inspectorId, UUID inspectionId) {
+    UUID organizationId = requireInspector(inspectorId);
+    Inspection inspection =
+        inspections
+            .findByIdAndOrganizationId(inspectionId, organizationId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
+    if (!inspection.isInspectedBy(inspectorId)) {
+      return List.of();
+    }
+    return sessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
+  }
+
+  /**
    * Records a postponement (MF2-09).
    *
    * <p>The inspection returns to {@code READY_FOR_FLIGHT} because the readiness decision was not
@@ -122,9 +147,10 @@ public class InspectionFieldSessionService {
    * approval is still the current one.
    */
   @Transactional
-  public FieldSession postpone(UUID inspectorId, UUID sessionId, String reason) {
+  public FieldSession postpone(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
     UUID organizationId = requireInspector(inspectorId);
-    FieldSession session = requireOwnedOpenSession(sessionId, organizationId, inspectorId);
+    FieldSession session =
+        requireOwnedOpenSession(inspectionId, sessionId, organizationId, inspectorId);
 
     try {
       session.postpone(reason);
@@ -139,9 +165,10 @@ public class InspectionFieldSessionService {
 
   /** Records an abort (MF2-11). The inspection stays in progress until the session is ended. */
   @Transactional
-  public FieldSession abort(UUID inspectorId, UUID sessionId, String reason) {
+  public FieldSession abort(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
     UUID organizationId = requireInspector(inspectorId);
-    FieldSession session = requireOwnedOpenSession(sessionId, organizationId, inspectorId);
+    FieldSession session =
+        requireOwnedOpenSession(inspectionId, sessionId, organizationId, inspectorId);
 
     try {
       session.abort(reason);
@@ -195,11 +222,20 @@ public class InspectionFieldSessionService {
     }
   }
 
+  /**
+   * The session the caller named, inside the inspection they named.
+   *
+   * <p>The inspection id is part of the lookup on purpose. A session id alone would let a caller
+   * close a session through a different inspection's URL, which is the same mistake the preparation
+   * submission route guards against by re-reading the scoped record first. The repository already
+   * has {@code findByIdAndInspectionId}, so this is one query rather than a second authorization
+   * pass.
+   */
   private FieldSession requireOwnedOpenSession(
-      UUID sessionId, UUID organizationId, UUID inspectorId) {
+      UUID inspectionId, UUID sessionId, UUID organizationId, UUID inspectorId) {
     FieldSession session =
         sessions
-            .findById(sessionId)
+            .findByIdAndInspectionId(sessionId, inspectionId)
             .filter(candidate -> candidate.getOrganizationId().equals(organizationId))
             .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
     if (!session.getInspectorUserId().equals(inspectorId)) {
