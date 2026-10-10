@@ -32,6 +32,8 @@ class RuntimePersistenceInventoryTest {
           "refresh_tokens",
           "user_roles",
           "users",
+          // MF4 credential read for team assignment checks.
+          "workforce_credentials",
           // MF3 inspection slice: evidence, advisory detection, human findings and report versions.
           "inspections",
           "field_sessions",

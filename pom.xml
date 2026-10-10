@@ -227,6 +227,8 @@
                 <exclude>com/smartdroneinspection/inspections/repository/**</exclude>
                 <exclude>com/smartdroneinspection/maintenance/domain/**</exclude>
                 <exclude>com/smartdroneinspection/maintenance/repository/**</exclude>
+                <exclude>com/smartdroneinspection/workforce/domain/**</exclude>
+                <exclude>com/smartdroneinspection/workforce/repository/**</exclude>
                 <exclude>com/smartdroneinspection/notifications/domain/**</exclude>
                 <exclude>com/smartdroneinspection/notifications/repository/**</exclude>
 
