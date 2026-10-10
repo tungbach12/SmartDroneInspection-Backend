@@ -40,7 +40,13 @@ class RuntimePersistenceInventoryTest {
           "ai_finding_candidates",
           "verified_findings",
           "inspection_reports",
-          "inspection_report_versions");
+          "inspection_report_versions",
+          // MF4 slice: work order aggregate with its team, task, estimate and cost line.
+          "maintenance_work_orders",
+          "maintenance_tasks",
+          "maintenance_team_members",
+          "maintenance_estimate_versions",
+          "maintenance_cost_lines");
 
   private static final Set<String> TARGET_APPLICATION_TABLES =
       Set.of(
