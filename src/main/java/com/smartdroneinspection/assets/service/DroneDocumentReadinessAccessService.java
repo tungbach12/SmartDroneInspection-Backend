@@ -44,6 +44,15 @@ public class DroneDocumentReadinessAccessService implements DroneDocumentReadine
 
   @Override
   @Transactional(readOnly = true)
+  public List<DroneDocumentSummary> listForDrone(UUID organizationId, UUID droneId) {
+    return documents.findAllForReadiness(organizationId, droneId).stream()
+        .sorted(Comparator.comparing(DroneDocument::getId))
+        .map(DroneDocumentReadinessAccessService::toSummary)
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public Optional<AssetPairReadinessSummary> findPairForInspection(
       UUID organizationId, UUID pairId, UUID assetId) {
     return pairs
