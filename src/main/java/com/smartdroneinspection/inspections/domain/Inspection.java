@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -108,6 +109,23 @@ public class Inspection {
     this.status = InspectionStatus.DRAFT;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
+  }
+
+  public Inspection(UUID organizationId, UUID assetId, String objective, Instant plannedStartAt) {
+    this(
+        Objects.requireNonNull(organizationId, "Inspection organization is required"),
+        Objects.requireNonNull(assetId, "Inspection asset is required"),
+        null,
+        null,
+        null,
+        null,
+        null,
+        objective,
+        null,
+        null,
+        null,
+        plannedStartAt,
+        null);
   }
 
   /**
@@ -214,5 +232,25 @@ public class Inspection {
 
   public Instant getUpdatedAt() {
     return updatedAt;
+  }
+
+  public boolean isInspectedBy(UUID candidateInspectorId) {
+    return inspectorId != null && inspectorId.equals(candidateInspectorId);
+  }
+
+  public void startPreparation() {
+    if (status != InspectionStatus.ASSIGNED) {
+      throw new IllegalStateException("Only an assigned inspection can start preparation");
+    }
+    moveTo(InspectionStatus.PREPARING);
+  }
+
+  public void moveTo(InspectionStatus nextStatus) {
+    Objects.requireNonNull(nextStatus, "Inspection status is required");
+    if (nextStatus == this.status) {
+      throw new IllegalStateException("The inspection is already " + nextStatus);
+    }
+    this.status = nextStatus;
+    this.updatedAt = Instant.now();
   }
 }
