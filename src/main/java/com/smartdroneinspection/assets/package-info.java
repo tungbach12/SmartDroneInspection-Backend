@@ -5,6 +5,7 @@
       "shared::api",
       "shared::exception",
       "users",
-      "shared::storage"
+      "shared::storage",
+      "subscriptions"
     })
 package com.smartdroneinspection.assets;

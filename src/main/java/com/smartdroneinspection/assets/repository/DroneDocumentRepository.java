@@ -10,29 +10,27 @@ import org.springframework.data.repository.query.Param;
 
 public interface DroneDocumentRepository extends JpaRepository<DroneDocument, UUID> {
 
+  /** MF1 inventory listing; service verifies ownership before calling this query. */
+  List<DroneDocument> findAllByDrone_IdOrderByCreatedAtDesc(UUID droneId);
+
+  /** Tenant-scoped readiness selection through the Drone's owning organization. */
   @Query(
       "select document from DroneDocument document "
-          + "join Drone drone on drone.id = document.droneId "
+          + "join document.drone drone "
           + "where drone.organizationId = :organizationId "
-          + "and document.droneId = :droneId "
+          + "and drone.id = :droneId "
           + "and document.id in :documentIds")
   List<DroneDocument> findForReadiness(
       @Param("organizationId") UUID organizationId,
       @Param("droneId") UUID droneId,
       @Param("documentIds") Collection<UUID> documentIds);
 
-  /**
-   * Every document the Drone holds, reached through the Drone's own organization.
-   *
-   * <p>The join is what makes this tenant-safe: {@code drone_documents} has no organization column
-   * of its own, so filtering on the Drone's owner is the only way a caller cannot reach another
-   * organization's documents by guessing a Drone id.
-   */
+  /** All tenant-owned Drone documents, reached through the Drone owner. */
   @Query(
       "select document from DroneDocument document "
-          + "join Drone drone on drone.id = document.droneId "
+          + "join document.drone drone "
           + "where drone.organizationId = :organizationId "
-          + "and document.droneId = :droneId")
+          + "and drone.id = :droneId")
   List<DroneDocument> findAllForReadiness(
       @Param("organizationId") UUID organizationId, @Param("droneId") UUID droneId);
 }

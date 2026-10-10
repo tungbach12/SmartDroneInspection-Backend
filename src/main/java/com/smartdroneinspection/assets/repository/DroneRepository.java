@@ -13,24 +13,26 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-/**
- * Drone lookups scoped to the owning organization.
- *
- * <p>Every finder that accepts an organization id exists so a caller can never reach another
- * tenant's fleet by guessing an id.
- */
+/** Organization-scoped Drone access for MF1 inventory and MF2 pairing/readiness. */
 public interface DroneRepository extends JpaRepository<Drone, UUID> {
 
   Optional<Drone> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
   Optional<Drone> findByOrganizationIdAndSerialNumber(UUID organizationId, String serialNumber);
 
-  List<Drone> findByOrganizationIdAndServiceabilityOrderBySerialNumberAsc(
-      UUID organizationId, DroneServiceability serviceability);
+  boolean existsByOrganizationIdAndSerialNumber(UUID organizationId, String serialNumber);
 
   Page<Drone> findByOrganizationId(UUID organizationId, Pageable pageable);
 
-  /** Drones an organization may still pair with an inspector to. */
+  List<Drone> findAllByOrganizationId(UUID organizationId);
+
+  List<Drone> findByOrganizationIdAndServiceabilityOrderBySerialNumberAsc(
+      UUID organizationId, DroneServiceability serviceability);
+
+  List<Drone> findAllByOrganizationIdAndServiceability(
+      UUID organizationId, DroneServiceability serviceability);
+
+  /** Drones an organization may pair with an Inspector. */
   @Query(
       "select drone from Drone drone where drone.organizationId = :organizationId "
           + "and drone.serviceability = com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE "
@@ -42,6 +44,4 @@ public interface DroneRepository extends JpaRepository<Drone, UUID> {
       "select drone from Drone drone where drone.id = :id and drone.organizationId = :organizationId")
   Optional<Drone> findWithLockByIdAndOrganizationId(
       @Param("id") UUID id, @Param("organizationId") UUID organizationId);
-
-  boolean existsByOrganizationIdAndSerialNumber(UUID organizationId, String serialNumber);
 }

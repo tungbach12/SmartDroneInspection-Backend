@@ -17,16 +17,18 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * An organization-owned drone (MF1-06).
+ * An organization-owned airframe registered in the Drone inventory.
  *
- * <p>Serial numbers are unique per organization rather than globally, because two organizations may
- * legitimately record the same airframe identifier while a single organization may not register the
- * same one twice.
+ * <p>Serviceability is a maintenance fact, not a permit or flight-readiness assertion. Only ACTIVE
+ * drones are eligible for MF2 pairing; permit and readiness decisions belong to their own flows.
  */
 @Entity
 @Table(
     name = "drones",
-    uniqueConstraints = @UniqueConstraint(columnNames = {"organization_id", "serial_number"}))
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uq_drones_organization_serial",
+            columnNames = {"organization_id", "serial_number"}))
 public class Drone {
 
   @Id @GeneratedValue private UUID id;
@@ -83,16 +85,41 @@ public class Drone {
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability) {
+    this(
+        organizationId,
+        serialNumber,
+        model,
+        manufacturer,
+        payloadMetadata,
+        serviceability,
+        null,
+        null,
+        null);
+  }
+
+  public Drone(
+      UUID organizationId,
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String payloadMetadata,
+      DroneServiceability serviceability,
+      Instant lastMaintenanceAt,
+      Instant nextMaintenanceAt,
+      String notes) {
     this.organizationId = Objects.requireNonNull(organizationId, "Drone organization is required");
     if (serialNumber == null || serialNumber.isBlank()) {
       throw new IllegalArgumentException("Drone serial number must not be blank");
     }
-    this.serialNumber = serialNumber;
+    this.serialNumber = serialNumber.trim();
     this.model = model;
     this.manufacturer = manufacturer;
     this.payloadMetadata = payloadMetadata;
     this.serviceability =
         Objects.requireNonNull(serviceability, "Drone serviceability is required");
+    this.lastMaintenanceAt = lastMaintenanceAt;
+    this.nextMaintenanceAt = nextMaintenanceAt;
+    this.notes = notes;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
@@ -145,21 +172,24 @@ public class Drone {
     return updatedAt;
   }
 
+  /** MF2 assignment eligibility; it is not a permit or flight-readiness decision. */
   public boolean isEligibleForAssignment() {
     return serviceability == DroneServiceability.ACTIVE;
   }
 
-  public void changeServiceability(DroneServiceability next) {
-    this.serviceability = Objects.requireNonNull(next, "Drone serviceability is required");
+  public void changeServiceability(DroneServiceability target) {
+    Objects.requireNonNull(target, "Drone serviceability is required");
+    if (serviceability == DroneServiceability.RETIRED) {
+      throw new IllegalStateException("Retired drones cannot change serviceability");
+    }
+    this.serviceability = target;
     this.updatedAt = Instant.now();
   }
 
   public void recordMaintenance(Instant servicedAt, Instant nextDueAt, String maintenanceNotes) {
     this.lastMaintenanceAt = servicedAt;
     this.nextMaintenanceAt = nextDueAt;
-    if (maintenanceNotes != null) {
-      this.notes = maintenanceNotes;
-    }
+    if (maintenanceNotes != null) this.notes = maintenanceNotes;
     this.updatedAt = Instant.now();
   }
 }
