@@ -8,11 +8,13 @@ import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.ChecklistItem;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
 import com.smartdroneinspection.notifications.domain.Notification;
+import com.smartdroneinspection.subscriptions.domain.Subscription;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.RefreshToken;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.UserRoleAssignment;
+import com.smartdroneinspection.workforce.domain.WorkforceCredential;
 import java.util.List;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
@@ -35,7 +37,9 @@ class PersistenceEntityMappingTest {
           Organization.class,
           RefreshToken.class,
           User.class,
-          UserRoleAssignment.class);
+          UserRoleAssignment.class,
+          Subscription.class,
+          WorkforceCredential.class);
 
   @Test
   void allFeatureEntitiesBuildValidHibernateMetadataWithoutDatabaseAccess() {
