@@ -123,6 +123,17 @@ public class MaintenanceCostLine {
     return quantity.multiply(unitRate).setScale(AMOUNT_SCALE, RoundingMode.HALF_UP);
   }
 
+  /**
+   * Binds a line to the estimate version that owns it. This happens once, when the version is
+   * persisted; the line is not shared between versions.
+   */
+  public void attachToEstimate(UUID estimateVersionId) {
+    if (this.estimateVersionId != null) {
+      throw new IllegalStateException("This cost line already belongs to an estimate version");
+    }
+    this.estimateVersionId = require(estimateVersionId, "estimateVersionId");
+  }
+
   private static BigDecimal requireQuantity(BigDecimal value) {
     if (value == null || value.signum() < 0) {
       throw new IllegalArgumentException("quantity must be present and not negative");

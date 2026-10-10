@@ -1,11 +1,11 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Maintenance",
     allowedDependencies = {
-      "inspections",
-      "shared",
+      "inspections::spi",
+      "shared::api",
+      "shared::exception",
       "users",
-      "workforce",
-      "workforce::repository",
+      "workforce::spi",
       "maintenance::repository"
     })
 package com.smartdroneinspection.maintenance;

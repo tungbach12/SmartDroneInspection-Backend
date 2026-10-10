@@ -21,6 +21,12 @@ public interface MaintenanceWorkLogRepository extends JpaRepository<MaintenanceW
   /** MF4-11: the lead verifies each submitted timesheet; verification is a separate act. */
   List<MaintenanceWorkLog> findByWorkOrderIdAndStatus(UUID workOrderId, WorkLogStatus status);
 
+  long countByWorkOrderId(UUID workOrderId);
+
+  long countByWorkOrderIdAndStatus(UUID workOrderId, WorkLogStatus status);
+
+  long countByWorkOrderIdAndStatusIn(UUID workOrderId, List<WorkLogStatus> statuses);
+
   /**
    * MF4-20: the actual total is summed from reconciled cost lines in decimal arithmetic rather than
    * read from a typed-in figure.

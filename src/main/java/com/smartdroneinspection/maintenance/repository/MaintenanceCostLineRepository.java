@@ -19,7 +19,7 @@ public interface MaintenanceCostLineRepository extends JpaRepository<Maintenance
    */
   @Query(
       "select coalesce(sum(l.amount), 0) from MaintenanceCostLine l "
-          + "where l.estimateVersionId = :estimateVersionId and l.state = :state")
-  BigDecimal sumAmountByEstimateVersionIdAndState(
-      @Param("estimateVersionId") UUID estimateVersionId, @Param("state") CostLineState state);
+          + "where l.workOrderId = :workOrderId and l.state = :state")
+  BigDecimal sumAmountByWorkOrderIdAndState(
+      @Param("workOrderId") UUID workOrderId, @Param("state") CostLineState state);
 }

@@ -183,11 +183,32 @@ public class MaintenanceWorkOrder {
 
   public void requestRework(String reason) {
     requireStatus(WorkOrderStatus.APPROVED);
-    if (reason == null || reason.isBlank()) {
-      throw new IllegalArgumentException("A rework request requires a reason");
-    }
+    requireReason(reason, "A rework request requires a reason");
     this.status = WorkOrderStatus.REWORK_REQUIRED;
     this.updatedAt = Instant.now();
+  }
+
+  /** MF4-08: the budget approver may return a submitted estimate for revision. */
+  public void returnEstimateForRework(UUID decidingUserId, String reason) {
+    requireStatus(WorkOrderStatus.AWAITING_APPROVAL);
+    UUID approver = require(decidingUserId, "decidingUserId");
+    if (!approver.equals(budgetApproverUserId)) {
+      throw new IllegalStateException(
+          "Only the designated budget approver may return this estimate");
+    }
+    if (approver.equals(teamLeadUserId) || approver.equals(reportAuthorUserId)) {
+      throw new IllegalStateException(
+          "A member of the executing team cannot return its own estimate");
+    }
+    requireReason(reason, "A rework request requires a reason");
+    this.status = WorkOrderStatus.REWORK_REQUIRED;
+    this.updatedAt = Instant.now();
+  }
+
+  private static void requireReason(String reason, String message) {
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException(message);
+    }
   }
 
   /** MF4-09: approved work is released to the team to begin. */
@@ -205,11 +226,15 @@ public class MaintenanceWorkOrder {
   }
 
   /**
-   * MF4-14: the team declares the physical work done. This is explicitly not acceptance; closure
-   * still requires an independent reviewer under MF4-18.
+   * MF4-14: the team declares the physical work done only after all submitted work logs have been
+   * verified by the lead. This is explicitly not acceptance; closure still requires an independent
+   * reviewer under MF4-18.
    */
-  public void markWorkCompleted() {
+  public void markWorkCompleted(long submittedWorkLogs, long verifiedWorkLogs) {
     requireStatus(WorkOrderStatus.IN_PROGRESS);
+    if (submittedWorkLogs <= 0 || verifiedWorkLogs != submittedWorkLogs) {
+      throw new IllegalStateException("All submitted work logs must be verified before completion");
+    }
     this.status = WorkOrderStatus.WORK_COMPLETED;
     this.updatedAt = Instant.now();
   }

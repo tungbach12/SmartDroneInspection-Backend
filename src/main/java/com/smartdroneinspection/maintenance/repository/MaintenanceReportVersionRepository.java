@@ -16,6 +16,9 @@ public interface MaintenanceReportVersionRepository
 
   Optional<MaintenanceReportVersion> findFirstByWorkOrderIdOrderByVersionNoDesc(UUID workOrderId);
 
+  Optional<MaintenanceReportVersion> findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
+      UUID workOrderId, ReportVersionStatus status);
+
   Optional<MaintenanceReportVersion> findByWorkOrderIdAndStatus(
       UUID workOrderId, ReportVersionStatus status);
 }

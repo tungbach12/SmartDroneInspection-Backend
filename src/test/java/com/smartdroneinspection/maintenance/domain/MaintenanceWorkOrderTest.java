@@ -184,6 +184,19 @@ class MaintenanceWorkOrderTest {
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.AWAITING_APPROVAL);
   }
 
+  @Test
+  void budgetApproverMayReturnARejectedEstimateForRevision() {
+    MaintenanceWorkOrder order = workOrder();
+    order.assignTeam(LEAD, AUTHOR, REVIEWER);
+    order.submitForApproval();
+
+    order.returnEstimateForRework(APPROVER, "Estimate missing materials");
+
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.REWORK_REQUIRED);
+    order.submitForApproval();
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.AWAITING_APPROVAL);
+  }
+
   /** MF4-08: the designated budget approver is still required after a rework cycle. */
   @Test
   void rejectsApprovalFromAnyoneOtherThanTheDesignatedApprover() {

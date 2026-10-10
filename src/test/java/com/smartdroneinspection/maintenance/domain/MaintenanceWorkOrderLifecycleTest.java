@@ -42,7 +42,7 @@ class MaintenanceWorkOrderLifecycleTest {
     MaintenanceWorkOrder order = approved();
     order.markReady();
     order.markInProgress();
-    order.markWorkCompleted();
+    order.markWorkCompleted(1, 1);
     order.markSubmittedForAcceptance();
     return order;
   }
@@ -58,7 +58,7 @@ class MaintenanceWorkOrderLifecycleTest {
     order.markInProgress();
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.IN_PROGRESS);
 
-    order.markWorkCompleted();
+    order.markWorkCompleted(1, 1);
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.WORK_COMPLETED);
 
     order.markSubmittedForAcceptance();
@@ -66,11 +66,26 @@ class MaintenanceWorkOrderLifecycleTest {
   }
 
   @Test
+  void cannotDeclareWorkCompletedUntilSubmittedLogsAreVerified() {
+    MaintenanceWorkOrder order = approved();
+    order.markReady();
+    order.markInProgress();
+
+    assertThatThrownBy(() -> order.markWorkCompleted(1, 0))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("verified");
+
+    order.markWorkCompleted(1, 1);
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.WORK_COMPLETED);
+  }
+
+  @Test
   void skipsExecutionStatesInTheWrongOrder() {
     MaintenanceWorkOrder order = approved();
 
     assertThatThrownBy(order::markInProgress).isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(order::markWorkCompleted).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> order.markWorkCompleted(0, 0))
+        .isInstanceOf(IllegalStateException.class);
     assertThatThrownBy(order::markSubmittedForAcceptance).isInstanceOf(IllegalStateException.class);
   }
 
@@ -132,7 +147,7 @@ class MaintenanceWorkOrderLifecycleTest {
     order.requireReworkAfterAcceptance(REVIEWER, "Torque not recorded");
 
     order.resumeExecutionAfterRework();
-    order.markWorkCompleted();
+    order.markWorkCompleted(1, 1);
     order.markSubmittedForAcceptance();
     order.accept(REVIEWER);
 

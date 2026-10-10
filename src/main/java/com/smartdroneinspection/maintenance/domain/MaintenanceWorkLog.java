@@ -129,6 +129,13 @@ public class MaintenanceWorkLog {
     this.updatedAt = Instant.now();
   }
 
+  /** MF4-11: the lead verifies the submitted work log; verification is not acceptance. */
+  public void verify() {
+    requireStatus(WorkLogStatus.SUBMITTED);
+    this.status = WorkLogStatus.VERIFIED;
+    this.updatedAt = Instant.now();
+  }
+
   /** MF4-11: a change request pauses the log until the change is decided. */
   public void pauseForChange() {
     requireStatus(WorkLogStatus.IN_PROGRESS);

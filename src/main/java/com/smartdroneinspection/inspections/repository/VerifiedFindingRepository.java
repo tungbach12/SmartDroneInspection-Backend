@@ -19,6 +19,9 @@ public interface VerifiedFindingRepository extends JpaRepository<VerifiedFinding
 
   long countByInspectionId(UUID inspectionId);
 
+  List<VerifiedFinding> findByRepairRequiredTrueAndDecisionIn(
+      List<com.smartdroneinspection.inspections.domain.enums.FindingDecision> decisions);
+
   /** MF3-13 hands only confirmed, repair-required findings to MF4. */
   @Query(
       "select f from VerifiedFinding f where f.inspectionId = :inspectionId "

@@ -138,6 +138,15 @@ public class MaintenanceReportVersion {
     this.status = ReportVersionStatus.SUBMITTED;
   }
 
+  /**
+   * MF4-18: recording an acceptance also approves the report version it was made against, so the
+   * accepted artifact is the one the reviewer actually read.
+   */
+  public void approveReport() {
+    requireStatus(ReportVersionStatus.SUBMITTED);
+    this.status = ReportVersionStatus.APPROVED;
+  }
+
   /** MF4-17: a return always carries a reason so the team knows what to correct. */
   public void returnToAuthor(String reason) {
     requireStatus(ReportVersionStatus.SUBMITTED);

@@ -144,4 +144,18 @@ class MaintenanceWorkLogTest {
   void cannotResumeALogThatWasNeverPaused() {
     assertThatThrownBy(log()::resumeAfterChange).isInstanceOf(IllegalStateException.class);
   }
+
+  @Test
+  void leadVerifiesOnlySubmittedLogs() {
+    MaintenanceWorkLog l = log();
+    Instant end = l.getStartedAt().plusSeconds(3600);
+    l.recordProgress(null, end, BigDecimal.ONE, null, "Installed", "{}");
+
+    assertThatThrownBy(l::verify).isInstanceOf(IllegalStateException.class);
+    l.submit();
+    l.verify();
+
+    assertThat(l.getStatus()).isEqualTo(WorkLogStatus.VERIFIED);
+    assertThatThrownBy(l::verify).isInstanceOf(IllegalStateException.class);
+  }
 }
