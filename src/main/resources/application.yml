@@ -42,6 +42,7 @@ app:
     max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
   assets:
     drone-document-max-file-size: ${DRONE_DOCUMENT_MAX_FILE_SIZE:10MB}
+    document-max-file-size: ${ASSET_DOCUMENT_MAX_FILE_SIZE:10MB}
   workforce:
     # Display warning horizon for a credential approaching its recorded expiry date. Not a
     # statutory renewal rule; change it per deployment if the organization warns earlier or later.

@@ -13,6 +13,7 @@ import org.springframework.util.unit.DataSize;
 public class AssetProperties {
 
   private DataSize droneDocumentMaxFileSize = DataSize.ofMegabytes(10);
+  private DataSize documentMaxFileSize = DataSize.ofMegabytes(10);
 
   public DataSize getDroneDocumentMaxFileSize() {
     return droneDocumentMaxFileSize;
@@ -20,5 +21,13 @@ public class AssetProperties {
 
   public void setDroneDocumentMaxFileSize(DataSize droneDocumentMaxFileSize) {
     this.droneDocumentMaxFileSize = droneDocumentMaxFileSize;
+  }
+
+  public DataSize getDocumentMaxFileSize() {
+    return documentMaxFileSize;
+  }
+
+  public void setDocumentMaxFileSize(DataSize documentMaxFileSize) {
+    this.documentMaxFileSize = documentMaxFileSize;
   }
 }
