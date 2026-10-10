@@ -40,6 +40,12 @@ springdoc:
 app:
   evidence:
     max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
+  assets:
+    drone-document-max-file-size: ${DRONE_DOCUMENT_MAX_FILE_SIZE:10MB}
+  workforce:
+    # Display warning horizon for a credential approaching its recorded expiry date. Not a
+    # statutory renewal rule; change it per deployment if the organization warns earlier or later.
+    credential-expiring-soon-window: ${CREDENTIAL_EXPIRING_SOON_WINDOW:30d}
   report:
     narrative-max-chars: ${REPORT_NARRATIVE_MAX_CHARS:10000}
   storage:

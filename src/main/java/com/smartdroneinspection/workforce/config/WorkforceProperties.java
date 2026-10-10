@@ -3,7 +3,12 @@ package com.smartdroneinspection.workforce.config;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Deployment-overridable presentation thresholds for workforce credentials. */
+/**
+ * Operational thresholds for workforce credential management.
+ *
+ * <p>The 60-day expiring-soon horizon is a deployment-overridable display warning, not a statutory
+ * renewal rule.
+ */
 @ConfigurationProperties(prefix = "app.workforce")
 public class WorkforceProperties {
 
