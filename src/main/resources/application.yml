@@ -46,7 +46,9 @@ app:
   workforce:
     # Display warning horizon for a credential approaching its recorded expiry date. Not a
     # statutory renewal rule; change it per deployment if the organization warns earlier or later.
-    credential-expiring-soon-window: ${CREDENTIAL_EXPIRING_SOON_WINDOW:30d}
+    # Chosen for commercial drone inspection, where operator credentials and liability insurance
+    # are annual or longer: two months is enough to arrange renewal and internal review.
+    credential-expiring-soon-window: ${CREDENTIAL_EXPIRING_SOON_WINDOW:60d}
   report:
     narrative-max-chars: ${REPORT_NARRATIVE_MAX_CHARS:10000}
   storage:

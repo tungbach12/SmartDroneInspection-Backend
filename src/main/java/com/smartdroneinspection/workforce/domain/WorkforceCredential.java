@@ -23,7 +23,10 @@ import java.util.UUID;
 @Table(name = "workforce_credentials")
 public class WorkforceCredential {
 
-  /** Default warning horizon used by compatibility callers without deployment configuration. */
+  /**
+   * Fallback horizon for compatibility callers; production service reads
+   * {@code app.workforce.credential-expiring-soon-window}.
+   */
   public static final Duration DEFAULT_EXPIRING_SOON_WINDOW = Duration.ofDays(60);
 
   @Id @GeneratedValue private UUID id;
