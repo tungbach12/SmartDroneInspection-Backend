@@ -8,6 +8,8 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface MaintenanceWorkOrderRepository extends JpaRepository<MaintenanceWorkOrder, UUID> {
 
@@ -17,6 +19,28 @@ public interface MaintenanceWorkOrderRepository extends JpaRepository<Maintenanc
   List<MaintenanceWorkOrder> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
   Page<MaintenanceWorkOrder> findByOrganizationId(UUID organizationId, Pageable pageable);
+
+  /** Team members see only orders with an active assignment row. */
+  @Query(
+      "select w from MaintenanceWorkOrder w where w.organizationId = :organizationId "
+          + "and exists (select tm.id from MaintenanceTeamMember tm "
+          + "where tm.workOrderId = w.id and tm.engineerUserId = :engineerId "
+          + "and tm.active = true)")
+  Page<MaintenanceWorkOrder> findAssignedToEngineer(
+      @Param("organizationId") UUID organizationId,
+      @Param("engineerId") UUID engineerId,
+      Pageable pageable);
+
+  /** Team members receive not-found semantics for unassigned orders. */
+  @Query(
+      "select w from MaintenanceWorkOrder w where w.id = :id and w.organizationId = :organizationId "
+          + "and exists (select tm.id from MaintenanceTeamMember tm "
+          + "where tm.workOrderId = w.id and tm.engineerUserId = :engineerId "
+          + "and tm.active = true)")
+  Optional<MaintenanceWorkOrder> findAssignedOrder(
+      @Param("id") UUID id,
+      @Param("organizationId") UUID organizationId,
+      @Param("engineerId") UUID engineerId);
 
   Page<MaintenanceWorkOrder> findByOrganizationIdAndStatus(
       UUID organizationId, WorkOrderStatus status, Pageable pageable);

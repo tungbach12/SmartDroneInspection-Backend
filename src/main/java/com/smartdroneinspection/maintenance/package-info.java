@@ -5,7 +5,7 @@
       "shared::api",
       "shared::exception",
       "users",
-      "workforce::spi",
+      "workforce::credential",
       "maintenance::repository"
     })
 package com.smartdroneinspection.maintenance;

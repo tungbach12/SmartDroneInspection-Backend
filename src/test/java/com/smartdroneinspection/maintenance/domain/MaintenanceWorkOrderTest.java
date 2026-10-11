@@ -118,6 +118,18 @@ class MaintenanceWorkOrderTest {
   }
 
   @Test
+  void rejectsSecondTeamDesignationInsteadOfSilentlyOverwritingTheFirst() {
+    MaintenanceWorkOrder order = workOrder();
+    order.assignTeam(LEAD, AUTHOR, REVIEWER);
+
+    assertThatThrownBy(() -> order.assignTeam(UUID.randomUUID(), UUID.randomUUID(), REVIEWER))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("already designated");
+    assertThat(order.getTeamLeadUserId()).isEqualTo(LEAD);
+    assertThat(order.getReportAuthorUserId()).isEqualTo(AUTHOR);
+  }
+
+  @Test
   void rejectsTeamDesignationOnceWorkStarted() {
     MaintenanceWorkOrder order = workOrder();
     order.assignTeam(LEAD, AUTHOR, REVIEWER);

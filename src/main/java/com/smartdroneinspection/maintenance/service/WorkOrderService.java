@@ -27,7 +27,7 @@ import com.smartdroneinspection.maintenance.repository.MaintenanceTeamMemberRepo
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkOrderRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
-import com.smartdroneinspection.workforce.spi.WorkforceAccess;
+import com.smartdroneinspection.workforce.credential.WorkforceCredentialAccess;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -72,7 +73,7 @@ public class WorkOrderService {
   private final MaintenanceTaskRepository tasks;
   private final MaintenanceEstimateVersionRepository estimates;
   private final MaintenanceCostLineRepository costLines;
-  private final WorkforceAccess workforceAccess;
+  private final WorkforceCredentialAccess workforceCredentials;
   private final RepairCandidateAccess repairCandidateAccess;
   private final UserAccess userAccess;
 
@@ -82,7 +83,7 @@ public class WorkOrderService {
       MaintenanceTaskRepository tasks,
       MaintenanceEstimateVersionRepository estimates,
       MaintenanceCostLineRepository costLines,
-      WorkforceAccess workforceAccess,
+      WorkforceCredentialAccess workforceCredentials,
       RepairCandidateAccess repairCandidateAccess,
       UserAccess userAccess) {
     this.workOrders = workOrders;
@@ -90,7 +91,7 @@ public class WorkOrderService {
     this.tasks = tasks;
     this.estimates = estimates;
     this.costLines = costLines;
-    this.workforceAccess = workforceAccess;
+    this.workforceCredentials = workforceCredentials;
     this.repairCandidateAccess = repairCandidateAccess;
     this.userAccess = userAccess;
   }
@@ -126,14 +127,6 @@ public class WorkOrderService {
   public WorkOrderResponse create(UUID actorId, CreateWorkOrderRequest request) {
     UserAccess.ActiveUser actor = requireOrganizationAdmin(actorId);
 
-    // MF4-01: a finding may not have two live work orders without an explicit reason.
-    if (workOrders.existsBySourceFindingIdAndStatusIn(request.sourceFindingId(), ACTIVE_STATUSES)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "WORK_ORDER_DUPLICATE_SCOPE",
-          "An active work order already covers this finding");
-    }
-
     RepairCandidate source =
         repairCandidateAccess
             .findRepairCandidate(
@@ -149,6 +142,14 @@ public class WorkOrderService {
           HttpStatus.BAD_REQUEST,
           "WORK_ORDER_SOURCE_INVALID",
           "The work order asset must match the source finding's asset");
+    }
+
+    // MF4-01: only after confirming source scope may duplicate state be disclosed.
+    if (workOrders.existsBySourceFindingIdAndStatusIn(request.sourceFindingId(), ACTIVE_STATUSES)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "WORK_ORDER_DUPLICATE_SCOPE",
+          "An active work order already covers this finding");
     }
 
     MaintenanceWorkOrder order =
@@ -183,13 +184,17 @@ public class WorkOrderService {
     if (actor.organizationId() == null) {
       throw forbidden("Maintenance work orders belong to a customer organization");
     }
-    Page<MaintenanceWorkOrder> result =
-        workOrders.findByOrganizationId(
-            actor.organizationId(),
-            PageRequest.of(
-                Math.max(page, 0),
-                Math.clamp(size, 1, 100),
-                Sort.by(Sort.Direction.DESC, "createdAt")));
+    Pageable pageable =
+        PageRequest.of(
+            Math.max(page, 0), Math.clamp(size, 1, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+    Page<MaintenanceWorkOrder> result;
+    if (actor.hasRole("ORG_ADMIN")) {
+      result = workOrders.findByOrganizationId(actor.organizationId(), pageable);
+    } else if (actor.hasRole("MAINTENANCE_ENGINEER")) {
+      result = workOrders.findAssignedToEngineer(actor.organizationId(), actor.id(), pageable);
+    } else {
+      throw forbidden("Only an ORG_ADMIN or assigned MAINTENANCE_ENGINEER may list work orders");
+    }
     return new WorkOrderPageResponse(
         result.getContent().stream().map(WorkOrderResponse::from).toList(),
         result.getNumber(),
@@ -209,7 +214,6 @@ public class WorkOrderService {
   public WorkOrderResponse assignTeam(UUID actorId, UUID workOrderId, AssignTeamRequest request) {
     UserAccess.ActiveUser actor = requireOrganizationAdmin(actorId);
     MaintenanceWorkOrder order = requireWorkOrderInScope(actor.id(), workOrderId);
-
     requireEligibleEngineer(actor.organizationId(), request.leadUserId(), "team lead");
     requireEligibleEngineer(actor.organizationId(), request.reportAuthorUserId(), "report author");
     UserAccess.ActiveUser reviewer =
@@ -225,6 +229,17 @@ public class WorkOrderService {
           HttpStatus.BAD_REQUEST,
           "TEAM_REVIEWER_INVALID",
           "The accepting reviewer must be an active ORG_ADMIN in this organization");
+    }
+    UUID budgetApproverId = order.getBudgetApproverUserId();
+    if (budgetApproverId.equals(request.leadUserId())
+        || budgetApproverId.equals(request.reportAuthorUserId())
+        || budgetApproverId.equals(request.acceptingReviewerUserId())
+        || (request.memberUserIds() != null
+            && request.memberUserIds().contains(budgetApproverId))) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "TEAM_SEPARATION_OF_DUTIES",
+          "The budget approver cannot be part of the executing team");
     }
 
     try {
@@ -464,9 +479,6 @@ public class WorkOrderService {
 
   private void recordAssignment(
       UUID workOrderId, UUID engineerUserId, TeamMemberRole role, UUID actorId, String reason) {
-    if (role == TeamMemberRole.MEMBER) {
-      return;
-    }
     teamMembers.saveAndFlush(
         new MaintenanceTeamMember(
             workOrderId, engineerUserId, role, Instant.now(), actorId, reason));
@@ -488,7 +500,7 @@ public class WorkOrderService {
           "TEAM_MEMBER_OUT_OF_SCOPE",
           "Team members must be active users of the same organization");
     }
-    if (!workforceAccess.currentlyQualifies(organizationId, userId)) {
+    if (!workforceCredentials.currentlyQualifies(organizationId, userId, Instant.now())) {
       throw forbidden("The assigned " + role + " holds a credential that is not currently valid");
     }
   }
@@ -525,9 +537,17 @@ public class WorkOrderService {
     if (actor.organizationId() == null) {
       throw notFound();
     }
-    return workOrders
-        .findByIdAndOrganizationId(workOrderId, actor.organizationId())
-        .orElseThrow(WorkOrderService::notFound);
+    if (actor.hasRole("ORG_ADMIN")) {
+      return workOrders
+          .findByIdAndOrganizationId(workOrderId, actor.organizationId())
+          .orElseThrow(WorkOrderService::notFound);
+    }
+    if (actor.hasRole("MAINTENANCE_ENGINEER")) {
+      return workOrders
+          .findAssignedOrder(workOrderId, actor.organizationId(), actor.id())
+          .orElseThrow(WorkOrderService::notFound);
+    }
+    throw notFound();
   }
 
   private UserAccess.ActiveUser requireActiveUser(UUID actorId) {

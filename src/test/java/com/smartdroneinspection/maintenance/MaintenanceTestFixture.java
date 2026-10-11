@@ -203,7 +203,31 @@ public final class MaintenanceTestFixture {
     return users.saveAndFlush(user);
   }
 
-  /** Gives a user a credential record in a given status, to exercise the MF4-04 gate. */
+  public UUID createAdditionalFinding(UUID userId, UUID referenceFindingId) {
+    UUID findingId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO verified_findings (
+            id, inspection_id, evidence_id, ai_candidate_id, created_by_user_id, source, finding_code,
+            defect_label, severity, location_description, bounding_box, technical_notes,
+            recommended_action, status, resolved_at, created_at, updated_at, row_version,
+            component, description, observed_condition, decision, decided_by_user_id, decided_at,
+            rationale, repair_required)
+        SELECT ?, inspection_id, NULL, NULL, ?, 'MANUAL', ?, 'Additional corrosion', 'MEDIUM',
+               'North support', NULL, 'Additional corrosion observed', NULL, 'OPEN', NULL,
+               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'North support',
+               'Additional corrosion on north support', 'Corrosion observed', 'CONFIRMED', ?,
+               CURRENT_TIMESTAMP, NULL, TRUE
+          FROM verified_findings WHERE id = ?
+        """,
+        findingId,
+        userId,
+        ("F-" + UUID.randomUUID().toString().substring(0, 8)).toUpperCase(Locale.ROOT),
+        userId,
+        referenceFindingId);
+    return findingId;
+  }
+
   public void grantCredential(UUID organizationId, UUID userId, String status, Instant expiredAt) {
     jdbcTemplate.update(
         """

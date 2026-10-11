@@ -135,6 +135,19 @@ public class MaintenanceWorkOrder {
       throw new IllegalStateException(
           "Work order is " + status + "; the team can only be designated while DRAFT");
     }
+    // The parameters shadow these fields, so the check must read the current state explicitly.
+    if (this.teamLeadUserId != null
+        || this.reportAuthorUserId != null
+        || this.acceptingReviewerUserId != null) {
+      throw new IllegalStateException(
+          "The work-order team is already designated (lead="
+              + (this.teamLeadUserId != null)
+              + ", author="
+              + (this.reportAuthorUserId != null)
+              + ", reviewer="
+              + (this.acceptingReviewerUserId != null)
+              + "); replacement requires a handover workflow");
+    }
     UUID lead = require(leadUserId, "leadUserId");
     UUID author = require(reportAuthorUserId, "reportAuthorUserId");
     UUID reviewer = require(acceptingReviewerUserId, "acceptingReviewerUserId");

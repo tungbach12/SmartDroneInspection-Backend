@@ -1,5 +1,6 @@
 package com.smartdroneinspection.workforce.domain;
 
+import com.smartdroneinspection.workforce.domain.enums.WorkforceCredentialStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,11 +13,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One professional credential held by a workforce member.
+ * Persistence mapping for an organization-owned workforce credential.
  *
- * <p>Report 3 MF4-04 requires that work requiring a qualification is only assigned to someone whose
- * credential is currently valid. The verification lifecycle below is deliberately minimal: this
- * slice reads and checks credential status, it does not yet record review evidence.
+ * <p>MF4 reads this record to determine whether a credential that exists is currently valid. It
+ * does not implement credential issuance or verification; see {@code WorkforceCredentialAccess} for
+ * the read boundary.
  */
 @Entity
 @Table(name = "workforce_credentials")
@@ -47,7 +48,10 @@ public class WorkforceCredential {
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
-  private CredentialStatus status;
+  private WorkforceCredentialStatus status;
+
+  @Column(name = "evidence_id")
+  private UUID evidenceId;
 
   @Column(name = "verified_by_user_id")
   private UUID verifiedByUserId;
@@ -78,45 +82,34 @@ public class WorkforceCredential {
       String credentialReference,
       Instant issuedAt,
       Instant expiresAt,
-      CredentialStatus status) {
-    this.organizationId = require(organizationId, "organizationId");
-    this.userId = require(userId, "userId");
-    this.credentialType = requireText(credentialType, "credentialType");
+      WorkforceCredentialStatus status,
+      UUID evidenceId,
+      UUID verifiedByUserId,
+      Instant verifiedAt,
+      String verificationReason) {
+    this.organizationId = organizationId;
+    this.userId = userId;
+    this.credentialType = credentialType;
     this.issuer = issuer;
     this.credentialReference = credentialReference;
     this.issuedAt = issuedAt;
     this.expiresAt = expiresAt;
-    this.status = status == null ? CredentialStatus.DRAFT : status;
-    this.createdAt = Instant.now();
-    this.updatedAt = this.createdAt;
+    this.status = status;
+    this.evidenceId = evidenceId;
+    this.verifiedByUserId = verifiedByUserId;
+    this.verifiedAt = verifiedAt;
+    this.verificationReason = verificationReason;
   }
 
   /**
-   * Whether this credential currently authorises assignment at the given moment.
+   * Whether a credential record currently qualifies for MF4 assignment.
    *
-   * <p>MF4-04 treats a missing credential as unverified rather than disqualifying, so callers must
-   * distinguish "no record" from "record that does not qualify". A record that exists but is not
-   * ACTIVE, or whose expiry has passed, does not qualify.
+   * <p>An absent record is handled by the caller according to the interim MF4 policy. A record that
+   * exists but is not ACTIVE, or whose expiry has passed, does not qualify.
    */
   public boolean qualifiesAt(Instant moment) {
-    if (status != CredentialStatus.ACTIVE) {
-      return false;
-    }
-    return expiresAt == null || expiresAt.isAfter(moment);
-  }
-
-  private static UUID require(UUID value, String name) {
-    if (value == null) {
-      throw new IllegalArgumentException(name + " is required");
-    }
-    return value;
-  }
-
-  private static String requireText(String value, String name) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(name + " is required");
-    }
-    return value;
+    return status == WorkforceCredentialStatus.ACTIVE
+        && (expiresAt == null || expiresAt.isAfter(moment));
   }
 
   public UUID getId() {
@@ -135,6 +128,14 @@ public class WorkforceCredential {
     return credentialType;
   }
 
+  public String getIssuer() {
+    return issuer;
+  }
+
+  public String getCredentialReference() {
+    return credentialReference;
+  }
+
   public Instant getIssuedAt() {
     return issuedAt;
   }
@@ -143,7 +144,35 @@ public class WorkforceCredential {
     return expiresAt;
   }
 
-  public CredentialStatus getStatus() {
+  public WorkforceCredentialStatus getStatus() {
     return status;
+  }
+
+  public UUID getEvidenceId() {
+    return evidenceId;
+  }
+
+  public UUID getVerifiedByUserId() {
+    return verifiedByUserId;
+  }
+
+  public Instant getVerifiedAt() {
+    return verifiedAt;
+  }
+
+  public String getVerificationReason() {
+    return verificationReason;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
+  }
+
+  public long getRowVersion() {
+    return rowVersion;
   }
 }

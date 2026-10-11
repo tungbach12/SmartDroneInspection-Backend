@@ -76,6 +76,68 @@ class MaintenanceApiIntegrationTest {
   }
 
   @Test
+  void activeTeamMemberCanReadAndListOnlyOrdersAssignedToTheirTeam() throws Exception {
+    UUID assignedOrderId = createWorkOrder(fixture.ownerId());
+    UUID otherFindingId = helper.createAdditionalFinding(fixture.ownerId(), fixture.findingId());
+    UUID unrelatedOrderId = createWorkOrder(fixture.ownerId(), otherFindingId);
+    assignTeamWithMember(assignedOrderId, fixture.engineerId());
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders/{id}", assignedOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.id").value(assignedOrderId.toString()));
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders")
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items.length()").value(1))
+        .andExpect(jsonPath("$.data.items[0].id").value(assignedOrderId.toString()));
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders/{id}", unrelatedOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void sameOrganizationUnassignedEngineerCannotReadOrListWorkOrders() throws Exception {
+    UUID workOrderId = createWorkOrder(fixture.ownerId());
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders/{id}", workOrderId)
+                .with(principal(fixture.engineerId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("WORK_ORDER_NOT_FOUND"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders")
+                .with(principal(fixture.engineerId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items.length()").value(0));
+  }
+
+  @Test
+  void crossTenantDuplicateFindingDoesNotRevealExistingWorkOrder() throws Exception {
+    UUID workOrderId = createWorkOrder(fixture.ownerId());
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders")
+                .with(principal(fixture.outsiderId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createWorkOrderBody()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("WORK_ORDER_SOURCE_INVALID"));
+  }
+
+  @Test
   void duplicateActiveFindingCannotOpenSecondWorkOrder() throws Exception {
     createWorkOrder(fixture.ownerId());
 
@@ -121,6 +183,25 @@ class MaintenanceApiIntegrationTest {
   }
 
   @Test
+  void orgAdminCannotAssignBudgetApproverIntoExecutingTeam() throws Exception {
+    UUID workOrderId = createWorkOrder(fixture.ownerId());
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
+                .with(principal(fixture.ownerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "leadUserId", fixture.leadId(),
+                            "reportAuthorUserId", fixture.reportAuthorId(),
+                            "acceptingReviewerUserId", fixture.reviewerId(),
+                            "memberUserIds", List.of(fixture.approverId())))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("TEAM_SEPARATION_OF_DUTIES"));
+  }
+
+  @Test
   void adminAssignsIndependentTeamAndEngineerReadsAssignments() throws Exception {
     UUID workOrderId = createWorkOrder(fixture.ownerId());
 
@@ -147,6 +228,32 @@ class MaintenanceApiIntegrationTest {
                 .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(2));
+  }
+
+  @Test
+  void orgAdminPersistsEveryRequestedTeamMember() throws Exception {
+    UUID workOrderId = createWorkOrder(fixture.ownerId());
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
+                .with(principal(fixture.ownerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "leadUserId", fixture.leadId(),
+                            "reportAuthorUserId", fixture.reportAuthorId(),
+                            "acceptingReviewerUserId", fixture.reviewerId(),
+                            "memberUserIds", List.of(fixture.engineerId())))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(3));
   }
 
   @Test
@@ -583,8 +690,8 @@ class MaintenanceApiIntegrationTest {
                 .with(principal(fixture.engineerId(), "MAINTENANCE_ENGINEER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("taskId", taskId, "hours", 1))))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("WORK_ORDER_SCOPE_DENIED"));
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("WORK_ORDER_NOT_FOUND"));
   }
 
   @Test
@@ -953,6 +1060,22 @@ class MaintenanceApiIntegrationTest {
         .andExpect(status().isOk());
   }
 
+  private void assignTeamWithMember(UUID workOrderId, UUID memberId) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
+                .with(principal(fixture.ownerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "leadUserId", fixture.leadId(),
+                            "reportAuthorUserId", fixture.reportAuthorId(),
+                            "acceptingReviewerUserId", fixture.reviewerId(),
+                            "memberUserIds", List.of(memberId)))))
+        .andExpect(status().isOk());
+  }
+
   private void assignDefaultTeam(UUID workOrderId) throws Exception {
     mockMvc
         .perform(
@@ -969,13 +1092,17 @@ class MaintenanceApiIntegrationTest {
   }
 
   private UUID createWorkOrder(UUID actorId) throws Exception {
+    return createWorkOrder(actorId, fixture.findingId());
+  }
+
+  private UUID createWorkOrder(UUID actorId, UUID findingId) throws Exception {
     String response =
         mockMvc
             .perform(
                 post("/api/v1/maintenance/work-orders")
                     .with(principal(actorId, "ORG_ADMIN"))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(createWorkOrderBody()))
+                    .content(createWorkOrderBody(findingId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("DRAFT"))
             .andReturn()
@@ -985,15 +1112,26 @@ class MaintenanceApiIntegrationTest {
   }
 
   private String createWorkOrderBody() throws Exception {
+    return createWorkOrderBody(fixture.findingId());
+  }
+
+  private String createWorkOrderBody(UUID findingId) throws Exception {
     return objectMapper.writeValueAsString(
         Map.of(
-            "assetId", fixture.assetId(),
-            "sourceReportVersionId", fixture.reportVersionId(),
-            "sourceFindingId", fixture.findingId(),
-            "budgetApproverUserId", fixture.approverId(),
-            "priority", "HIGH",
-            "correctiveScope", "{\"summary\":\"Replace corroded support\"}",
-            "acceptanceCriteria", "{\"checks\":[\"load test\"]}"));
+            "assetId",
+            fixture.assetId(),
+            "sourceReportVersionId",
+            fixture.reportVersionId(),
+            "sourceFindingId",
+            findingId,
+            "budgetApproverUserId",
+            fixture.approverId(),
+            "priority",
+            "HIGH",
+            "correctiveScope",
+            "{\"summary\":\"Replace corroded support\"}",
+            "acceptanceCriteria",
+            "{\"checks\":[\"load test\"]}"));
   }
 
   private static SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor principal(

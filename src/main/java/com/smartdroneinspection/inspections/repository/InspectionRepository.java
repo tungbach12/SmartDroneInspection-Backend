@@ -1,13 +1,18 @@
 package com.smartdroneinspection.inspections.repository;
 
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
@@ -73,4 +78,22 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
           "select count(i) from Inspection i where "
               + "exists (select r.id from InspectionReport r where r.inspectionId = i.id)")
   Page<Inspection> findWithReport(Pageable pageable);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @QueryHints(
+      value = {
+        @QueryHint(name = "jakarta.persistence.cache.storeMode", value = "REFRESH"),
+        @QueryHint(name = "jakarta.persistence.cache.retrieveMode", value = "BYPASS")
+      })
+  @Query(
+      "select inspection from Inspection inspection "
+          + "where inspection.id = :id and inspection.organizationId = :organizationId")
+  Optional<Inspection> findWithLockByIdAndOrganizationId(
+      @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+
+  List<Inspection> findByOrganizationIdAndInspectorIdOrderByUpdatedAtDesc(
+      UUID organizationId, UUID inspectorId);
+
+  List<Inspection> findByOrganizationIdAndStatusOrderByUpdatedAtDesc(
+      UUID organizationId, InspectionStatus status);
 }
