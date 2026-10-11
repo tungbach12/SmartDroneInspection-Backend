@@ -7,6 +7,7 @@ import com.smartdroneinspection.inspections.spi.ReportDraftPort.ChecklistEntrySu
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.FindingSummary;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort.SectionDraft;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -21,7 +22,24 @@ import org.springframework.web.client.RestClient;
 
 class ReportDraftClientTest {
 
+  /** The section values a compliant model returns, as it would in a real reply. */
+  private static final String SECTION_REPLY =
+      """
+      {"executiveSummary":"The north span girder G4 shows coating blistering.",\
+      "purposeScopeCriteria":"Objective: confirm coating integrity. Excluded: substructure.",\
+      "methodEquipmentConditions":"Visual and thermal optical survey at 15m AGL.",\
+      "conclusionsRecommendations":"Close inspection of G4 within 90 days.",\
+      "overallCondition":"POOR",\
+      "omissionDisclosure":"Submerged components were not observed."}""";
+
   private HttpServer server;
+
+  /** Embeds a reply inside the chat-completion envelope, escaping it as a JSON string. */
+  private static String chatCompletionBody(String content) {
+    return "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\""
+        + content.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+        + "\"}}]}";
+  }
 
   @AfterEach
   void stopServer() {
@@ -31,55 +49,76 @@ class ReportDraftClientTest {
   }
 
   @Test
-  void postsSanitizedPromptAndExtractsChoiceMessageContent() throws Exception {
-    AtomicReference<String> authHeader = new AtomicReference<>();
+  void returnsEachProposedSectionAsItsOwnField() throws Exception {
     AtomicReference<String> requestBody = new AtomicReference<>();
     startServer(
         exchange -> {
-          authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
           requestBody.set(
               new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-          respond(
-              exchange,
-              200,
-              """
-              {
-                "id": "chatcmpl-123",
-                "object": "chat.completion",
-                "choices": [
-                  {
-                    "index": 0,
-                    "message": {
-                      "role": "assistant",
-                      "content": "Inspection Report Summary: Superficial crack noted on girder."
-                    },
-                    "finish_reason": "stop"
-                  }
-                ]
-              }
-              """);
+          respond(exchange, 200, chatCompletionBody(SECTION_REPLY));
         });
 
-    DraftContext context =
-        new DraftContext(
-            List.of(new ChecklistEntrySummary("Expansion joint condition", "PASS", "Normal wear")),
-            List.of(new FindingSummary("Surface Crack", "MEDIUM", "Hairline crack observed")),
-            List.of(new EvidenceSummary("girder-01.png", "image/png")));
+    SectionDraft draft = client("key", "model").draftSections(context());
 
-    ReportDraftClient client = client("test-secret-key", "gpt-4o-mini");
-    String narrative = client.generateDraft(context);
+    assertThat(draft.executiveSummary())
+        .isEqualTo("The north span girder G4 shows coating blistering.");
+    assertThat(draft.purposeScopeCriteria()).contains("confirm coating integrity");
+    assertThat(draft.methodEquipmentConditions()).contains("15m AGL");
+    assertThat(draft.conclusionsRecommendations()).contains("Close inspection of G4");
+    assertThat(draft.overallCondition()).isEqualTo("POOR");
+    assertThat(draft.omissionDisclosure()).contains("Submerged components");
 
-    assertThat(authHeader.get()).isEqualTo("Bearer test-secret-key");
+    // The prompt must carry the finding's component and location, not just its label, so the model
+    // can write the specific note the documentation practice requires.
     assertThat(requestBody.get())
         .contains("Surface Crack")
+        .contains("Lower chord")
+        .contains("Span 2")
         // Streaming must stay off, otherwise a compatible endpoint answers with SSE frames.
         .contains("\"stream\":false")
         .doesNotContain("latitude")
         .doesNotContain("longitude")
-        .doesNotContain("uploader")
-        .doesNotContain("123e4567-e89b-12d3-a456-426614174000");
-    assertThat(narrative)
-        .isEqualTo("Inspection Report Summary: Superficial crack noted on girder.");
+        .doesNotContain("uploader");
+  }
+
+  @Test
+  void leavesAnAbsentSectionNullRatherThanFillingItWithAnEmptyValue() throws Exception {
+    startServer(
+        exchange ->
+            respond(
+                exchange,
+                200,
+                chatCompletionBody(
+                    "{\"executiveSummary\":\"Span surveyed.\",\"overallCondition\":null}")));
+
+    SectionDraft draft = client("key", "model").draftSections(context());
+
+    assertThat(draft.executiveSummary()).isEqualTo("Span surveyed.");
+    assertThat(draft.overallCondition()).isNull();
+    assertThat(draft.purposeScopeCriteria()).isNull();
+    assertThat(draft.omissionDisclosure()).isNull();
+  }
+
+  @Test
+  void toleratesAMarkdownFencedJsonReply() throws Exception {
+    startServer(
+        exchange ->
+            respond(
+                exchange,
+                200,
+                chatCompletionBody("```json\n{\"executiveSummary\":\"Fenced but usable.\"}\n```")));
+
+    assertThat(client("key", "model").draftSections(context()).executiveSummary())
+        .isEqualTo("Fenced but usable.");
+  }
+
+  @Test
+  void treatsAnUnusableReplyAsAFailureRatherThanDraftingPlaceholderText() throws Exception {
+    startServer(exchange -> respond(exchange, 200, chatCompletionBody("I cannot help with that.")));
+
+    assertThatThrownBy(() -> client("key", "model").draftSections(context()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("did not return a JSON object");
   }
 
   @Test
@@ -87,9 +126,7 @@ class ReportDraftClientTest {
     startServer(exchange -> respond(exchange, 500, "Internal Server Error"));
     ReportDraftClient client = client("key", "model");
 
-    DraftContext context = new DraftContext(List.of(), List.of(), List.of());
-
-    assertThatThrownBy(() -> client.generateDraft(context))
+    assertThatThrownBy(() -> client.draftSections(context()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Report draft generation failed");
 
@@ -97,32 +134,32 @@ class ReportDraftClientTest {
     startServer(exchange -> respond(exchange, 200, "{\"choices\":[]}"));
     ReportDraftClient emptyClient = client("key", "model");
 
-    assertThatThrownBy(() -> emptyClient.generateDraft(context))
+    assertThatThrownBy(() -> emptyClient.draftSections(context()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("empty or blank response");
   }
 
   @Test
   void throwsIOExceptionWhenContentIsBlank() throws Exception {
-    startServer(
-        exchange ->
-            respond(
-                exchange,
-                200,
-                """
-                {
-                  "choices": [
-                    { "message": { "role": "assistant", "content": "   " } }
-                  ]
-                }
-                """));
-    ReportDraftClient client = client("key", "model");
+    startServer(exchange -> respond(exchange, 200, chatCompletionBody("   ")));
 
-    DraftContext context = new DraftContext(List.of(), List.of(), List.of());
-
-    assertThatThrownBy(() -> client.generateDraft(context))
+    assertThatThrownBy(() -> client("key", "model").draftSections(context()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("empty or blank response");
+  }
+
+  private static DraftContext context() {
+    return new DraftContext(
+        List.of(new ChecklistEntrySummary("Expansion joint condition", "PASS", "Normal wear")),
+        List.of(
+            new FindingSummary(
+                "Surface Crack",
+                "MEDIUM",
+                "Lower chord",
+                "Span 2, girder G3",
+                "Hairline crack observed",
+                "Monitor and re-inspect")),
+        List.of(new EvidenceSummary("girder-01.png", "image/png")));
   }
 
   private ReportDraftClient client(String apiKey, String model) {

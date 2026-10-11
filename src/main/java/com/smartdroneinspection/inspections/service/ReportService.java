@@ -148,10 +148,10 @@ public class ReportService {
                     "REPORT_DRAFT_UNAVAILABLE",
                     "Automated drafting is not configured; author a structured draft manually"));
 
-    String narrative;
+    ReportDraftPort.SectionDraft proposal;
     try {
-      narrative =
-          port.generateDraft(
+      proposal =
+          port.draftSections(
               new ReportDraftPort.DraftContext(
                   List.of(),
                   confirmedFindings.stream()
@@ -160,7 +160,10 @@ public class ReportService {
                               new ReportDraftPort.FindingSummary(
                                   finding.getDefectLabel(),
                                   finding.getSeverity().name(),
-                                  finding.getTechnicalNotes()))
+                                  finding.getComponent(),
+                                  finding.getLocationDescription(),
+                                  finding.getTechnicalNotes(),
+                                  finding.getRecommendedAction()))
                       .toList(),
                   confirmedEvidence.stream()
                       .map(
@@ -169,7 +172,9 @@ public class ReportService {
                                   item.getFileName(), item.getContentType()))
                       .toList()));
     } catch (IOException ex) {
-      // A failed generation permits a manual draft under the same review gates.
+      // A failed generation permits a manual draft under the same review gates. No placeholder text
+      // is written into a section: a section the author did not write and the model did not supply
+      // stays absent, and reads as "not supplied" rather than as a confident blank.
       throw new BusinessException(
           HttpStatus.SERVICE_UNAVAILABLE,
           "REPORT_DRAFT_UNAVAILABLE",
@@ -183,7 +188,7 @@ public class ReportService {
             versionNo,
             null,
             actorId,
-            buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, narrative, port),
+            buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port),
             null,
             port.modelName(),
             PROMPT_VERSION,
@@ -723,27 +728,42 @@ public class ReportService {
                     HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Report version not found"));
   }
 
+  /**
+   * Stores the proposed section values alongside the version's provenance.
+   *
+   * <p>Findings are deliberately not copied in: the Confirmed findings section is rendered from the
+   * reviewed finding records, so a copy here could disagree with them.
+   */
   private static String buildContentSnapshot(
       Inspection inspection,
       List<Evidence> confirmedEvidence,
       List<VerifiedFinding> confirmedFindings,
-      String narrative,
+      ReportDraftPort.SectionDraft proposal,
       ReportDraftPort port) {
-    return "{\"model\":"
-        + quote(port.modelName())
-        + ",\"assetId\":"
-        + quote(inspection.getAssetId().toString())
-        + ",\"inspectionId\":"
-        + quote(inspection.getId().toString())
-        + ",\"objective\":"
-        + quote(inspection.getObjective())
-        + ",\"evidenceCount\":"
-        + confirmedEvidence.size()
-        + ",\"findingsCount\":"
-        + confirmedFindings.size()
-        + ",\"narrative\":"
-        + quote(narrative)
-        + "}";
+    StringBuilder snapshot = new StringBuilder();
+    snapshot.append("{\"model\":").append(quote(port.modelName()));
+    snapshot.append(",\"assetId\":").append(quote(inspection.getAssetId().toString()));
+    snapshot.append(",\"inspectionId\":").append(quote(inspection.getId().toString()));
+    snapshot.append(",\"objective\":").append(quote(inspection.getObjective()));
+    snapshot.append(",\"evidenceCount\":").append(confirmedEvidence.size());
+    snapshot.append(",\"findingsCount\":").append(confirmedFindings.size());
+    appendSection(snapshot, "executiveSummary", proposal.executiveSummary());
+    appendSection(snapshot, "purposeScopeCriteria", proposal.purposeScopeCriteria());
+    appendSection(snapshot, "methodEquipmentConditions", proposal.methodEquipmentConditions());
+    appendSection(snapshot, "conclusionsRecommendations", proposal.conclusionsRecommendations());
+    appendSection(snapshot, "overallCondition", proposal.overallCondition());
+    appendSection(snapshot, "omissionDisclosure", proposal.omissionDisclosure());
+    snapshot.append(",\"narrative\":").append(quote(proposal.narrative()));
+    snapshot.append("}");
+    return snapshot.toString();
+  }
+
+  /** Writes a section only when the model supplied one, so an absent section stays absent. */
+  private static void appendSection(StringBuilder snapshot, String key, String value) {
+    if (value == null || value.isBlank()) {
+      return;
+    }
+    snapshot.append(",\"").append(key).append("\":").append(quote(value));
   }
 
   /**
