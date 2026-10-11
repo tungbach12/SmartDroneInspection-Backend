@@ -25,6 +25,8 @@
     <okhttp.version>5.3.2</okhttp.version>
     <spotless.version>3.10.2</spotless.version>
     <jacoco.version>0.8.13</jacoco.version>
+    <openhtmltopdf.version>1.0.10</openhtmltopdf.version>
+    <pdfbox.version>3.0.5</pdfbox.version>
   </properties>
 
   <dependencyManagement>
@@ -41,6 +43,25 @@
 
   <dependencies>
     <!-- Core starters -->
+    <dependency>
+      <groupId>com.openhtmltopdf</groupId>
+      <artifactId>openhtmltopdf-core</artifactId>
+      <version>${openhtmltopdf.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.openhtmltopdf</groupId>
+      <artifactId>openhtmltopdf-pdfbox</artifactId>
+      <version>${openhtmltopdf.version}</version>
+    </dependency>
+    <!-- Reading the delivered PDF back in tests proves it carries selectable text rather than an
+         image of a page. Test scope only: it is not part of the runtime dependency set. -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox-tools</artifactId>
+      <version>${pdfbox.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>

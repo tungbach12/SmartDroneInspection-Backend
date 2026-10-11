@@ -1,11 +1,14 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
+import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
@@ -16,19 +19,34 @@ import com.smartdroneinspection.inspections.repository.InspectionReportVersionRe
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
+import com.smartdroneinspection.inspections.spi.ReportRenderPort;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * MF3-07 to MF3-13: drafting, human verification, qualified review, publication and handoff.
@@ -46,6 +64,8 @@ public class ReportService {
   /** Recorded as the version model when the Inspector authors the draft without automated help. */
   private static final String MANUAL_MODEL_NAME = "manual-authoring";
 
+  private static final String PDF_MEDIA_TYPE = "application/pdf";
+
   private final InspectionRepository inspections;
   private final EvidenceRepository evidence;
   private final VerifiedFindingRepository findings;
@@ -54,8 +74,11 @@ public class ReportService {
   private final EvidenceService evidenceService;
   private final EvidenceQualityService qualityService;
   private final Optional<ReportDraftPort> draftPort;
+  private final ReportRenderPort renderPort;
+  private final Optional<EvidenceObjectStore> objectStore;
   private final UserAccess userAccess;
   private final ApplicationEventPublisher events;
+  private final ObjectMapper objectMapper;
 
   public ReportService(
       InspectionRepository inspections,
@@ -66,8 +89,11 @@ public class ReportService {
       EvidenceService evidenceService,
       EvidenceQualityService qualityService,
       Optional<ReportDraftPort> draftPort,
+      ReportRenderPort renderPort,
+      Optional<EvidenceObjectStore> objectStore,
       UserAccess userAccess,
-      ApplicationEventPublisher events) {
+      ApplicationEventPublisher events,
+      ObjectMapper objectMapper) {
     this.inspections = inspections;
     this.evidence = evidence;
     this.findings = findings;
@@ -76,6 +102,9 @@ public class ReportService {
     this.evidenceService = evidenceService;
     this.qualityService = qualityService;
     this.draftPort = draftPort;
+    this.renderPort = renderPort;
+    this.objectStore = objectStore;
+    this.objectMapper = objectMapper;
     this.userAccess = userAccess;
     this.events = events;
   }
@@ -236,6 +265,42 @@ public class ReportService {
         .toList();
   }
 
+  /**
+   * MF3-08: the author reads and edits the entire draft; verify identifiers, equipment, coverage,
+   * findings, uncertainty and recommendations against sources; submit the reviewed version.
+   */
+  @Transactional
+  public InspectionReportVersionResponse saveSections(
+      UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
+    InspectionReport report = requireAuthoredReport(actorId, inspectionId);
+    InspectionReportVersion version = requireVersion(report.getId(), versionId);
+
+    // Authoring is the author's work. A reviewer who is not the author may read a draft but cannot
+    // rewrite it, and the author cannot write onto a version that has left an editable state.
+    if (!version.getAuthorUserId().equals(actorId)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the report author may edit this draft");
+    }
+
+    ReportSections sections =
+        new ReportSections(
+            request.executiveSummary(),
+            request.purposeScopeCriteria(),
+            request.methodEquipmentConditions(),
+            request.conclusionsRecommendations(),
+            request.overallCondition(),
+            request.omissionDisclosure());
+    String updated = sections.applyTo(version.getContentSnapshot(), objectMapper);
+    try {
+      version.editContent(updated);
+    } catch (IllegalStateException ex) {
+      throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
+    }
+    return toResponse(versions.saveAndFlush(version));
+  }
+
   /** MF3-08: the author verifies the draft against its sources. */
   @Transactional
   public InspectionReportVersionResponse verifyVersion(
@@ -300,18 +365,32 @@ public class ReportService {
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
+
+    // MF3-11: the PDF is the version's deliverable, so it is rendered and stored before the version
+    // can be marked published. A failure here rolls the publish back rather than leaving a
+    // published
+    // version with no artefact.
+    storePublishedArtefact(inspectionId, version);
     versions.saveAndFlush(version);
     report.setStatus(ReportStatus.PUBLISHED);
     reports.saveAndFlush(report);
 
     List<UUID> repairRequired =
         findings.findRepairRequired(inspectionId).stream().map(VerifiedFinding::getId).toList();
-    inspection.markReportPublished();
-    if (repairRequired.isEmpty()) {
-      // A no-repair outcome closes with its limitations preserved, never an empty work order.
-      inspection.complete();
-    } else {
-      inspection.markRepairPending();
+    // The inspection state rules live on the entity, so an out-of-order publish is refused the same
+    // way whether it arrives over HTTP, a batch job or a future endpoint. The version-level check
+    // above is translated for the same reason.
+    try {
+      inspection.markReportPublished();
+      if (repairRequired.isEmpty()) {
+        // A no-repair outcome closes with its limitations preserved, never an empty work order.
+        inspection.complete();
+      } else {
+        inspection.markRepairPending();
+      }
+    } catch (IllegalStateException ex) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
     }
     inspections.saveAndFlush(inspection);
 
@@ -331,6 +410,247 @@ public class ReportService {
         version.getPublishedAt(),
         repairRequired,
         inspection.getStatus());
+  }
+
+  /**
+   * MF3-11: renders the deliverable, stores it, and records its checksum on the version.
+   *
+   * <p>The object key is derived from the version id, so publishing a later version never
+   * overwrites the bytes stored for an already-published one. The checksum is taken from the bytes
+   * that were stored, so it describes what a later reader would actually download.
+   */
+  private void storePublishedArtefact(UUID inspectionId, InspectionReportVersion version) {
+    byte[] pdf = renderArtefact(inspectionId, version, false);
+    String objectKey = reportObjectKey(version.getId());
+    try (InputStream input = new ByteArrayInputStream(pdf)) {
+      requireObjectStore().put(objectKey, PDF_MEDIA_TYPE, pdf.length, input);
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "REPORT_RENDER_UNAVAILABLE",
+          "The report document could not be stored; publication did not complete");
+    }
+    version.recordArtefact(objectKey, sha256Hex(pdf));
+  }
+
+  /**
+   * MF3-08: the author may render a preview of a draft to check the delivered layout before
+   * submitting it.
+   *
+   * <p>A preview is the author's working view. It is not stored against the version, is not
+   * checksummed and carries no approval block, so it cannot be mistaken for the published artefact.
+   */
+  @Transactional(readOnly = true)
+  public ResponseEntity<byte[]> preview(UUID actorId, UUID inspectionId, UUID versionId) {
+    InspectionReport report = requireReportForInspection(inspectionId);
+    InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    if (!version.getAuthorUserId().equals(actorId)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the report author may preview this draft");
+    }
+    return pdfResponse(
+        renderArtefact(inspectionId, version, true),
+        "inline",
+        documentReference(version) + "-preview.pdf");
+  }
+
+  @Transactional(readOnly = true)
+  public ResponseEntity<byte[]> downloadArtefact(UUID actorId, UUID inspectionId, UUID versionId) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+    InspectionReport report = requireReportForInspection(inspectionId);
+    InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    String objectKey = version.getRenderedObjectKey();
+    if (objectKey == null || objectKey.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND,
+          "REPORT_ARTEFACT_NOT_FOUND",
+          "This report version has no stored document");
+    }
+    byte[] content;
+    try (InputStream input = requireObjectStore().open(objectKey)) {
+      content = input.readAllBytes();
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND,
+          "REPORT_ARTEFACT_NOT_FOUND",
+          "This report version has no stored document");
+    }
+    return pdfResponse(content, "attachment", documentReference(version) + ".pdf");
+  }
+
+  private byte[] renderArtefact(
+      UUID inspectionId, InspectionReportVersion version, boolean preview) {
+    try {
+      return renderPort.render(buildRenderContext(inspectionId, version, preview));
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "REPORT_RENDER_UNAVAILABLE",
+          preview
+              ? "The report preview could not be produced"
+              : "The report document could not be produced; publication did not complete");
+    }
+  }
+
+  private static ResponseEntity<byte[]> pdfResponse(
+      byte[] content, String disposition, String fileName) {
+    return ResponseEntity.ok()
+        .contentType(MediaType.APPLICATION_PDF)
+        .contentLength(content.length)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.builder(disposition)
+                .filename(fileName, StandardCharsets.UTF_8)
+                .build()
+                .toString())
+        .body(content);
+  }
+
+  private static String documentReference(InspectionReportVersion version) {
+    return "SDI-RPT-"
+        + version.getId().toString().substring(0, 8).toUpperCase()
+        + "-V"
+        + version.getVersionNo();
+  }
+
+  static String reportObjectKey(UUID versionId) {
+    return "reports/" + versionId + ".pdf";
+  }
+
+  private static String sha256Hex(byte[] content) {
+    try {
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException(ex);
+    }
+  }
+
+  /**
+   * MF3-11/03: assembles everything the delivered document needs.
+   *
+   * <p>Confirmed findings and evidence are read from their own records at render time rather than
+   * from the stored body, so the document cannot disagree with the finding decisions. Evidence
+   * bytes are loaded here so the PDF embeds the stored original rather than a reference to it.
+   */
+  private ReportRenderPort.RenderContext buildRenderContext(
+      UUID inspectionId, InspectionReportVersion version, boolean preview) {
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+
+    ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
+
+    List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
+    Map<UUID, String> findingLabelByEvidence = new LinkedHashMap<>();
+    if (!preview) {
+      List<VerifiedFinding> confirmed =
+          findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+              .filter(VerifiedFinding::isOfficial)
+              .toList();
+      for (VerifiedFinding finding : confirmed) {
+        findingViews.add(
+            new ReportRenderPort.FindingView(
+                finding.getId().toString(),
+                finding.getComponent(),
+                finding.getDefectLabel(),
+                finding.getSeverity().name(),
+                finding.getLocationDescription(),
+                finding.getObservedCondition(),
+                finding.getDescription(),
+                finding.getTechnicalNotes(),
+                finding.getRecommendedAction(),
+                finding.getDecision().name(),
+                displayName(finding.getDecidedByUserId()),
+                finding.getDecidedAt() == null ? null : finding.getDecidedAt().toString(),
+                finding.getMeasurement(),
+                finding.isRepairRequired() ? "Yes" : "No",
+                finding.getEvidenceId() == null
+                    ? List.of()
+                    : List.of(finding.getEvidenceId().toString())));
+        if (finding.getEvidenceId() != null) {
+          findingLabelByEvidence.put(finding.getEvidenceId(), finding.getDefectLabel());
+        }
+      }
+    }
+
+    List<ReportRenderPort.EvidenceView> evidenceViews = new ArrayList<>();
+    for (Evidence item : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+      byte[] content = loadEvidenceBytes(item);
+      evidenceViews.add(
+          new ReportRenderPort.EvidenceView(
+              item.getId().toString(),
+              item.getFileName(),
+              item.getContentType(),
+              item.getChecksumSha256(),
+              item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
+              findingLabelByEvidence.get(item.getId()),
+              content));
+    }
+
+    return new ReportRenderPort.RenderContext(
+        documentReference(version),
+        version.getVersionNo(),
+        version.getStatus().name(),
+        inspection.getObjective(),
+        inspection.getAssetId().toString(),
+        inspection.getOrganizationId().toString(),
+        displayName(version.getAuthorUserId()),
+        displayName(version.getReviewerUserId()),
+        version.getAuthorVerifiedAt() == null ? null : version.getAuthorVerifiedAt().toString(),
+        version.getReviewedAt() == null ? null : version.getReviewedAt().toString(),
+        version.getPublishedAt() == null ? null : version.getPublishedAt().toString(),
+        version.getEvidenceSnapshotHash(),
+        new ReportRenderPort.Sections(
+            sections.executiveSummary(),
+            sections.purposeScopeCriteria(),
+            sections.methodEquipmentConditions(),
+            sections.conclusionsRecommendations(),
+            sections.overallCondition() == null ? null : sections.overallCondition().name(),
+            sections.omissionDisclosure()),
+        findingViews,
+        evidenceViews);
+  }
+
+  /**
+   * Loads the stored evidence bytes so the document embeds the original file.
+   *
+   * <p>A file that cannot be read is reported without its image rather than failing the whole
+   * render: one unreadable upload should not cost the reader the report.
+   */
+  private EvidenceObjectStore requireObjectStore() {
+    return objectStore.orElseThrow(
+        () ->
+            new BusinessException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "REPORT_ARTEFACT_UNAVAILABLE",
+                "Report document storage is not configured"));
+  }
+
+  private byte[] loadEvidenceBytes(Evidence item) {
+    try (InputStream input = requireObjectStore().open(item.getObjectKey())) {
+      return input.readAllBytes();
+    } catch (IOException ex) {
+      return new byte[0];
+    }
+  }
+
+  /**
+   * Resolves a user's name for the delivered document.
+   *
+   * <p>The users module is reached only through its {@code UserAccess} boundary, so this module
+   * does not depend on a users-internal repository. An unresolvable identity falls back to the
+   * identifier rather than leaving the approval block blank: the record must name who acted even
+   * when the profile is gone.
+   */
+  private String displayName(UUID userId) {
+    if (userId == null) {
+      return null;
+    }
+    return userAccess
+        .findActiveUser(userId)
+        .map(UserAccess.ActiveUser::fullName)
+        .filter(name -> name != null && !name.isBlank())
+        .orElse(userId.toString());
   }
 
   @Transactional(readOnly = true)
@@ -475,6 +795,7 @@ public class ReportService {
   }
 
   private InspectionReportVersionResponse toResponse(InspectionReportVersion version) {
+    JsonNode content = readContentSnapshot(version.getContentSnapshot());
     return new InspectionReportVersionResponse(
         version.getId(),
         version.getInspectionReportId(),
@@ -490,6 +811,37 @@ public class ReportService {
         version.getGeneratedAt(),
         version.getEvidenceSnapshotHash(),
         version.getPublishedAt(),
-        version.getCreatedAt());
+        version.getCreatedAt(),
+        textOrNull(content, "narrative"),
+        textOrNull(content, "omissionDisclosure"),
+        version.getContentSnapshot(),
+        ReportSectionsResponse.from(
+            ReportSections.read(version.getContentSnapshot(), objectMapper)));
+  }
+
+  /**
+   * Reads the stored document body so the response carries what the author wrote.
+   *
+   * <p>A snapshot that cannot be parsed yields no body rather than failing the read. The version's
+   * gates, hashes and provenance are still authoritative, and refusing to list them would turn a
+   * malformed historical row into an outage.
+   */
+  private JsonNode readContentSnapshot(String contentSnapshot) {
+    if (contentSnapshot == null || contentSnapshot.isBlank()) {
+      return null;
+    }
+    try {
+      return objectMapper.readTree(contentSnapshot);
+    } catch (JacksonException exception) {
+      return null;
+    }
+  }
+
+  private static String textOrNull(JsonNode content, String field) {
+    if (content == null) {
+      return null;
+    }
+    JsonNode value = content.get(field);
+    return value == null || value.isNull() ? null : value.asString();
   }
 }

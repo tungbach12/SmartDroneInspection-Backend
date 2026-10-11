@@ -132,6 +132,32 @@ public class InspectionReportVersion {
     this.contentSnapshot = newContent;
   }
 
+  /**
+   * MF3-11: records the published deliverable.
+   *
+   * <p>Only a published version can carry an artefact, so the column cannot be populated for a
+   * draft and a later version cannot overwrite the object key of an earlier published one.
+   */
+  public void recordArtefact(String objectKey, String checksumSha256) {
+    requireStatus(ReportStatus.PUBLISHED);
+    if (objectKey == null
+        || objectKey.isBlank()
+        || checksumSha256 == null
+        || checksumSha256.isBlank()) {
+      throw new IllegalArgumentException("A published report requires its object key and checksum");
+    }
+    this.renderedObjectKey = objectKey;
+    this.renderedChecksumSha256 = checksumSha256;
+  }
+
+  public String getRenderedObjectKey() {
+    return renderedObjectKey;
+  }
+
+  public String getRenderedChecksumSha256() {
+    return renderedChecksumSha256;
+  }
+
   public void submit() {
     requireStatus(ReportStatus.AUTHOR_VERIFIED);
     if (authorVerifiedByUserId == null || authorVerifiedAt == null) {
