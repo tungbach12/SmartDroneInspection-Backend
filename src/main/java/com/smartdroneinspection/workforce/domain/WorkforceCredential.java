@@ -24,8 +24,8 @@ import java.util.UUID;
 public class WorkforceCredential {
 
   /**
-   * Fallback horizon for compatibility callers; production service reads
-   * {@code app.workforce.credential-expiring-soon-window}.
+   * Fallback horizon for compatibility callers; production service reads {@code
+   * app.workforce.credential-expiring-soon-window}.
    */
   public static final Duration DEFAULT_EXPIRING_SOON_WINDOW = Duration.ofDays(60);
 

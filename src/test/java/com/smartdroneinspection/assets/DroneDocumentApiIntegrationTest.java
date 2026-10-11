@@ -145,6 +145,21 @@ class DroneDocumentApiIntegrationTest {
   }
 
   @Test
+  void refusesToUploadOntoAnotherOrganizationsDrone() throws Exception {
+    UUID foreignDroneId = seedDrone(fixture.otherOrganizationId());
+    long documentsBefore = droneDocumentCount();
+
+    // The caller owns the Drone in the previous test; this one is the Drone owned by somebody
+    // else, which is the case the write path has to refuse.
+    upload(foreignDroneId, "FLIGHT_PERMIT")
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("DRONE_NOT_FOUND"));
+
+    assertThat(droneDocumentCount()).isEqualTo(documentsBefore);
+    assertThat(storedObjects).isEmpty();
+  }
+
+  @Test
   void repeatedUploadsNeverReuseAnObjectKeyAndTheDatabaseRefusesDuplicates() throws Exception {
     UUID droneId = seedDrone(fixture.organizationId());
     upload(droneId, "FLIGHT_PERMIT").andExpect(status().isCreated());
@@ -330,6 +345,10 @@ class DroneDocumentApiIntegrationTest {
             String.class,
             organizationId,
             serial));
+  }
+
+  private long droneDocumentCount() {
+    return jdbcTemplate.queryForObject("SELECT count(*) FROM drone_documents", Long.class);
   }
 
   private String checksumInDatabase(UUID droneId) {

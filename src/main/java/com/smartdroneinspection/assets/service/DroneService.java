@@ -45,6 +45,8 @@ public class DroneService {
   public DroneResponse create(UUID actorId, CreateDroneRequest request) {
     UUID organizationId = requireOrganization(requireActive(actorId));
     requireEntitled(organizationId);
+    requireJsonDocument(
+        request.payloadMetadata(), "Payload metadata must be a valid JSON document.");
     String serialNumber = request.serialNumber().trim();
     if (drones.existsByOrganizationIdAndSerialNumber(organizationId, serialNumber)) {
       throw new BusinessException(
@@ -115,6 +117,18 @@ public class DroneService {
 
   private void requireEntitled(UUID organizationId) {
     entitlement.requireActive(organizationId, Instant.now());
+  }
+
+  /** Rejects malformed JSON before it reaches the PostgreSQL jsonb column as an opaque 500. */
+  private void requireJsonDocument(String value, String message) {
+    if (value == null) {
+      return;
+    }
+    try {
+      tools.jackson.databind.json.JsonMapper.shared().readTree(value);
+    } catch (RuntimeException ex) {
+      throw new IllegalArgumentException(message);
+    }
   }
 
   private UUID requireOrganization(UserAccess.ActiveUser actor) {

@@ -2,6 +2,7 @@ package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.request.UpdateDroneDocumentStatusRequest;
 import com.smartdroneinspection.assets.api.dto.response.DroneDocumentResponse;
+import com.smartdroneinspection.assets.config.AssetProperties;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneDocument;
 import com.smartdroneinspection.assets.domain.enums.DroneDocumentStatus;
@@ -30,9 +31,9 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class DroneDocumentService {
 
-  static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
   private static final Set<String> ALLOWED_TYPES =
       Set.of("image/png", "image/jpeg", "image/webp", "application/pdf");
+  private static final long DEFAULT_MAX_SIZE_BYTES = 10L * 1024 * 1024;
   private static final String NOT_FOUND_MESSAGE = "Drone not found.";
 
   private final DroneRepository drones;
@@ -40,27 +41,23 @@ public class DroneDocumentService {
   private final UserAccess userAccess;
   private final SubscriptionEntitlement entitlement;
   private final Optional<EvidenceObjectStore> objectStore;
+  private final AssetProperties properties;
 
   public DroneDocumentService(
       DroneRepository drones,
       DroneDocumentRepository droneDocuments,
       UserAccess userAccess,
       SubscriptionEntitlement entitlement,
-      Optional<EvidenceObjectStore> objectStore) {
+      Optional<EvidenceObjectStore> objectStore,
+      AssetProperties properties) {
     this.drones = drones;
     this.droneDocuments = droneDocuments;
     this.userAccess = userAccess;
     this.entitlement = entitlement;
     this.objectStore = objectStore;
+    this.properties = properties;
   }
 
-  /**
-   * Stores the uploaded file and records its metadata.
-   *
-   * <p>The recorded checksum is computed here, server-side, over the exact bytes handed to storage.
-   * A checksum supplied by the caller is never read or trusted, so the stored value is always a
-   * fact about the object that exists in the bucket rather than a claim about it.
-   */
   @Transactional
   public DroneDocumentResponse upload(
       UUID actorId,
@@ -87,15 +84,7 @@ public class DroneDocumentService {
     } catch (IOException ex) {
       throw new BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Unreadable file");
     }
-    if (content.length == 0) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Document must not be empty");
-    }
-    if (content.length > MAX_SIZE_BYTES) {
-      throw new BusinessException(
-          HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "Maximum document size is 10 MB");
-    }
-    // Reject an impossible validity window before writing anything to storage.
+    requireWithinSizeLimit(content.length, maxSizeBytes());
     if (validFrom != null && validUntil != null && !validUntil.isAfter(validFrom)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
@@ -150,7 +139,7 @@ public class DroneDocumentService {
     entitlement.requireActive(drone.getOrganizationId(), Instant.now());
 
     DroneDocument document =
-        droneDocuments.findAllByDrone_IdOrderByCreatedAtDesc(drone.getId()).stream()
+        droneDocuments.findAllForReadiness(drone.getOrganizationId(), drone.getId()).stream()
             .filter(candidate -> candidate.getId().equals(documentId))
             .findFirst()
             .orElseThrow(
@@ -163,6 +152,11 @@ public class DroneDocumentService {
     }
     document.changeStatus(request.status(), actorId, Instant.now());
     return DroneDocumentResponse.from(droneDocuments.saveAndFlush(document));
+  }
+
+  private long maxSizeBytes() {
+    var configured = properties.getDroneDocumentMaxFileSize();
+    return configured == null ? DEFAULT_MAX_SIZE_BYTES : configured.toBytes();
   }
 
   private Drone requireOwnedDrone(UUID actorId, UUID droneId) {
@@ -181,6 +175,20 @@ public class DroneDocumentService {
         .orElseThrow(
             () ->
                 new BusinessException(HttpStatus.NOT_FOUND, "DRONE_NOT_FOUND", NOT_FOUND_MESSAGE));
+  }
+
+  private long requireWithinSizeLimit(long sizeBytes, long maxSizeBytes) {
+    if (sizeBytes <= 0) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Document must not be empty");
+    }
+    if (sizeBytes > maxSizeBytes) {
+      throw new BusinessException(
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "PAYLOAD_TOO_LARGE",
+          "Maximum document size is " + (maxSizeBytes / (1024 * 1024)) + " MB");
+    }
+    return sizeBytes;
   }
 
   private static String sha256(byte[] content) {

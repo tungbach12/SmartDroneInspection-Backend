@@ -31,7 +31,7 @@ class WorkforceCredentialExpiryWindowTest {
   }
 
   @Test
-  void reportsExpiringSoonOnlyInsideTheConfiguredWindow() {
+  void aCredentialExpiringInsideTheWindowIsReportedAsExpiringSoon() {
     Instant now = Instant.parse("2026-10-10T00:00:00Z");
     Instant expiresInTenDays = now.plus(Duration.ofDays(10));
 
@@ -40,7 +40,7 @@ class WorkforceCredentialExpiryWindowTest {
   }
 
   @Test
-  void reportsActiveOutsideTheConfiguredWindow() {
+  void aCredentialExpiringOutsideTheWindowStaysActive() {
     Instant now = Instant.parse("2026-10-10T00:00:00Z");
     Instant expiresInNinetyDays = now.plus(Duration.ofDays(90));
 
@@ -48,27 +48,48 @@ class WorkforceCredentialExpiryWindowTest {
         .isEqualTo(WorkforceCredential.Status.ACTIVE);
   }
 
+  /**
+   * The configured window must be what decides, not a literal compiled into the entity: the same
+   * credential changes reported status purely because the configuration changed.
+   */
   @Test
-  void aWiderConfiguredWindowCatchesAnExpiryTheDefaultWouldMiss() {
+  void theConfiguredWindowDecidesRatherThanAnyLiteral() {
     Instant now = Instant.parse("2026-10-10T00:00:00Z");
     Instant expiresInNinetyDays = now.plus(Duration.ofDays(90));
 
-    // Same credential, different configuration: the window must be what decides.
     assertThat(statusAt(expiresInNinetyDays, Duration.ofDays(120), now))
         .isEqualTo(WorkforceCredential.Status.EXPIRING_SOON);
+    assertThat(statusAt(expiresInNinetyDays, Duration.ofDays(30), now))
+        .isEqualTo(WorkforceCredential.Status.ACTIVE);
   }
 
   @Test
-  void aNarrowerConfiguredWindowLeavesTheSameCredentialActive() {
+  void aRejectedCredentialIsNeverResurrectedByItsExpiryDate() {
     Instant now = Instant.parse("2026-10-10T00:00:00Z");
-    Instant expiresInTenDays = now.plus(Duration.ofDays(10));
 
-    assertThat(statusAt(expiresInTenDays, Duration.ofDays(5), now))
-        .isEqualTo(WorkforceCredential.Status.ACTIVE);
+    assertThat(statusAt(now.plus(Duration.ofDays(5)), Duration.ofDays(30), now, rejected()))
+        .isEqualTo(WorkforceCredential.Status.REJECTED);
+  }
+
+  private static java.util.function.Consumer<WorkforceCredential> rejected() {
+    return credential ->
+        credential.review(
+            WorkforceCredential.Status.REJECTED,
+            SUBJECT_ID,
+            Instant.parse("2026-10-01T00:00:00Z"),
+            "not acceptable");
   }
 
   private static WorkforceCredential.Status statusAt(
       Instant expiresAt, Duration window, Instant at) {
+    return statusAt(expiresAt, window, at, credential -> {});
+  }
+
+  private static WorkforceCredential.Status statusAt(
+      Instant expiresAt,
+      Duration window,
+      Instant at,
+      java.util.function.Consumer<WorkforceCredential> review) {
     WorkforceCredential credential =
         new WorkforceCredential(
             ORGANIZATION_ID,
@@ -86,6 +107,7 @@ class WorkforceCredentialExpiryWindowTest {
     // A new credential is PENDING_REVIEW; only a reviewed one can be reported ACTIVE, so the
     // window question is asked of a reviewed credential.
     credential.review(WorkforceCredential.Status.ACTIVE, SUBJECT_ID, at, "recorded by the tenant");
+    review.accept(credential);
 
     return credential.currentStatus(at, window);
   }

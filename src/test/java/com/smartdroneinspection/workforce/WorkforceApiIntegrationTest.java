@@ -117,6 +117,38 @@ class WorkforceApiIntegrationTest {
   }
 
   @Test
+  void doesNotRevealThatAnEmailBelongsToAnotherOrganization() throws Exception {
+    Organization organizationB = saveOrganization("Beta");
+    User foreignUser =
+        saveUser(
+            "foreign-email-" + UUID.randomUUID(),
+            organizationB.getId(),
+            UserRole.INSPECTOR,
+            UserStatus.ACTIVE);
+
+    // A 409 here would tell the actor the email is already registered somewhere in the
+    // platform. A 404 with the same body as a genuinely missing user reveals nothing.
+    postProvision(foreignUser.getEmail(), "INSPECTOR", null)
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"))
+        .andExpect(jsonPath("$.detail").value("User was not found."));
+  }
+
+  @Test
+  void returnsConflictWhenEmailIsAlreadyUsedWithinTheActorOrganization() throws Exception {
+    String unique = UUID.randomUUID().toString().replace("-", "");
+    String email = "dup-" + unique + "@example.test";
+
+    postProvision(email, "INSPECTOR", null).andExpect(status().isCreated());
+
+    // Same-organization duplication is not an oracle: the actor already knows their own
+    // users. A clear 409 is more useful than a silent 404 here.
+    postProvision(email, "INSPECTOR", null)
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
+  }
+
+  @Test
   void returnsNonDisclosingNotFoundForForeignOrganizationUser() throws Exception {
     Organization organizationB = saveOrganization("Foreign");
     User foreignUser =

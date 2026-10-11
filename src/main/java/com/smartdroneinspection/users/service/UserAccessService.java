@@ -79,6 +79,11 @@ public class UserAccessService implements UserAccess {
     if (!actor.getOrganizationId().equals(organizationId) || !isWorkforceRoles(roles)) {
       throw workforceAccessDenied();
     }
+    // A globally-unique email checked without an organization scope turns provisioning into an
+    // oracle: 409 for "this address exists somewhere on the platform" versus 201 for "it does not"
+    // would let one tenant enumerate another's users. A foreign address is answered exactly like a
+    // missing user, so nothing about another tenant's roster is disclosed.
+    requireEmailFreeWithinOrganization(email, organizationId);
     rolePolicy.validate(ActorZone.CUSTOMER_ORGANIZATION, organizationId, toEnumRoles(roles));
     var provisioned =
         adminUsers.create(
@@ -156,6 +161,23 @@ public class UserAccessService implements UserAccess {
         Set.copyOf(response.roles()),
         subject.getStatus().name(),
         response.organizationId());
+  }
+
+  /**
+   * Answers a duplicate email without disclosing another tenant's roster. Same-organization
+   * duplication is a clear conflict the actor can act on; a foreign-tenant email is answered
+   * exactly like a missing user.
+   */
+  private void requireEmailFreeWithinOrganization(String email, UUID organizationId) {
+    String normalizedEmail = User.normalizeEmail(email);
+    boolean belongsToAnotherOrganization =
+        users
+            .findByNormalizedEmail(normalizedEmail)
+            .map(user -> !organizationId.equals(user.getOrganizationId()))
+            .orElse(false);
+    if (belongsToAnotherOrganization) {
+      throw new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User was not found.");
+    }
   }
 
   private User requireWorkforceUser(UUID userId, UUID organizationId) {

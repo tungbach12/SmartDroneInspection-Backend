@@ -15,14 +15,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.json.JsonMapper;
 
 /** Persistence behaviour of the {@code flight_permits} mapping and its schema constraints. */
 @SpringBootTest
+@Transactional
 @Import(TestcontainersConfiguration.class)
 class CompliancePersistenceTest {
 
   @Autowired FlightPermitRepository permits;
   @Autowired JdbcTemplate jdbcTemplate;
+  private final JsonMapper json = JsonMapper.shared();
 
   @Test
   void roundTripsEveryMappedPermitColumn() {
@@ -64,10 +68,12 @@ class CompliancePersistenceTest {
     assertThat(reloaded.getPermitType()).isEqualTo("UAV_OPERATIONS");
     assertThat(reloaded.getIssuingAuthority()).isEqualTo("Regional aviation administration");
     assertThat(reloaded.getPermitReference()).isEqualTo("FP-2026-0001");
-    assertThat(reloaded.getGeographicScope()).isEqualTo("{\"radiusMeters\": 1500}");
+    assertThat(json.readTree(reloaded.getGeographicScope()))
+        .isEqualTo(json.readTree("{\"radiusMeters\":1500}"));
     assertThat(reloaded.getValidFrom()).isEqualTo(validFrom);
     assertThat(reloaded.getValidUntil()).isEqualTo(validUntil);
-    assertThat(reloaded.getConditions()).isEqualTo("{\"daylightOnly\": true}");
+    assertThat(json.readTree(reloaded.getConditions()))
+        .isEqualTo(json.readTree("{\"daylightOnly\":true}"));
     assertThat(reloaded.getStatus()).isEqualTo(PermitStatus.REJECTED);
     assertThat(reloaded.getSourceEvidenceId()).isEqualTo(evidenceId);
     assertThat(reloaded.getReviewedByUserId()).isEqualTo(reviewerId);

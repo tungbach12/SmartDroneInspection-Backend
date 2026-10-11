@@ -48,21 +48,11 @@ public class AssetDocumentService {
     this.properties = properties;
   }
 
-  /** The configured cap when {@code app.assets.document-max-file-size} is unset. */
-  public static long defaultMaxSizeBytes() {
-    return DEFAULT_MAX_SIZE_BYTES;
-  }
-
-  /** The finite set of accepted upload content types; a wildcard would defeat the check. */
-  public static Set<String> allowedContentTypes() {
-    return ALLOWED_TYPES;
-  }
-
   /**
    * Rejects an upload above the caller's configured cap, so the limit is policy rather than a fixed
    * literal.
    */
-  public static long requireWithinSizeLimit(long sizeBytes, long maxSizeBytes) {
+  private static long requireWithinSizeLimit(long sizeBytes, long maxSizeBytes) {
     if (sizeBytes > maxSizeBytes) {
       throw new BusinessException(
           HttpStatus.PAYLOAD_TOO_LARGE,

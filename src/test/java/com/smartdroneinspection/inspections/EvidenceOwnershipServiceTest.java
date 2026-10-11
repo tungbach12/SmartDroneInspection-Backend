@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The tenant-ownership facade other modules use to validate an evidence reference. It answers only
@@ -21,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * and an unknown identifier are indistinguishable to the caller.
  */
 @SpringBootTest
+@Transactional
 @Import(TestcontainersConfiguration.class)
 class EvidenceOwnershipServiceTest {
 

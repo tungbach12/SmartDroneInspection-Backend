@@ -18,10 +18,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Persistence behaviour of the {@code drones} and {@code drone_documents} mappings. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@Transactional
 class DronePersistenceTest {
 
   private static final String CHECKSUM = "a".repeat(64);

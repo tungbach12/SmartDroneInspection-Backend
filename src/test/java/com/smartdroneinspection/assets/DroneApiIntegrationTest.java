@@ -104,6 +104,40 @@ class DroneApiIntegrationTest {
   }
 
   @Test
+  void rejectsMalformedPayloadMetadataAsAClientErrorWithoutPersistingDrone() throws Exception {
+    long before = droneCount();
+
+    mockMvc
+        .perform(
+            post("/api/v1/drones")
+                .with(orgAdmin(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"serialNumber\":\"bad-json-%s\",\"payloadMetadata\":\"not-json\"}"
+                        .formatted(serial())))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    assertThat(droneCount()).isEqualTo(before);
+  }
+
+  @Test
+  void acceptsStructuredPayloadMetadata() throws Exception {
+    String serial = serial();
+
+    mockMvc
+        .perform(
+            post("/api/v1/drones")
+                .with(orgAdmin(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"serialNumber\":\"%s\",\"payloadMetadata\":\"{\\\"camera\\\":true}\"}"
+                        .formatted(serial)))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.serialNumber").value(serial));
+  }
+
+  @Test
   void duplicateSerialWithinOrganizationIsRejectedAsConflict() throws Exception {
     String serial = serial();
     createDrone(fixture.clientId(), serial).andExpect(status().isCreated());
