@@ -39,6 +39,7 @@ class RuntimePersistenceInventoryTest {
           "refresh_tokens",
           "user_roles",
           "users",
+          // MF2 readiness and MF4 team credential read.
           "workforce_credentials",
           // MF3 inspection slice: evidence, advisory detection, human findings and report versions.
           "field_sessions",
@@ -47,7 +48,18 @@ class RuntimePersistenceInventoryTest {
           "ai_finding_candidates",
           "verified_findings",
           "inspection_reports",
-          "inspection_report_versions");
+          "inspection_report_versions",
+          // MF4 slice: work order aggregate with its team, task, estimate and cost line,
+          // then execution, change control, completion report and acceptance.
+          "maintenance_work_orders",
+          "maintenance_tasks",
+          "maintenance_team_members",
+          "maintenance_estimate_versions",
+          "maintenance_cost_lines",
+          "maintenance_change_orders",
+          "maintenance_work_logs",
+          "maintenance_report_versions",
+          "maintenance_acceptance_decisions");
 
   private static final Set<String> TARGET_APPLICATION_TABLES =
       Set.of(

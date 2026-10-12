@@ -12,7 +12,13 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Persistence mapping for the V25 organization-owned workforce credential table. */
+/**
+ * Persistence mapping for an organization-owned workforce credential.
+ *
+ * <p>MF4 reads this record to determine whether a credential that exists is currently valid. It
+ * does not implement credential issuance or verification; see {@code WorkforceCredentialAccess} for
+ * the read boundary.
+ */
 @Entity
 @Table(name = "workforce_credentials")
 public class WorkforceCredential {
@@ -67,6 +73,44 @@ public class WorkforceCredential {
   private long rowVersion;
 
   protected WorkforceCredential() {}
+
+  public WorkforceCredential(
+      UUID organizationId,
+      UUID userId,
+      String credentialType,
+      String issuer,
+      String credentialReference,
+      Instant issuedAt,
+      Instant expiresAt,
+      WorkforceCredentialStatus status,
+      UUID evidenceId,
+      UUID verifiedByUserId,
+      Instant verifiedAt,
+      String verificationReason) {
+    this.organizationId = organizationId;
+    this.userId = userId;
+    this.credentialType = credentialType;
+    this.issuer = issuer;
+    this.credentialReference = credentialReference;
+    this.issuedAt = issuedAt;
+    this.expiresAt = expiresAt;
+    this.status = status;
+    this.evidenceId = evidenceId;
+    this.verifiedByUserId = verifiedByUserId;
+    this.verifiedAt = verifiedAt;
+    this.verificationReason = verificationReason;
+  }
+
+  /**
+   * Whether a credential record currently qualifies for MF4 assignment.
+   *
+   * <p>An absent record is handled by the caller according to the interim MF4 policy. A record that
+   * exists but is not ACTIVE, or whose expiry has passed, does not qualify.
+   */
+  public boolean qualifiesAt(Instant moment) {
+    return status == WorkforceCredentialStatus.ACTIVE
+        && (expiresAt == null || expiresAt.isAfter(moment));
+  }
 
   public UUID getId() {
     return id;

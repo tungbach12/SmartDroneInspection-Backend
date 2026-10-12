@@ -1,5 +1,6 @@
 package com.smartdroneinspection.workforce.credential;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,4 +33,9 @@ public interface WorkforceCredentialAccess {
    */
   List<WorkforceCredentialSummary> listByOrganizationIdAndSubjectId(
       UUID organizationId, UUID subjectUserId);
+
+  /**
+   * Interim MF4 policy: absence is handled by the caller; present unresolved/invalid records fail.
+   */
+  boolean currentlyQualifies(UUID organizationId, UUID userId, Instant at);
 }

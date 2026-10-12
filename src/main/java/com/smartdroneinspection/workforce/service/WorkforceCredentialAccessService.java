@@ -1,9 +1,11 @@
 package com.smartdroneinspection.workforce.service;
 
+import com.smartdroneinspection.workforce.credential.CredentialStatus;
 import com.smartdroneinspection.workforce.credential.WorkforceCredentialAccess;
 import com.smartdroneinspection.workforce.credential.WorkforceCredentialSummary;
 import com.smartdroneinspection.workforce.domain.WorkforceCredential;
 import com.smartdroneinspection.workforce.repository.WorkforceCredentialRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,6 +50,20 @@ public class WorkforceCredentialAccessService implements WorkforceCredentialAcce
         .stream()
         .map(WorkforceCredentialAccessService::toSummary)
         .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean currentlyQualifies(UUID organizationId, UUID userId, Instant at) {
+    return listByOrganizationIdAndUserId(organizationId, userId).stream()
+        .filter(
+            credential ->
+                credential.status() != CredentialStatus.DRAFT
+                    && credential.status() != CredentialStatus.PENDING_REVIEW)
+        .allMatch(
+            credential ->
+                credential.status() == CredentialStatus.ACTIVE
+                    && (credential.expiresAt() == null || credential.expiresAt().isAfter(at)));
   }
 
   private static WorkforceCredentialSummary toSummary(WorkforceCredential credential) {
