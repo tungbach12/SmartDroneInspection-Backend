@@ -9,10 +9,14 @@ public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
 
-  record ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
+  record ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null);
+      this(id, roles, null, null);
+    }
+
+    public ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
+      this(id, roles, organizationId, null);
     }
 
     public ActiveUser {

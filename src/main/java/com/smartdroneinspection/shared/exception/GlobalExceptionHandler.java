@@ -13,6 +13,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestCookieException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -51,6 +53,31 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(IllegalArgumentException.class)
   public ProblemDetail handleValidation(IllegalArgumentException ex, HttpServletRequest request) {
     return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", ex.getMessage(), request);
+  }
+
+  /**
+   * A request that matches no controller and no static resource. Without this the catch-all handler
+   * reports a missing endpoint as a server fault, which hides both the real cause and the request
+   * that provoked it.
+   */
+  @ExceptionHandler(NoResourceFoundException.class)
+  public ProblemDetail handleNoResourceFound(
+      NoResourceFoundException ex, HttpServletRequest request) {
+    return problem(
+        HttpStatus.NOT_FOUND,
+        "ENDPOINT_NOT_FOUND",
+        "No endpoint matches " + request.getMethod() + " " + request.getRequestURI() + ".",
+        request);
+  }
+
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  public ProblemDetail handleMaxUploadSize(
+      MaxUploadSizeExceededException ex, HttpServletRequest request) {
+    return problem(
+        HttpStatus.CONTENT_TOO_LARGE,
+        "PAYLOAD_TOO_LARGE",
+        "The uploaded payload exceeds the maximum permitted size.",
+        request);
   }
 
   @ExceptionHandler(Exception.class)

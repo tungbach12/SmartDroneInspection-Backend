@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import javax.imageio.ImageIO;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,10 @@ public class EvidenceService {
   static final long MAX_SIZE_BYTES = 50L * 1024 * 1024;
   private static final Set<String> ALLOWED_TYPES =
       Set.of("image/png", "image/jpeg", "image/webp", "image/tiff", "video/mp4", "application/pdf");
+
+  /** Image types whose bytes must decode before the evidence is stored. */
+  private static final Set<String> DECODABLE_IMAGE_TYPES =
+      Set.of("image/png", "image/jpeg", "image/webp", "image/tiff");
 
   private final InspectionRepository inspections;
   private final EvidenceRepository evidence;
@@ -89,6 +94,14 @@ public class EvidenceService {
     if (content.length > MAX_SIZE_BYTES) {
       throw new BusinessException(
           HttpStatus.PAYLOAD_TOO_LARGE, "EVIDENCE_TOO_LARGE", "Maximum evidence size is 50 MB");
+    }
+    // Report 3 MF3-02 requires corrupt input to be identified with a corrective action. Declared
+    // type alone is not proof of content, so image bytes must decode before they are stored.
+    if (DECODABLE_IMAGE_TYPES.contains(contentType) && !isDecodableImage(content)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_INVALID",
+          "The uploaded file is not a readable " + contentType + " image");
     }
     // Missing GPS is acceptable; a half-specified pair is not.
     if ((latitude == null) != (longitude == null)) {
@@ -262,6 +275,19 @@ public class EvidenceService {
     }
     String cleaned = name.replaceAll("[\\\\/\\r\\n]", "_");
     return cleaned.length() > 500 ? cleaned.substring(0, 500) : cleaned;
+  }
+
+  /**
+   * Whether image bytes actually decode. {@code ImageIO.read} returns null when no registered
+   * reader recognises the content, and throws when the header is valid but the data is truncated,
+   * so both outcomes mean the evidence is not usable.
+   */
+  private static boolean isDecodableImage(byte[] content) {
+    try {
+      return ImageIO.read(new ByteArrayInputStream(content)) != null;
+    } catch (IOException | RuntimeException ex) {
+      return false;
+    }
   }
 
   private static String sha256(byte[] content) {

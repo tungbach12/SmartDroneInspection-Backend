@@ -19,20 +19,14 @@ import com.smartdroneinspection.inspections.domain.enums.AiFindingCandidateStatu
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
-import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -50,12 +44,17 @@ import tools.jackson.databind.ObjectMapper;
  * author/reviewer gates on the report including separation of duties and immutable publication.
  */
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, InspectionReportApiIntegrationTest.StubStore.class})
+@Import(TestcontainersConfiguration.class)
 class InspectionReportApiIntegrationTest {
 
-  private static final byte[] PNG_BYTES = {
-    (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 7, 7, 7
-  };
+  /**
+   * A real 1x1 PNG. MF3-02 requires corrupt input to be refused, so the happy-path fixtures must be
+   * bytes that genuinely decode -- a signature followed by filler would be rejected by that check.
+   */
+  private static final byte[] PNG_BYTES =
+      Base64.getDecoder()
+          .decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
@@ -64,36 +63,6 @@ class InspectionReportApiIntegrationTest {
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
   @MockitoBean AiInferencePort inferencePort;
-
-  @TestConfiguration(proxyBeanMethods = false)
-  static class StubStore {
-    static final Map<String, byte[]> OBJECTS = new ConcurrentHashMap<>();
-
-    @Bean
-    EvidenceObjectStore evidenceObjectStore() {
-      return new EvidenceObjectStore() {
-        @Override
-        public void put(String objectKey, String contentType, long sizeBytes, InputStream input)
-            throws IOException {
-          OBJECTS.put(objectKey, input.readAllBytes());
-        }
-
-        @Override
-        public InputStream open(String objectKey) throws IOException {
-          byte[] content = OBJECTS.get(objectKey);
-          if (content == null) {
-            throw new IOException("missing object " + objectKey);
-          }
-          return new ByteArrayInputStream(content);
-        }
-
-        @Override
-        public void delete(String objectKey) {
-          OBJECTS.remove(objectKey);
-        }
-      };
-    }
-  }
 
   private InspectionTestFixture.Data fixture;
   private MockMvc mockMvc;
@@ -107,7 +76,6 @@ class InspectionReportApiIntegrationTest {
                     .springSecurity())
             .build();
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
-    StubStore.OBJECTS.clear();
   }
 
   @Test
@@ -246,6 +214,51 @@ class InspectionReportApiIntegrationTest {
                 String.class,
                 evidenceId))
         .isEqualTo(AiFindingCandidateStatus.PENDING.name());
+  }
+
+  @Test
+  void reAnalysingTheSameEvidenceReturnsTheExistingCandidatesInsteadOfDuplicatingThem()
+      throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    when(inferencePort.analyze(any(), eq("image/png")))
+        .thenReturn(
+            java.util.List.of(
+                new AiInferencePort.Detection(
+                    "capstone",
+                    "provider-vision-model",
+                    "surface crack",
+                    new java.math.BigDecimal("0.81"),
+                    "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}")));
+
+    // MF3-05 fires automatically once the evidence set is accepted, and a re-opened workspace
+    // repeats it, so the same capture must not accumulate a second candidate for one detection.
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1));
+
+    String firstCandidateId =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?", String.class, evidenceId);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id").value(firstCandidateId));
+
+    assertThat(candidates.countByEvidenceId(evidenceId)).isEqualTo(1);
   }
 
   @Test

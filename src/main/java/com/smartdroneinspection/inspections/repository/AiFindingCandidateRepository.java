@@ -12,5 +12,7 @@ public interface AiFindingCandidateRepository extends JpaRepository<AiFindingCan
 
   Optional<AiFindingCandidate> findByIdAndInspectionId(UUID id, UUID inspectionId);
 
+  List<AiFindingCandidate> findByEvidenceIdOrderByCreatedAtAsc(UUID evidenceId);
+
   long countByEvidenceId(UUID evidenceId);
 }

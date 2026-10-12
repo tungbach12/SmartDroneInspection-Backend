@@ -4,6 +4,7 @@ import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecis
 import com.smartdroneinspection.inspections.api.dto.request.FindingDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualReportDraftRequest;
+import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewCandidateRequest;
 import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
@@ -35,6 +36,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -257,6 +259,35 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.publish(actorId(jwt), inspectionId, versionId));
+  }
+
+  @PutMapping("/report/versions/{versionId}/sections")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<InspectionReportVersionResponse> saveSections(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId,
+      @Valid @RequestBody ReportSectionsRequest request) {
+    return ApiResponse.success(
+        reportService.saveSections(actorId(jwt), inspectionId, versionId, request));
+  }
+
+  @GetMapping("/report/versions/{versionId}/preview")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ResponseEntity<byte[]> previewReport(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId) {
+    return reportService.preview(actorId(jwt), inspectionId, versionId);
+  }
+
+  @GetMapping("/report/versions/{versionId}/document")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  public ResponseEntity<byte[]> downloadReport(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId) {
+    return reportService.downloadArtefact(actorId(jwt), inspectionId, versionId);
   }
 
   @GetMapping("/report/versions")
