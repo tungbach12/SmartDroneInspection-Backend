@@ -242,6 +242,47 @@ class InspectionPreparationApiIntegrationTest {
     return new ObjectMapper().writeValueAsString(fields);
   }
 
+  /**
+   * Listing the preparation history is a read-only operation. It used to take a pessimistic write
+   * lock, which PostgreSQL refuses inside a read-only transaction, so every caller saw a 500.
+   */
+  @Test
+  void listingPreparationHistoryIsReadableByTheAssignedOrganization() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/inspections/{i}/preparation", inspectionId).with(inspector()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data").isArray());
+  }
+
+  /**
+   * The same read-only path must refuse another organization before anything else can fail. A
+   * database-level error here would surface as a 500 and hide the scope denial from the caller.
+   */
+  @Test
+  void listingPreparationHistoryRefusesAnotherOrganizationWithoutA500() throws Exception {
+    UUID outsideOrganizationId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
+        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        """,
+        outsideOrganizationId,
+        "Outside organization " + outsideOrganizationId,
+        "Outside organization " + outsideOrganizationId,
+        "OUT-" + outsideOrganizationId);
+    UUID outsideInspectorId = createInspector(outsideOrganizationId);
+
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{i}/preparation", inspectionId)
+                .with(
+                    jwt()
+                        .jwt(token -> token.subject(outsideInspectorId.toString()))
+                        .authorities(new SimpleGrantedAuthority("ROLE_INSPECTOR"))))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
+  }
+
   private UUID createInspector(UUID ownerOrganizationId) {
     User inspector =
         new User(

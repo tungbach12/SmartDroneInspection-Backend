@@ -166,12 +166,52 @@ final class ReportHtmlTemplate {
               + " at "
               + orNotSupplied(finding.decidedAt()));
       row(body, "Corrective work required", finding.repairRequired());
+
+      ReportRenderPort.EvidenceView attachedEvidence = null;
       if (!finding.evidenceFileNames().isEmpty()) {
+        for (ReportRenderPort.EvidenceView ev : context.evidence()) {
+          if (finding.evidenceFileNames().contains(ev.id())
+              || finding.evidenceFileNames().contains(ev.fileName())) {
+            attachedEvidence = ev;
+            break;
+          }
+        }
+      }
+
+      if (attachedEvidence != null) {
+        body.append("<tr><th>Evidence</th><td>")
+            .append(escape(attachedEvidence.fileName()))
+            .append(" (")
+            .append(escape(attachedEvidence.id()))
+            .append(")</td></tr>");
+      } else if (!finding.evidenceFileNames().isEmpty()) {
         body.append("<tr><th>Evidence</th><td>")
             .append(escape(String.join(", ", finding.evidenceFileNames())))
             .append("</td></tr>");
       }
-      body.append("</table></div>");
+      body.append("</table>");
+
+      if (attachedEvidence != null
+          && isRenderableImage(attachedEvidence.contentType())
+          && attachedEvidence.content() != null
+          && attachedEvidence.content().length > 0) {
+        body.append("<div class=\"plate\" style=\"margin-top: 6pt;\">")
+            .append("<div class=\"plate-img\"><img src=\"data:")
+            .append(escape(attachedEvidence.contentType()))
+            .append(";base64,")
+            .append(java.util.Base64.getEncoder().encodeToString(attachedEvidence.content()))
+            .append("\" alt=\"")
+            .append(escape(attachedEvidence.fileName()))
+            .append("\"/></div>")
+            .append("<div class=\"plate-cap\"><b>Defect evidence photograph:</b> ")
+            .append(escape(attachedEvidence.fileName()))
+            .append(" · ")
+            .append(escape(attachedEvidence.id()))
+            .append(" · SHA-256 ")
+            .append(escape(attachedEvidence.checksumSha256()))
+            .append("</div></div>");
+      }
+      body.append("</div>");
     }
   }
 
@@ -187,15 +227,30 @@ final class ReportHtmlTemplate {
 
   private static void appendices(StringBuilder body, ReportRenderPort.RenderContext context) {
     section(body, "8. Appendices");
-    body.append("<p>Evidence photographs are listed in section 5 with their checksums. ")
+    body.append(
+            "<p>Evidence photographs associated with confirmed findings are presented alongside their respective findings in section 6. ")
+        .append("All evidence items are indexed with their SHA-256 checksums in section 5. ")
         .append("Checklist responses, session logs and source documents are held against the")
         .append(" inspection record and are linked from the platform.</p>");
-    if (!context.evidence().isEmpty()) {
-      body.append("<h3>Evidence photographs</h3>");
-      for (ReportRenderPort.EvidenceView item : context.evidence()) {
-        if (!isRenderableImage(item.contentType())) {
-          continue;
-        }
+
+    java.util.Set<String> findingEvidenceIds = new java.util.HashSet<>();
+    for (ReportRenderPort.FindingView finding : context.findings()) {
+      findingEvidenceIds.addAll(finding.evidenceFileNames());
+    }
+
+    java.util.List<ReportRenderPort.EvidenceView> additionalEvidence =
+        context.evidence().stream()
+            .filter(
+                item ->
+                    !findingEvidenceIds.contains(item.id())
+                        && !findingEvidenceIds.contains(item.fileName()))
+            .filter(item -> isRenderableImage(item.contentType()))
+            .filter(item -> item.content() != null && item.content().length > 0)
+            .toList();
+
+    if (!additionalEvidence.isEmpty()) {
+      body.append("<h3>Additional survey photographs</h3>");
+      for (ReportRenderPort.EvidenceView item : additionalEvidence) {
         body.append("<div class=\"plate\">")
             .append("<div class=\"plate-img\"><img src=\"data:")
             .append(escape(item.contentType()))
@@ -375,7 +430,7 @@ final class ReportHtmlTemplate {
           padding: 4pt 6pt; font-size: 8.5pt; text-align: left; color: #334155;
         }
         .grid td { border: 0.5pt solid #cbd5e1; padding: 4pt 6pt; font-size: 8.5pt; }
-        .finding { margin: 0 0 12pt 0; }
+        .finding { margin: 0 0 12pt 0; page-break-inside: avoid; }
         .finding-head td { padding: 0; }
         .finding-id { font-size: 9.5pt; font-weight: bold; color: #0f172a; padding-bottom: 3pt; }
         .finding-sev { font-size: 8.5pt; font-weight: bold; padding-bottom: 3pt; }

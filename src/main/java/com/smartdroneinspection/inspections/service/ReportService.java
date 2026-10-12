@@ -182,11 +182,16 @@ public class ReportService {
     }
 
     int versionNo = report.nextVersionNumber();
+    UUID sourceVersionId =
+        versions
+            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+            .map(InspectionReportVersion::getId)
+            .orElse(null);
     InspectionReportVersion version =
         new InspectionReportVersion(
             report.getId(),
             versionNo,
-            null,
+            sourceVersionId,
             actorId,
             buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port),
             null,
@@ -221,11 +226,16 @@ public class ReportService {
     List<VerifiedFinding> confirmedFindings = officialFindings(inspectionId);
 
     int versionNo = report.nextVersionNumber();
+    UUID sourceVersionId =
+        versions
+            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+            .map(InspectionReportVersion::getId)
+            .orElse(null);
     InspectionReportVersion version =
         new InspectionReportVersion(
             report.getId(),
             versionNo,
-            null,
+            sourceVersionId,
             actorId,
             buildManualContentSnapshot(
                 inspection, confirmedEvidence, confirmedFindings, narrative, omissionDisclosure),
@@ -377,6 +387,17 @@ public class ReportService {
     // version with no artefact.
     storePublishedArtefact(inspectionId, version);
     versions.saveAndFlush(version);
+
+    // MF3-11: a new published version supersedes any previously published version of this report.
+    List<InspectionReportVersion> previouslyPublished =
+        versions.findByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED);
+    for (InspectionReportVersion prev : previouslyPublished) {
+      if (!prev.getId().equals(version.getId())) {
+        prev.supersede();
+        versions.save(prev);
+      }
+    }
+
     report.setStatus(ReportStatus.PUBLISHED);
     reports.saveAndFlush(report);
 
@@ -547,35 +568,41 @@ public class ReportService {
 
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
     Map<UUID, String> findingLabelByEvidence = new LinkedHashMap<>();
-    if (!preview) {
-      List<VerifiedFinding> confirmed =
-          findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-              .filter(VerifiedFinding::isOfficial)
-              .toList();
-      for (VerifiedFinding finding : confirmed) {
-        findingViews.add(
-            new ReportRenderPort.FindingView(
-                finding.getId().toString(),
-                finding.getComponent(),
-                finding.getDefectLabel(),
-                finding.getSeverity().name(),
-                finding.getLocationDescription(),
-                finding.getObservedCondition(),
-                finding.getDescription(),
-                finding.getTechnicalNotes(),
-                finding.getRecommendedAction(),
-                finding.getDecision().name(),
-                displayName(finding.getDecidedByUserId()),
-                finding.getDecidedAt() == null ? null : finding.getDecidedAt().toString(),
-                finding.getMeasurement(),
-                finding.isRepairRequired() ? "Yes" : "No",
-                finding.getEvidenceId() == null
-                    ? List.of()
-                    : List.of(finding.getEvidenceId().toString())));
-        if (finding.getEvidenceId() != null) {
-          findingLabelByEvidence.put(finding.getEvidenceId(), finding.getDefectLabel());
+    Map<UUID, Evidence> evidenceById = new LinkedHashMap<>();
+    for (Evidence item : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+      evidenceById.put(item.getId(), item);
+    }
+    List<VerifiedFinding> confirmed =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(VerifiedFinding::isOfficial)
+            .toList();
+    for (VerifiedFinding finding : confirmed) {
+      List<String> evidenceRefs = new ArrayList<>();
+      if (finding.getEvidenceId() != null) {
+        evidenceRefs.add(finding.getEvidenceId().toString());
+        Evidence evItem = evidenceById.get(finding.getEvidenceId());
+        if (evItem != null) {
+          evidenceRefs.add(evItem.getFileName());
         }
+        findingLabelByEvidence.put(finding.getEvidenceId(), finding.getDefectLabel());
       }
+      findingViews.add(
+          new ReportRenderPort.FindingView(
+              finding.getId().toString(),
+              finding.getComponent(),
+              finding.getDefectLabel(),
+              finding.getSeverity().name(),
+              finding.getLocationDescription(),
+              finding.getObservedCondition(),
+              finding.getDescription(),
+              finding.getTechnicalNotes(),
+              finding.getRecommendedAction(),
+              finding.getDecision().name(),
+              displayName(finding.getDecidedByUserId()),
+              finding.getDecidedAt() == null ? null : finding.getDecidedAt().toString(),
+              finding.getMeasurement(),
+              finding.isRepairRequired() ? "Yes" : "No",
+              evidenceRefs));
     }
 
     List<ReportRenderPort.EvidenceView> evidenceViews = new ArrayList<>();

@@ -168,6 +168,13 @@
       <artifactId>testcontainers-postgresql</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- The report deliverable is stored through the same MinIO adapter production uses, so the
+         storage path is exercised against a real object store rather than an in-memory stub. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

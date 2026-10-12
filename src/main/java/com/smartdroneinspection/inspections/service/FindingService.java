@@ -84,6 +84,13 @@ public class FindingService {
                     "AI_INFERENCE_UNAVAILABLE",
                     "Automated analysis is not configured"));
 
+    // MF3-05 runs automatically once the evidence set is accepted, so re-running it on the same
+    // capture must not create a second candidate for the same detection.
+    List<AiFindingCandidate> prior = candidates.findByEvidenceIdOrderByCreatedAtAsc(evidenceId);
+    if (!prior.isEmpty()) {
+      return prior.stream().map(this::toCandidateResponse).toList();
+    }
+
     byte[] bytes;
     try (InputStream stream = evidenceService.readForAnalysis(inspectionId, evidenceId).stream()) {
       bytes = stream.readAllBytes();

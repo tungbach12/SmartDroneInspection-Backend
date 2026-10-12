@@ -168,8 +168,13 @@ public class InspectionPreparationService {
   public List<InspectionPreparationResponse> listPreparations(UUID inspectorId, UUID inspectionId) {
     UserAccess.ActiveUser inspector = requireInspector(inspectorId);
     UUID organizationId = requireOrganization(inspector);
+    // A read-only listing only has to prove the inspection belongs to the caller's organization, so
+    // it
+    // uses the plain scoped lookup. The locking variant issues SELECT ... FOR NO KEY UPDATE, which
+    // PostgreSQL refuses inside a read-only transaction and which would fail with a 500 before the
+    // organization check could deny an out-of-scope caller.
     inspections
-        .findWithLockByIdAndOrganizationId(inspectionId, organizationId)
+        .findByIdAndOrganizationId(inspectionId, organizationId)
         .orElseThrow(InspectionPreparationService::inspectionNotFound);
 
     return preparations.findByInspectionIdOrderByPreparationVersionDesc(inspectionId).stream()

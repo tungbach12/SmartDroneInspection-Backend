@@ -17,20 +17,16 @@ import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -51,10 +47,7 @@ import tools.jackson.databind.ObjectMapper;
  * asserts on internal helper names or template markup.
  */
 @SpringBootTest
-@Import({
-  TestcontainersConfiguration.class,
-  InspectionReportSectionsApiIntegrationTest.SectionsStore.class
-})
+@Import(TestcontainersConfiguration.class)
 class InspectionReportSectionsApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
@@ -63,40 +56,11 @@ class InspectionReportSectionsApiIntegrationTest {
   @Autowired AiFindingCandidateRepository candidates;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired EvidenceObjectStore objectStore;
   @MockitoBean AiInferencePort inferencePort;
 
   private InspectionTestFixture.Data fixture;
   private MockMvc mockMvc;
-
-  @TestConfiguration(proxyBeanMethods = false)
-  static class SectionsStore {
-    static final Map<String, byte[]> OBJECTS = new ConcurrentHashMap<>();
-
-    @Bean
-    EvidenceObjectStore evidenceObjectStore() {
-      return new EvidenceObjectStore() {
-        @Override
-        public void put(String objectKey, String contentType, long sizeBytes, InputStream input)
-            throws IOException {
-          OBJECTS.put(objectKey, input.readAllBytes());
-        }
-
-        @Override
-        public InputStream open(String objectKey) throws IOException {
-          byte[] content = OBJECTS.get(objectKey);
-          if (content == null) {
-            throw new IOException("missing object " + objectKey);
-          }
-          return new ByteArrayInputStream(content);
-        }
-
-        @Override
-        public void delete(String objectKey) {
-          OBJECTS.remove(objectKey);
-        }
-      };
-    }
-  }
 
   @BeforeEach
   void setUp() {
@@ -106,7 +70,6 @@ class InspectionReportSectionsApiIntegrationTest {
                 org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers
                     .springSecurity())
             .build();
-    SectionsStore.OBJECTS.clear();
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
     jdbcTemplate.update(
         "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
@@ -338,8 +301,9 @@ class InspectionReportSectionsApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF));
 
-    assertThat(SectionsStore.OBJECTS).isEmpty();
+    // A preview is the author's working view: it renders but stores nothing against the version.
     assertThat(renderedKey(versionId)).isNull();
+    assertThat(objectExists(reportObjectKey(versionId))).isFalse();
   }
 
   @Test
@@ -365,7 +329,7 @@ class InspectionReportSectionsApiIntegrationTest {
 
     String objectKey = renderedKey(versionId);
     assertThat(objectKey).isNotBlank();
-    byte[] stored = SectionsStore.OBJECTS.get(objectKey);
+    byte[] stored = storedBytes(objectKey);
     assertThat(stored).isNotNull();
     assertThat(new String(stored, 0, 5, java.nio.charset.StandardCharsets.US_ASCII))
         .isEqualTo("%PDF-");
@@ -412,7 +376,7 @@ class InspectionReportSectionsApiIntegrationTest {
   void aRepeatPublishIsRefusedAndLeavesTheFirstArtefactIntact() throws Exception {
     UUID versionId = approvedVersion();
     publish(versionId);
-    byte[] first = SectionsStore.OBJECTS.get(renderedKey(versionId));
+    byte[] first = storedBytes(renderedKey(versionId));
     String firstChecksum = renderedChecksum(versionId);
 
     mockMvc
@@ -424,7 +388,7 @@ class InspectionReportSectionsApiIntegrationTest {
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isConflict());
 
-    assertThat(SectionsStore.OBJECTS.get(renderedKey(versionId))).isEqualTo(first);
+    assertThat(storedBytes(renderedKey(versionId))).isEqualTo(first);
     assertThat(renderedChecksum(versionId)).isEqualTo(firstChecksum);
   }
 
@@ -433,15 +397,74 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID firstVersion = approvedVersion();
     publish(firstVersion);
     String firstKey = renderedKey(firstVersion);
-    byte[] firstBytes = SectionsStore.OBJECTS.get(firstKey);
+    byte[] firstBytes = storedBytes(firstKey);
 
     UUID secondVersion = approvedVersion();
-    jdbcTemplate.update(
-        "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
     publish(secondVersion);
 
     assertThat(renderedKey(secondVersion)).isNotEqualTo(firstKey);
-    assertThat(SectionsStore.OBJECTS.get(firstKey)).isEqualTo(firstBytes);
+    assertThat(storedBytes(firstKey)).isEqualTo(firstBytes);
+
+    // The prior published version is now superseded
+    String firstStatus =
+        jdbcTemplate.queryForObject(
+            "SELECT status FROM inspection_report_versions WHERE id = ?",
+            String.class,
+            firstVersion);
+    assertThat(firstStatus).isEqualTo("SUPERSEDED");
+  }
+
+  @Test
+  void previewRendersConfirmedFindingsAndAttachedEvidence() throws Exception {
+    UUID evidenceId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id,
+                              evidence_kind, file_name, content_type, size_bytes,
+                              checksum_sha256, object_key, source, upload_status, created_at)
+        VALUES (?, ?, ?, ?, 'INSPECTION', 'flange-crack.png', 'image/png', 67,
+                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'test-key',
+                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+        """,
+        evidenceId,
+        fixture.organizationId(),
+        fixture.inspectionId(),
+        fixture.inspectorId());
+
+    UUID findingId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO verified_findings (id, inspection_id, evidence_id, created_by_user_id, source, finding_code,
+                                       defect_label, severity, location_description, technical_notes,
+                                       status, decision, repair_required, component, description,
+                                       observed_condition, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, 'MANUAL', 'F-001', 'Fatigue Crack', 'HIGH', 'North girder flange',
+                '50mm surface crack', 'OPEN', 'CONFIRMED', TRUE, 'Flange', 'Fatigue crack',
+                'Cracking observed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        """,
+        findingId,
+        fixture.inspectionId(),
+        evidenceId,
+        fixture.inspectorId());
+
+    UUID versionId = insertDraftVersion();
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                get(
+                        "/api/v1/inspections/{id}/report/versions/{versionId}/preview",
+                        fixture.inspectionId(),
+                        versionId)
+                    .with(principal(fixture.inspectorId(), "INSPECTOR")))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdfBytes = result.getResponse().getContentAsByteArray();
+    assertThat(pdfBytes).isNotEmpty();
+    assertThat(new String(pdfBytes, 0, 5, java.nio.charset.StandardCharsets.US_ASCII))
+        .isEqualTo("%PDF-");
   }
 
   @Test
@@ -535,6 +558,27 @@ class InspectionReportSectionsApiIntegrationTest {
         "SELECT id FROM inspection_reports WHERE inspection_id = ?",
         UUID.class,
         fixture.inspectionId());
+  }
+
+  /** The same object key the service derives, so the assertion checks the real storage layout. */
+  private static String reportObjectKey(UUID versionId) {
+    return "reports/" + versionId + ".pdf";
+  }
+
+  /** Reads the stored bytes back through the production object store. */
+  private byte[] storedBytes(String objectKey) throws IOException {
+    try (InputStream input = objectStore.open(objectKey)) {
+      return input.readAllBytes();
+    }
+  }
+
+  private boolean objectExists(String objectKey) {
+    try (InputStream input = objectStore.open(objectKey)) {
+      input.readAllBytes();
+      return true;
+    } catch (IOException expectedAbsent) {
+      return false;
+    }
   }
 
   private String renderedKey(UUID versionId) {

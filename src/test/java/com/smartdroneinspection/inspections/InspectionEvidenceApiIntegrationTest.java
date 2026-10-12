@@ -11,23 +11,17 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,51 +37,23 @@ import tools.jackson.databind.ObjectMapper;
  * and the Inspector's own adequacy decision.
  */
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, InspectionEvidenceApiIntegrationTest.StubStore.class})
+@Import(TestcontainersConfiguration.class)
 class InspectionEvidenceApiIntegrationTest {
 
-  private static final byte[] PNG_BYTES = {
-    (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3
-  };
+  /**
+   * A real 1x1 PNG. MF3-02 requires corrupt input to be refused, so the happy-path fixtures must be
+   * bytes that genuinely decode -- a signature followed by filler would be rejected by that check.
+   */
+  private static final byte[] PNG_BYTES =
+      Base64.getDecoder()
+          .decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
-
-  /**
-   * Storage is stubbed at the shared port: the bytes contract is covered by the MinIO adapter test.
-   */
-  @TestConfiguration(proxyBeanMethods = false)
-  static class StubStore {
-    static final Map<String, byte[]> OBJECTS = new ConcurrentHashMap<>();
-
-    @Bean
-    EvidenceObjectStore evidenceObjectStore() {
-      return new EvidenceObjectStore() {
-        @Override
-        public void put(String objectKey, String contentType, long sizeBytes, InputStream input)
-            throws IOException {
-          OBJECTS.put(objectKey, input.readAllBytes());
-        }
-
-        @Override
-        public InputStream open(String objectKey) throws IOException {
-          byte[] content = OBJECTS.get(objectKey);
-          if (content == null) {
-            throw new IOException("missing object " + objectKey);
-          }
-          return new ByteArrayInputStream(content);
-        }
-
-        @Override
-        public void delete(String objectKey) {
-          OBJECTS.remove(objectKey);
-        }
-      };
-    }
-  }
 
   private InspectionTestFixture.Data fixture;
   private MockMvc mockMvc;
@@ -101,7 +67,6 @@ class InspectionEvidenceApiIntegrationTest {
                     .springSecurity())
             .build();
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
-    StubStore.OBJECTS.clear();
   }
 
   @Test

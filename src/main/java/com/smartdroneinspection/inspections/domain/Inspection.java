@@ -139,7 +139,13 @@ public class Inspection {
 
   /** MF3-11 publication. */
   public void markReportPublished() {
-    requireStatus(InspectionStatus.REPORT_DRAFT);
+    if (status != InspectionStatus.REPORT_DRAFT
+        && status != InspectionStatus.REPORT_PUBLISHED
+        && status != InspectionStatus.REPAIR_PENDING
+        && status != InspectionStatus.COMPLETED) {
+      throw new IllegalStateException(
+          "Inspection must be in drafting, active report, or closed status but is " + status);
+    }
     status = InspectionStatus.REPORT_PUBLISHED;
     updatedAt = Instant.now();
   }

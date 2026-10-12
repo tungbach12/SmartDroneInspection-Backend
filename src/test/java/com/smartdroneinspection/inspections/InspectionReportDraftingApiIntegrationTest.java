@@ -13,11 +13,8 @@ import com.smartdroneinspection.inspections.repository.AiFindingCandidateReposit
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
-import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,28 +60,14 @@ class InspectionReportDraftingApiIntegrationTest {
   private InspectionTestFixture.Data fixture;
   private MockMvc mockMvc;
 
+  /**
+   * The model provider is stubbed, the object store is not: drafting must never reach storage, and
+   * asserting that against a real adapter proves the path is genuinely unwired rather than
+   * trivially satisfied by a stub that ignores writes.
+   */
   @TestConfiguration(proxyBeanMethods = false)
   static class DraftingStub {
     static final AtomicBoolean FAIL_NEXT = new AtomicBoolean(false);
-
-    @Bean
-    EvidenceObjectStore evidenceObjectStore() {
-      return new EvidenceObjectStore() {
-        @Override
-        public void put(String objectKey, String contentType, long sizeBytes, InputStream input)
-            throws IOException {
-          // Not exercised here; the drafting path never stores an artefact.
-        }
-
-        @Override
-        public InputStream open(String objectKey) throws IOException {
-          return new ByteArrayInputStream(new byte[0]);
-        }
-
-        @Override
-        public void delete(String objectKey) {}
-      };
-    }
 
     @Bean
     ReportDraftPort reportDraftPort() {
