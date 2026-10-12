@@ -31,6 +31,15 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -p 2222 -o StrictHostKeyChecking=no ubuntu@100.120.66.114 '
             set -e
+            # The Frontend workflow drives this same compose project from this same host on
+            # every push to main, and `web` waits on `condition: service_healthy` for `backend`.
+            # Without a lock the steps below can SIGTERM a backend the Frontend deploy is still
+            # waiting on, which shows up only as "container smartdroneinspection-backend exited
+            # (143)" and no other symptom. Hold one lock across every container mutation.
+            command -v flock >/dev/null 2>&1 || { echo "flock(1) is required to serialise deploys"; exit 1; }
+            exec 9>/tmp/sdi-deploy.lock
+            flock -w 900 9 || { echo "Timed out waiting for the deploy lock"; exit 1; }
+            echo "Acquired deploy lock"
             cd ~/repos/backend
             git fetch --depth 1 origin main
             git reset --hard origin/main
@@ -56,7 +65,14 @@ jobs:
             docker compose down --remove-orphans || true
             docker rm -f smartdroneinspection-web smartdroneinspection-backend smartdroneinspection-postgres smartdroneinspection-minio 2>/dev/null || true
             docker network rm backend_smartdroneinspection-network 2>/dev/null || true
-            docker compose up -d --build
+            if ! docker compose up -d --build; then
+              # `compose up` fails silently when the backend exits during its start window, so
+              # capture the container list and the backend log before the runner tears down.
+              echo "compose up failed - container state and backend log follow"
+              docker compose ps -a
+              docker compose logs --no-color --tail=200 backend || true
+              exit 1
+            fi
             docker image prune -f
             echo "Deployed at $(date -u +%FT%TZ)"
           '
