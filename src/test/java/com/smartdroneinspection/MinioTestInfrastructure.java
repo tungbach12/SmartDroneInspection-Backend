@@ -34,7 +34,13 @@ public class MinioTestInfrastructure
   static final String ACCESS_KEY = "test-only-minio-access";
   static final String SECRET_KEY = "test-only-minio-secret-key";
   private static final String BUCKET = "smartdroneinspection-test";
-  private static final DockerImageName MINIO = DockerImageName.parse("quay.io/minio/minio:latest");
+  // The official upstream is quay.io/minio/minio, which is also what docker-compose runs locally.
+  // A GitHub runner cannot pull it anonymously, so this mirrors the exact bytes into this
+  // organization's Docker Hub namespace and pins the digest, so no upstream re-tag can move it.
+  // Source digest equals the cached quay.io/minio/minio:latest image.
+  private static final DockerImageName MINIO =
+      DockerImageName.parse(
+          "tungbach12/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2");
 
   private static final GenericContainer<?> SERVER = startOnce();
 
