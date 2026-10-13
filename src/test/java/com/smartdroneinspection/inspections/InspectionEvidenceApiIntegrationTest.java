@@ -242,9 +242,33 @@ class InspectionEvidenceApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of(
                             "decision", "LIMITED",
+                            "shotListComparison", "Span covered except the east face",
                             "limitationReason", "The east face was not observed"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.decision").value("LIMITED"));
+  }
+
+  @Test
+  void everyDecisionRequiresAShotListComparison() throws Exception {
+    // A blank comparison leaves the report disclosure unsupported, so no decision is recorded.
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("decision", "ACCEPTED", "shotListComparison", "  "))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_QUALITY_INVALID"));
+
+    // Nothing was persisted by the refusal.
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0));
   }
 
   @Test

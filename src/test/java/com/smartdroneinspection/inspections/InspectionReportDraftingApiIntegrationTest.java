@@ -224,7 +224,11 @@ class InspectionReportDraftingApiIntegrationTest {
             post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPTED"))))
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ACCEPTED",
+                            "shotListComparison", "Main span covered from both walkways"))))
         .andExpect(status().isOk());
   }
 

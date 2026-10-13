@@ -238,6 +238,13 @@ public class FindingService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
+    // Separation of duties: no finding is self-reviewed, mirroring the report gate.
+    if (finding.getCreatedByUserId().equals(actorId)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FINDING_REVIEWER_INVALID",
+          "The finding author cannot decide their own finding");
+    }
     finding.recordDecision(decision, actorId, rationale);
     return toFindingResponse(findings.saveAndFlush(finding));
   }
