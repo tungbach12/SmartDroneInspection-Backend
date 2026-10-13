@@ -322,6 +322,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId) {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    requireFreshEvidenceSnapshot(inspectionId, version);
     try {
       version.verifyAsAuthor(actorId);
     } catch (IllegalStateException | IllegalArgumentException ex) {
@@ -338,6 +339,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId) {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    requireFreshEvidenceSnapshot(inspectionId, version);
     try {
       version.submit();
     } catch (IllegalStateException ex) {
@@ -346,6 +348,22 @@ public class ReportService {
     report.setStatus(ReportStatus.SUBMITTED);
     reports.saveAndFlush(report);
     return toResponse(versions.saveAndFlush(version));
+  }
+
+  /**
+   * MF3-04: evidence added after the Inspector's confirmation makes a dependent draft stale. The
+   * stored snapshot hash is compared against the current evidence set, so a version drafted over
+   * older captures cannot be verified or submitted — the author drafts a new version instead.
+   */
+  private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReportVersion version) {
+    String current =
+        evidenceSnapshotHash(evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
+    if (!current.equals(version.getEvidenceSnapshotHash())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_SNAPSHOT_STALE",
+          "Evidence changed after this draft was created; author a new draft version");
+    }
   }
 
   /**

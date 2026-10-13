@@ -46,7 +46,6 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class InspectionReportApiIntegrationTest {
-
   /**
    * A real 1x1 PNG. MF3-02 requires corrupt input to be refused, so the happy-path fixtures must be
    * bytes that genuinely decode -- a signature followed by filler would be rejected by that check.
@@ -55,6 +54,12 @@ class InspectionReportApiIntegrationTest {
       Base64.getDecoder()
           .decode(
               "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+
+  // A second distinct 1x1 PNG (distinct SHA-256), so idempotent intake adds a second row.
+  private static final byte[] PNG_BYTES_2 =
+      Base64.getDecoder()
+          .decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==");
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
@@ -149,6 +154,82 @@ class InspectionReportApiIntegrationTest {
                             "locationDescription", "Elsewhere",
                             "technicalNotes", "None"))))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void findingAuthorCannotDecideTheirOwnFinding() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+
+    // The finding author is a genuine dual-role account: persist ORG_ADMIN beside INSPECTOR so
+    // the request reaches the authorship check rather than failing an earlier scope gate.
+    // A direct insert avoids LazyInitializationException on the detached fixture user's
+    // LAZY roleAssignments collection.
+    jdbcTemplate.update(
+        "INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, 'ORG_ADMIN')",
+        UUID.randomUUID(),
+        fixture.inspectorId());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/findings/{findingId}/decision",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.inspectorId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("decision", "CONFIRMED", "rationale", "Looks right"))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FINDING_REVIEWER_INVALID"));
+
+    // The denial persists nothing: the finding stays undecided.
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/findings", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].decision").doesNotExist());
+
+    // An independent qualified reviewer in the same organization may decide it.
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/findings/{findingId}/decision",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("decision", "CONFIRMED", "rationale", "Blistering visible"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.decision").value("CONFIRMED"));
+  }
+
+  private UUID createManualFinding(UUID evidenceId) throws Exception {
+    MvcResult created =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/findings", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "evidenceId", evidenceId.toString(),
+                                "defectLabel", "Coating blistering",
+                                "severity", "HIGH",
+                                "locationDescription", "Girder G4",
+                                "technicalNotes", "Roughly 60mm across"))))
+            .andExpect(status().isOk())
+            .andReturn();
+    return UUID.fromString(
+        objectMapper
+            .readTree(created.getResponse().getContentAsString())
+            .path("data")
+            .path("id")
+            .stringValue());
   }
 
   @Test
@@ -324,6 +405,104 @@ class InspectionReportApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("AUTHOR_VERIFIED"));
+  }
+
+  @Test
+  void evidenceAddedAfterTheDraftMakesVerificationStale() throws Exception {
+    uploadEvidence();
+    acceptEvidence();
+
+    UUID versionId = createManualDraftVersion();
+
+    // A new capture lands after the draft: upload succeeds (idempotent intake is unaffected),
+    // but the draft was written over the older set.
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "east-face.png", "image/png", PNG_BYTES_2))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_SNAPSHOT_STALE"));
+
+    // The stale version is untouched: still DRAFT, never verified.
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/versions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].status").value("DRAFT"));
+  }
+
+  @Test
+  void evidenceAddedAfterVerificationMakesSubmitStale() throws Exception {
+    uploadEvidence();
+    acceptEvidence();
+
+    UUID versionId = createManualDraftVersion();
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("AUTHOR_VERIFIED"));
+
+    // A new capture lands after verification: submit is refused and the version stays verified.
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "east-face.png", "image/png", PNG_BYTES_2))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/submit",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_SNAPSHOT_STALE"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/versions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].status").value("AUTHOR_VERIFIED"));
+  }
+
+  private UUID createManualDraftVersion() throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of("narrative", "The north span was surveyed."))))
+            .andExpect(status().isOk())
+            .andReturn();
+    return UUID.fromString(
+        objectMapper
+            .readTree(result.getResponse().getContentAsString())
+            .path("data")
+            .path("id")
+            .stringValue());
   }
 
   @Test
@@ -593,7 +772,11 @@ class InspectionReportApiIntegrationTest {
             post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPTED"))))
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ACCEPTED",
+                            "shotListComparison", "Main span covered from both walkways"))))
         .andExpect(status().isOk());
   }
 

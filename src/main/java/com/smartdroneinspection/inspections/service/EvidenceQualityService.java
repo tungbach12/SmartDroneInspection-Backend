@@ -54,6 +54,23 @@ public class EvidenceQualityService {
           "EVIDENCE_QUALITY_INVALID",
           "A substantive evidence decision is required");
     }
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    if (inspection.getStatus() != InspectionStatus.FIELD_COMPLETED
+        && inspection.getStatus() != InspectionStatus.REPORT_DRAFT) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Evidence can only be assessed after field work is completed");
+    }
+    // The comparison is what the report discloses about unobserved scope; a decision recorded
+    // without it would leave the disclosure unsupported (Report 3 MF3-03). Scope and state are
+    // checked first so an out-of-scope caller never learns input-validation details.
+    if (shotListComparison == null || shotListComparison.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_QUALITY_INVALID",
+          "A shot-list comparison is required with every evidence decision");
+    }
     // A decision that accepts or limits coverage must explain itself; the report reader needs to
     // know
     // what was and was not observed.
@@ -65,15 +82,6 @@ public class EvidenceQualityService {
           HttpStatus.BAD_REQUEST,
           "EVIDENCE_QUALITY_INVALID",
           "This decision requires a stated reason or limitation");
-    }
-
-    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    if (inspection.getStatus() != InspectionStatus.FIELD_COMPLETED
-        && inspection.getStatus() != InspectionStatus.REPORT_DRAFT) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "INSPECTION_STATE_CONFLICT",
-          "Evidence can only be assessed after field work is completed");
     }
 
     EvidenceQualityDecision record =
