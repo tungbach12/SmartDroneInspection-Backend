@@ -68,4 +68,27 @@ class AiFindingCandidateTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("Only pending candidates");
   }
+
+  @Test
+  void reviewedCandidateRevisionChangesDecisionButPreservesOriginalReviewer() {
+    AiFindingCandidate candidate = candidate();
+    candidate.review(AiFindingCandidateStatus.CONFIRMED, reviewer, null);
+
+    candidate.reviseReview(AiFindingCandidateStatus.REJECTED, "False positive");
+
+    assertThat(candidate.getStatus()).isEqualTo(AiFindingCandidateStatus.REJECTED);
+    assertThat(candidate.getRejectionReason()).isEqualTo("False positive");
+    assertThat(candidate.getReviewedByUserId()).isEqualTo(reviewer);
+    assertThat(candidate.getReviewedAt()).isNotNull();
+  }
+
+  @Test
+  void revisionRequiresAnExistingReviewAndRejectionReason() {
+    AiFindingCandidate candidate = candidate();
+    assertThatThrownBy(() -> candidate.reviseReview(AiFindingCandidateStatus.CONFIRMED, null))
+        .isInstanceOf(IllegalStateException.class);
+    candidate.review(AiFindingCandidateStatus.CONFIRMED, reviewer, null);
+    assertThatThrownBy(() -> candidate.reviseReview(AiFindingCandidateStatus.REJECTED, " "))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
 }

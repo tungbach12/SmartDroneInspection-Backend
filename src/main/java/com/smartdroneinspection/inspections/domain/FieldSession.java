@@ -250,6 +250,10 @@ public class FieldSession {
     return abortReason;
   }
 
+  public String getLimitations() {
+    return limitations;
+  }
+
   public UUID getChecklistTemplateId() {
     return checklistTemplateId;
   }

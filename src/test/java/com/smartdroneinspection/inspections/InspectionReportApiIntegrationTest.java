@@ -10,6 +10,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
@@ -340,6 +341,78 @@ class InspectionReportApiIntegrationTest {
         .andExpect(jsonPath("$.data[0].id").value(firstCandidateId));
 
     assertThat(candidates.countByEvidenceId(evidenceId)).isEqualTo(1);
+  }
+
+  @Test
+  void rejectingAReviewedCandidateRemovesItsUndecidedOfficialFinding() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    when(inferencePort.analyze(any(), eq("image/png")))
+        .thenReturn(
+            java.util.List.of(
+                new AiInferencePort.Detection(
+                    "capstone",
+                    "vision-v1",
+                    "surface crack",
+                    new java.math.BigDecimal("0.81"),
+                    "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}")));
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    UUID candidateId =
+        UUID.fromString(
+            jdbcTemplate.queryForObject(
+                "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?",
+                String.class,
+                evidenceId));
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+                    fixture.inspectionId(),
+                    candidateId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+            {"decision":"CONFIRMED","defectLabel":"Surface crack","severity":"HIGH",
+             "locationDescription":"Girder G4","technicalNotes":"Visible crack"}
+            """))
+        .andExpect(status().isOk());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM verified_findings WHERE ai_candidate_id = ?",
+                Long.class,
+                candidateId))
+        .isEqualTo(1L);
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/reviewed-revision",
+                    fixture.inspectionId(),
+                    candidateId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+            {"decision":"REJECTED","reason":"False positive"}
+            """))
+        .andExpect(status().isNoContent());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM ai_finding_candidates WHERE id = ?", String.class, candidateId))
+        .isEqualTo("REJECTED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM verified_findings WHERE ai_candidate_id = ?",
+                Long.class,
+                candidateId))
+        .isZero();
   }
 
   @Test

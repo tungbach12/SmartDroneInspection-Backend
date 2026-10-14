@@ -4,7 +4,10 @@ import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsReques
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
+import com.smartdroneinspection.inspections.domain.AiFindingCandidate;
 import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.EvidenceQualityDecision;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
@@ -13,12 +16,17 @@ import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
+import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
+import com.smartdroneinspection.inspections.repository.EvidenceQualityDecisionRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceQualitySummary;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportRenderPort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -59,7 +67,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class ReportService {
 
-  private static final String PROMPT_VERSION = "mf3-report-v1";
+  private static final String PROMPT_VERSION = "mf3-report-v2";
 
   /** Recorded as the version model when the Inspector authors the draft without automated help. */
   private static final String MANUAL_MODEL_NAME = "manual-authoring";
@@ -67,8 +75,11 @@ public class ReportService {
   private static final String PDF_MEDIA_TYPE = "application/pdf";
 
   private final InspectionRepository inspections;
+  private final EvidenceQualityDecisionRepository qualityDecisions;
   private final EvidenceRepository evidence;
   private final VerifiedFindingRepository findings;
+  private final AiFindingCandidateRepository candidates;
+  private final FieldSessionRepository fieldSessions;
   private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository versions;
   private final EvidenceService evidenceService;
@@ -84,6 +95,9 @@ public class ReportService {
       InspectionRepository inspections,
       EvidenceRepository evidence,
       VerifiedFindingRepository findings,
+      AiFindingCandidateRepository candidates,
+      FieldSessionRepository fieldSessions,
+      EvidenceQualityDecisionRepository qualityDecisions,
       InspectionReportRepository reports,
       InspectionReportVersionRepository versions,
       EvidenceService evidenceService,
@@ -96,12 +110,15 @@ public class ReportService {
       ObjectMapper objectMapper) {
     this.inspections = inspections;
     this.evidence = evidence;
+    this.candidates = candidates;
+    this.fieldSessions = fieldSessions;
     this.findings = findings;
     this.reports = reports;
     this.versions = versions;
     this.evidenceService = evidenceService;
     this.qualityService = qualityService;
     this.draftPort = draftPort;
+    this.qualityDecisions = qualityDecisions;
     this.renderPort = renderPort;
     this.objectStore = objectStore;
     this.objectMapper = objectMapper;
@@ -134,7 +151,22 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
+    EvidenceQualitySummary evidenceQuality =
+        qualityDecisions
+            .findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId)
+            .filter(EvidenceQualityDecision::isAccepted)
+            .map(
+                decision ->
+                    new EvidenceQualitySummary(
+                        decision.getDecision().name(),
+                        decision.getShotListComparison(),
+                        decision.getLimitationReason()))
+            .orElse(null);
     List<Evidence> confirmedEvidence = evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    List<AiFindingCandidate> inspectionCandidates =
+        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId);
+    List<FieldSession> recordedSessions =
+        fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     List<VerifiedFinding> confirmedFindings =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
             .filter(VerifiedFinding::isOfficial)
@@ -153,6 +185,18 @@ public class ReportService {
       proposal =
           port.draftSections(
               new ReportDraftPort.DraftContext(
+                  new InspectionSummary(
+                      inspection.getObjective(),
+                      inspection.getScope(),
+                      inspection.getComponentScope(),
+                      inspection.getAcceptanceCriteria(),
+                      inspection.getPlannedStartAt() == null
+                          ? null
+                          : inspection.getPlannedStartAt().toString(),
+                      inspection.getPlannedEndAt() == null
+                          ? null
+                          : inspection.getPlannedEndAt().toString(),
+                      inspection.getDroneId() == null ? null : inspection.getDroneId().toString()),
                   List.of(),
                   confirmedFindings.stream()
                       .map(
@@ -169,8 +213,55 @@ public class ReportService {
                       .map(
                           item ->
                               new ReportDraftPort.EvidenceSummary(
-                                  item.getFileName(), item.getContentType()))
-                      .toList()));
+                                  item.getFileName(),
+                                  item.getContentType(),
+                                  item.getCaptureTime() == null
+                                      ? null
+                                      : item.getCaptureTime().toString(),
+                                  item.getLatitude() == null
+                                      ? null
+                                      : item.getLatitude().toPlainString(),
+                                  item.getLongitude() == null
+                                      ? null
+                                      : item.getLongitude().toPlainString(),
+                                  item.getSource().name(),
+                                  item.getFieldSessionId() == null
+                                      ? null
+                                      : item.getFieldSessionId().toString()))
+                      .toList(),
+                  inspectionCandidates.stream()
+                      .map(
+                          candidate ->
+                              new ReportDraftPort.CandidateSummary(
+                                  candidate.getId().toString(),
+                                  candidate.getEvidenceId().toString(),
+                                  candidate.getModelProvider(),
+                                  candidate.getModelName(),
+                                  candidate.getModelVersion(),
+                                  candidate.getPredictedLabel(),
+                                  candidate.getConfidence() == null
+                                      ? null
+                                      : candidate.getConfidence().toPlainString(),
+                                  candidate.getBoundingBox(),
+                                  candidate.getStatus().name()))
+                      .toList(),
+                  recordedSessions.stream()
+                      .map(
+                          session ->
+                              new ReportDraftPort.FieldSessionSummary(
+                                  session.getId().toString(),
+                                  session.getStatus(),
+                                  session.getStartedAt() == null
+                                      ? null
+                                      : session.getStartedAt().toString(),
+                                  session.getEndedAt() == null
+                                      ? null
+                                      : session.getEndedAt().toString(),
+                                  session.getDroneId() == null
+                                      ? null
+                                      : session.getDroneId().toString()))
+                      .toList(),
+                  evidenceQuality));
     } catch (IOException ex) {
       // A failed generation permits a manual draft under the same review gates. No placeholder text
       // is written into a section: a section the author did not write and the model did not supply
@@ -585,7 +676,7 @@ public class ReportService {
     ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
 
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
-    Map<UUID, String> findingLabelByEvidence = new LinkedHashMap<>();
+    Map<UUID, List<String>> componentLocationByEvidence = new LinkedHashMap<>();
     Map<UUID, Evidence> evidenceById = new LinkedHashMap<>();
     for (Evidence item : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
       evidenceById.put(item.getId(), item);
@@ -602,7 +693,16 @@ public class ReportService {
         if (evItem != null) {
           evidenceRefs.add(evItem.getFileName());
         }
-        findingLabelByEvidence.put(finding.getEvidenceId(), finding.getDefectLabel());
+        String componentLocation =
+            componentLocation(finding.getComponent(), finding.getLocationDescription());
+        if (componentLocation != null) {
+          List<String> values =
+              componentLocationByEvidence.computeIfAbsent(
+                  finding.getEvidenceId(), ignored -> new ArrayList<>());
+          if (!values.contains(componentLocation)) {
+            values.add(componentLocation);
+          }
+        }
       }
       findingViews.add(
           new ReportRenderPort.FindingView(
@@ -633,7 +733,9 @@ public class ReportService {
               item.getContentType(),
               item.getChecksumSha256(),
               item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
-              findingLabelByEvidence.get(item.getId()),
+              componentLocationByEvidence.containsKey(item.getId())
+                  ? String.join("; ", componentLocationByEvidence.get(item.getId()))
+                  : null,
               content));
     }
 
@@ -857,6 +959,21 @@ public class ReportService {
       return "null";
     }
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"";
+  }
+
+  private static String componentLocation(String component, String location) {
+    String cleanComponent = component == null || component.isBlank() ? null : component.trim();
+    String cleanLocation = location == null || location.isBlank() ? null : location.trim();
+    if (cleanComponent == null) {
+      return cleanLocation;
+    }
+    if (cleanLocation == null) {
+      return cleanComponent;
+    }
+    if (cleanComponent.equals(cleanLocation)) {
+      return cleanComponent;
+    }
+    return cleanComponent + " — " + cleanLocation;
   }
 
   private InspectionReportVersionResponse toResponse(InspectionReportVersion version) {

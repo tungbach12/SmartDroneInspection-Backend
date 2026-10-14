@@ -172,6 +172,20 @@ public class InspectionController {
         .orElseGet(() -> ResponseEntity.noContent().build());
   }
 
+  @PutMapping("/finding-candidates/{candidateId}/reviewed-revision")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ResponseEntity<ApiResponse<VerifiedFindingResponse>> reviseReviewedCandidate(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID candidateId,
+      @Valid @RequestBody ReviewCandidateRequest request) {
+    Optional<VerifiedFindingResponse> finding =
+        findingService.reviseReviewedCandidate(actorId(jwt), inspectionId, candidateId, request);
+    return finding
+        .map(result -> ResponseEntity.ok(ApiResponse.success(result)))
+        .orElseGet(() -> ResponseEntity.noContent().build());
+  }
+
   @PostMapping("/findings")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<VerifiedFindingResponse> createManualFinding(
