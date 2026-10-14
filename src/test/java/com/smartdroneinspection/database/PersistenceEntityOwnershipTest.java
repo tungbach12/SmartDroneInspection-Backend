@@ -49,6 +49,14 @@ class PersistenceEntityOwnershipTest {
         Arguments.of(
             "users", "user_roles", "com.smartdroneinspection.users.domain.UserRoleAssignment"),
         Arguments.of(
+            "subscriptions",
+            "subscriptions",
+            "com.smartdroneinspection.subscriptions.domain.Subscription"),
+        Arguments.of(
+            "workforce",
+            "workforce_credentials",
+            "com.smartdroneinspection.workforce.domain.WorkforceCredential"),
+        Arguments.of(
             "inspections", "inspections", "com.smartdroneinspection.inspections.domain.Inspection"),
         Arguments.of(
             "inspections",

@@ -40,6 +40,15 @@ springdoc:
 app:
   evidence:
     max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
+  assets:
+    drone-document-max-file-size: ${DRONE_DOCUMENT_MAX_FILE_SIZE:10MB}
+    document-max-file-size: ${ASSET_DOCUMENT_MAX_FILE_SIZE:10MB}
+  workforce:
+    # Display warning horizon for a credential approaching its recorded expiry date. Not a
+    # statutory renewal rule; change it per deployment if the organization warns earlier or later.
+    # Chosen for commercial drone inspection, where operator credentials and liability insurance
+    # are annual or longer: two months is enough to arrange renewal and internal review.
+    credential-expiring-soon-window: ${CREDENTIAL_EXPIRING_SOON_WINDOW:60d}
   report:
     narrative-max-chars: ${REPORT_NARRATIVE_MAX_CHARS:10000}
   storage:

@@ -37,9 +37,11 @@ class RuntimePersistenceInventoryTest {
           "notifications",
           "organizations",
           "refresh_tokens",
+          // MF1 entitlement, workforce credential, Drone/document and permit runtime entities.
+          "subscriptions",
           "user_roles",
           "users",
-          // MF2 readiness and MF4 team credential read.
+          // Workforce credential records serve MF1 management and MF2/MF4 readiness.
           "workforce_credentials",
           // MF3 inspection slice: evidence, advisory detection, human findings and report versions.
           "field_sessions",

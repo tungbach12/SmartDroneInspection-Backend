@@ -1,6 +1,7 @@
 package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.response.AssetDocumentResponse;
+import com.smartdroneinspection.assets.config.AssetProperties;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
@@ -27,19 +28,44 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class AssetDocumentService {
 
-  static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
   private static final Set<String> ALLOWED_TYPES =
       Set.of("image/png", "image/jpeg", "image/webp", "application/pdf");
+  private static final long DEFAULT_MAX_SIZE_BYTES = 10L * 1024 * 1024;
 
   private final AssetRepository assets;
   private final Optional<EvidenceObjectStore> objectStore;
   private final UserAccess userAccess;
+  private final AssetProperties properties;
 
   public AssetDocumentService(
-      AssetRepository assets, Optional<EvidenceObjectStore> objectStore, UserAccess userAccess) {
+      AssetRepository assets,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      AssetProperties properties) {
     this.assets = assets;
     this.objectStore = objectStore;
     this.userAccess = userAccess;
+    this.properties = properties;
+  }
+
+  /**
+   * Rejects an upload above the caller's configured cap, so the limit is policy rather than a fixed
+   * literal.
+   */
+  private static long requireWithinSizeLimit(long sizeBytes, long maxSizeBytes) {
+    if (sizeBytes > maxSizeBytes) {
+      throw new BusinessException(
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "PAYLOAD_TOO_LARGE",
+          "Maximum document size is " + (maxSizeBytes / (1024 * 1024)) + " MB");
+    }
+    return sizeBytes;
+  }
+
+  /** The configured upload cap, falling back to the service default when unset. */
+  private long maxSizeBytes() {
+    var configured = properties.getDocumentMaxFileSize();
+    return configured == null ? DEFAULT_MAX_SIZE_BYTES : configured.toBytes();
   }
 
   @Transactional
@@ -63,10 +89,7 @@ public class AssetDocumentService {
     } catch (IOException ex) {
       throw new BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Unreadable file");
     }
-    if (content.length > MAX_SIZE_BYTES) {
-      throw new BusinessException(
-          HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "Maximum document size is 10 MB");
-    }
+    requireWithinSizeLimit(content.length, maxSizeBytes());
 
     String objectKey = "assets/" + assetId + "/documents/" + UUID.randomUUID();
     EvidenceObjectStore store = requireObjectStore();

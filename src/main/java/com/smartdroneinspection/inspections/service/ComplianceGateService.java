@@ -181,7 +181,7 @@ public class ComplianceGateService {
         blockers.add(blocker);
         continue;
       }
-      if (permit.getStatus() == FlightPermitStatus.NOT_APPLICABLE) {
+      if (permit.getReadinessStatus() == FlightPermitStatus.NOT_APPLICABLE) {
         requiresHumanVerification = true;
       }
       linked.add(permit.getId());
@@ -197,7 +197,7 @@ public class ComplianceGateService {
         List.copyOf(linked),
         requiresHumanVerification,
         applicable.stream()
-            .filter(permit -> permit.getStatus() == FlightPermitStatus.NOT_APPLICABLE)
+            .filter(permit -> permit.getReadinessStatus() == FlightPermitStatus.NOT_APPLICABLE)
             .map(FlightPermit::getReviewReason)
             .filter(reason -> reason != null && !reason.isBlank())
             .sorted()
@@ -216,7 +216,7 @@ public class ComplianceGateService {
         permit.getGeographicScope(),
         permit.getValidFrom(),
         permit.getValidUntil(),
-        permit.getStatus().name(),
+        permit.getReadinessStatus().name(),
         permit.getReviewReason());
   }
 
@@ -251,7 +251,7 @@ public class ComplianceGateService {
    * an exemption with a blank basis is treated as no permit at all rather than as clearance.
    */
   private ComplianceGateResponse.Blocker checkPermit(FlightPermit permit, Instant plannedStart) {
-    if (permit.getStatus() == FlightPermitStatus.NOT_APPLICABLE) {
+    if (permit.getReadinessStatus() == FlightPermitStatus.NOT_APPLICABLE) {
       if (permit.getReviewReason() == null || permit.getReviewReason().isBlank()) {
         return new ComplianceGateResponse.Blocker(
             "EXEMPTION_BASIS_MISSING",
@@ -262,13 +262,13 @@ public class ComplianceGateService {
       return null;
     }
 
-    if (!ISSUED_STATUSES.contains(permit.getStatus())) {
+    if (!ISSUED_STATUSES.contains(permit.getReadinessStatus())) {
       return new ComplianceGateResponse.Blocker(
           "PERMIT_NOT_ISSUED",
           "Permit "
               + permit.getId()
               + " is "
-              + permit.getStatus()
+              + permit.getReadinessStatus()
               + ". An authority must issue it; an internal approval cannot substitute.");
     }
 

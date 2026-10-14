@@ -10,6 +10,7 @@
       "shared::api",
       "shared::auth",
       "shared::exception",
-      "shared::storage"
+      "shared::storage",
+      "shared"
     })
 package com.smartdroneinspection.inspections;

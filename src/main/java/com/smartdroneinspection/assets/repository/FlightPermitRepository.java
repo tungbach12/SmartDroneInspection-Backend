@@ -6,25 +6,34 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-/**
- * Flight permit lookups scoped to the owning organization.
- *
- * <p>MF2-05 needs the permits that apply to one mission rather than the whole file, so the
- * organization-and-asset finder is the one the readiness gate should use; an asset with no
- * applicable permit returns empty rather than a permit belonging to a different asset.
- */
+/** Tenant-scoped permit queries for MF1 management and MF2 readiness. */
 public interface FlightPermitRepository extends JpaRepository<FlightPermit, UUID> {
 
   Optional<FlightPermit> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
+  /** MF1: tenant-safe lookup for internal record review. */
+  @Query("select p from FlightPermit p where p.id = :id and p.organizationId = :organizationId")
+  Optional<FlightPermit> findInOrganization(
+      @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+
+  /** MF1: list only records owned by the caller's organization. */
+  @Query(
+      "select p from FlightPermit p where p.organizationId = :organizationId"
+          + " order by p.createdAt desc")
+  List<FlightPermit> listByOrganization(@Param("organizationId") UUID organizationId);
+
+  /** MF2: permits with a recorded status for one tenant. */
   List<FlightPermit> findByOrganizationIdAndStatusOrderByCreatedAtDesc(
       UUID organizationId, FlightPermitStatus status);
 
+  /** MF2: permits attached to a particular asset. */
   List<FlightPermit> findByOrganizationIdAndAssetIdOrderByCreatedAtDesc(
       UUID organizationId, UUID assetId);
 
-  /** Permits that currently authorize a flight for this asset, ignoring expiry bookkeeping. */
+  /** Permits that may support readiness for this tenant's asset. */
   List<FlightPermit> findByOrganizationIdAndAssetIdAndStatusIn(
       UUID organizationId, UUID assetId, List<FlightPermitStatus> statuses);
 }

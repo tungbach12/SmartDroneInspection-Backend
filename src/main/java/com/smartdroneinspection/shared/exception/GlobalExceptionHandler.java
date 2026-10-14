@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestCookieException;
@@ -46,6 +47,18 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ProblemDetail handleBeanValidation(
       MethodArgumentNotValidException ex, HttpServletRequest request) {
+    return problem(
+        HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed.", request);
+  }
+
+  /**
+   * A body that cannot be deserialized — malformed JSON, or a value outside an enum's accepted set
+   * — is a client error, not a server fault. Reporting it as 500 would hide a rejected request
+   * behind an opaque failure, so it is answered as a validation problem.
+   */
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ProblemDetail handleUnreadableBody(
+      HttpMessageNotReadableException ex, HttpServletRequest request) {
     return problem(
         HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed.", request);
   }

@@ -37,9 +37,9 @@ class DroneTest {
 
     drone.changeServiceability(DroneServiceability.RETIRED);
     assertThat(drone.isEligibleForAssignment()).isFalse();
-
-    drone.changeServiceability(DroneServiceability.MAINTENANCE);
-    assertThat(drone.isEligibleForAssignment()).isFalse();
+    assertThatThrownBy(() -> drone.changeServiceability(DroneServiceability.ACTIVE))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Retired drones cannot change serviceability");
   }
 
   @Test

@@ -3,8 +3,10 @@
     allowedDependencies = {
       "shared",
       "shared::api",
+      "shared::auth",
       "shared::exception",
       "users",
-      "shared::storage"
+      "shared::storage",
+      "subscriptions"
     })
 package com.smartdroneinspection.assets;
