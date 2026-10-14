@@ -6,7 +6,7 @@ import com.smartdroneinspection.assets.api.dto.response.FlightPermitResponse;
 import com.smartdroneinspection.assets.domain.FlightPermit;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.FlightPermitRepository;
-import com.smartdroneinspection.inspections.EvidenceOwnership;
+import com.smartdroneinspection.shared.EvidenceOwnership;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;

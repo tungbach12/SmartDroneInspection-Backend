@@ -1,7 +1,7 @@
 package com.smartdroneinspection.inspections.service;
 
-import com.smartdroneinspection.inspections.EvidenceOwnership;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.shared.EvidenceOwnership;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

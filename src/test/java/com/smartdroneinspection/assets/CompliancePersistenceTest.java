@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.domain.FlightPermit;
+import com.smartdroneinspection.assets.domain.enums.FlightPermitStatus;
 import com.smartdroneinspection.assets.domain.enums.PermitStatus;
 import com.smartdroneinspection.assets.repository.FlightPermitRepository;
 import java.time.Instant;
@@ -74,7 +75,7 @@ class CompliancePersistenceTest {
     assertThat(reloaded.getValidUntil()).isEqualTo(validUntil);
     assertThat(json.readTree(reloaded.getConditions()))
         .isEqualTo(json.readTree("{\"daylightOnly\":true}"));
-    assertThat(reloaded.getStatus()).isEqualTo(PermitStatus.REJECTED);
+    assertThat(reloaded.getStatus()).isEqualTo(FlightPermitStatus.REJECTED);
     assertThat(reloaded.getSourceEvidenceId()).isEqualTo(evidenceId);
     assertThat(reloaded.getReviewedByUserId()).isEqualTo(reviewerId);
     assertThat(reloaded.getReviewedAt()).isEqualTo(reviewedAt);

@@ -149,12 +149,17 @@ public class FlightPermit {
     }
   }
 
-  /** MF1 API vocabulary; persisted values remain the MF2 enum for compatibility. */
-  public com.smartdroneinspection.assets.domain.enums.PermitStatus getStatus() {
+  /** MF2 persisted status contract retained for existing domain consumers. */
+  public FlightPermitStatus getStatus() {
+    return status;
+  }
+
+  /** MF1 response vocabulary for the organization's own recorded permit status. */
+  public com.smartdroneinspection.assets.domain.enums.PermitStatus getRecordedStatus() {
     return com.smartdroneinspection.assets.domain.enums.PermitStatus.valueOf(status.name());
   }
 
-  /** Status type retained for existing MF2 readiness consumers. */
+  /** Explicit alias for MF2 readiness paths. */
   public FlightPermitStatus getReadinessStatus() {
     return status;
   }

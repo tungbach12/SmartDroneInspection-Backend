@@ -44,7 +44,7 @@ public record FlightPermitResponse(
         permit.getValidFrom(),
         permit.getValidUntil(),
         permit.getConditions(),
-        permit.getStatus().name(),
+        permit.getRecordedStatus().name(),
         permit.getSourceEvidenceId(),
         permit.getReviewedByUserId(),
         permit.getReviewedAt(),

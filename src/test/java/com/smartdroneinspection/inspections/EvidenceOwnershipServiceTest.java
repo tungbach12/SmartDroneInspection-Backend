@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.shared.EvidenceOwnership;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.Locale;
 import java.util.UUID;

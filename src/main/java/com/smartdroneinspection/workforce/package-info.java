@@ -7,7 +7,6 @@
       "shared::exception",
       "users",
       "subscriptions",
-      "inspections",
       "workforce::repository"
     })
 package com.smartdroneinspection.workforce;
