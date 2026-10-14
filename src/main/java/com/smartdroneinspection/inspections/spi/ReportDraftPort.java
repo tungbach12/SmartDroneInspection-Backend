@@ -36,9 +36,39 @@ public interface ReportDraftPort {
       String narrative) {}
 
   record DraftContext(
+      InspectionSummary inspection,
       List<ChecklistEntrySummary> checklistResponses,
       List<FindingSummary> findings,
-      List<EvidenceSummary> evidence) {}
+      List<EvidenceSummary> evidence,
+      List<CandidateSummary> candidates,
+      List<FieldSessionSummary> fieldSessions,
+      EvidenceQualitySummary evidenceQuality) {}
+
+  record EvidenceQualitySummary(
+      String decision, String shotListComparison, String limitationReason) {}
+
+  record CandidateSummary(
+      String candidateId,
+      String evidenceId,
+      String provider,
+      String modelName,
+      String modelVersion,
+      String label,
+      String confidence,
+      String boundingBoxJson,
+      String status) {}
+
+  record FieldSessionSummary(
+      String sessionId, String status, String startedAt, String endedAt, String assignedDroneId) {}
+
+  record InspectionSummary(
+      String objective,
+      String scope,
+      String componentScope,
+      String acceptanceCriteria,
+      String plannedStartAt,
+      String plannedEndAt,
+      String assignedDroneId) {}
 
   record ChecklistEntrySummary(String prompt, String responseValue, String notes) {}
 
@@ -50,5 +80,12 @@ public interface ReportDraftPort {
       String technicalNotes,
       String recommendedAction) {}
 
-  record EvidenceSummary(String fileName, String contentType) {}
+  record EvidenceSummary(
+      String fileName,
+      String contentType,
+      String captureTime,
+      String latitude,
+      String longitude,
+      String source,
+      String fieldSessionId) {}
 }

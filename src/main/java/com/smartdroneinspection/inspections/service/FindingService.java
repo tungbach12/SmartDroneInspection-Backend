@@ -9,9 +9,12 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.AiFindingCandidateStatus;
 import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
+import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingSource;
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -39,6 +42,8 @@ public class FindingService {
   private final VerifiedFindingRepository findings;
   private final EvidenceService evidenceService;
   private final EvidenceQualityService qualityService;
+  private final InspectionReportRepository reports;
+  private final InspectionReportVersionRepository reportVersions;
   private final Optional<AiInferencePort> inference;
 
   public FindingService(
@@ -47,12 +52,16 @@ public class FindingService {
       VerifiedFindingRepository findings,
       EvidenceService evidenceService,
       EvidenceQualityService qualityService,
+      InspectionReportRepository reports,
+      InspectionReportVersionRepository reportVersions,
       Optional<AiInferencePort> inference) {
     this.evidence = evidence;
     this.candidates = candidates;
     this.findings = findings;
     this.evidenceService = evidenceService;
     this.qualityService = qualityService;
+    this.reports = reports;
+    this.reportVersions = reportVersions;
     this.inference = inference;
   }
 
@@ -192,6 +201,101 @@ public class FindingService {
                         request.measurement(),
                         Boolean.TRUE.equals(request.repairRequired())));
     return Optional.of(toFindingResponse(findings.saveAndFlush(finding)));
+  }
+
+  /** Revises an Inspector-reviewed candidate before reviewer decision and report lock. */
+  @Transactional
+  public Optional<VerifiedFindingResponse> reviseReviewedCandidate(
+      UUID actorId, UUID inspectionId, UUID candidateId, ReviewCandidateRequest request) {
+    evidenceService.requireAssignedInspection(actorId, inspectionId);
+    AiFindingCandidate candidate =
+        candidates
+            .findByIdAndInspectionId(candidateId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "AI_CANDIDATE_NOT_FOUND", "Candidate not found"));
+    if (!actorId.equals(candidate.getReviewedByUserId())) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "CANDIDATE_REVIEWER_INVALID",
+          "Only the Inspector who reviewed the candidate may revise it");
+    }
+    if (candidate.getStatus() == AiFindingCandidateStatus.PENDING) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CANDIDATE_REVISION_LOCKED",
+          "Only a reviewed candidate can be revised");
+    }
+    VerifiedFinding linked =
+        findings.findByInspectionIdAndAiCandidateId(inspectionId, candidateId).orElse(null);
+    if (linked != null && linked.getDecision() != null) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CANDIDATE_REVISION_LOCKED",
+          "A reviewer has decided the linked finding");
+    }
+    var report = reports.findByInspectionId(inspectionId).orElse(null);
+    if (report != null
+        && reportVersions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
+            .anyMatch(
+                version ->
+                    version.getStatus() == ReportStatus.SUBMITTED
+                        || version.getStatus() == ReportStatus.APPROVED
+                        || version.getStatus() == ReportStatus.PUBLISHED
+                        || version.getStatus() == ReportStatus.SUPERSEDED)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CANDIDATE_REVISION_LOCKED",
+          "A downstream report decision or publication locks candidate revisions");
+    }
+    candidate.reviseReview(request.decision(), request.reason());
+    candidates.saveAndFlush(candidate);
+    if (request.decision() == AiFindingCandidateStatus.REJECTED) {
+      if (linked != null) findings.delete(linked);
+      return Optional.empty();
+    }
+    VerifiedFindingSource source =
+        request.decision() == AiFindingCandidateStatus.CONFIRMED
+            ? VerifiedFindingSource.AI_CONFIRMED
+            : VerifiedFindingSource.AI_MODIFIED;
+    if (linked == null) {
+      linked =
+          new VerifiedFinding(
+              inspectionId,
+              candidate.getEvidenceId(),
+              candidateId,
+              actorId,
+              source,
+              nextFindingCode(inspectionId),
+              orDefault(request.defectLabel(), candidate.getPredictedLabel()),
+              request.severity(),
+              request.locationDescription(),
+              orDefault(request.technicalNotes(), candidate.getPredictedLabel()),
+              request.recommendedAction(),
+              candidate.getBoundingBox(),
+              request.component(),
+              request.description(),
+              request.observedCondition(),
+              request.priority(),
+              request.measurement(),
+              Boolean.TRUE.equals(request.repairRequired()));
+    } else {
+      linked.reviseCandidateDetails(
+          source,
+          orDefault(request.defectLabel(), candidate.getPredictedLabel()),
+          request.severity(),
+          request.locationDescription(),
+          orDefault(request.technicalNotes(), candidate.getPredictedLabel()),
+          request.recommendedAction(),
+          request.component(),
+          request.description(),
+          request.observedCondition(),
+          request.priority(),
+          request.measurement(),
+          Boolean.TRUE.equals(request.repairRequired()));
+    }
+    return Optional.of(toFindingResponse(findings.saveAndFlush(linked)));
   }
 
   /** MF3-06: a manual finding is available whenever detection is unavailable or missed a defect. */

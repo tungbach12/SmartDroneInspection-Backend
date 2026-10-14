@@ -465,6 +465,8 @@ class InspectionReportSectionsApiIntegrationTest {
     assertThat(pdfBytes).isNotEmpty();
     assertThat(new String(pdfBytes, 0, 5, java.nio.charset.StandardCharsets.US_ASCII))
         .isEqualTo("%PDF-");
+    String reportText = extractText(pdfBytes).replaceAll("\\s+", " ");
+    assertThat(reportText).contains("North girder flange", "Flange — North girder");
   }
 
   @Test

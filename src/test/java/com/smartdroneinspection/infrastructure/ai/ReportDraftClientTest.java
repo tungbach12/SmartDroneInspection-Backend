@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.ChecklistEntrySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceQualitySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.FindingSummary;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.SectionDraft;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -69,16 +71,58 @@ class ReportDraftClientTest {
     assertThat(draft.omissionDisclosure()).contains("Submerged components");
 
     // The prompt must carry the finding's component and location, not just its label, so the model
-    // can write the specific note the documentation practice requires.
-    assertThat(requestBody.get())
+    String request = requestBody.get();
+    String prompt =
+        new tools.jackson.databind.ObjectMapper()
+            .readTree(request)
+            .path("messages")
+            .get(1)
+            .path("content")
+            .asString();
+    assertThat(prompt)
+        .contains("Confirmed Findings (official findings only):\n- Component: Lower chord")
+        .contains("Defect: Surface Crack")
+        .contains("AI Detection Candidates (advisory, not official findings)")
+        .contains("Candidate status (not official finding status): PENDING")
+        .contains("Bounding-box JSON: {\"x\":1}")
+        .contains("Recorded start: 2026-10-12T10:00:00Z")
+        .contains("Assigned drone reference (not proof used): drone-1")
         .contains("Surface Crack")
         .contains("Lower chord")
         .contains("Span 2")
-        // Streaming must stay off, otherwise a compatible endpoint answers with SSE frames.
-        .contains("\"stream\":false")
+        .contains("Inspect main-span coating")
+        .contains("North span")
+        .contains("Main girder G4")
+        .contains("No blistering over 50mm")
+        .contains("Planned start (not actual inspection time)")
+        .contains("Expansion joint condition")
+        .contains("Capture time: 2026-10-12T09:30:00Z")
+        .contains("GPS: 10.7769, 106.7009")
+        .contains("Field session: session-1")
         .doesNotContain("latitude")
         .doesNotContain("longitude")
+        .contains("Inspector-recorded Evidence Quality Assessment (not independent proof)")
+        .contains("Inspector-recorded decision: ACCEPTED")
+        .contains(
+            "Shot-list comparison entered by Inspector: Both walkways and the central span were covered")
+        .contains("Inspector-recorded limitation reason: Wind limited north access")
+        .contains("not proof beyond the entered comparison")
+        .doesNotContain("inspector-42")
+        .doesNotContain("12:34:56Z")
+        .doesNotContain("Inspector ID:")
+        .doesNotContain("readiness-1")
+        .doesNotContain("checklist-1")
         .doesNotContain("uploader");
+    assertThat(request).contains("\"stream\":false");
+    assertThat(prompt.indexOf("Confirmed Findings (official findings only):"))
+        .isLessThan(prompt.indexOf("AI Detection Candidates (advisory, not official findings):"));
+    assertThat(prompt.indexOf("AI Detection Candidates (advisory, not official findings):"))
+        .isLessThan(prompt.indexOf("Recorded Field Sessions (platform records"));
+    assertThat(
+            prompt.substring(
+                prompt.indexOf("AI Detection Candidates"),
+                prompt.indexOf("Recorded Field Sessions")))
+        .doesNotContain("Component: Lower chord");
   }
 
   @Test
@@ -150,6 +194,14 @@ class ReportDraftClientTest {
 
   private static DraftContext context() {
     return new DraftContext(
+        new InspectionSummary(
+            "Inspect main-span coating",
+            "{\"summary\":\"North span\"}",
+            "[\"Main girder G4\"]",
+            "{\"criteria\":\"No blistering over 50mm\"}",
+            "2026-10-12T09:00:00Z",
+            "2026-10-12T17:00:00Z",
+            null),
         List.of(new ChecklistEntrySummary("Expansion joint condition", "PASS", "Normal wear")),
         List.of(
             new FindingSummary(
@@ -159,7 +211,33 @@ class ReportDraftClientTest {
                 "Span 2, girder G3",
                 "Hairline crack observed",
                 "Monitor and re-inspect")),
-        List.of(new EvidenceSummary("girder-01.png", "image/png")));
+        List.of(
+            new EvidenceSummary(
+                "girder-01.png",
+                "image/png",
+                "2026-10-12T09:30:00Z",
+                "10.7769",
+                "106.7009",
+                "WEB_UPLOAD",
+                "session-1")),
+        List.of(
+            new com.smartdroneinspection.inspections.spi.ReportDraftPort.CandidateSummary(
+                "candidate-1",
+                "evidence-1",
+                "provider-a",
+                "model-a",
+                "v2",
+                "Crack",
+                "0.91",
+                "{\"x\":1}",
+                "PENDING")),
+        List.of(
+            new com.smartdroneinspection.inspections.spi.ReportDraftPort.FieldSessionSummary(
+                "session-1", "IN_PROGRESS", "2026-10-12T10:00:00Z", null, "drone-1")),
+        new EvidenceQualitySummary(
+            "ACCEPTED",
+            "Both walkways and the central span were covered",
+            "Wind limited north access"));
   }
 
   private ReportDraftClient client(String apiKey, String model) {

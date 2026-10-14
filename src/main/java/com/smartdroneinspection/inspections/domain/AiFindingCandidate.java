@@ -112,6 +112,22 @@ public class AiFindingCandidate {
     rejectionReason = reason;
   }
 
+  /** Replaces an Inspector's reviewed revision without erasing who made the original review. */
+  public void reviseReview(AiFindingCandidateStatus decision, String reason) {
+    if (status == AiFindingCandidateStatus.PENDING) {
+      throw new IllegalStateException("Only reviewed candidates can be revised");
+    }
+    if (decision == null || decision == AiFindingCandidateStatus.PENDING) {
+      throw new IllegalArgumentException("A review decision is required");
+    }
+    if (decision == AiFindingCandidateStatus.REJECTED && (reason == null || reason.isBlank())) {
+      throw new IllegalArgumentException("A rejection reason is required");
+    }
+    status = decision;
+    reviewedAt = Instant.now();
+    rejectionReason = decision == AiFindingCandidateStatus.REJECTED ? reason : null;
+  }
+
   public UUID getId() {
     return id;
   }

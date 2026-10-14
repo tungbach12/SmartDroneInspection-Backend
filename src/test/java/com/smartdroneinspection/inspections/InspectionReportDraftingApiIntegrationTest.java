@@ -10,14 +10,18 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +56,8 @@ class InspectionReportDraftingApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
+  @Autowired FieldSessionRepository fieldSessions;
+  @Autowired VerifiedFindingRepository findings;
   @Autowired AiFindingCandidateRepository candidates;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -68,6 +74,7 @@ class InspectionReportDraftingApiIntegrationTest {
   @TestConfiguration(proxyBeanMethods = false)
   static class DraftingStub {
     static final AtomicBoolean FAIL_NEXT = new AtomicBoolean(false);
+    static final AtomicReference<DraftContext> LAST_CONTEXT = new AtomicReference<>();
 
     @Bean
     ReportDraftPort reportDraftPort() {
@@ -79,6 +86,7 @@ class InspectionReportDraftingApiIntegrationTest {
 
         @Override
         public SectionDraft draftSections(DraftContext context) throws IOException {
+          LAST_CONTEXT.set(context);
           if (FAIL_NEXT.get()) {
             throw new IOException("stubbed generation failure");
           }
@@ -106,6 +114,7 @@ class InspectionReportDraftingApiIntegrationTest {
                     .springSecurity())
             .build();
     DraftingStub.FAIL_NEXT.set(false);
+    DraftingStub.LAST_CONTEXT.set(null);
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
     jdbcTemplate.update(
         "UPDATE inspections SET status = 'FIELD_COMPLETED' WHERE id = ?", fixture.inspectionId());
@@ -137,6 +146,141 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
+  void draftingReceivesInspectionScopeAndCriteriaFromStoredInspection() throws Exception {
+    draft();
+
+    ReportDraftPort.DraftContext context = DraftingStub.LAST_CONTEXT.get();
+    assertThat(context.inspection().objective()).isEqualTo("Visual inspection of the main span");
+    assertThat(objectMapper.readTree(context.inspection().scope()))
+        .isEqualTo(objectMapper.readTree("{\"method\":\"visual\"}"));
+    assertThat(objectMapper.readTree(context.inspection().componentScope()))
+        .isEqualTo(objectMapper.readTree("[\"main span\"]"));
+    assertThat(objectMapper.readTree(context.inspection().acceptanceCriteria()))
+        .isEqualTo(objectMapper.readTree("{\"criteria\":\"no visible structural damage\"}"));
+    assertThat(context.checklistResponses()).isEmpty();
+  }
+
+  @Test
+  void draftingReceivesValuesRecordedThroughEvidenceQualityApi() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ACCEPTED",
+                            "shotListComparison", "API-recorded north and south span coverage",
+                            "limitationReason", "North approach blocked by wind"))))
+        .andExpect(status().isOk());
+
+    draft();
+
+    var quality = DraftingStub.LAST_CONTEXT.get().evidenceQuality();
+    assertThat(quality.decision()).isEqualTo("ACCEPTED");
+    assertThat(quality.shotListComparison())
+        .isEqualTo("API-recorded north and south span coverage");
+    assertThat(quality.limitationReason()).isEqualTo("North approach blocked by wind");
+  }
+
+  @Test
+  void latestNonAcceptedDecisionSupersedesEarlierAcceptanceAndBlocksDrafting() throws Exception {
+    // setUp() writes an ACCEPTED decision; this later decision must replace it as current.
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ADDITIONAL_SESSION_REQUIRED",
+                            "shotListComparison", "Later coverage requires another session",
+                            "limitationReason", "Wind blocked the north approach"))))
+        .andExpect(status().isOk());
+
+    long versionsBefore = countVersions();
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
+
+    assertThat(countVersions()).isEqualTo(versionsBefore);
+    assertThat(DraftingStub.LAST_CONTEXT.get()).isNull();
+  }
+
+  @Test
+  void draftingLoadsCandidatesAndSessionsByInspectionAndKeepsCandidateSeparateFromFindings()
+      throws Exception {
+    UUID evidenceId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO evidence (id, inspection_id, organization_id, uploaded_by_user_id, evidence_kind,
+                              file_name, content_type, size_bytes, checksum_sha256, object_key, source,
+                              upload_status, created_at)
+        VALUES (?, ?, ?, ?, 'INSPECTION', 'candidate-image.jpg', 'image/jpeg', 100, ?, ?,
+                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+        """,
+        evidenceId,
+        fixture.inspectionId(),
+        fixture.organizationId(),
+        fixture.inspectorId(),
+        "0".repeat(64),
+        "test/" + UUID.randomUUID());
+    UUID candidateId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO ai_finding_candidates
+          (id, evidence_id, inspection_id, model_provider, model_name, model_version,
+           predicted_label, confidence, bounding_box, status, created_at)
+        VALUES (?, ?, ?, 'provider-test', 'detector-test', 'v7', 'Possible crack', 0.87,
+                '{"x":12}', 'PENDING', CURRENT_TIMESTAMP)
+        """,
+        candidateId,
+        evidenceId,
+        fixture.inspectionId());
+    UUID sessionId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO field_sessions
+          (id, inspection_id, organization_id, inspector_user_id, drone_id, readiness_decision_id,
+           status, started_at, ended_at, checklist_template_id, checklist_version, readiness_version,
+           limitations, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, NULL, NULL, 'POSTPONED', '2026-10-12T10:00:00Z',
+                '2026-10-12T10:30:00Z', NULL, NULL, NULL, '{"wind":"high"}',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        """,
+        sessionId,
+        fixture.inspectionId(),
+        fixture.organizationId(),
+        fixture.inspectorId());
+
+    draft();
+
+    DraftContext context = DraftingStub.LAST_CONTEXT.get();
+    assertThat(context.candidates()).hasSize(1);
+    assertThat(context.candidates().get(0).candidateId()).isEqualTo(candidateId.toString());
+    assertThat(context.candidates().get(0).status()).isEqualTo("PENDING");
+    assertThat(context.candidates().get(0).provider()).isEqualTo("provider-test");
+    assertThat(objectMapper.readTree(context.candidates().get(0).boundingBoxJson()))
+        .isEqualTo(objectMapper.readTree("{\"x\":12}"));
+    assertThat(context.findings()).isEmpty();
+    assertThat(context.fieldSessions())
+        .singleElement()
+        .satisfies(
+            session -> {
+              assertThat(session.sessionId()).isEqualTo(sessionId.toString());
+              assertThat(session.status()).isEqualTo("POSTPONED");
+              assertThat(session.startedAt()).isEqualTo("2026-10-12T10:00:00Z");
+              assertThat(session.endedAt()).isEqualTo("2026-10-12T10:30:00Z");
+              assertThat(session.assignedDroneId()).isNull();
+            });
+  }
+
+  @Test
   void draftingRecordsItsProvenanceOnTheVersion() throws Exception {
     UUID versionId = draft();
 
@@ -149,7 +293,7 @@ class InspectionReportDraftingApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.llmModel").value("stub-drafting-model"))
-        .andExpect(jsonPath("$.data.promptVersion").value("mf3-report-v1"))
+        .andExpect(jsonPath("$.data.promptVersion").value("mf3-report-v2"))
         .andExpect(jsonPath("$.data.generatedAt").isNotEmpty());
   }
 

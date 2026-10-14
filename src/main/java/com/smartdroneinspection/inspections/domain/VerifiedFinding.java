@@ -163,6 +163,39 @@ public class VerifiedFinding {
     this.updatedAt = createdAt;
   }
 
+  /** Updates Inspector-provided fields while preserving any reviewer decision and audit. */
+  public void reviseCandidateDetails(
+      VerifiedFindingSource source,
+      String defectLabel,
+      FindingSeverity severity,
+      String locationDescription,
+      String technicalNotes,
+      String recommendedAction,
+      String component,
+      String description,
+      String observedCondition,
+      String priority,
+      String measurement,
+      boolean repairRequired) {
+    if (decision != null) {
+      throw new IllegalStateException("A reviewed finding cannot be revised");
+    }
+    this.source = source;
+    this.defectLabel = defectLabel;
+    this.severity = severity;
+    this.locationDescription = locationDescription;
+    this.technicalNotes = technicalNotes;
+    this.recommendedAction = recommendedAction;
+    this.component = component;
+    this.description = description;
+    this.observedCondition = observedCondition;
+    this.priority = priority;
+    this.measurement =
+        measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
+    this.repairRequired = repairRequired;
+    this.updatedAt = Instant.now();
+  }
+
   /** MF3-09: the qualified reviewer records the final decision on this finding. */
   public void recordDecision(FindingDecision newDecision, UUID decidedByUserId, String rationale) {
     if (newDecision == null || decidedByUserId == null) {
