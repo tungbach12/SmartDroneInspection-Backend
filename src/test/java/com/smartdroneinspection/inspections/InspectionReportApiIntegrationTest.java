@@ -983,6 +983,77 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void aReturnedVersionDoesNotAllowFindingDecisionsAfterPublication() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID firstVersion = createManualDraftVersion();
+    verifyAndSubmitVersion(firstVersion);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    firstVersion)
+                .param("approve", "false")
+                .param("reason", "Clarify the observed condition")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("RETURNED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    fixture.inspectionId(),
+                    firstVersion)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/submit",
+                    fixture.inspectionId(),
+                    firstVersion)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    decideFinding(findingId, "CONFIRMED", "Finding is supported by the evidence");
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    firstVersion)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    fixture.inspectionId(),
+                    firstVersion)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/findings/{findingId}/decision",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("decision", "REJECTED", "rationale", "Not actionable"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
+  }
+
+  @Test
   void aReportAuthoredThroughTheApiCanBePublished() throws Exception {
     // This walks the real sequence instead of seeding a SUBMITTED version, so the inspection
     // status transitions that drafting and publication depend on are covered too.

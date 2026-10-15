@@ -455,12 +455,7 @@ public class FindingService {
           "The finding author cannot decide their own finding");
     }
     var report = reports.findByInspectionId(inspectionId).orElse(null);
-    if (report == null
-        || reportVersions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
-            .noneMatch(
-                version ->
-                    version.getStatus() == ReportStatus.SUBMITTED
-                        || version.getStatus() == ReportStatus.RETURNED)) {
+    if (report == null || !ReportStatus.SUBMITTED.name().equals(report.getStatus())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "REPORT_STATE_CONFLICT",

@@ -272,6 +272,101 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
+  void evidenceUploadIsRejectedAfterReportPublication() throws Exception {
+    UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision",
+                            "ACCEPTED",
+                            "shotListComparison",
+                            "All required views captured"))))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/findings/confirm", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("noFindingsAcknowledged", true))))
+        .andExpect(status().isOk());
+
+    UUID versionId = createSubmittedManualVersion();
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "later.png", "image/png", PNG_BYTES))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTION_STATE_CONFLICT"));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM evidence WHERE id = ?", Long.class, evidenceId))
+        .isEqualTo(1L);
+  }
+
+  private UUID createSubmittedManualVersion() throws Exception {
+    MvcResult created =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "narrative", "Surveyed the span", "omissionDisclosure", "None"))))
+            .andExpect(status().isOk())
+            .andReturn();
+    UUID versionId =
+        UUID.fromString(
+            objectMapper
+                .readTree(created.getResponse().getContentAsString())
+                .path("data")
+                .path("id")
+                .stringValue());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/submit",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    return versionId;
+  }
+
+  @Test
   void onlyTheAssignedInspectorMayDecideEvidenceQuality() throws Exception {
     mockMvc
         .perform(

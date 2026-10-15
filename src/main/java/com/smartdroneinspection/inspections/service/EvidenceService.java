@@ -5,6 +5,7 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -73,12 +74,19 @@ public class EvidenceService {
       String externalReference) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
-    if (inspection.getStatus()
-        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_CONFIRMATION_STALE",
           "Reopen Findings before adding evidence after confirmation");
+    }
+    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
+        || inspection.getStatus() == InspectionStatus.REPAIR_PENDING
+        || inspection.getStatus() == InspectionStatus.COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Evidence cannot be added to a published or completed inspection");
     }
     String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     if (!ALLOWED_TYPES.contains(contentType)) {
