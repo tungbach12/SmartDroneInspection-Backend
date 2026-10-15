@@ -237,6 +237,12 @@ public class FindingService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "AI_CANDIDATE_NOT_FOUND", "Candidate not found"));
+    if (candidate.getStatus() != AiFindingCandidateStatus.PENDING) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CANDIDATE_ALREADY_REVIEWED",
+          "Use the reviewed-candidate revision action to change this decision");
+    }
 
     candidate.review(request.decision(), actorId, request.reason());
     candidates.saveAndFlush(candidate);

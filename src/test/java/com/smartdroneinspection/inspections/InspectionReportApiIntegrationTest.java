@@ -417,6 +417,21 @@ class InspectionReportApiIntegrationTest {
         .isEqualTo(1L);
     mockMvc
         .perform(
+            post(
+                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+                    fixture.inspectionId(),
+                    candidateId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"decision":"CONFIRMED","defectLabel":"Surface crack","severity":"HIGH",
+                     "locationDescription":"Girder G4","technicalNotes":"Visible crack"}
+                    """))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CANDIDATE_ALREADY_REVIEWED"));
+    mockMvc
+        .perform(
             put(
                     "/api/v1/inspections/{id}/finding-candidates/{candidateId}/reviewed-revision",
                     fixture.inspectionId(),
