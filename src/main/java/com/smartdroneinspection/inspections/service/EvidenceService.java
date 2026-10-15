@@ -73,6 +73,13 @@ public class EvidenceService {
       String externalReference) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    if (inspection.getStatus()
+        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_CONFIRMATION_STALE",
+          "Reopen Findings before adding evidence after confirmation");
+    }
     String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     if (!ALLOWED_TYPES.contains(contentType)) {
       throw new BusinessException(
@@ -103,6 +110,19 @@ public class EvidenceService {
           "EVIDENCE_INVALID",
           "The uploaded file is not a readable " + contentType + " image");
     }
+    if ((latitude == null && longitude == null) || captureTime == null) {
+      ExifMetadataExtractor.ExtractedMetadata extracted = ExifMetadataExtractor.extract(content);
+      if (extracted != null) {
+        if (latitude == null && longitude == null) {
+          latitude = extracted.latitude();
+          longitude = extracted.longitude();
+        }
+        if (captureTime == null) {
+          captureTime = extracted.captureTime();
+        }
+      }
+    }
+
     // Missing GPS is acceptable; a half-specified pair is not.
     if ((latitude == null) != (longitude == null)) {
       throw new BusinessException(

@@ -54,7 +54,7 @@ public class VerifiedFinding {
   @Column(nullable = false, length = 16)
   private FindingSeverity severity;
 
-  @Column(name = "location_description", nullable = false, length = 1000)
+  @Column(name = "location_description", length = 1000)
   private String locationDescription;
 
   @JdbcTypeCode(SqlTypes.JSON)
@@ -159,7 +159,10 @@ public class VerifiedFinding {
         measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
     this.repairRequired = repairRequired;
     this.status = VerifiedFindingStatus.OPEN;
+    this.decision = null;
+    this.decidedByUserId = null;
     this.createdAt = Instant.now();
+    this.decidedAt = null;
     this.updatedAt = createdAt;
   }
 
@@ -208,9 +211,49 @@ public class VerifiedFinding {
     this.updatedAt = decidedAt;
   }
 
-  /** Only a confirmed finding enters official statistics and corrective-work scope. */
+  /**
+   * Inspector has reviewed this proposal; the independent reviewer still decides its disposition.
+   */
+  public void recordInspectorProposal(
+      VerifiedFindingSource source,
+      String defectLabel,
+      FindingSeverity severity,
+      String locationDescription,
+      String technicalNotes,
+      String recommendedAction,
+      String component,
+      String description,
+      String observedCondition,
+      String priority,
+      String measurement,
+      boolean repairRequired) {
+    reviseCandidateDetails(
+        source,
+        defectLabel,
+        severity,
+        locationDescription,
+        technicalNotes,
+        recommendedAction,
+        component,
+        description,
+        observedCondition,
+        priority,
+        measurement,
+        repairRequired);
+    decision = null;
+    decidedByUserId = null;
+    decidedAt = null;
+    rationale = null;
+  }
+
+  /** Only an independent reviewer decision makes the finding official. */
   public boolean isOfficial() {
-    return decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED;
+    return decidedByUserId != null
+        && (decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED);
+  }
+
+  public boolean hasReviewerDecision() {
+    return decidedByUserId != null && decision != null;
   }
 
   public UUID getId() {

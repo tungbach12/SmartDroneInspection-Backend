@@ -67,6 +67,15 @@ public class Inspection {
   @Column(nullable = false, length = 32)
   private InspectionStatus status;
 
+  @Column(name = "findings_confirmed_by_user_id")
+  private UUID findingsConfirmedByUserId;
+
+  @Column(name = "findings_confirmed_at")
+  private Instant findingsConfirmedAt;
+
+  @Column(name = "findings_snapshot_hash", length = 64)
+  private String findingsSnapshotHash;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -128,8 +137,55 @@ public class Inspection {
         null);
   }
 
+  /** MF3-06: the Inspector confirms the reviewed evidence/findings baseline before drafting. */
+  public void confirmFindings(UUID actorId, String snapshotHash) {
+    if (status != InspectionStatus.FIELD_COMPLETED && status != InspectionStatus.REPORT_DRAFT) {
+      throw new IllegalStateException("Findings can only be confirmed after field completion");
+    }
+    if (actorId == null || snapshotHash == null || snapshotHash.isBlank()) {
+      throw new IllegalArgumentException("Findings confirmation requires an actor and snapshot");
+    }
+    findingsConfirmedByUserId = actorId;
+    findingsConfirmedAt = Instant.now();
+    findingsSnapshotHash = snapshotHash;
+    status = InspectionStatus.REPORT_DRAFT;
+    updatedAt = findingsConfirmedAt;
+  }
+
+  /** A pre-submission edit invalidates the reviewed set and returns the inspection to Findings. */
+  public void reopenFindings() {
+    if (status != InspectionStatus.REPORT_DRAFT) return;
+    findingsConfirmedByUserId = null;
+    findingsConfirmedAt = null;
+    findingsSnapshotHash = null;
+    status = InspectionStatus.FIELD_COMPLETED;
+    updatedAt = Instant.now();
+  }
+
+  public boolean hasCurrentFindingsConfirmation(String snapshotHash) {
+    return (status == InspectionStatus.REPORT_DRAFT
+            || status == InspectionStatus.REPORT_PUBLISHED
+            || status == InspectionStatus.REPAIR_PENDING
+            || status == InspectionStatus.COMPLETED)
+        && findingsConfirmedAt != null
+        && findingsSnapshotHash != null
+        && findingsSnapshotHash.equals(snapshotHash);
+  }
+
+  public UUID getFindingsConfirmedByUserId() {
+    return findingsConfirmedByUserId;
+  }
+
+  public Instant getFindingsConfirmedAt() {
+    return findingsConfirmedAt;
+  }
+
+  public String getFindingsSnapshotHash() {
+    return findingsSnapshotHash;
+  }
+
   /**
-   * MF3-04 snapshots the confirmed evidence set, which moves the inspection into report drafting.
+   * Legacy transition retained for migration compatibility with existing persisted report states.
    */
   public void beginReportDraft() {
     requireStatus(InspectionStatus.FIELD_COMPLETED);

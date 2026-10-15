@@ -55,8 +55,7 @@ public class EvidenceQualityService {
           "A substantive evidence decision is required");
     }
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    if (inspection.getStatus() != InspectionStatus.FIELD_COMPLETED
-        && inspection.getStatus() != InspectionStatus.REPORT_DRAFT) {
+    if (inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "INSPECTION_STATE_CONFLICT",

@@ -13,7 +13,7 @@ import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
-import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
@@ -133,12 +133,7 @@ public class ReportService {
   public InspectionReportVersionResponse generateDraft(UUID actorId, UUID inspectionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
 
-    if (!qualityService.isEligibleForAnalysis(inspectionId)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REPORT_STATE_CONFLICT",
-          "A draft requires an accepted evidence quality decision");
-    }
+    requireCurrentFindingsConfirmation(inspection);
 
     InspectionReport report =
         reports
@@ -167,10 +162,7 @@ public class ReportService {
         candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId);
     List<FieldSession> recordedSessions =
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
-    List<VerifiedFinding> confirmedFindings =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(VerifiedFinding::isOfficial)
-            .toList();
+    List<VerifiedFinding> confirmedFindings = inspectorFindings(inspectionId);
 
     ReportDraftPort port =
         draftPort.orElseThrow(
@@ -272,6 +264,7 @@ public class ReportService {
           "Automated drafting is temporarily unavailable");
     }
 
+    String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
     int versionNo = report.nextVersionNumber();
     UUID sourceVersionId =
         versions
@@ -288,11 +281,11 @@ public class ReportService {
             null,
             port.modelName(),
             PROMPT_VERSION,
-            evidenceSnapshotHash(confirmedEvidence));
+            evidenceSnapshotHash(confirmedEvidence),
+            findingsSnapshot);
     report.recordNewVersion(versionNo);
     report.setStatus(ReportStatus.DRAFT);
     reports.saveAndFlush(report);
-    beginReportDrafting(inspection);
     return toResponse(versions.saveAndFlush(version));
   }
 
@@ -305,16 +298,12 @@ public class ReportService {
   public InspectionReportVersionResponse authorManualDraft(
       UUID actorId, UUID inspectionId, String narrative, String omissionDisclosure) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    if (!qualityService.isEligibleForAnalysis(inspectionId)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REPORT_STATE_CONFLICT",
-          "A draft requires an accepted evidence quality decision");
-    }
+    requireCurrentFindingsConfirmation(inspection);
     InspectionReport report = requireAuthoredReport(actorId, inspectionId);
 
     List<Evidence> confirmedEvidence = evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
-    List<VerifiedFinding> confirmedFindings = officialFindings(inspectionId);
+    List<VerifiedFinding> confirmedFindings = inspectorFindings(inspectionId);
+    String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
 
     int versionNo = report.nextVersionNumber();
     UUID sourceVersionId =
@@ -333,22 +322,12 @@ public class ReportService {
             null,
             MANUAL_MODEL_NAME,
             PROMPT_VERSION,
-            evidenceSnapshotHash(confirmedEvidence));
+            evidenceSnapshotHash(confirmedEvidence),
+            findingsSnapshot);
     report.recordNewVersion(versionNo);
     report.setStatus(ReportStatus.DRAFT);
     reports.saveAndFlush(report);
-    beginReportDrafting(inspection);
     return toResponse(versions.saveAndFlush(version));
-  }
-
-  /**
-   * The first draft moves the inspection out of field work. Publication later requires this state,
-   * so leaving it unmoved would make every publish fail.
-   */
-  private void beginReportDrafting(Inspection inspection) {
-    if (inspection.getStatus() == InspectionStatus.FIELD_COMPLETED) {
-      inspection.beginReportDraft();
-    }
   }
 
   private InspectionReport requireAuthoredReport(UUID actorId, UUID inspectionId) {
@@ -365,9 +344,26 @@ public class ReportService {
     return report;
   }
 
-  private List<VerifiedFinding> officialFindings(UUID inspectionId) {
+  private List<VerifiedFinding> inspectorFindings(UUID inspectionId) {
     return findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-        .filter(VerifiedFinding::isOfficial)
+        .filter(finding -> finding.getDecision() == null || finding.isOfficial())
+        .toList();
+  }
+
+  /**
+   * MF3-06/09/10: the findings the delivered document lists under Confirmed findings.
+   *
+   * <p>An Inspector proposal belongs here. MF3-06 confirmation is already a human decision and the
+   * MF3-09 reviewer verdict refines a proposed finding at the submitted report; it does not decide
+   * whether the defect appears in the draft at all. Publication cannot reach this state unresolved,
+   * because approval and publication both refuse while any proposal is undecided, so a delivered
+   * document never carries a pending verdict.
+   *
+   * <p>Only a rejected finding is excluded: MF3-10 keeps it auditable but not official.
+   */
+  private List<VerifiedFinding> reportableFindings(UUID inspectionId) {
+    return findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+        .filter(finding -> finding.getDecision() != FindingDecision.REJECTED)
         .toList();
   }
 
@@ -390,6 +386,9 @@ public class ReportService {
           "Only the report author may edit this draft");
     }
 
+    requireCurrentFindingsConfirmation(
+        evidenceService.requireAssignedInspection(actorId, inspectionId));
+    requireFreshFindingsSnapshot(inspectionId, version);
     ReportSections sections =
         new ReportSections(
             request.executiveSummary(),
@@ -414,6 +413,9 @@ public class ReportService {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
+    requireFreshFindingsSnapshot(inspectionId, version);
+    requireCurrentFindingsConfirmation(
+        evidenceService.requireAssignedInspection(actorId, inspectionId));
     try {
       version.verifyAsAuthor(actorId);
     } catch (IllegalStateException | IllegalArgumentException ex) {
@@ -431,6 +433,9 @@ public class ReportService {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
+    requireFreshFindingsSnapshot(inspectionId, version);
+    requireCurrentFindingsConfirmation(
+        evidenceService.requireAssignedInspection(actorId, inspectionId));
     try {
       version.submit();
     } catch (IllegalStateException ex) {
@@ -446,6 +451,44 @@ public class ReportService {
    * stored snapshot hash is compared against the current evidence set, so a version drafted over
    * older captures cannot be verified or submitted — the author drafts a new version instead.
    */
+  private void requireCurrentFindingsConfirmation(Inspection inspection) {
+    if (!qualityService.isEligibleForAnalysis(inspection.getId())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_STATE_CONFLICT",
+          "A draft requires an accepted evidence quality decision");
+    }
+    String current = currentFindingsSnapshotHash(inspection.getId());
+    if (!inspection.hasCurrentFindingsConfirmation(current)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_NOT_CONFIRMED",
+          "Confirm the current findings before authoring a report");
+    }
+  }
+
+  private String currentFindingsSnapshotHash(UUID inspectionId) {
+    return FindingsSnapshot.hash(
+        evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId),
+        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId),
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
+  }
+
+  private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReportVersion version) {
+    String current = currentFindingsSnapshotHash(inspectionId);
+    if (!current.equals(version.getFindingsSnapshotHash())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_SNAPSHOT_STALE",
+          "Findings changed after this draft was created; author a new draft version");
+    }
+  }
+
+  private boolean hasUndecidedFindings(UUID inspectionId) {
+    return findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+        .anyMatch(finding -> !finding.hasReviewerDecision());
+  }
+
   private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReportVersion version) {
     String current =
         evidenceSnapshotHash(evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
@@ -467,6 +510,23 @@ public class ReportService {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    if (!approve) {
+      try {
+        version.reviewBy(reviewer.id(), false, reason);
+      } catch (IllegalStateException | IllegalArgumentException ex) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
+      }
+      report.setStatus(ReportStatus.RETURNED);
+      reports.saveAndFlush(report);
+      return toResponse(versions.saveAndFlush(version));
+    }
+    if (hasUndecidedFindings(inspectionId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_REVIEW_INCOMPLETE",
+          "Decide every proposed finding before approving the report");
+    }
     try {
       version.reviewBy(reviewer.id(), approve, reason);
     } catch (IllegalStateException | IllegalArgumentException ex) {
@@ -482,8 +542,16 @@ public class ReportService {
   public ReportPublishedResponse publish(UUID actorId, UUID inspectionId, UUID versionId) {
     UserAccess.ActiveUser publisher = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    if (hasUndecidedFindings(inspectionId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_REVIEW_INCOMPLETE",
+          "Decide every proposed finding before publishing the report");
+    }
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    requireFreshEvidenceSnapshot(inspectionId, version);
+    requireFreshFindingsSnapshot(inspectionId, version);
     try {
       version.publish(publisher.id());
     } catch (IllegalStateException | IllegalArgumentException ex) {
@@ -681,10 +749,7 @@ public class ReportService {
     for (Evidence item : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
       evidenceById.put(item.getId(), item);
     }
-    List<VerifiedFinding> confirmed =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(VerifiedFinding::isOfficial)
-            .toList();
+    List<VerifiedFinding> confirmed = reportableFindings(inspectionId);
     for (VerifiedFinding finding : confirmed) {
       List<String> evidenceRefs = new ArrayList<>();
       if (finding.getEvidenceId() != null) {
@@ -715,7 +780,12 @@ public class ReportService {
               finding.getDescription(),
               finding.getTechnicalNotes(),
               finding.getRecommendedAction(),
-              finding.getDecision().name(),
+              // A finding may still await its MF3-09 reviewer verdict. It is reported as awaiting
+              // one
+              // rather than as decided, so the document never implies a decision nobody recorded.
+              finding.getDecision() == null
+                  ? "Awaiting reviewer decision"
+                  : finding.getDecision().name(),
               displayName(finding.getDecidedByUserId()),
               finding.getDecidedAt() == null ? null : finding.getDecidedAt().toString(),
               finding.getMeasurement(),
@@ -992,6 +1062,7 @@ public class ReportService {
         version.getPromptVersion(),
         version.getGeneratedAt(),
         version.getEvidenceSnapshotHash(),
+        version.getFindingsSnapshotHash(),
         version.getPublishedAt(),
         version.getCreatedAt(),
         textOrNull(content, "narrative"),
