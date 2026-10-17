@@ -369,6 +369,100 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void anExplicitReRunReplacesUnreviewedCandidatesAndKeepsTheReviewedOnes() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    when(inferencePort.analyze(any(), eq("image/png")))
+        .thenReturn(
+            java.util.List.of(
+                new AiInferencePort.Detection(
+                    "capstone",
+                    "vision-v1",
+                    "surface crack",
+                    new java.math.BigDecimal("0.81"),
+                    "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}")));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1));
+    UUID suggested =
+        UUID.fromString(
+            jdbcTemplate.queryForObject(
+                "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?",
+                String.class,
+                evidenceId));
+
+    // A candidate the Inspector already decided carries that decision, so a changed detector must
+    // not erase it.
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+                    fixture.inspectionId(),
+                    suggested)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"decision\":\"REJECTED\",\"reason\":\"Not a defect\"}"))
+        .andExpect(status().isNoContent());
+
+    // A pass without the explicit re-run still answers with the existing set.
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id").value(suggested.toString()));
+
+    // Re-running after the detector changed replaces the unreviewed suggestion and keeps the
+    // reviewed one, so the Inspector can re-detect without losing a decision.
+    when(inferencePort.analyze(any(), eq("image/png")))
+        .thenReturn(
+            java.util.List.of(
+                new AiInferencePort.Detection(
+                    "yolo11s",
+                    "mbdd2025-v1",
+                    "corrosion",
+                    new java.math.BigDecimal("0.62"),
+                    "{\"xMin\":0.2,\"yMin\":0.3,\"xMax\":0.5,\"yMax\":0.7}")));
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .param("replace", "true")
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2));
+
+    assertThat(candidates.countByEvidenceId(evidenceId)).isEqualTo(2);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_finding_candidates"
+                    + " WHERE evidence_id = ? AND status = 'PENDING' AND model_name = 'yolo11s'",
+                Integer.class,
+                evidenceId))
+        .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_finding_candidates"
+                    + " WHERE evidence_id = ? AND status = 'REJECTED'",
+                Integer.class,
+                evidenceId))
+        .isEqualTo(1);
+  }
+
+  @Test
   void rejectingAReviewedCandidateRemovesItsUndecidedOfficialFinding() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();

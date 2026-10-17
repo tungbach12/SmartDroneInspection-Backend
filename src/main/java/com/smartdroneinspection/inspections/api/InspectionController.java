@@ -154,8 +154,10 @@ public class InspectionController {
   public ApiResponse<List<AiFindingCandidateResponse>> analyzeEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID evidenceId) {
-    return ApiResponse.success(findingService.analyze(actorId(jwt), inspectionId, evidenceId));
+      @PathVariable UUID evidenceId,
+      @RequestParam(name = "replace", defaultValue = "false") boolean replace) {
+    return ApiResponse.success(
+        findingService.analyze(actorId(jwt), inspectionId, evidenceId, replace));
   }
 
   @GetMapping("/finding-candidates")

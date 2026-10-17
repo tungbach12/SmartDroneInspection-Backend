@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -137,7 +138,7 @@ public class FindingService {
   /** MF3-05: run advisory detection. Refuses evidence the Inspector has not accepted. */
   @Transactional
   public List<AiFindingCandidateResponse> analyze(
-      UUID actorId, UUID inspectionId, UUID evidenceId) {
+      UUID actorId, UUID inspectionId, UUID evidenceId, boolean replace) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     if (inspection.getStatus()
         != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
@@ -167,11 +168,22 @@ public class FindingService {
                     "Automated analysis is not configured"));
 
     // MF3-05 runs automatically once the evidence set is accepted, so re-running it on the same
-    // capture must not create a second candidate for the same detection.
+    // capture must not create a second candidate for the same detection. An explicit re-run
+    // replaces
+    // the image's unreviewed suggestions instead, which is what a changed detector or threshold
+    // needs; a candidate the Inspector already reviewed carries that decision and survives.
     List<AiFindingCandidate> prior = candidates.findByEvidenceIdOrderByCreatedAtAsc(evidenceId);
-    if (!prior.isEmpty()) {
-      return prior.stream().map(this::toCandidateResponse).toList();
+    if (!replace) {
+      if (!prior.isEmpty()) {
+        return prior.stream().map(this::toCandidateResponse).toList();
+      }
     }
+    List<AiFindingCandidate> reviewed =
+        replace
+            ? prior.stream()
+                .filter(candidate -> candidate.getStatus() != AiFindingCandidateStatus.PENDING)
+                .toList()
+            : List.of();
 
     byte[] bytes;
     try (InputStream stream = evidenceService.readForAnalysis(inspectionId, evidenceId).stream()) {
@@ -208,7 +220,21 @@ public class FindingService {
                         detection.confidence(),
                         detection.boundingBox()))
             .toList();
-    return candidates.saveAll(created).stream().map(this::toCandidateResponse).toList();
+    if (replace) {
+      // Only after the new detections exist, so a failed inference leaves the previous suggestions
+      // in place rather than emptying the image.
+      List<AiFindingCandidate> replaced =
+          prior.stream()
+              .filter(candidate -> candidate.getStatus() == AiFindingCandidateStatus.PENDING)
+              .toList();
+      if (!replaced.isEmpty()) {
+        candidates.deleteAll(replaced);
+      }
+    }
+    List<AiFindingCandidate> stored = candidates.saveAll(created);
+    return Stream.concat(stored.stream(), reviewed.stream())
+        .map(this::toCandidateResponse)
+        .toList();
   }
 
   @Transactional(readOnly = true)
