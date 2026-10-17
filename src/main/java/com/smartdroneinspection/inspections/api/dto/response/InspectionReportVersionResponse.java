@@ -25,6 +25,7 @@ public record InspectionReportVersionResponse(
     String promptVersion,
     Instant generatedAt,
     String evidenceSnapshotHash,
+    String findingsSnapshotHash,
     Instant publishedAt,
     Instant createdAt,
     String narrative,

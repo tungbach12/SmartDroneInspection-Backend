@@ -54,7 +54,7 @@ public class VerifiedFinding {
   @Column(nullable = false, length = 16)
   private FindingSeverity severity;
 
-  @Column(name = "location_description", nullable = false, length = 1000)
+  @Column(name = "location_description", length = 1000)
   private String locationDescription;
 
   @JdbcTypeCode(SqlTypes.JSON)
@@ -99,6 +99,24 @@ public class VerifiedFinding {
 
   @Column(name = "decided_at")
   private Instant decidedAt;
+
+  @Column(name = "corrective_action_required", nullable = false)
+  private boolean correctiveActionRequired = true;
+
+  @Column(name = "corrective_action_priority", length = 24)
+  private String correctiveActionPriority;
+
+  @Column(name = "corrective_action_due_at")
+  private Instant correctiveActionDueAt;
+
+  @Column(name = "corrective_action_reviewed_by_user_id")
+  private UUID correctiveActionReviewedByUserId;
+
+  @Column(name = "corrective_action_reviewed_at")
+  private Instant correctiveActionReviewedAt;
+
+  @Column(name = "corrective_action_rationale", length = 4000)
+  private String correctiveActionRationale;
 
   @Column(length = 4000)
   private String rationale;
@@ -159,7 +177,10 @@ public class VerifiedFinding {
         measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
     this.repairRequired = repairRequired;
     this.status = VerifiedFindingStatus.OPEN;
+    this.decision = null;
+    this.decidedByUserId = null;
     this.createdAt = Instant.now();
+    this.decidedAt = null;
     this.updatedAt = createdAt;
   }
 
@@ -205,12 +226,126 @@ public class VerifiedFinding {
     this.decidedByUserId = decidedByUserId;
     this.decidedAt = Instant.now();
     this.rationale = rationale;
+    this.correctiveActionRequired = newDecision != FindingDecision.REJECTED;
+    this.correctiveActionReviewedByUserId = null;
+    this.correctiveActionReviewedAt = null;
+    this.repairRequired = false;
     this.updatedAt = decidedAt;
   }
 
-  /** Only a confirmed finding enters official statistics and corrective-work scope. */
+  public void updateCorrectiveAction(
+      UUID reviewerId,
+      boolean correctiveActionRequired,
+      String priority,
+      Instant dueAt,
+      String rationale) {
+    if (reviewerId == null) {
+      throw new IllegalArgumentException("A reviewer is required");
+    }
+    if (!hasReviewerDecision()
+        || decision == FindingDecision.REJECTED
+        || !decidedByUserId.equals(reviewerId)) {
+      throw new IllegalStateException(
+          "The finding decision reviewer must record its corrective action");
+    }
+    if (correctiveActionReviewedByUserId != null) {
+      throw new IllegalStateException("Corrective action has already been recorded");
+    }
+    if (rationale == null || rationale.isBlank()) {
+      throw new IllegalArgumentException("A corrective-action outcome rationale is required");
+    }
+    if (correctiveActionRequired && (priority == null || priority.isBlank())) {
+      throw new IllegalArgumentException("MF3-12 requires a priority for corrective work");
+    }
+    if (!correctiveActionRequired && (priority != null || dueAt != null)) {
+      throw new IllegalArgumentException(
+          "Priority and due date cannot be set for a no-repair outcome");
+    }
+    if (dueAt != null && dueAt.isBefore(Instant.now())) {
+      throw new IllegalArgumentException("The corrective-action due date must be in the future");
+    }
+    this.correctiveActionRequired = correctiveActionRequired;
+    this.repairRequired = correctiveActionRequired;
+    this.correctiveActionPriority = correctiveActionRequired ? priority : null;
+    this.correctiveActionDueAt = correctiveActionRequired ? dueAt : null;
+    this.correctiveActionReviewedByUserId = reviewerId;
+    this.correctiveActionReviewedAt = Instant.now();
+    this.correctiveActionRationale = rationale;
+    this.updatedAt = correctiveActionReviewedAt;
+  }
+
+  /**
+   * Inspector has reviewed this proposal; the independent reviewer still decides its disposition.
+   */
+  public void recordInspectorProposal(
+      VerifiedFindingSource source,
+      String defectLabel,
+      FindingSeverity severity,
+      String locationDescription,
+      String technicalNotes,
+      String recommendedAction,
+      String component,
+      String description,
+      String observedCondition,
+      String priority,
+      String measurement,
+      boolean repairRequired) {
+    reviseCandidateDetails(
+        source,
+        defectLabel,
+        severity,
+        locationDescription,
+        technicalNotes,
+        recommendedAction,
+        component,
+        description,
+        observedCondition,
+        priority,
+        measurement,
+        repairRequired);
+    decision = null;
+    decidedByUserId = null;
+    decidedAt = null;
+    rationale = null;
+    correctiveActionRequired = true;
+  }
+
+  /** Only an independent reviewer decision makes the finding official. */
   public boolean isOfficial() {
-    return decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED;
+    return decidedByUserId != null
+        && (decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED);
+  }
+
+  public String getCorrectiveActionPriority() {
+    return correctiveActionPriority;
+  }
+
+  public Instant getCorrectiveActionDueAt() {
+    return correctiveActionDueAt;
+  }
+
+  public UUID getCorrectiveActionReviewedByUserId() {
+    return correctiveActionReviewedByUserId;
+  }
+
+  public Instant getCorrectiveActionReviewedAt() {
+    return correctiveActionReviewedAt;
+  }
+
+  public String getCorrectiveActionRationale() {
+    return correctiveActionRationale;
+  }
+
+  public boolean isCorrectiveActionRequired() {
+    return correctiveActionRequired;
+  }
+
+  public boolean isCorrectiveActionReviewed() {
+    return correctiveActionReviewedByUserId != null && correctiveActionReviewedAt != null;
+  }
+
+  public boolean hasReviewerDecision() {
+    return decidedByUserId != null && decision != null;
   }
 
   public UUID getId() {
@@ -294,7 +429,7 @@ public class VerifiedFinding {
   }
 
   public boolean isRepairRequired() {
-    return repairRequired;
+    return repairRequired && correctiveActionRequired;
   }
 
   public VerifiedFindingStatus getStatus() {

@@ -67,6 +67,24 @@ public class Inspection {
   @Column(nullable = false, length = 32)
   private InspectionStatus status;
 
+  @Column(name = "findings_confirmed_by_user_id")
+  private UUID findingsConfirmedByUserId;
+
+  @Column(name = "findings_confirmed_at")
+  private Instant findingsConfirmedAt;
+
+  @Column(name = "findings_snapshot_hash", length = 64)
+  private String findingsSnapshotHash;
+
+  @Column(name = "corrective_handoff_by_user_id")
+  private UUID correctiveHandoffByUserId;
+
+  @Column(name = "corrective_handoff_at")
+  private Instant correctiveHandoffAt;
+
+  @Column(name = "no_repair_rationale", length = 2000)
+  private String noRepairRationale;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -128,8 +146,71 @@ public class Inspection {
         null);
   }
 
+  /** MF3-06: the Inspector confirms the reviewed evidence/findings baseline before drafting. */
+  public void confirmFindings(UUID actorId, String snapshotHash) {
+    if (status != InspectionStatus.FIELD_COMPLETED && status != InspectionStatus.REPORT_DRAFT) {
+      throw new IllegalStateException("Findings can only be confirmed after field completion");
+    }
+    if (actorId == null || snapshotHash == null || snapshotHash.isBlank()) {
+      throw new IllegalArgumentException("Findings confirmation requires an actor and snapshot");
+    }
+    findingsConfirmedByUserId = actorId;
+    findingsConfirmedAt = Instant.now();
+    findingsSnapshotHash = snapshotHash;
+    status = InspectionStatus.REPORT_DRAFT;
+    updatedAt = findingsConfirmedAt;
+  }
+
+  /** A pre-submission edit invalidates the reviewed set and returns the inspection to Findings. */
+  public void reopenFindings() {
+    if (status != InspectionStatus.REPORT_DRAFT) return;
+    findingsConfirmedByUserId = null;
+    findingsConfirmedAt = null;
+    findingsSnapshotHash = null;
+    status = InspectionStatus.FIELD_COMPLETED;
+    updatedAt = Instant.now();
+  }
+
+  public boolean hasCurrentFindingsConfirmation(String snapshotHash) {
+    return (status == InspectionStatus.REPORT_DRAFT
+            || status == InspectionStatus.REPORT_PUBLISHED
+            || status == InspectionStatus.REPAIR_PENDING
+            || status == InspectionStatus.COMPLETED)
+        && findingsConfirmedAt != null
+        && findingsSnapshotHash != null
+        && findingsSnapshotHash.equals(snapshotHash);
+  }
+
+  public UUID getFindingsConfirmedByUserId() {
+    return findingsConfirmedByUserId;
+  }
+
+  public Instant getFindingsConfirmedAt() {
+    return findingsConfirmedAt;
+  }
+
+  public String getFindingsSnapshotHash() {
+    return findingsSnapshotHash;
+  }
+
+  public boolean hasFindingsConfirmation() {
+    return findingsConfirmedByUserId != null && findingsConfirmedAt != null;
+  }
+
+  public UUID getCorrectiveHandoffByUserId() {
+    return correctiveHandoffByUserId;
+  }
+
+  public Instant getCorrectiveHandoffAt() {
+    return correctiveHandoffAt;
+  }
+
+  public String getNoRepairRationale() {
+    return noRepairRationale;
+  }
+
   /**
-   * MF3-04 snapshots the confirmed evidence set, which moves the inspection into report drafting.
+   * Legacy transition retained for migration compatibility with existing persisted report states.
    */
   public void beginReportDraft() {
     requireStatus(InspectionStatus.FIELD_COMPLETED);
@@ -148,6 +229,25 @@ public class Inspection {
     }
     status = InspectionStatus.REPORT_PUBLISHED;
     updatedAt = Instant.now();
+  }
+
+  /** MF3-12/13: the reviewer records the corrective outcome before MF4 handoff. */
+  public void recordCorrectiveHandoff(UUID reviewerId, String rationale) {
+    if (status != InspectionStatus.REPORT_PUBLISHED
+        && status != InspectionStatus.REPAIR_PENDING
+        && status != InspectionStatus.COMPLETED) {
+      throw new IllegalStateException("Corrective handoff requires a published report");
+    }
+    if (reviewerId == null) {
+      throw new IllegalArgumentException("A reviewer is required for corrective handoff");
+    }
+    if (findingsConfirmedByUserId == null) {
+      throw new IllegalStateException("An Inspector findings confirmation is required");
+    }
+    correctiveHandoffByUserId = reviewerId;
+    correctiveHandoffAt = Instant.now();
+    noRepairRationale = rationale;
+    updatedAt = correctiveHandoffAt;
   }
 
   /** MF3-12: confirmed repair-required findings were handed to MF4. */

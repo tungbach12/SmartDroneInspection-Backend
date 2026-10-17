@@ -1,5 +1,8 @@
 package com.smartdroneinspection.inspections.api;
 
+import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
+import com.smartdroneinspection.inspections.api.dto.request.CorrectiveActionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.CorrectiveHandoffRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
@@ -10,12 +13,14 @@ import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateR
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VerifiedFindingResponse;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.service.EvidenceQualityService;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
+import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -58,16 +63,19 @@ public class InspectionController {
   private final EvidenceQualityService qualityService;
   private final FindingService findingService;
   private final ReportService reportService;
+  private final InspectionWorkflowService workflowService;
 
   public InspectionController(
       EvidenceService evidenceService,
       EvidenceQualityService qualityService,
       FindingService findingService,
-      ReportService reportService) {
+      ReportService reportService,
+      InspectionWorkflowService workflowService) {
     this.evidenceService = evidenceService;
     this.qualityService = qualityService;
     this.findingService = findingService;
     this.reportService = reportService;
+    this.workflowService = workflowService;
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -196,6 +204,31 @@ public class InspectionController {
         findingService.createManualFinding(actorId(jwt), inspectionId, request));
   }
 
+  @GetMapping("/workflow-state")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  public ApiResponse<InspectionWorkflowStateResponse> workflowState(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(workflowService.state(actorId(jwt), inspectionId));
+  }
+
+  @PostMapping("/findings/reopen")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<Void> reopenFindings(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    findingService.reopenFindings(actorId(jwt), inspectionId);
+    return ApiResponse.success(null);
+  }
+
+  @PostMapping("/findings/confirm")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<Void> confirmFindings(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @Valid @RequestBody ConfirmFindingsRequest request) {
+    findingService.confirmFindings(actorId(jwt), inspectionId, request.noFindingsAcknowledged());
+    return ApiResponse.success(null);
+  }
+
   @GetMapping("/findings")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
   public ApiResponse<List<VerifiedFindingResponse>> listFindings(
@@ -213,6 +246,24 @@ public class InspectionController {
     return ApiResponse.success(
         findingService.decideFinding(
             actorId(jwt), inspectionId, findingId, request.decision(), request.rationale()));
+  }
+
+  @PutMapping("/findings/{findingId}/corrective-action")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
+  public ApiResponse<VerifiedFindingResponse> recordCorrectiveAction(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId,
+      @Valid @RequestBody CorrectiveActionRequest request) {
+    return ApiResponse.success(
+        findingService.recordCorrectiveAction(
+            actorId(jwt),
+            inspectionId,
+            findingId,
+            request.correctiveActionRequired(),
+            request.priority(),
+            request.dueAt(),
+            request.rationale()));
   }
 
   @PostMapping("/report/draft")
@@ -273,6 +324,24 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.publish(actorId(jwt), inspectionId, versionId));
+  }
+
+  @PostMapping("/report/no-corrective-work")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
+  public ApiResponse<ReportPublishedResponse> declareNoCorrectiveWork(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @Valid @RequestBody CorrectiveHandoffRequest request) {
+    return ApiResponse.success(
+        reportService.declareNoCorrectiveWork(actorId(jwt), inspectionId, request.rationale()));
+  }
+
+  @PostMapping("/report/corrective-handoff")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
+  public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(
+        reportService.completeCorrectiveActionHandoff(actorId(jwt), inspectionId));
   }
 
   @PutMapping("/report/versions/{versionId}/sections")

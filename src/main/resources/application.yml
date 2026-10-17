@@ -3,8 +3,8 @@ spring:
     name: smartdroneinspection
   servlet:
     multipart:
-      max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
-      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:10MB}
+      max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
+      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:20MB}
   datasource:
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdroneinspection}
     username: ${POSTGRES_USER:postgres}
@@ -39,7 +39,7 @@ springdoc:
     path: /v3/api-docs
 app:
   evidence:
-    max-file-size: ${EVIDENCE_MAX_FILE_SIZE:1MB}
+    max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
   assets:
     drone-document-max-file-size: ${DRONE_DOCUMENT_MAX_FILE_SIZE:10MB}
     document-max-file-size: ${ASSET_DOCUMENT_MAX_FILE_SIZE:10MB}

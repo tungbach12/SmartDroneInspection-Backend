@@ -25,7 +25,8 @@ public interface VerifiedFindingRepository extends JpaRepository<VerifiedFinding
   /** MF3-13 hands only confirmed, repair-required findings to MF4. */
   @Query(
       "select f from VerifiedFinding f where f.inspectionId = :inspectionId "
-          + "and f.repairRequired = true and f.decision in "
+          + "and f.repairRequired = true and f.correctiveActionReviewedByUserId is not null "
+          + "and f.correctiveActionRequired = true and f.decision in "
           + "(com.smartdroneinspection.inspections.domain.enums.FindingDecision.CONFIRMED, "
           + "com.smartdroneinspection.inspections.domain.enums.FindingDecision.MODIFIED)")
   List<VerifiedFinding> findRepairRequired(@Param("inspectionId") UUID inspectionId);

@@ -5,6 +5,7 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -36,7 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class EvidenceService {
 
-  static final long MAX_SIZE_BYTES = 50L * 1024 * 1024;
+  static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
   private static final Set<String> ALLOWED_TYPES =
       Set.of("image/png", "image/jpeg", "image/webp", "image/tiff", "video/mp4", "application/pdf");
 
@@ -73,6 +74,20 @@ public class EvidenceService {
       String externalReference) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_CONFIRMATION_STALE",
+          "Reopen Findings before adding evidence after confirmation");
+    }
+    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
+        || inspection.getStatus() == InspectionStatus.REPAIR_PENDING
+        || inspection.getStatus() == InspectionStatus.COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Evidence cannot be added to a published or completed inspection");
+    }
     String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     if (!ALLOWED_TYPES.contains(contentType)) {
       throw new BusinessException(
@@ -93,7 +108,9 @@ public class EvidenceService {
     }
     if (content.length > MAX_SIZE_BYTES) {
       throw new BusinessException(
-          HttpStatus.PAYLOAD_TOO_LARGE, "EVIDENCE_TOO_LARGE", "Maximum evidence size is 50 MB");
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "EVIDENCE_TOO_LARGE",
+          "Maximum evidence size is " + (MAX_SIZE_BYTES / (1024 * 1024)) + " MB");
     }
     // Report 3 MF3-02 requires corrupt input to be identified with a corrective action. Declared
     // type alone is not proof of content, so image bytes must decode before they are stored.
@@ -103,6 +120,19 @@ public class EvidenceService {
           "EVIDENCE_INVALID",
           "The uploaded file is not a readable " + contentType + " image");
     }
+    if ((latitude == null && longitude == null) || captureTime == null) {
+      ExifMetadataExtractor.ExtractedMetadata extracted = ExifMetadataExtractor.extract(content);
+      if (extracted != null) {
+        if (latitude == null && longitude == null) {
+          latitude = extracted.latitude();
+          longitude = extracted.longitude();
+        }
+        if (captureTime == null) {
+          captureTime = extracted.captureTime();
+        }
+      }
+    }
+
     // Missing GPS is acceptable; a half-specified pair is not.
     if ((latitude == null) != (longitude == null)) {
       throw new BusinessException(

@@ -122,6 +122,18 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
+  void reportDraftCannotBeGeneratedBeforeFindingsConfirmation() throws Exception {
+    long versionsBefore = countVersions();
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FINDINGS_NOT_CONFIRMED"));
+    assertThat(countVersions()).isEqualTo(versionsBefore);
+  }
+
+  @Test
   void draftingProposesSectionValuesThatTheAuthorCanReadBack() throws Exception {
     UUID versionId = draft();
 
@@ -235,13 +247,15 @@ class InspectionReportDraftingApiIntegrationTest {
         """
         INSERT INTO ai_finding_candidates
           (id, evidence_id, inspection_id, model_provider, model_name, model_version,
-           predicted_label, confidence, bounding_box, status, created_at)
+           predicted_label, confidence, bounding_box, status, reviewed_by_user_id, reviewed_at,
+           rejection_reason, created_at)
         VALUES (?, ?, ?, 'provider-test', 'detector-test', 'v7', 'Possible crack', 0.87,
-                '{"x":12}', 'PENDING', CURRENT_TIMESTAMP)
+                '{"x":12}', 'REJECTED', ?, CURRENT_TIMESTAMP, 'Reviewed in fixture', CURRENT_TIMESTAMP)
         """,
         candidateId,
         evidenceId,
-        fixture.inspectionId());
+        fixture.inspectionId(),
+        fixture.inspectorId());
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
         """
@@ -263,7 +277,7 @@ class InspectionReportDraftingApiIntegrationTest {
     DraftContext context = DraftingStub.LAST_CONTEXT.get();
     assertThat(context.candidates()).hasSize(1);
     assertThat(context.candidates().get(0).candidateId()).isEqualTo(candidateId.toString());
-    assertThat(context.candidates().get(0).status()).isEqualTo("PENDING");
+    assertThat(context.candidates().get(0).status()).isEqualTo("REJECTED");
     assertThat(context.candidates().get(0).provider()).isEqualTo("provider-test");
     assertThat(objectMapper.readTree(context.candidates().get(0).boundingBoxJson()))
         .isEqualTo(objectMapper.readTree("{\"x\":12}"));
@@ -314,6 +328,7 @@ class InspectionReportDraftingApiIntegrationTest {
 
   @Test
   void aFailedGenerationLeavesNoVersionAndReportsTheFailure() throws Exception {
+    confirmFindings(true);
     DraftingStub.FAIL_NEXT.set(true);
     long before = countVersions();
 
@@ -329,6 +344,7 @@ class InspectionReportDraftingApiIntegrationTest {
 
   @Test
   void theManualDraftRemainsAvailableWhenDraftingIsUnconfigured() throws Exception {
+    confirmFindings(true);
     // The authoring path must not depend on a model. Report 3 requires a structured manual draft to
     // remain possible, so this works with no drafting provider at all.
     mockMvc
@@ -347,6 +363,7 @@ class InspectionReportDraftingApiIntegrationTest {
   // ------------------------------------------------------------------ helpers
 
   private UUID draft() throws Exception {
+    confirmFindings(true);
     org.springframework.test.web.servlet.MvcResult result =
         mockMvc
             .perform(
@@ -360,6 +377,16 @@ class InspectionReportDraftingApiIntegrationTest {
             .path("data")
             .path("id")
             .asString());
+  }
+
+  private void confirmFindings(boolean noFindingsAcknowledged) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/findings/confirm", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"noFindingsAcknowledged\":" + noFindingsAcknowledged + "}"))
+        .andExpect(status().isOk());
   }
 
   private void acceptEvidence() throws Exception {
@@ -378,7 +405,12 @@ class InspectionReportDraftingApiIntegrationTest {
 
   private long countVersions() {
     Long count =
-        jdbcTemplate.queryForObject("SELECT count(*) FROM inspection_report_versions", Long.class);
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM inspection_report_versions version "
+                + "JOIN inspection_reports report ON report.id = version.inspection_report_id "
+                + "WHERE report.inspection_id = ?",
+            Long.class,
+            fixture.inspectionId());
     return count == null ? 0 : count;
   }
 

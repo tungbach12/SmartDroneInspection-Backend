@@ -4,6 +4,7 @@ import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingSource;
 import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingStatus;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -28,5 +29,13 @@ public record VerifiedFindingResponse(
     String priority,
     String measurement,
     FindingDecision decision,
+    UUID decidedByUserId,
+    Instant decidedAt,
     boolean repairRequired,
-    VerifiedFindingStatus status) {}
+    VerifiedFindingStatus status,
+    boolean correctiveActionRequired,
+    String correctiveActionPriority,
+    java.time.Instant correctiveActionDueAt,
+    UUID correctiveActionReviewedByUserId,
+    Instant correctiveActionReviewedAt,
+    String correctiveActionRationale) {}

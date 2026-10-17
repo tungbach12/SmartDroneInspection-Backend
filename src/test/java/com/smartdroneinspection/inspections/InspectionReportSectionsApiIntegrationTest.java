@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,7 +64,7 @@ class InspectionReportSectionsApiIntegrationTest {
   private MockMvc mockMvc;
 
   @BeforeEach
-  void setUp() {
+  void setUp() throws Exception {
     mockMvc =
         webAppContextSetup(webApplicationContext)
             .apply(
@@ -71,11 +72,49 @@ class InspectionReportSectionsApiIntegrationTest {
                     .springSecurity())
             .build();
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
-    jdbcTemplate.update(
-        "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
+    acceptEvidence();
+    confirmFindings(true);
+  }
+
+  private void acceptEvidence() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ACCEPTED",
+                            "shotListComparison", "Main span covered from both walkways"))))
+        .andExpect(status().isOk());
+  }
+
+  private void confirmFindings(boolean noFindingsAcknowledged) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/findings/confirm", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"noFindingsAcknowledged\":" + noFindingsAcknowledged + "}"))
+        .andExpect(status().isOk());
   }
 
   // ------------------------------------------------------------------ MF3-08 sections
+
+  @Test
+  void setupConfirmsTheFindingsSetThroughTheWorkflowApi() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/workflow-state", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("REPORT_DRAFT"))
+        .andExpect(
+            jsonPath("$.data.findingsConfirmedByUserId").value(fixture.inspectorId().toString()))
+        .andExpect(jsonPath("$.data.findingsConfirmedAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.findingsSnapshotHash").isNotEmpty());
+  }
 
   @Test
   void theAuthorCanSaveAndReadBackEveryAuthoredSection() throws Exception {
@@ -437,15 +476,20 @@ class InspectionReportSectionsApiIntegrationTest {
         INSERT INTO verified_findings (id, inspection_id, evidence_id, created_by_user_id, source, finding_code,
                                        defect_label, severity, location_description, technical_notes,
                                        status, decision, repair_required, component, description,
-                                       observed_condition, created_at, updated_at, row_version)
+                                       observed_condition, decided_by_user_id, decided_at, rationale,
+                                       created_at, updated_at, row_version)
         VALUES (?, ?, ?, ?, 'MANUAL', 'F-001', 'Fatigue Crack', 'HIGH', 'North girder flange',
                 '50mm surface crack', 'OPEN', 'CONFIRMED', TRUE, 'Flange', 'Fatigue crack',
-                'Cracking observed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+                'Cracking observed', ?, CURRENT_TIMESTAMP, 'Reviewer confirmed',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         findingId,
         fixture.inspectionId(),
         evidenceId,
-        fixture.inspectorId());
+        fixture.inspectorId(),
+        fixture.reviewerId());
+
+    confirmFindings(false);
 
     UUID versionId = insertDraftVersion();
 
@@ -467,6 +511,115 @@ class InspectionReportSectionsApiIntegrationTest {
         .isEqualTo("%PDF-");
     String reportText = extractText(pdfBytes).replaceAll("\\s+", " ");
     assertThat(reportText).contains("North girder flange", "Flange — North girder");
+  }
+
+  @Test
+  void previewRendersAnInspectorConfirmedFindingThatHasNoReviewerDecisionYet() throws Exception {
+    // MF3-06: the Inspector's confirmation is a human decision, and the Findings UI states that a
+    // confirmed candidate is "included in the report draft as a verified finding". The reviewer
+    // verdict in MF3-09 refines that finding at the submitted report; it does not decide whether
+    // the proposed defect appears in the draft at all. A draft that silently omits it disagrees
+    // with both the reviewed set and the narrative drafted over the same findings.
+    UUID evidenceId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id,
+                              evidence_kind, file_name, content_type, size_bytes,
+                              checksum_sha256, object_key, source, upload_status, created_at)
+        VALUES (?, ?, ?, ?, 'INSPECTION', 'gusset-plate.jpg', 'image/jpeg', 67,
+                'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90', 'gusset-test-key',
+                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+        """,
+        evidenceId,
+        fixture.organizationId(),
+        fixture.inspectionId(),
+        fixture.inspectorId());
+
+    UUID candidateId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO ai_finding_candidates (id, evidence_id, inspection_id, model_name, model_version,
+                                           predicted_label, confidence, bounding_box, status,
+                                           reviewed_by_user_id, reviewed_at, created_at)
+        VALUES (?, ?, ?, 'gemini-test', 'v1', 'GussetPlateSectionLoss', 0.98, '{}', 'CONFIRMED',
+                ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        candidateId,
+        evidenceId,
+        fixture.inspectionId(),
+        fixture.inspectorId());
+
+    jdbcTemplate.update(
+        """
+        INSERT INTO verified_findings (id, inspection_id, evidence_id, ai_candidate_id, created_by_user_id, source, finding_code,
+                                       defect_label, severity, technical_notes, status, repair_required,
+                                       created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, ?, 'AI_CONFIRMED', 'F-001', 'GussetPlateSectionLoss', 'MEDIUM',
+                'Confirmed by the assigned Inspector', 'OPEN', FALSE,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        """,
+        UUID.randomUUID(),
+        fixture.inspectionId(),
+        evidenceId,
+        candidateId,
+        fixture.inspectorId());
+
+    confirmFindings(false);
+    UUID versionId = insertDraftVersion();
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                get(
+                        "/api/v1/inspections/{id}/report/versions/{versionId}/preview",
+                        fixture.inspectionId(),
+                        versionId)
+                    .with(principal(fixture.inspectorId(), "INSPECTOR")))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    String reportText =
+        extractText(result.getResponse().getContentAsByteArray()).replaceAll("\\s+", " ");
+    assertThat(reportText)
+        .as("an Inspector-confirmed finding must appear in the draft before any reviewer verdict")
+        .contains("GussetPlateSectionLoss");
+  }
+
+  @Test
+  void previewOmitsAFindingTheReviewerRejected() throws Exception {
+    // MF3-10: rejected findings remain auditable but are not official, so the document must not
+    // list them among the confirmed findings.
+    UUID findingId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO verified_findings (id, inspection_id, created_by_user_id, source, finding_code,
+                                       defect_label, severity, technical_notes, status, decision,
+                                       repair_required, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, 'MANUAL', 'F-002', 'spurious-corroded-seam', 'LOW',
+                'Rejected by the reviewer', 'OPEN', 'REJECTED', FALSE,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        """,
+        findingId,
+        fixture.inspectionId(),
+        fixture.inspectorId());
+
+    confirmFindings(false);
+    UUID versionId = insertDraftVersion();
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                get(
+                        "/api/v1/inspections/{id}/report/versions/{versionId}/preview",
+                        fixture.inspectionId(),
+                        versionId)
+                    .with(principal(fixture.inspectorId(), "INSPECTOR")))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    String reportText =
+        extractText(result.getResponse().getContentAsByteArray()).replaceAll("\\s+", " ");
+    assertThat(reportText).doesNotContain("spurious-corroded-seam");
   }
 
   @Test
@@ -620,56 +773,93 @@ class InspectionReportSectionsApiIntegrationTest {
     return reportId();
   }
 
-  private UUID insertDraftVersion() {
-    UUID reportId = insertReport();
-    UUID versionId = UUID.randomUUID();
-    Integer nextNo =
-        jdbcTemplate.queryForObject(
-            "SELECT COALESCE(MAX(version_no), 0) + 1 FROM inspection_report_versions"
-                + " WHERE inspection_report_id = ?",
-            Integer.class,
-            reportId);
-    jdbcTemplate.update(
-        """
-        INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status,
-                                                author_user_id, llm_model, prompt_version,
-                                                content_snapshot, created_at)
-        VALUES (?, ?, ?, 'DRAFT', ?, 'manual-authoring', 'mf3-report-v1', '{}'::jsonb,
-                CURRENT_TIMESTAMP)
-        """,
-        versionId,
-        reportId,
-        nextNo,
-        fixture.inspectorId());
+  private UUID insertDraftVersion() throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of("narrative", "The main span was surveyed."))))
+            .andExpect(status().isOk())
+            .andReturn();
+    return UUID.fromString(
+        objectMapper
+            .readTree(result.getResponse().getContentAsString())
+            .path("data")
+            .path("id")
+            .stringValue());
+  }
+
+  private UUID approvedVersion() throws Exception {
+    UUID versionId = insertDraftVersion();
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("executiveSummary", "Recorded condition assessment."))))
+        .andExpect(status().isOk());
+    authorVerifyAndSubmit(versionId);
+    decideAllFindings("REJECTED", "No actionable finding in this preview-only test");
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
     return versionId;
   }
 
-  private UUID approvedVersion() {
-    UUID reportId = insertReport();
-    UUID versionId = UUID.randomUUID();
-    Integer nextNo =
-        jdbcTemplate.queryForObject(
-            "SELECT COALESCE(MAX(version_no), 0) + 1 FROM inspection_report_versions"
-                + " WHERE inspection_report_id = ?",
-            Integer.class,
-            reportId);
-    jdbcTemplate.update(
-        """
-        INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status,
-                                                author_user_id, author_verified_by_user_id,
-                                                author_verified_at, reviewer_user_id, reviewed_at,
-                                                llm_model, prompt_version, content_snapshot, created_at)
-        VALUES (?, ?, ?, 'APPROVED', ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP,
-                'manual-authoring', 'mf3-report-v1',
-                '{"executiveSummary":"Recorded condition assessment."}'::jsonb, CURRENT_TIMESTAMP)
-        """,
-        versionId,
-        reportId,
-        nextNo,
-        fixture.inspectorId(),
-        fixture.inspectorId(),
-        fixture.reviewerId());
-    return versionId;
+  private void authorVerifyAndSubmit(UUID versionId) throws Exception {
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/submit",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+  }
+
+  private void decideAllFindings(String decision, String rationale) throws Exception {
+    List<UUID> findingIds =
+        jdbcTemplate.query(
+            "SELECT id FROM verified_findings WHERE inspection_id = ? ORDER BY created_at",
+            (row, index) -> UUID.fromString(row.getString("id")),
+            fixture.inspectionId());
+    for (UUID findingId : findingIds) {
+      mockMvc
+          .perform(
+              post(
+                      "/api/v1/inspections/{id}/findings/{findingId}/decision",
+                      fixture.inspectionId(),
+                      findingId)
+                  .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      objectMapper.writeValueAsString(
+                          Map.of("decision", decision, "rationale", rationale))))
+          .andExpect(status().isOk());
+    }
   }
 
   private static RequestPostProcessor principal(UUID userId, String role) {

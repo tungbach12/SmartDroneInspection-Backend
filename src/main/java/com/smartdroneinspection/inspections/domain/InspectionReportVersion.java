@@ -84,6 +84,9 @@ public class InspectionReportVersion {
   @Column(name = "evidence_snapshot_hash", length = 128)
   private String evidenceSnapshotHash;
 
+  @Column(name = "findings_snapshot_hash", length = 64)
+  private String findingsSnapshotHash;
+
   @Column(name = "published_at")
   private Instant publishedAt;
 
@@ -102,6 +105,30 @@ public class InspectionReportVersion {
       String llmModel,
       String promptVersion,
       String evidenceSnapshotHash) {
+    this(
+        inspectionReportId,
+        versionNo,
+        sourceVersionId,
+        authorUserId,
+        contentSnapshot,
+        llmProvider,
+        llmModel,
+        promptVersion,
+        evidenceSnapshotHash,
+        null);
+  }
+
+  public InspectionReportVersion(
+      UUID inspectionReportId,
+      int versionNo,
+      UUID sourceVersionId,
+      UUID authorUserId,
+      String contentSnapshot,
+      String llmProvider,
+      String llmModel,
+      String promptVersion,
+      String evidenceSnapshotHash,
+      String findingsSnapshotHash) {
     this.inspectionReportId = inspectionReportId;
     this.versionNo = versionNo;
     this.sourceVersionId = sourceVersionId;
@@ -111,6 +138,7 @@ public class InspectionReportVersion {
     this.llmModel = llmModel;
     this.promptVersion = promptVersion;
     this.evidenceSnapshotHash = evidenceSnapshotHash;
+    this.findingsSnapshotHash = findingsSnapshotHash;
     this.status = ReportStatus.DRAFT;
     this.generatedAt = contentSnapshot == null ? null : Instant.now();
     this.createdAt = Instant.now();
@@ -180,6 +208,13 @@ public class InspectionReportVersion {
     }
     if (!approve && (reason == null || reason.isBlank())) {
       throw new IllegalArgumentException("A return requires a reason");
+    }
+    if (!approve) {
+      this.status = ReportStatus.RETURNED;
+      this.reviewerUserId = reviewerId;
+      this.reviewedAt = Instant.now();
+      this.reviewReason = reason;
+      return;
     }
     this.reviewerUserId = reviewerId;
     this.reviewedAt = Instant.now();
@@ -287,6 +322,10 @@ public class InspectionReportVersion {
 
   public String getEvidenceSnapshotHash() {
     return evidenceSnapshotHash;
+  }
+
+  public String getFindingsSnapshotHash() {
+    return findingsSnapshotHash;
   }
 
   public Instant getPublishedAt() {
