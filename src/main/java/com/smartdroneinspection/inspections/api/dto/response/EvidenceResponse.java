@@ -20,4 +20,7 @@ public record EvidenceResponse(
     BigDecimal longitude,
     String externalReference,
     UploadStatus uploadStatus,
-    Instant createdAt) {}
+    Instant createdAt,
+    UUID retiredByUserId,
+    Instant retiredAt,
+    String retirementReason) {}

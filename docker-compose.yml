@@ -40,6 +40,32 @@ services:
     networks:
       - smartdroneinspection-network
 
+  ai-inference:
+    build:
+      context: ./ai-inference
+      dockerfile: Dockerfile
+    image: smartdroneinspection-ai-inference:latest
+    container_name: smartdroneinspection-ai-inference
+    restart: unless-stopped
+    environment:
+      MODEL_PATH: /app/models/best.pt
+      MODEL_NAME: ${AI_MODEL_NAME:-yolo11s}
+      MODEL_VERSION: ${AI_MODEL_VERSION:-mbdd2025-v1}
+      CONFIDENCE_THRESHOLD: ${AI_CONFIDENCE_THRESHOLD:-0.25}
+    volumes:
+      # Mounted rather than baked in, so swapping weights needs no rebuild.
+      - ./ai-inference/models:/app/models:ro
+    ports:
+      - "${AI_INFERENCE_HOST_BIND:-127.0.0.1}:${AI_INFERENCE_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 90s
+      retries: 12
+    networks:
+      - smartdroneinspection-network
+
   backend:
     build:
       context: .
@@ -73,8 +99,8 @@ services:
       REPORT_DRAFT_API_KEY: ${REPORT_DRAFT_API_KEY:-}
       REPORT_DRAFT_MODEL: ${REPORT_DRAFT_MODEL:-}
       REPORT_DRAFT_TIMEOUT: ${REPORT_DRAFT_TIMEOUT:-60s}
-      YOLO_INFERENCE_ENABLED: ${YOLO_INFERENCE_ENABLED:-false}
-      YOLO_INFERENCE_BASE_URL: ${YOLO_INFERENCE_BASE_URL:-http://localhost:8000}
+      YOLO_INFERENCE_ENABLED: ${YOLO_INFERENCE_ENABLED:-true}
+      YOLO_INFERENCE_BASE_URL: ${YOLO_INFERENCE_BASE_URL:-http://ai-inference:8000}
       YOLO_INFERENCE_PREDICT_PATH: ${YOLO_INFERENCE_PREDICT_PATH:-/predict}
       YOLO_INFERENCE_CONNECT_TIMEOUT: ${YOLO_INFERENCE_CONNECT_TIMEOUT:-2s}
       YOLO_INFERENCE_READ_TIMEOUT: ${YOLO_INFERENCE_READ_TIMEOUT:-30s}

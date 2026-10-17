@@ -1,0 +1,6 @@
+# torch and torchvision are installed from the PyTorch CPU index by the Dockerfile,
+# so they are deliberately absent here.
+fastapi==0.115.6
+pillow==11.1.0
+ultralytics==8.3.55
+uvicorn[standard]==0.34.0

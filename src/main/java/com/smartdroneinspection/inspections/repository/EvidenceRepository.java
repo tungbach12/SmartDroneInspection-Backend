@@ -18,6 +18,8 @@ public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
 
   List<Evidence> findByInspectionIdOrderByCreatedAtAsc(UUID inspectionId);
 
+  List<Evidence> findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(UUID inspectionId);
+
   Optional<Evidence> findByIdAndInspectionId(UUID id, UUID inspectionId);
 
   @Query("select e from Evidence e where e.id = :id and e.organizationId = :organizationId")

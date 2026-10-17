@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -61,7 +62,7 @@ class InspectionReportVersionTest {
     version.verifyAsAuthor(author);
     version.submit();
 
-    assertThatThrownBy(() -> version.reviewBy(author, true, null))
+    assertThatThrownBy(() -> version.reviewBy(author, true, null, null))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("cannot review their own report");
   }
@@ -72,7 +73,7 @@ class InspectionReportVersionTest {
     version.verifyAsAuthor(author);
     version.submit();
 
-    version.reviewBy(reviewer, true, null);
+    version.reviewBy(reviewer, true, null, null);
 
     assertThat(version.getStatus()).isEqualTo(ReportStatus.APPROVED);
     assertThat(version.getReviewerUserId()).isEqualTo(reviewer);
@@ -85,13 +86,19 @@ class InspectionReportVersionTest {
     version.verifyAsAuthor(author);
     version.submit();
 
-    assertThatThrownBy(() -> version.reviewBy(reviewer, false, null))
+    assertThatThrownBy(
+            () -> version.reviewBy(reviewer, false, null, ReportReturnReasonType.TEXT_REVISION))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("return requires a reason");
-    assertThatThrownBy(() -> version.reviewBy(reviewer, false, "  "))
+    assertThatThrownBy(
+            () -> version.reviewBy(reviewer, false, "  ", ReportReturnReasonType.TEXT_REVISION))
         .isInstanceOf(IllegalArgumentException.class);
 
-    version.reviewBy(reviewer, false, "Coverage of the west face is missing");
+    version.reviewBy(
+        reviewer,
+        false,
+        "Coverage of the west face is missing",
+        ReportReturnReasonType.TEXT_REVISION);
     assertThat(version.getStatus()).isEqualTo(ReportStatus.RETURNED);
     assertThat(version.getReviewReason()).contains("west face");
   }
@@ -101,7 +108,7 @@ class InspectionReportVersionTest {
     InspectionReportVersion version = draft();
     version.verifyAsAuthor(author);
     version.submit();
-    version.reviewBy(reviewer, false, "Missing limitations");
+    version.reviewBy(reviewer, false, "Missing limitations", ReportReturnReasonType.TEXT_REVISION);
 
     version.editContent("{\"narrative\":\"revised with disclosed limitations\"}");
     version.verifyAsAuthor(author);
@@ -122,7 +129,7 @@ class InspectionReportVersionTest {
     InspectionReportVersion version = draft();
     version.verifyAsAuthor(author);
     version.submit();
-    version.reviewBy(reviewer, true, null);
+    version.reviewBy(reviewer, true, null, null);
     version.publish(reviewer);
 
     assertThat(version.getStatus()).isEqualTo(ReportStatus.PUBLISHED);
@@ -141,7 +148,7 @@ class InspectionReportVersionTest {
   void reviewIsRejectedWhenTheVersionIsNotSubmitted() {
     InspectionReportVersion version = draft();
 
-    assertThatThrownBy(() -> version.reviewBy(reviewer, true, null))
+    assertThatThrownBy(() -> version.reviewBy(reviewer, true, null, null))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("expected one of");
   }

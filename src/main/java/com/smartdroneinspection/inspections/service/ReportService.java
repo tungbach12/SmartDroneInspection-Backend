@@ -14,6 +14,7 @@ import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
+import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
@@ -157,9 +158,13 @@ public class ReportService {
                         decision.getShotListComparison(),
                         decision.getLimitationReason()))
             .orElse(null);
-    List<Evidence> confirmedEvidence = evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    List<Evidence> confirmedEvidence =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+    List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
     List<AiFindingCandidate> inspectionCandidates =
-        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId);
+        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
+            .filter(candidate -> currentEvidenceIds.contains(candidate.getEvidenceId()))
+            .toList();
     List<FieldSession> recordedSessions =
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     List<VerifiedFinding> confirmedFindings = inspectorFindings(inspectionId);
@@ -267,8 +272,8 @@ public class ReportService {
     String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
     int versionNo = report.nextVersionNumber();
     UUID sourceVersionId =
-        versions
-            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+        versions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
+            .findFirst()
             .map(InspectionReportVersion::getId)
             .orElse(null);
     InspectionReportVersion version =
@@ -301,14 +306,15 @@ public class ReportService {
     requireCurrentFindingsConfirmation(inspection);
     InspectionReport report = requireAuthoredReport(actorId, inspectionId);
 
-    List<Evidence> confirmedEvidence = evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    List<Evidence> confirmedEvidence =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
     List<VerifiedFinding> confirmedFindings = inspectorFindings(inspectionId);
     String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
 
     int versionNo = report.nextVersionNumber();
     UUID sourceVersionId =
-        versions
-            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+        versions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
+            .findFirst()
             .map(InspectionReportVersion::getId)
             .orElse(null);
     InspectionReportVersion version =
@@ -468,9 +474,14 @@ public class ReportService {
   }
 
   private String currentFindingsSnapshotHash(UUID inspectionId) {
+    List<Evidence> currentEvidence =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+    List<UUID> currentEvidenceIds = currentEvidence.stream().map(Evidence::getId).toList();
     return FindingsSnapshot.hash(
-        evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId),
-        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId),
+        currentEvidence,
+        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
+            .filter(candidate -> currentEvidenceIds.contains(candidate.getEvidenceId()))
+            .toList(),
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
 
@@ -491,7 +502,8 @@ public class ReportService {
 
   private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReportVersion version) {
     String current =
-        evidenceSnapshotHash(evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
+        evidenceSnapshotHash(
+            evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId));
     if (!current.equals(version.getEvidenceSnapshotHash())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -506,35 +518,97 @@ public class ReportService {
    */
   @Transactional
   public InspectionReportVersionResponse reviewVersion(
-      UUID actorId, UUID inspectionId, UUID versionId, boolean approve, String reason) {
+      UUID actorId,
+      UUID inspectionId,
+      UUID versionId,
+      boolean approve,
+      String reason,
+      ReportReturnReasonType reasonType) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
-    if (!approve) {
-      try {
-        version.reviewBy(reviewer.id(), false, reason);
-      } catch (IllegalStateException | IllegalArgumentException ex) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
-      }
-      report.setStatus(ReportStatus.RETURNED);
-      reports.saveAndFlush(report);
-      return toResponse(versions.saveAndFlush(version));
+    if (!approve && (reason == null || reason.isBlank())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "REPORT_RETURN_REASON_REQUIRED",
+          "A reviewer return requires a reason");
     }
-    if (hasUndecidedFindings(inspectionId)) {
+    if (!approve && reasonType == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "REPORT_RETURN_REASON_REQUIRED",
+          "State whether the return asks for a text revision or a findings revision");
+    }
+    if (approve && hasUndecidedFindings(inspectionId)) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_REVIEW_INCOMPLETE",
           "Decide every proposed finding before approving the report");
     }
     try {
-      version.reviewBy(reviewer.id(), approve, reason);
+      version.reviewBy(reviewer.id(), approve, reason, reasonType);
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
+    }
+    if (!approve && reasonType == ReportReturnReasonType.FINDINGS_REVISION) {
+      // Keep the reviewer decision against the submitted version as immutable history, then clear
+      // the live decision so the Inspector can revise the finding without erasing the audit trail.
+      reopenFindingsForRevision(inspectionId, version.getId());
     }
     report.setStatus(approve ? ReportStatus.APPROVED : ReportStatus.RETURNED);
     reports.saveAndFlush(report);
     return toResponse(versions.saveAndFlush(version));
+  }
+
+  /**
+   * MF3-08: the author pulls a submission back before the reviewer acted on it. The version keeps
+   * its number and content; the author revises and re-submits, and the reviewer never sees a
+   * version change after they have acted on it.
+   */
+  @Transactional
+  public InspectionReportVersionResponse withdrawVersion(
+      UUID actorId, UUID inspectionId, UUID versionId, String reason) {
+    evidenceService.requireAssignedInspection(actorId, inspectionId);
+    InspectionReport report = requireReportForInspection(inspectionId);
+    InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    if (hasReviewerDecisionOnFindings(inspectionId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_REVIEW_IN_PROGRESS",
+          "The reviewer has already decided findings on this submission; ask for a return instead");
+    }
+    try {
+      version.withdraw(actorId, reason);
+    } catch (IllegalStateException | IllegalArgumentException ex) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "REPORT_WITHDRAWAL_INVALID", ex.getMessage());
+    }
+    report.setStatus(ReportStatus.RETURNED);
+    reports.saveAndFlush(report);
+    Inspection inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection != null) {
+      inspection.reopenFindings();
+      inspections.saveAndFlush(inspection);
+    }
+    return toResponse(versions.saveAndFlush(version));
+  }
+
+  private void reopenFindingsForRevision(UUID inspectionId, UUID versionId) {
+    Inspection inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection == null) return;
+    List<VerifiedFinding> decided =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(VerifiedFinding::hasReviewerDecision)
+            .toList();
+    decided.forEach(VerifiedFinding::clearReviewerDecisionForRevision);
+    if (!decided.isEmpty()) findings.saveAllAndFlush(decided);
+    inspection.reopenFindings();
+    inspections.saveAndFlush(inspection);
+  }
+
+  private boolean hasReviewerDecisionOnFindings(UUID inspectionId) {
+    return findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+        .anyMatch(VerifiedFinding::hasReviewerDecision);
   }
 
   /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
@@ -584,6 +658,19 @@ public class ReportService {
     // planning data.
     inspection.markReportPublished();
     inspections.saveAndFlush(inspection);
+
+    // MF3-12: any corrective-action outcome recorded before this publication belongs to an earlier
+    // version or to the pre-cutover review decision. Clearing it keeps the new version from being
+    // presented with a disposition nobody recorded after it, and the reviewer records a fresh one.
+    List<VerifiedFinding> staleOutcomes =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(VerifiedFinding::isOfficial)
+            .filter(VerifiedFinding::isCorrectiveActionReviewed)
+            .toList();
+    staleOutcomes.forEach(VerifiedFinding::clearCorrectiveActionOutcome);
+    if (!staleOutcomes.isEmpty()) {
+      findings.saveAll(staleOutcomes);
+    }
 
     return new ReportPublishedResponse(
         version.getId(),
@@ -878,7 +965,8 @@ public class ReportService {
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
     Map<UUID, List<String>> componentLocationByEvidence = new LinkedHashMap<>();
     Map<UUID, Evidence> evidenceById = new LinkedHashMap<>();
-    for (Evidence item : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+    for (Evidence item :
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId)) {
       evidenceById.put(item.getId(), item);
     }
     List<VerifiedFinding> confirmed = reportableFindings(inspectionId);
@@ -926,7 +1014,8 @@ public class ReportService {
     }
 
     List<ReportRenderPort.EvidenceView> evidenceViews = new ArrayList<>();
-    for (Evidence item : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+    for (Evidence item :
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId)) {
       byte[] content = loadEvidenceBytes(item);
       evidenceViews.add(
           new ReportRenderPort.EvidenceView(
@@ -1190,6 +1279,10 @@ public class ReportService {
         version.getReviewerUserId(),
         version.getReviewedAt(),
         version.getReviewReason(),
+        version.getReturnReasonType(),
+        version.getWithdrawnByUserId(),
+        version.getWithdrawnAt(),
+        version.getWithdrawalReason(),
         version.getLlmModel(),
         version.getPromptVersion(),
         version.getGeneratedAt(),

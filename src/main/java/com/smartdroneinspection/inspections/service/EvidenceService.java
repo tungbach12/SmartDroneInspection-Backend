@@ -3,11 +3,15 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -47,16 +51,22 @@ public class EvidenceService {
 
   private final InspectionRepository inspections;
   private final EvidenceRepository evidence;
+  private final InspectionReportRepository reports;
+  private final VerifiedFindingRepository findings;
   private final Optional<EvidenceObjectStore> objectStore;
   private final UserAccess userAccess;
 
   public EvidenceService(
       InspectionRepository inspections,
       EvidenceRepository evidence,
+      InspectionReportRepository reports,
+      VerifiedFindingRepository findings,
       Optional<EvidenceObjectStore> objectStore,
       UserAccess userAccess) {
     this.inspections = inspections;
     this.evidence = evidence;
+    this.reports = reports;
+    this.findings = findings;
     this.objectStore = objectStore;
     this.userAccess = userAccess;
   }
@@ -74,19 +84,10 @@ public class EvidenceService {
       String externalReference) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    requireEvidenceEditable(inspectionId, inspection);
     if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FINDINGS_CONFIRMATION_STALE",
-          "Reopen Findings before adding evidence after confirmation");
-    }
-    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
-        || inspection.getStatus() == InspectionStatus.REPAIR_PENDING
-        || inspection.getStatus() == InspectionStatus.COMPLETED) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "INSPECTION_STATE_CONFLICT",
-          "Evidence cannot be added to a published or completed inspection");
+      inspection.reopenFindings();
+      inspections.saveAndFlush(inspection);
     }
     String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     if (!ALLOWED_TYPES.contains(contentType)) {
@@ -193,6 +194,63 @@ public class EvidenceService {
     return toResponse(evidence.saveAndFlush(record));
   }
 
+  /**
+   * MF3-02: retire an original capture without removing its bytes or metadata. A live finding must
+   * first be removed or re-linked, so the next report cannot silently cite a retired capture.
+   */
+  @Transactional
+  public EvidenceResponse retire(UUID actorId, UUID inspectionId, UUID evidenceId, String reason) {
+    Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    requireEvidenceEditable(inspectionId, inspection);
+    Evidence record =
+        evidence
+            .findByIdAndInspectionId(evidenceId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "EVIDENCE_NOT_FOUND", "Evidence not found"));
+    boolean hasActiveFinding =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .anyMatch(finding -> evidenceId.equals(finding.getEvidenceId()));
+    if (hasActiveFinding) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_HAS_ACTIVE_FINDINGS",
+          "Remove or re-link the findings that cite this capture before retiring it");
+    }
+    try {
+      record.retire(actorId, reason);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw new BusinessException(HttpStatus.CONFLICT, "EVIDENCE_RETIRE_INVALID", ex.getMessage());
+    }
+    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
+      inspection.reopenFindings();
+      inspections.saveAndFlush(inspection);
+    }
+    return toResponse(evidence.saveAndFlush(record));
+  }
+
+  private void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
+    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
+        || inspection.getStatus() == InspectionStatus.REPAIR_PENDING
+        || inspection.getStatus() == InspectionStatus.COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Evidence is immutable after publication");
+    }
+    InspectionReport report = reports.findByInspectionId(inspectionId).orElse(null);
+    if (report == null) return;
+    if (ReportStatus.SUBMITTED.name().equals(report.getStatus())
+        || ReportStatus.APPROVED.name().equals(report.getStatus())
+        || ReportStatus.PUBLISHED.name().equals(report.getStatus())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_LOCKED",
+          "Withdraw the submitted report or ask the reviewer to return it before changing evidence");
+    }
+  }
+
   @Transactional(readOnly = true)
   public List<EvidenceResponse> list(UUID actorId, UUID inspectionId) {
     requireInspectionInScope(actorId, inspectionId);
@@ -237,6 +295,10 @@ public class EvidenceService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "EVIDENCE_NOT_FOUND", "Evidence not found"));
+    if (record.isRetired()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "EVIDENCE_RETIRED", "Retired evidence cannot be analysed");
+    }
     try {
       return new EvidenceContent(
           record.getContentType(),
@@ -343,7 +405,10 @@ public class EvidenceService {
         record.getLongitude(),
         record.getExternalReference(),
         record.getUploadStatus(),
-        record.getCreatedAt());
+        record.getCreatedAt(),
+        record.getRetiredByUserId(),
+        record.getRetiredAt(),
+        record.getRetirementReason());
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}

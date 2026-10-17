@@ -19,6 +19,11 @@ public interface VerifiedFindingRepository extends JpaRepository<VerifiedFinding
 
   long countByInspectionId(UUID inspectionId);
 
+  @Query(
+      value = "SELECT count(*) FROM verified_findings WHERE inspection_id = :inspectionId",
+      nativeQuery = true)
+  long countIncludingDeletedByInspectionId(@Param("inspectionId") UUID inspectionId);
+
   List<VerifiedFinding> findByRepairRequiredTrueAndDecisionIn(
       List<com.smartdroneinspection.inspections.domain.enums.FindingDecision> decisions);
 

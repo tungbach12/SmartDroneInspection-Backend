@@ -1,5 +1,6 @@
 package com.smartdroneinspection.inspections.domain;
 
+import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -86,6 +87,19 @@ public class InspectionReportVersion {
 
   @Column(name = "findings_snapshot_hash", length = 64)
   private String findingsSnapshotHash;
+
+  @Column(name = "withdrawn_by_user_id")
+  private UUID withdrawnByUserId;
+
+  @Column(name = "withdrawn_at")
+  private Instant withdrawnAt;
+
+  @Column(name = "withdrawal_reason", length = 2000)
+  private String withdrawalReason;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "return_reason_type", length = 32)
+  private ReportReturnReasonType returnReasonType;
 
   @Column(name = "published_at")
   private Instant publishedAt;
@@ -198,7 +212,8 @@ public class InspectionReportVersion {
    * The qualified reviewer records a decision. Separation of duties is a domain invariant here, not
    * only a service check: no report is self-reviewed.
    */
-  public void reviewBy(UUID reviewerId, boolean approve, String reason) {
+  public void reviewBy(
+      UUID reviewerId, boolean approve, String reason, ReportReturnReasonType reasonType) {
     requireStatus(ReportStatus.SUBMITTED);
     if (reviewerId == null) {
       throw new IllegalArgumentException("A reviewer is required");
@@ -209,17 +224,61 @@ public class InspectionReportVersion {
     if (!approve && (reason == null || reason.isBlank())) {
       throw new IllegalArgumentException("A return requires a reason");
     }
-    if (!approve) {
-      this.status = ReportStatus.RETURNED;
-      this.reviewerUserId = reviewerId;
-      this.reviewedAt = Instant.now();
-      this.reviewReason = reason;
-      return;
+    if (!approve && reasonType == null) {
+      throw new IllegalArgumentException("A return states whether the findings need revision");
     }
     this.reviewerUserId = reviewerId;
     this.reviewedAt = Instant.now();
     this.reviewReason = reason;
+    this.returnReasonType = approve ? null : reasonType;
     this.status = approve ? ReportStatus.APPROVED : ReportStatus.RETURNED;
+  }
+
+  /**
+   * MF3-08: the author pulls a submission back before the reviewer acted on it. The version keeps
+   * its number and content - a submission is a state, not a new document - and returns to the
+   * author for revision, so a version the reviewer already acted on never changes underneath them.
+   */
+  public void withdraw(UUID authorId, String reason) {
+    requireStatus(ReportStatus.SUBMITTED);
+    if (authorId == null) {
+      throw new IllegalArgumentException("An author is required to withdraw a submission");
+    }
+    if (!authorUserId.equals(authorId)) {
+      throw new IllegalStateException("Only the report author can withdraw this submission");
+    }
+    if (reviewedAt != null || reviewerUserId != null) {
+      throw new IllegalStateException(
+          "A version the reviewer already acted on cannot be withdrawn");
+    }
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A withdrawal reason is required");
+    }
+    this.status = ReportStatus.RETURNED;
+    this.withdrawnByUserId = authorId;
+    this.withdrawnAt = Instant.now();
+    this.withdrawalReason = reason;
+  }
+
+  /** True when the author withdrew the submission rather than the reviewer returning it. */
+  public boolean isAuthorWithdrawn() {
+    return withdrawnByUserId != null && withdrawnAt != null;
+  }
+
+  public UUID getWithdrawnByUserId() {
+    return withdrawnByUserId;
+  }
+
+  public Instant getWithdrawnAt() {
+    return withdrawnAt;
+  }
+
+  public String getWithdrawalReason() {
+    return withdrawalReason;
+  }
+
+  public ReportReturnReasonType getReturnReasonType() {
+    return returnReasonType;
   }
 
   /** Publication is a separate act after approval; the result is immutable. */

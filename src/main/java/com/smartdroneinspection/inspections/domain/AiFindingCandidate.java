@@ -128,6 +128,17 @@ public class AiFindingCandidate {
     rejectionReason = decision == AiFindingCandidateStatus.REJECTED ? reason : null;
   }
 
+  /**
+   * MF3-06: deleting the finding that came from this candidate returns the candidate to the
+   * Inspector, so a confirmed suggestion never survives without the finding it produced.
+   */
+  public void reopenForReview() {
+    status = AiFindingCandidateStatus.PENDING;
+    reviewedByUserId = null;
+    reviewedAt = null;
+    rejectionReason = null;
+  }
+
   public UUID getId() {
     return id;
   }

@@ -2,11 +2,14 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewCandidateRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VerifiedFindingResponse;
 import com.smartdroneinspection.inspections.domain.AiFindingCandidate;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.AiFindingCandidateStatus;
 import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
@@ -25,6 +28,7 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,8 +93,15 @@ public class FindingService {
           "EVIDENCE_NOT_ACCEPTED",
           "Findings confirmation requires an accepted evidence set");
     }
+    var activeEvidenceIds =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId).stream()
+            .map(Evidence::getId)
+            .collect(java.util.stream.Collectors.toSet());
     long pending =
-        candidates.countByInspectionIdAndStatus(inspectionId, AiFindingCandidateStatus.PENDING);
+        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
+            .filter(candidate -> activeEvidenceIds.contains(candidate.getEvidenceId()))
+            .filter(candidate -> candidate.getStatus() == AiFindingCandidateStatus.PENDING)
+            .count();
     if (pending > 0) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -137,7 +148,7 @@ public class FindingService {
   /** MF3-05: run advisory detection. Refuses evidence the Inspector has not accepted. */
   @Transactional
   public List<AiFindingCandidateResponse> analyze(
-      UUID actorId, UUID inspectionId, UUID evidenceId) {
+      UUID actorId, UUID inspectionId, UUID evidenceId, boolean replace) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     if (inspection.getStatus()
         != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
@@ -167,11 +178,22 @@ public class FindingService {
                     "Automated analysis is not configured"));
 
     // MF3-05 runs automatically once the evidence set is accepted, so re-running it on the same
-    // capture must not create a second candidate for the same detection.
+    // capture must not create a second candidate for the same detection. An explicit re-run
+    // replaces
+    // the image's unreviewed suggestions instead, which is what a changed detector or threshold
+    // needs; a candidate the Inspector already reviewed carries that decision and survives.
     List<AiFindingCandidate> prior = candidates.findByEvidenceIdOrderByCreatedAtAsc(evidenceId);
-    if (!prior.isEmpty()) {
-      return prior.stream().map(this::toCandidateResponse).toList();
+    if (!replace) {
+      if (!prior.isEmpty()) {
+        return prior.stream().map(this::toCandidateResponse).toList();
+      }
     }
+    List<AiFindingCandidate> reviewed =
+        replace
+            ? prior.stream()
+                .filter(candidate -> candidate.getStatus() != AiFindingCandidateStatus.PENDING)
+                .toList()
+            : List.of();
 
     byte[] bytes;
     try (InputStream stream = evidenceService.readForAnalysis(inspectionId, evidenceId).stream()) {
@@ -208,13 +230,32 @@ public class FindingService {
                         detection.confidence(),
                         detection.boundingBox()))
             .toList();
-    return candidates.saveAll(created).stream().map(this::toCandidateResponse).toList();
+    if (replace) {
+      // Only after the new detections exist, so a failed inference leaves the previous suggestions
+      // in place rather than emptying the image.
+      List<AiFindingCandidate> replaced =
+          prior.stream()
+              .filter(candidate -> candidate.getStatus() == AiFindingCandidateStatus.PENDING)
+              .toList();
+      if (!replaced.isEmpty()) {
+        candidates.deleteAll(replaced);
+      }
+    }
+    List<AiFindingCandidate> stored = candidates.saveAll(created);
+    return Stream.concat(stored.stream(), reviewed.stream())
+        .map(this::toCandidateResponse)
+        .toList();
   }
 
   @Transactional(readOnly = true)
   public List<AiFindingCandidateResponse> listCandidates(UUID actorId, UUID inspectionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
+    var activeEvidenceIds =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId).stream()
+            .map(Evidence::getId)
+            .collect(java.util.stream.Collectors.toSet());
     return candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
+        .filter(candidate -> activeEvidenceIds.contains(candidate.getEvidenceId()))
         .map(this::toCandidateResponse)
         .toList();
   }
@@ -237,6 +278,7 @@ public class FindingService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "AI_CANDIDATE_NOT_FOUND", "Candidate not found"));
+    requireEvidence(inspectionId, candidate.getEvidenceId());
     if (candidate.getStatus() != AiFindingCandidateStatus.PENDING) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -317,6 +359,7 @@ public class FindingService {
           "CANDIDATE_REVIEWER_INVALID",
           "Only the Inspector who reviewed the candidate may revise it");
     }
+    requireEvidence(inspectionId, candidate.getEvidenceId());
     if (candidate.getStatus() == AiFindingCandidateStatus.PENDING) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -440,6 +483,87 @@ public class FindingService {
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
+  /** MF3-06: correct an Inspector's finding while the current report is editable. */
+  @Transactional
+  public VerifiedFindingResponse updateFinding(
+      UUID actorId, UUID inspectionId, UUID findingId, UpdateFindingRequest request) {
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    rejectLockedFindingEdits(inspectionId);
+    VerifiedFinding finding =
+        findings
+            .findByIdAndInspectionId(findingId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
+    archiveDecisionBeforeInspectorRevision(inspectionId, finding);
+    Evidence record = requireEvidence(inspectionId, request.evidenceId());
+    if (record.isRetired()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_RETIRED",
+          "Retired evidence cannot support an active finding; link the finding to a current capture");
+    }
+    if (finding.getAiCandidateId() != null
+        && !finding.getEvidenceId().equals(request.evidenceId())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "AI_FINDING_EVIDENCE_IMMUTABLE",
+          "An AI candidate remains linked to the capture it analysed; delete it and add a manual finding to link another capture");
+    }
+    finding.reviseInspectorProposal(
+        request.evidenceId(),
+        request.defectLabel(),
+        request.severity(),
+        request.locationDescription(),
+        request.technicalNotes(),
+        request.recommendedAction(),
+        request.component(),
+        request.description(),
+        request.observedCondition(),
+        request.priority(),
+        request.measurement(),
+        Boolean.TRUE.equals(request.repairRequired()));
+    if (finding.getAiCandidateId() != null) {
+      candidates
+          .findByIdAndInspectionId(finding.getAiCandidateId(), inspectionId)
+          .ifPresent(candidate -> candidate.reviseReview(AiFindingCandidateStatus.MODIFIED, null));
+    }
+    reopenFindings(inspection);
+    return toFindingResponse(findings.saveAndFlush(finding));
+  }
+
+  /** MF3-06: remove a finding from the active record but retain its audit row. */
+  @Transactional
+  public void deleteFinding(UUID actorId, UUID inspectionId, UUID findingId, String reason) {
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    rejectLockedFindingEdits(inspectionId);
+    VerifiedFinding finding =
+        findings
+            .findByIdAndInspectionId(findingId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
+    archiveDecisionBeforeInspectorRevision(inspectionId, finding);
+    try {
+      finding.delete(actorId, reason);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw new BusinessException(HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", ex.getMessage());
+    }
+    if (finding.getAiCandidateId() != null) {
+      candidates
+          .findByIdAndInspectionId(finding.getAiCandidateId(), inspectionId)
+          .ifPresent(
+              candidate -> {
+                candidate.reopenForReview();
+                candidates.save(candidate);
+              });
+    }
+    findings.saveAndFlush(finding);
+    reopenFindings(inspection);
+  }
+
   /** MF3-09: the reviewer records the final decision on a finding. */
   @Transactional
   public VerifiedFindingResponse decideFinding(
@@ -556,26 +680,61 @@ public class FindingService {
   }
 
   String findingsSnapshotHash(UUID inspectionId) {
+    List<Evidence> currentEvidence =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+    var currentEvidenceIds =
+        currentEvidence.stream().map(Evidence::getId).collect(java.util.stream.Collectors.toSet());
     return FindingsSnapshot.hash(
-        evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId),
-        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId),
+        currentEvidence,
+        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
+            .filter(candidate -> currentEvidenceIds.contains(candidate.getEvidenceId()))
+            .toList(),
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
+  }
+
+  /**
+   * A reviewer decision is immutable while a submission is in review. If the reviewer returned the
+   * version, the Inspector may edit even a decided finding; archive the prior decision against that
+   * returned version before clearing it from the live finding.
+   */
+  private void archiveDecisionBeforeInspectorRevision(UUID inspectionId, VerifiedFinding finding) {
+    if (!finding.hasReviewerDecision()) return;
+    InspectionReport report = reports.findByInspectionId(inspectionId).orElse(null);
+    InspectionReportVersion current =
+        report == null
+            ? null
+            : reportVersions
+                .findByInspectionReportIdAndVersionNo(
+                    report.getId(), report.getCurrentVersionNumber())
+                .orElse(null);
+    if (current == null
+        || current.getStatus() != ReportStatus.RETURNED
+        || current.getReviewerUserId() == null) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDING_REVIEWER_DECISION_LOCKED",
+          "A reviewer-decided finding can only be edited after the reviewer returns its report");
+    }
+    finding.clearReviewerDecisionForRevision();
+    findings.saveAndFlush(finding);
   }
 
   private void rejectLockedFindingEdits(UUID inspectionId) {
     var report = reports.findByInspectionId(inspectionId).orElse(null);
-    if (report != null
-        && reportVersions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
-            .anyMatch(
-                version ->
-                    version.getStatus() == ReportStatus.SUBMITTED
-                        || version.getStatus() == ReportStatus.APPROVED
-                        || version.getStatus() == ReportStatus.PUBLISHED
-                        || version.getStatus() == ReportStatus.SUPERSEDED)) {
+    if (report == null) return;
+    var current =
+        reportVersions
+            .findByInspectionReportIdAndVersionNo(report.getId(), report.getCurrentVersionNumber())
+            .orElse(null);
+    if (current != null
+        && (current.getStatus() == ReportStatus.SUBMITTED
+            || current.getStatus() == ReportStatus.APPROVED
+            || current.getStatus() == ReportStatus.PUBLISHED
+            || current.getStatus() == ReportStatus.SUPERSEDED)) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",
-          "Submitted or reviewed report findings cannot be changed");
+          "Findings are locked while a report is submitted or returned for text revision");
     }
   }
 
@@ -590,12 +749,20 @@ public class FindingService {
   }
 
   private Evidence requireEvidence(UUID inspectionId, UUID evidenceId) {
-    return evidence
-        .findByIdAndInspectionId(evidenceId, inspectionId)
-        .orElseThrow(
-            () ->
-                new BusinessException(
-                    HttpStatus.NOT_FOUND, "EVIDENCE_NOT_FOUND", "Evidence not found"));
+    Evidence record =
+        evidence
+            .findByIdAndInspectionId(evidenceId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "EVIDENCE_NOT_FOUND", "Evidence not found"));
+    if (record.isRetired()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_RETIRED",
+          "Retired evidence cannot be used for an active finding");
+    }
+    return record;
   }
 
   private static String orDefault(String value, String fallback) {
@@ -603,7 +770,7 @@ public class FindingService {
   }
 
   private String nextFindingCode(UUID inspectionId) {
-    return "F-" + (findings.countByInspectionId(inspectionId) + 1);
+    return "F-" + (findings.countIncludingDeletedByInspectionId(inspectionId) + 1);
   }
 
   private AiFindingCandidateResponse toCandidateResponse(AiFindingCandidate candidate) {

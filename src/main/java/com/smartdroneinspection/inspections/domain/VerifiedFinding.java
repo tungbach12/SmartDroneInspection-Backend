@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 /**
@@ -24,6 +25,7 @@ import org.hibernate.type.SqlTypes;
  */
 @Entity
 @Table(name = "verified_findings")
+@SQLRestriction("deleted_at is null")
 public class VerifiedFinding {
 
   @Id @GeneratedValue private UUID id;
@@ -124,6 +126,15 @@ public class VerifiedFinding {
   @Column(name = "repair_required", nullable = false)
   private boolean repairRequired;
 
+  @Column(name = "deleted_by_user_id")
+  private UUID deletedByUserId;
+
+  @Column(name = "deleted_at")
+  private Instant deletedAt;
+
+  @Column(name = "deletion_reason", length = 2000)
+  private String deletionReason;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -217,6 +228,43 @@ public class VerifiedFinding {
     this.updatedAt = Instant.now();
   }
 
+  /**
+   * MF3-06: removing a finding from the record keeps who removed it, when and why. The row stays
+   * for audit; reads filter deleted findings out, and the source candidate is reopened separately
+   * so the Inspector can decide it again.
+   */
+  public void delete(UUID actorId, String reason) {
+    if (actorId == null) {
+      throw new IllegalArgumentException("An actor is required to delete a finding");
+    }
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A deletion reason is required");
+    }
+    if (hasReviewerDecision()) {
+      throw new IllegalStateException("A finding the reviewer decided cannot be deleted");
+    }
+    this.deletedByUserId = actorId;
+    this.deletedAt = Instant.now();
+    this.deletionReason = reason;
+    this.updatedAt = deletedAt;
+  }
+
+  public boolean isDeleted() {
+    return deletedAt != null;
+  }
+
+  public UUID getDeletedByUserId() {
+    return deletedByUserId;
+  }
+
+  public Instant getDeletedAt() {
+    return deletedAt;
+  }
+
+  public String getDeletionReason() {
+    return deletionReason;
+  }
+
   /** MF3-09: the qualified reviewer records the final decision on this finding. */
   public void recordDecision(FindingDecision newDecision, UUID decidedByUserId, String rationale) {
     if (newDecision == null || decidedByUserId == null) {
@@ -272,6 +320,39 @@ public class VerifiedFinding {
     this.correctiveActionReviewedAt = Instant.now();
     this.correctiveActionRationale = rationale;
     this.updatedAt = correctiveActionReviewedAt;
+  }
+
+  /** Corrects an Inspector proposal and its evidence reference before report submission. */
+  public void reviseInspectorProposal(
+      UUID evidenceId,
+      String defectLabel,
+      FindingSeverity severity,
+      String locationDescription,
+      String technicalNotes,
+      String recommendedAction,
+      String component,
+      String description,
+      String observedCondition,
+      String priority,
+      String measurement,
+      boolean repairRequired) {
+    if (hasReviewerDecision()) {
+      throw new IllegalStateException("A reviewer-decided finding cannot be revised");
+    }
+    this.evidenceId = evidenceId;
+    recordInspectorProposal(
+        source,
+        defectLabel,
+        severity,
+        locationDescription,
+        technicalNotes,
+        recommendedAction,
+        component,
+        description,
+        observedCondition,
+        priority,
+        measurement,
+        repairRequired);
   }
 
   /**
@@ -344,8 +425,48 @@ public class VerifiedFinding {
     return correctiveActionReviewedByUserId != null && correctiveActionReviewedAt != null;
   }
 
+  /**
+   * MF3-12: the corrective-action outcome belongs to the published report version that precedes it.
+   * Publishing a version clears an outcome recorded earlier, so a disposition from an earlier cycle
+   * is never presented as the outcome of the new version; the reviewer records a fresh one.
+   */
+  public void clearCorrectiveActionOutcome() {
+    if (!isCorrectiveActionReviewed()) {
+      return;
+    }
+    correctiveActionRequired = true;
+    correctiveActionPriority = null;
+    correctiveActionDueAt = null;
+    correctiveActionReviewedByUserId = null;
+    correctiveActionReviewedAt = null;
+    correctiveActionRationale = null;
+  }
+
   public boolean hasReviewerDecision() {
     return decidedByUserId != null && decision != null;
+  }
+
+  /**
+   * Clears the live decision after a reviewer return for a findings revision. The immutable prior
+   * decision is written to reviewer_finding_decision_history before this method is called.
+   */
+  public void clearReviewerDecisionForRevision() {
+    decision = null;
+    decidedByUserId = null;
+    decidedAt = null;
+    rationale = null;
+    repairRequired = false;
+    correctiveActionRequired = true;
+    correctiveActionPriority = null;
+    correctiveActionDueAt = null;
+    correctiveActionReviewedByUserId = null;
+    correctiveActionReviewedAt = null;
+    correctiveActionRationale = null;
+    updatedAt = Instant.now();
+  }
+
+  public String getRationale() {
+    return rationale;
   }
 
   public UUID getId() {

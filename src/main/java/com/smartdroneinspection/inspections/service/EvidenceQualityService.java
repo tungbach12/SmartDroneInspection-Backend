@@ -6,6 +6,7 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceQualityDecisionType;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceQualityDecisionRepository;
+import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -25,16 +26,19 @@ public class EvidenceQualityService {
 
   private final InspectionRepository inspections;
   private final EvidenceQualityDecisionRepository decisions;
+  private final EvidenceRepository evidence;
   private final EvidenceService evidenceService;
   private final UserAccess userAccess;
 
   public EvidenceQualityService(
       InspectionRepository inspections,
       EvidenceQualityDecisionRepository decisions,
+      EvidenceRepository evidence,
       EvidenceService evidenceService,
       UserAccess userAccess) {
     this.inspections = inspections;
     this.decisions = decisions;
+    this.evidence = evidence;
     this.evidenceService = evidenceService;
     this.userAccess = userAccess;
   }
