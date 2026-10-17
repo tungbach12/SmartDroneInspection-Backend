@@ -230,6 +230,56 @@ public class EvidenceService {
     return toResponse(evidence.saveAndFlush(record));
   }
 
+  /**
+   * MF3-02: bulk retirement of captures. Applies a single shared retirement reason across the
+   * target captures without deleting their stored bytes, checksums, or audit rows.
+   *
+   * <p>If {@code evidenceIds} is empty or null, all unretired captures for the inspection are
+   * retired.
+   */
+  @Transactional
+  public List<EvidenceResponse> bulkRetire(
+      UUID actorId, UUID inspectionId, List<UUID> evidenceIds, String reason) {
+    Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    requireEvidenceEditable(inspectionId, inspection);
+    if (reason == null || reason.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "EVIDENCE_RETIRE_INVALID", "A retirement reason is required");
+    }
+    List<Evidence> activeCaptures =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+    List<Evidence> targets;
+    if (evidenceIds == null || evidenceIds.isEmpty()) {
+      targets = activeCaptures;
+    } else {
+      Set<UUID> idSet = new java.util.HashSet<>(evidenceIds);
+      targets = activeCaptures.stream().filter(e -> idSet.contains(e.getId())).toList();
+    }
+    if (targets.isEmpty()) {
+      return List.of();
+    }
+    Set<UUID> targetIds =
+        targets.stream().map(Evidence::getId).collect(java.util.stream.Collectors.toSet());
+    boolean hasActiveFinding =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .anyMatch(finding -> targetIds.contains(finding.getEvidenceId()));
+    if (hasActiveFinding) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_HAS_ACTIVE_FINDINGS",
+          "Remove or re-link the findings that cite these captures before retiring them");
+    }
+    for (Evidence target : targets) {
+      target.retire(actorId, reason);
+    }
+    List<Evidence> saved = evidence.saveAllAndFlush(targets);
+    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
+      inspection.reopenFindings();
+      inspections.saveAndFlush(inspection);
+    }
+    return saved.stream().map(this::toResponse).toList();
+  }
+
   private void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
     if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
         || inspection.getStatus() == InspectionStatus.REPAIR_PENDING

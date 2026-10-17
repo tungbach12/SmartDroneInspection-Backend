@@ -1,5 +1,6 @@
 package com.smartdroneinspection.inspections.api;
 
+import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CorrectiveActionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CorrectiveHandoffRequest;
@@ -125,6 +126,17 @@ public class InspectionController {
       @Valid @RequestBody RetireEvidenceRequest request) {
     return ApiResponse.success(
         evidenceService.retire(actorId(jwt), inspectionId, evidenceId, request.reason()));
+  }
+
+  @PostMapping("/evidence/bulk-retire")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<List<EvidenceResponse>> bulkRetireEvidence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @Valid @RequestBody BulkRetireEvidenceRequest request) {
+    return ApiResponse.success(
+        evidenceService.bulkRetire(
+            actorId(jwt), inspectionId, request.evidenceIds(), request.reason()));
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
