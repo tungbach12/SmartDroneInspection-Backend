@@ -92,6 +92,15 @@ public class Evidence {
   @Column(name = "immutable_original", nullable = false)
   private boolean immutableOriginal;
 
+  @Column(name = "retired_by_user_id")
+  private UUID retiredByUserId;
+
+  @Column(name = "retired_at")
+  private Instant retiredAt;
+
+  @Column(name = "retirement_reason", length = 2000)
+  private String retirementReason;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -137,6 +146,42 @@ public class Evidence {
 
   public boolean isImage() {
     return contentType != null && contentType.startsWith("image/");
+  }
+
+  /**
+   * MF3-02: an original capture is never overwritten or removed. Retiring it holds the bytes,
+   * checksum and metadata for audit while taking it out of the evidence set that drafting and
+   * verification use, so a replacement capture can stand in for the review.
+   */
+  public void retire(UUID actorId, String reason) {
+    if (actorId == null) {
+      throw new IllegalArgumentException("An actor is required to retire evidence");
+    }
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A retirement reason is required");
+    }
+    if (retiredAt != null) {
+      throw new IllegalStateException("This capture is already retired");
+    }
+    this.retiredByUserId = actorId;
+    this.retiredAt = Instant.now();
+    this.retirementReason = reason;
+  }
+
+  public boolean isRetired() {
+    return retiredAt != null;
+  }
+
+  public UUID getRetiredByUserId() {
+    return retiredByUserId;
+  }
+
+  public Instant getRetiredAt() {
+    return retiredAt;
+  }
+
+  public String getRetirementReason() {
+    return retirementReason;
   }
 
   public UUID getId() {

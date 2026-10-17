@@ -3,12 +3,16 @@ package com.smartdroneinspection.inspections.api;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CorrectiveActionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CorrectiveHandoffRequest;
+import com.smartdroneinspection.inspections.api.dto.request.DeleteFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualReportDraftRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
+import com.smartdroneinspection.inspections.api.dto.request.RetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewCandidateRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
@@ -17,6 +21,7 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowS
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VerifiedFindingResponse;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
+import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.service.EvidenceQualityService;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
@@ -38,6 +43,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -108,6 +114,17 @@ public class InspectionController {
   public ApiResponse<List<EvidenceResponse>> listEvidence(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(evidenceService.list(actorId(jwt), inspectionId));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/retire")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceResponse> retireEvidence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @Valid @RequestBody RetireEvidenceRequest request) {
+    return ApiResponse.success(
+        evidenceService.retire(actorId(jwt), inspectionId, evidenceId, request.reason()));
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
@@ -204,6 +221,28 @@ public class InspectionController {
       @Valid @RequestBody ManualFindingRequest request) {
     return ApiResponse.success(
         findingService.createManualFinding(actorId(jwt), inspectionId, request));
+  }
+
+  @PutMapping("/findings/{findingId}")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<VerifiedFindingResponse> updateFinding(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId,
+      @Valid @RequestBody UpdateFindingRequest request) {
+    return ApiResponse.success(
+        findingService.updateFinding(actorId(jwt), inspectionId, findingId, request));
+  }
+
+  @DeleteMapping("/findings/{findingId}")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<Void> deleteFinding(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId,
+      @Valid @RequestBody DeleteFindingRequest request) {
+    findingService.deleteFinding(actorId(jwt), inspectionId, findingId, request.reason());
+    return ApiResponse.success(null);
   }
 
   @GetMapping("/workflow-state")
@@ -307,6 +346,17 @@ public class InspectionController {
     return ApiResponse.success(reportService.submitVersion(actorId(jwt), inspectionId, versionId));
   }
 
+  @PostMapping("/report/versions/{versionId}/withdraw")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<InspectionReportVersionResponse> withdrawVersion(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId,
+      @Valid @RequestBody WithdrawVersionRequest request) {
+    return ApiResponse.success(
+        reportService.withdrawVersion(actorId(jwt), inspectionId, versionId, request.reason()));
+  }
+
   @PostMapping("/report/versions/{versionId}/review")
   @PreAuthorize("hasRole('ORG_ADMIN')")
   public ApiResponse<InspectionReportVersionResponse> reviewVersion(
@@ -314,9 +364,11 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
       @RequestParam boolean approve,
-      @RequestParam(required = false) String reason) {
+      @RequestParam(required = false) String reason,
+      @RequestParam(required = false) ReportReturnReasonType reasonType) {
     return ApiResponse.success(
-        reportService.reviewVersion(actorId(jwt), inspectionId, versionId, approve, reason));
+        reportService.reviewVersion(
+            actorId(jwt), inspectionId, versionId, approve, reason, reasonType));
   }
 
   @PostMapping("/report/versions/{versionId}/publish")

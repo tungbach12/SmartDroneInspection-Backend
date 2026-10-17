@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,8 +18,13 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.domain.enums.AiFindingCandidateStatus;
+import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
+import com.smartdroneinspection.inspections.service.EvidenceQualityService;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.Base64;
@@ -65,6 +71,10 @@ class InspectionReportApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
+  @Autowired InspectionReportRepository reports;
+  @Autowired InspectionReportVersionRepository reportVersions;
+  @Autowired VerifiedFindingRepository findings;
+  @Autowired EvidenceQualityService qualityService;
   @Autowired AiFindingCandidateRepository candidates;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -707,6 +717,7 @@ class InspectionReportApiIntegrationTest {
                 .file(new MockMultipartFile("file", "east-face.png", "image/png", PNG_BYTES_2))
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk());
+    acceptEvidence();
     ensureFindingsConfirmed();
 
     mockMvc
@@ -753,6 +764,7 @@ class InspectionReportApiIntegrationTest {
                 .file(new MockMultipartFile("file", "east-face.png", "image/png", PNG_BYTES_2))
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk());
+    acceptEvidence();
     ensureFindingsConfirmed();
 
     mockMvc
@@ -814,6 +826,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "false")
+                .param("reasonType", "TEXT_REVISION")
                 .param("reason", rationale)
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
@@ -933,9 +946,10 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "false")
+                .param("reasonType", "TEXT_REVISION")
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("REPORT_REVIEWER_INVALID"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("REPORT_RETURN_REASON_REQUIRED"));
 
     mockMvc
         .perform(
@@ -944,6 +958,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "false")
+                .param("reasonType", "TEXT_REVISION")
                 .param("reason", "The east face coverage is not disclosed")
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
@@ -1253,6 +1268,250 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void inspectorCanWithdrawAnUnreviewedSubmissionAndKeepItsEvidenceAndFindings() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/withdraw",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("reason", "Correct the finding details"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("RETURNED"))
+        .andExpect(jsonPath("$.data.withdrawnByUserId").value(fixture.inspectorId().toString()))
+        .andExpect(jsonPath("$.data.withdrawnAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.withdrawalReason").value("Correct the finding details"));
+
+    assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
+        .isEqualTo(
+            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM evidence WHERE inspection_id = ?",
+                Integer.class,
+                fixture.inspectionId()))
+        .isEqualTo(1);
+    assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId())).isPresent();
+    assertThat(
+            reportVersions
+                .findByInspectionReportIdAndVersionNo(
+                    reports.findByInspectionId(fixture.inspectionId()).orElseThrow().getId(), 1)
+                .orElseThrow()
+                .getStatus())
+        .isEqualTo(ReportStatus.RETURNED);
+  }
+
+  @Test
+  void authorCannotWithdrawAfterReviewerHasDecidedAProposal() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    decideFinding(findingId, "CONFIRMED", "Visible crack");
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/withdraw",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("reason", "Need to change findings"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REPORT_REVIEW_IN_PROGRESS"));
+  }
+
+  @Test
+  void findingsRevisionReturnArchivesReviewerDecisionsAndReopensTheSameFindings() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    decideFinding(findingId, "CONFIRMED", "The source supports this finding");
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "false")
+                .param("reasonType", "FINDINGS_REVISION")
+                .param("reason", "Revisit the location and measurement")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("RETURNED"))
+        .andExpect(jsonPath("$.data.returnReasonType").value("FINDINGS_REVISION"));
+
+    assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
+        .isEqualTo(
+            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
+    assertThat(
+            findings
+                .findByIdAndInspectionId(findingId, fixture.inspectionId())
+                .orElseThrow()
+                .getDecision())
+        .isNull();
+    assertThat(
+            reportVersions
+                .findByInspectionReportIdAndVersionNo(
+                    reports.findByInspectionId(fixture.inspectionId()).orElseThrow().getId(), 1)
+                .orElseThrow()
+                .getReturnReasonType())
+        .isEqualTo(
+            com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType
+                .FINDINGS_REVISION);
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId", evidenceId,
+                            "defectLabel", "Rechecked concrete crack",
+                            "severity", "HIGH",
+                            "technicalNotes", "New close-up confirms the crack"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.defectLabel").value("Rechecked concrete crack"));
+
+    ensureFindingsConfirmed();
+    MvcResult nextDraft =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "narrative", "Revised report after the findings review.",
+                                "omissionDisclosure", "No omission."))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.versionNo").value(2))
+            .andReturn();
+    UUID newVersionId =
+        UUID.fromString(
+            objectMapper
+                .readTree(nextDraft.getResponse().getContentAsString())
+                .path("data")
+                .path("id")
+                .stringValue());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT source_version_id FROM inspection_report_versions WHERE id = ?",
+                UUID.class,
+                newVersionId))
+        .isEqualTo(versionId);
+    assertThat(
+            findings
+                .findByIdAndInspectionId(findingId, fixture.inspectionId())
+                .orElseThrow()
+                .getId())
+        .isEqualTo(findingId);
+  }
+
+  @Test
+  void inspectorCanCorrectAndSoftDeleteAnUndecidedFinding() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId", evidenceId,
+                            "defectLabel", "Corrected label",
+                            "severity", "MEDIUM",
+                            "technicalNotes", "Updated observation"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.defectLabel").value("Corrected label"));
+
+    mockMvc
+        .perform(
+            delete(
+                    "/api/v1/inspections/{id}/findings/{findingId}",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("reason", "False alarm after close-up review"))))
+        .andExpect(status().isOk());
+
+    assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId())).isEmpty();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM verified_findings WHERE id = ? AND deleted_by_user_id = ? AND deletion_reason = ? AND deleted_at IS NOT NULL",
+                Integer.class,
+                findingId,
+                fixture.inspectorId(),
+                "False alarm after close-up review"))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void retiringEvidenceKeepsTheOriginalCaptureForAuditButRefusesAnalysis() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/retire",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("reason", "Replaced with a sharper close-up"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.retiredAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.retirementReason").value("Replaced with a sharper close-up"));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM evidence WHERE id = ?", Integer.class, evidenceId))
+        .isEqualTo(1);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_RETIRED"));
+  }
+
+  @Test
   void aReviewerFromAnotherOrganizationIsRefused() throws Exception {
     UUID versionId = createSubmittedManualVersion();
 
@@ -1405,6 +1664,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     firstVersion)
                 .param("approve", "false")
+                .param("reasonType", "TEXT_REVISION")
                 .param("reason", "Clarify the observed condition")
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
