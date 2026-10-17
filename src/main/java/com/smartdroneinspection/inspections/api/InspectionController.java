@@ -1,6 +1,8 @@
 package com.smartdroneinspection.inspections.api;
 
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
+import com.smartdroneinspection.inspections.api.dto.request.CorrectiveActionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.CorrectiveHandoffRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
@@ -246,6 +248,24 @@ public class InspectionController {
             actorId(jwt), inspectionId, findingId, request.decision(), request.rationale()));
   }
 
+  @PutMapping("/findings/{findingId}/corrective-action")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
+  public ApiResponse<VerifiedFindingResponse> recordCorrectiveAction(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId,
+      @Valid @RequestBody CorrectiveActionRequest request) {
+    return ApiResponse.success(
+        findingService.recordCorrectiveAction(
+            actorId(jwt),
+            inspectionId,
+            findingId,
+            request.correctiveActionRequired(),
+            request.priority(),
+            request.dueAt(),
+            request.rationale()));
+  }
+
   @PostMapping("/report/draft")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<InspectionReportVersionResponse> generateDraft(
@@ -304,6 +324,24 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.publish(actorId(jwt), inspectionId, versionId));
+  }
+
+  @PostMapping("/report/no-corrective-work")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
+  public ApiResponse<ReportPublishedResponse> declareNoCorrectiveWork(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @Valid @RequestBody CorrectiveHandoffRequest request) {
+    return ApiResponse.success(
+        reportService.declareNoCorrectiveWork(actorId(jwt), inspectionId, request.rationale()));
+  }
+
+  @PostMapping("/report/corrective-handoff")
+  @PreAuthorize("hasRole('ORG_ADMIN')")
+  public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(
+        reportService.completeCorrectiveActionHandoff(actorId(jwt), inspectionId));
   }
 
   @PutMapping("/report/versions/{versionId}/sections")

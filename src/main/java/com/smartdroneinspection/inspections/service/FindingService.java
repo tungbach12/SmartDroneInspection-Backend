@@ -475,7 +475,75 @@ public class FindingService {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "FINDING_DECISION_INVALID", "A decision rationale is required");
     }
-    finding.recordDecision(decision, actorId, rationale);
+    try {
+      finding.recordDecision(decision, actorId, rationale);
+    } catch (IllegalArgumentException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "FINDING_DECISION_INVALID", ex.getMessage());
+    }
+    return toFindingResponse(findings.saveAndFlush(finding));
+  }
+
+  /** MF3-12: the reviewer records a corrective outcome after report publication. */
+  @Transactional
+  public VerifiedFindingResponse recordCorrectiveAction(
+      UUID actorId,
+      UUID inspectionId,
+      UUID findingId,
+      boolean correctiveActionRequired,
+      String priority,
+      java.time.Instant dueAt,
+      String rationale) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+    var report = reports.findByInspectionId(inspectionId).orElse(null);
+    VerifiedFinding finding =
+        findings
+            .findByIdAndInspectionId(findingId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
+    if (!finding.isOfficial()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDING_REVIEW_INCOMPLETE",
+          "Corrective action can only be recorded for a confirmed or modified finding");
+    }
+    var inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection != null && inspection.getCorrectiveHandoffAt() != null) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
+          "Corrective handoff has already been completed");
+    }
+    if (!ReportStatus.PUBLISHED.name().equals(report == null ? null : report.getStatus())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_STATE_CONFLICT",
+          "Corrective actions are recorded after the report is published");
+    }
+    boolean publishedVersionExists =
+        report != null
+            && reportVersions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
+                .anyMatch(version -> version.getStatus() == ReportStatus.PUBLISHED);
+    if (finding.isCorrectiveActionReviewed()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CORRECTIVE_ACTION_ALREADY_RECORDED",
+          "Corrective action has already been recorded for this published finding");
+    }
+    if (!publishedVersionExists) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_STATE_CONFLICT",
+          "Corrective actions are recorded after the report is published");
+    }
+    try {
+      finding.updateCorrectiveAction(actorId, correctiveActionRequired, priority, dueAt, rationale);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "CORRECTIVE_ACTION_INVALID", ex.getMessage());
+    }
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -576,6 +644,12 @@ public class FindingService {
         finding.getDecidedByUserId(),
         finding.getDecidedAt(),
         finding.isRepairRequired(),
-        finding.getStatus());
+        finding.getStatus(),
+        finding.isCorrectiveActionRequired(),
+        finding.getCorrectiveActionPriority(),
+        finding.getCorrectiveActionDueAt(),
+        finding.getCorrectiveActionReviewedByUserId(),
+        finding.getCorrectiveActionReviewedAt(),
+        finding.getCorrectiveActionRationale());
   }
 }

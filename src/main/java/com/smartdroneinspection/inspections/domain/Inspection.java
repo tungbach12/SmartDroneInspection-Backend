@@ -76,6 +76,15 @@ public class Inspection {
   @Column(name = "findings_snapshot_hash", length = 64)
   private String findingsSnapshotHash;
 
+  @Column(name = "corrective_handoff_by_user_id")
+  private UUID correctiveHandoffByUserId;
+
+  @Column(name = "corrective_handoff_at")
+  private Instant correctiveHandoffAt;
+
+  @Column(name = "no_repair_rationale", length = 2000)
+  private String noRepairRationale;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -184,6 +193,22 @@ public class Inspection {
     return findingsSnapshotHash;
   }
 
+  public boolean hasFindingsConfirmation() {
+    return findingsConfirmedByUserId != null && findingsConfirmedAt != null;
+  }
+
+  public UUID getCorrectiveHandoffByUserId() {
+    return correctiveHandoffByUserId;
+  }
+
+  public Instant getCorrectiveHandoffAt() {
+    return correctiveHandoffAt;
+  }
+
+  public String getNoRepairRationale() {
+    return noRepairRationale;
+  }
+
   /**
    * Legacy transition retained for migration compatibility with existing persisted report states.
    */
@@ -204,6 +229,25 @@ public class Inspection {
     }
     status = InspectionStatus.REPORT_PUBLISHED;
     updatedAt = Instant.now();
+  }
+
+  /** MF3-12/13: the reviewer records the corrective outcome before MF4 handoff. */
+  public void recordCorrectiveHandoff(UUID reviewerId, String rationale) {
+    if (status != InspectionStatus.REPORT_PUBLISHED
+        && status != InspectionStatus.REPAIR_PENDING
+        && status != InspectionStatus.COMPLETED) {
+      throw new IllegalStateException("Corrective handoff requires a published report");
+    }
+    if (reviewerId == null) {
+      throw new IllegalArgumentException("A reviewer is required for corrective handoff");
+    }
+    if (findingsConfirmedByUserId == null) {
+      throw new IllegalStateException("An Inspector findings confirmation is required");
+    }
+    correctiveHandoffByUserId = reviewerId;
+    correctiveHandoffAt = Instant.now();
+    noRepairRationale = rationale;
+    updatedAt = correctiveHandoffAt;
   }
 
   /** MF3-12: confirmed repair-required findings were handed to MF4. */

@@ -578,20 +578,78 @@ public class ReportService {
     report.setStatus(ReportStatus.PUBLISHED);
     reports.saveAndFlush(report);
 
+    // MF3-11 ends here: the PDF is stored, checksummed and the version is immutable. Corrective
+    // action (MF3-12) and the MF4 handoff (MF3-13) are separate later acts, because a published
+    // report is a record of observed condition and must not be reopened to carry maintenance
+    // planning data.
+    inspection.markReportPublished();
+    inspections.saveAndFlush(inspection);
+
+    return new ReportPublishedResponse(
+        version.getId(),
+        version.getVersionNo(),
+        version.getPublishedAt(),
+        List.of(),
+        inspection.getStatus());
+  }
+
+  /**
+   * MF3-13: hands the published report's corrective items to MF4 after every confirmed finding has
+   * an explicit MF3-12 corrective-action outcome.
+   *
+   * <p>MF4 work-order creation is not implemented; this records the handoff and inspection status,
+   * but does not create a work order.
+   */
+  @Transactional
+  public ReportPublishedResponse completeCorrectiveActionHandoff(UUID actorId, UUID inspectionId) {
+    UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
+    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    if (inspection.getCorrectiveHandoffAt() != null) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
+          "Corrective handoff has already been completed");
+    }
+    InspectionReport report = requireReportForInspection(inspectionId);
+    InspectionReportVersion version =
+        versions
+            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "REPORT_STATE_CONFLICT",
+                        "Publish the report before handing corrective items to maintenance"));
+
+    List<VerifiedFinding> official =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(VerifiedFinding::isOfficial)
+            .toList();
+    if (official.stream().anyMatch(finding -> !finding.isCorrectiveActionReviewed())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CORRECTIVE_ACTION_REVIEW_INCOMPLETE",
+          "Record corrective action or an explicit no-action outcome for every confirmed finding");
+    }
     List<UUID> repairRequired =
-        findings.findRepairRequired(inspectionId).stream().map(VerifiedFinding::getId).toList();
-    // The inspection state rules live on the entity, so an out-of-order publish is refused the same
-    // way whether it arrives over HTTP, a batch job or a future endpoint. The version-level check
-    // above is translated for the same reason.
+        official.stream()
+            .filter(VerifiedFinding::isCorrectiveActionRequired)
+            .map(VerifiedFinding::getId)
+            .toList();
+    if (official.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "NO_CORRECTIVE_WORK_PENDING",
+          "Record an explicit no-corrective-work rationale for a scope without confirmed findings");
+    }
     try {
-      inspection.markReportPublished();
+      inspection.recordCorrectiveHandoff(reviewer.id(), null);
       if (repairRequired.isEmpty()) {
-        // A no-repair outcome closes with its limitations preserved, never an empty work order.
         inspection.complete();
       } else {
         inspection.markRepairPending();
       }
-    } catch (IllegalStateException ex) {
+    } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
     }
@@ -604,7 +662,7 @@ public class ReportService {
             inspectionId,
             inspection.getOrganizationId(),
             inspection.getAssetId(),
-            publisher.id(),
+            reviewer.id(),
             repairRequired,
             version.getPublishedAt()));
     return new ReportPublishedResponse(
@@ -612,6 +670,80 @@ public class ReportService {
         version.getVersionNo(),
         version.getPublishedAt(),
         repairRequired,
+        inspection.getStatus());
+  }
+
+  /**
+   * MF3-12: records the reviewer’s explicit no-repair outcome after report publication.
+   *
+   * <p>This route is for a scope that has no official finding requiring corrective work. If there
+   * are any official findings, the reviewer must record the outcome on each one instead.
+   */
+  @Transactional
+  public ReportPublishedResponse declareNoCorrectiveWork(
+      UUID actorId, UUID inspectionId, String rationale) {
+    UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
+    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    if (inspection.getCorrectiveHandoffAt() != null) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
+          "Corrective handoff has already been completed");
+    }
+    InspectionReport report = requireReportForInspection(inspectionId);
+    InspectionReportVersion version =
+        versions
+            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "REPORT_STATE_CONFLICT",
+                        "Publish the report before declaring no corrective work"));
+    boolean hasOfficialFindings =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .anyMatch(VerifiedFinding::isOfficial);
+    if (!inspection.hasFindingsConfirmation()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_NOT_CONFIRMED",
+          "The Inspector must explicitly confirm the observed findings set first");
+    }
+    if (hasOfficialFindings) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CORRECTIVE_ACTION_REVIEW_REQUIRED",
+          "Record a corrective-action outcome for each confirmed finding");
+    }
+    if (rationale == null || rationale.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "NO_REPAIR_RATIONALE_REQUIRED",
+          "Record why no corrective work is required within the observed scope");
+    }
+    try {
+      inspection.recordCorrectiveHandoff(reviewer.id(), rationale);
+      inspection.complete();
+    } catch (IllegalStateException | IllegalArgumentException ex) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
+    }
+    inspections.saveAndFlush(inspection);
+    events.publishEvent(
+        new ReportPublishedEvent(
+            report.getId(),
+            version.getId(),
+            inspectionId,
+            inspection.getOrganizationId(),
+            inspection.getAssetId(),
+            reviewer.id(),
+            List.of(),
+            version.getPublishedAt()));
+    return new ReportPublishedResponse(
+        version.getId(),
+        version.getVersionNo(),
+        version.getPublishedAt(),
+        List.of(),
         inspection.getStatus());
   }
 

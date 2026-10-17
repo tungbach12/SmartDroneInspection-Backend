@@ -37,7 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class EvidenceService {
 
-  static final long MAX_SIZE_BYTES = 50L * 1024 * 1024;
+  static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
   private static final Set<String> ALLOWED_TYPES =
       Set.of("image/png", "image/jpeg", "image/webp", "image/tiff", "video/mp4", "application/pdf");
 
@@ -108,7 +108,9 @@ public class EvidenceService {
     }
     if (content.length > MAX_SIZE_BYTES) {
       throw new BusinessException(
-          HttpStatus.PAYLOAD_TOO_LARGE, "EVIDENCE_TOO_LARGE", "Maximum evidence size is 50 MB");
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "EVIDENCE_TOO_LARGE",
+          "Maximum evidence size is " + (MAX_SIZE_BYTES / (1024 * 1024)) + " MB");
     }
     // Report 3 MF3-02 requires corrupt input to be identified with a corrective action. Declared
     // type alone is not proof of content, so image bytes must decode before they are stored.

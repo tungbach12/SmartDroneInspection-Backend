@@ -44,6 +44,8 @@ class InspectionEvidenceApiIntegrationTest {
    * A real 1x1 PNG. MF3-02 requires corrupt input to be refused, so the happy-path fixtures must be
    * bytes that genuinely decode -- a signature followed by filler would be rejected by that check.
    */
+  private static final long MAX_EVIDENCE_SIZE_BYTES = 10L * 1024 * 1024;
+
   private static final byte[] PNG_BYTES =
       Base64.getDecoder()
           .decode(
@@ -99,7 +101,7 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void unsupportedTypeAndOversizeAndEmptyUploadsAreRejected() throws Exception {
+  void unsupportedTypeMultipartOversizeAndEmptyUploadsAreRejected() throws Exception {
     mockMvc
         .perform(
             multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
@@ -115,17 +117,40 @@ class InspectionEvidenceApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("EVIDENCE_INVALID"));
-  }
-
-  @Test
-  void missingGpsIsAcceptedButAHalfSuppliedCoordinateIsRejected() throws Exception {
-    upload(fixture.inspectorId(), "INSPECTOR", "no-gps.png", PNG_BYTES);
 
     mockMvc
         .perform(
             multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
                 .file(
-                    new MockMultipartFile("file", "lat-only.png", "image/png", "other".getBytes()))
+                    new MockMultipartFile(
+                        "file",
+                        "oversize.png",
+                        "image/png",
+                        new byte[Math.toIntExact(MAX_EVIDENCE_SIZE_BYTES + 1)]))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        // MockMvc parses multipart requests in memory, so the Spring multipart size guard cannot
+        // fire here; on a real servlet container it may answer first with PAYLOAD_TOO_LARGE. This
+        // test therefore observes the service guard's own limit and error code.
+        .andExpect(status().isPayloadTooLarge())
+        .andExpect(jsonPath("$.status").value(413))
+        .andExpect(jsonPath("$.code").value("EVIDENCE_TOO_LARGE"));
+  }
+
+  @Test
+  void missingGpsIsAcceptedButAHalfSuppliedCoordinateIsRejected() throws Exception {
+    upload(fixture.inspectorId(), "INSPECTOR", "no-gps.png", PNG_BYTES);
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].latitude").doesNotExist())
+        .andExpect(jsonPath("$.data[0].longitude").doesNotExist());
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "lat-only.png", "image/png", PNG_BYTES))
                 .param("latitude", "10.5")
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isBadRequest())

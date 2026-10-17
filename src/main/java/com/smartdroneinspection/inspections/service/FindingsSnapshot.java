@@ -78,8 +78,6 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getMeasurement())
                     .append('|')
-                    .append(item.isRepairRequired())
-                    .append('|')
                     .append(item.getStatus())
                     .append('\n'));
     try {

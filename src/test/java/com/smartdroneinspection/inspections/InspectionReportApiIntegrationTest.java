@@ -712,6 +712,20 @@ class InspectionReportApiIntegrationTest {
         .andExpect(status().isOk());
   }
 
+  private void postReportReturn(UUID versionId, String rationale) throws Exception {
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "false")
+                .param("reason", rationale)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("RETURNED"));
+  }
+
   private void verifyAndSubmitVersion(UUID versionId) throws Exception {
     mockMvc
         .perform(
@@ -807,7 +821,7 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void qualifiedReviewerCanReturnThenApproveThenPublish() throws Exception {
+  void qualifiedReviewerCanReturnThenApprovePublishAndRecordNoRepair() throws Exception {
     UUID versionId = createSubmittedManualVersion();
     UUID findingId =
         UUID.fromString(
@@ -906,8 +920,170 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.repairRequiredFindingIds.length()").value(0))
+        .andExpect(jsonPath("$.data.repairRequiredFindingIds").isEmpty())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/no-corrective-work", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("rationale", "No corrective work is required in scope"))))
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
+  }
+
+  @Test
+  void publishedFindingNoRepairOutcomeIsDurableAndHandoffClosesTheInspection() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    decideFinding(findingId, "CONFIRMED", "Visible but no repair needed in scope");
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"))
+        .andExpect(jsonPath("$.data.repairRequiredFindingIds").isEmpty());
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/no-corrective-work", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("rationale", "Within scope"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CORRECTIVE_ACTION_REVIEW_REQUIRED"));
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/findings/{findingId}/corrective-action",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "correctiveActionRequired",
+                            false,
+                            "rationale",
+                            "No repair is needed within the observed span"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.correctiveActionRequired").value(false))
+        .andExpect(
+            jsonPath("$.data.correctiveActionRationale")
+                .value("No repair is needed within the observed span"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.repairRequiredFindingIds").isEmpty());
+  }
+
+  @Test
+  void publishedConfirmedFindingRequiresCorrectiveOutcomeBeforeHandoff() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    jdbcTemplate.update(
+        "UPDATE verified_findings SET repair_required = TRUE WHERE id = ?", findingId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    decideFinding(findingId, "CONFIRMED", "Repair required");
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CORRECTIVE_ACTION_REVIEW_INCOMPLETE"));
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/findings/{findingId}/corrective-action",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "correctiveActionRequired",
+                            true,
+                            "priority",
+                            "HIGH",
+                            "dueAt",
+                            java.time.Instant.now().plusSeconds(86400).toString(),
+                            "rationale",
+                            "Corrosion requires repair"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.correctiveActionRequired").value(true))
+        .andExpect(jsonPath("$.data.correctiveActionPriority").value("HIGH"))
+        .andExpect(jsonPath("$.data.correctiveActionDueAt").exists())
+        .andExpect(
+            jsonPath("$.data.correctiveActionReviewedByUserId")
+                .value(fixture.reviewerId().toString()));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.repairRequiredFindingIds[0]").value(findingId.toString()));
   }
 
   @Test
@@ -933,8 +1109,6 @@ class InspectionReportApiIntegrationTest {
     UUID manualFindingId = createManualFinding(evidenceId);
     UUID additionalFindingId = createManualFinding(evidenceId);
     UUID undecidedFindingId = insertRepairRequiredFinding(false);
-    jdbcTemplate.update(
-        "UPDATE verified_findings SET repair_required = TRUE WHERE id = ?", manualFindingId);
     ensureFindingsConfirmed();
     UUID versionId = createManualDraftVersion();
     verifyAndSubmitVersion(versionId);
@@ -982,8 +1156,40 @@ class InspectionReportApiIntegrationTest {
                         versionId)
                     .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+            .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"))
+            .andExpect(jsonPath("$.data.repairRequiredFindingIds").isEmpty())
             .andReturn();
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/findings/{findingId}/corrective-action",
+                    fixture.inspectionId(),
+                    manualFindingId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "correctiveActionRequired",
+                            true,
+                            "priority",
+                            "HIGH",
+                            "dueAt",
+                            java.time.Instant.now().plusSeconds(86400).toString(),
+                            "rationale",
+                            "Repair required"))))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(
+            jsonPath("$.data.repairRequiredFindingIds[0]").value(manualFindingId.toString()));
 
     String body = published.getResponse().getContentAsString();
     assertThat(body).contains("repairRequiredFindingIds");
@@ -994,7 +1200,27 @@ class InspectionReportApiIntegrationTest {
             Long.class,
             fixture.inspectionId());
     assertThat(confirmedRepairRequired).isEqualTo(1L);
-    assertThat(body).contains(manualFindingId.toString());
+  }
+
+  @Test
+  void aMaterialFindingDecisionReturnsTheSubmittedVersion() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+
+    decideFinding(findingId, "MODIFIED", "Clarify defect description");
+
+    // MF3-10: the reviewer states the required revision and the Inspector revises; the reviewer
+    // never edits report text themselves, so the version stays SUBMITTED until an explicit return.
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/versions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].status").value("SUBMITTED"));
   }
 
   @Test
@@ -1140,6 +1366,18 @@ class InspectionReportApiIntegrationTest {
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.versionNo").value(1))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/no-corrective-work", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "rationale",
+                            "No corrective work is required within the inspected north span"))))
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
   }
 

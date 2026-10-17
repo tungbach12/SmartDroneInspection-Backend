@@ -32,4 +32,10 @@ public record VerifiedFindingResponse(
     UUID decidedByUserId,
     Instant decidedAt,
     boolean repairRequired,
-    VerifiedFindingStatus status) {}
+    VerifiedFindingStatus status,
+    boolean correctiveActionRequired,
+    String correctiveActionPriority,
+    java.time.Instant correctiveActionDueAt,
+    UUID correctiveActionReviewedByUserId,
+    Instant correctiveActionReviewedAt,
+    String correctiveActionRationale) {}
