@@ -28,6 +28,7 @@ import com.smartdroneinspection.inspections.service.EvidenceQualityService;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -1509,6 +1510,60 @@ class InspectionReportApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("EVIDENCE_RETIRED"));
+  }
+
+  @Test
+  void inspectorCanBulkRetireCapturesWithASingleSharedReason() throws Exception {
+    UUID evidenceId1 = uploadEvidence();
+    UUID evidenceId2 =
+        UUID.fromString(
+            objectMapper
+                .readTree(
+                    mockMvc
+                        .perform(
+                            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                                .file(
+                                    new MockMultipartFile(
+                                        "file", "span2.png", "image/png", PNG_BYTES_2))
+                                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .path("data")
+                .path("id")
+                .stringValue());
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence/bulk-retire", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("reason", "Imported wrong SD card from another site"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(
+            jsonPath("$.data[0].retirementReason")
+                .value("Imported wrong SD card from another site"))
+        .andExpect(
+            jsonPath("$.data[1].retirementReason")
+                .value("Imported wrong SD card from another site"));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM evidence WHERE inspection_id = ? AND retired_at IS NOT NULL",
+                Integer.class,
+                fixture.inspectionId()))
+        .isEqualTo(2);
+
+    List<com.smartdroneinspection.inspections.domain.Evidence> active =
+        ((com.smartdroneinspection.inspections.repository.EvidenceRepository)
+                webApplicationContext.getBean(
+                    com.smartdroneinspection.inspections.repository.EvidenceRepository.class))
+            .findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(fixture.inspectionId());
+    assertThat(active).isEmpty();
   }
 
   @Test
