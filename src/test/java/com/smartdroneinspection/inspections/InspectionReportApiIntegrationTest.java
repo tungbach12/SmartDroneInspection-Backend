@@ -1007,6 +1007,78 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void publishingClearsACorrectiveOutcomeRecordedBeforeThePublication() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    decideFinding(findingId, "CONFIRMED", "Repair required");
+
+    // The V30 cutover backfilled the pre-cutover reviewer disposition onto findings of reports that
+    // had not been published yet, so a recorded outcome can predate the version it is attributed
+    // to.
+    jdbcTemplate.update(
+        """
+        UPDATE verified_findings
+           SET corrective_action_required = FALSE,
+               corrective_action_reviewed_by_user_id = ?,
+               corrective_action_reviewed_at = ?,
+               corrective_action_rationale = 'Backfilled disposition'
+         WHERE id = ?
+        """,
+        fixture.reviewerId(),
+        java.sql.Timestamp.from(java.time.Instant.now().minusSeconds(259200)),
+        findingId);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+
+    // MF3-12: the outcome belongs to the publication that precedes it, so the stale one is cleared
+    // and the handoff refuses until the reviewer records a fresh outcome for this version.
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CORRECTIVE_ACTION_REVIEW_INCOMPLETE"));
+
+    Integer reviewed =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM verified_findings WHERE id = ?"
+                + " AND corrective_action_reviewed_by_user_id IS NOT NULL",
+            Integer.class,
+            findingId);
+    Boolean required =
+        jdbcTemplate.queryForObject(
+            "SELECT corrective_action_required FROM verified_findings WHERE id = ?",
+            Boolean.class,
+            findingId);
+    assertThat(reviewed).isZero();
+    assertThat(required).isTrue();
+  }
+
+  @Test
   void publishedConfirmedFindingRequiresCorrectiveOutcomeBeforeHandoff() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();

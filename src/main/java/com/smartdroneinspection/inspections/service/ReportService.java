@@ -585,6 +585,19 @@ public class ReportService {
     inspection.markReportPublished();
     inspections.saveAndFlush(inspection);
 
+    // MF3-12: any corrective-action outcome recorded before this publication belongs to an earlier
+    // version or to the pre-cutover review decision. Clearing it keeps the new version from being
+    // presented with a disposition nobody recorded after it, and the reviewer records a fresh one.
+    List<VerifiedFinding> staleOutcomes =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(VerifiedFinding::isOfficial)
+            .filter(VerifiedFinding::isCorrectiveActionReviewed)
+            .toList();
+    staleOutcomes.forEach(VerifiedFinding::clearCorrectiveActionOutcome);
+    if (!staleOutcomes.isEmpty()) {
+      findings.saveAll(staleOutcomes);
+    }
+
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),

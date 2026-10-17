@@ -344,6 +344,23 @@ public class VerifiedFinding {
     return correctiveActionReviewedByUserId != null && correctiveActionReviewedAt != null;
   }
 
+  /**
+   * MF3-12: the corrective-action outcome belongs to the published report version that precedes it.
+   * Publishing a version clears an outcome recorded earlier, so a disposition from an earlier cycle
+   * is never presented as the outcome of the new version; the reviewer records a fresh one.
+   */
+  public void clearCorrectiveActionOutcome() {
+    if (!isCorrectiveActionReviewed()) {
+      return;
+    }
+    correctiveActionRequired = true;
+    correctiveActionPriority = null;
+    correctiveActionDueAt = null;
+    correctiveActionReviewedByUserId = null;
+    correctiveActionReviewedAt = null;
+    correctiveActionRationale = null;
+  }
+
   public boolean hasReviewerDecision() {
     return decidedByUserId != null && decision != null;
   }
