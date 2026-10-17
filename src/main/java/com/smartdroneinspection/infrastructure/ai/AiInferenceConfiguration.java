@@ -4,7 +4,6 @@ import java.net.http.HttpClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -15,7 +14,6 @@ import tools.jackson.databind.ObjectMapper;
  * is configured alongside the YOLO adapter, which stays available for a self-hosted detector.
  */
 @Configuration(proxyBeanMethods = false)
-@Conditional(SingleAiInferenceProviderCondition.class)
 @EnableConfigurationProperties(CompatibleVisionProperties.class)
 @ConditionalOnProperty(prefix = "app.ai.compatible-vision", name = "enabled", havingValue = "true")
 class AiInferenceConfiguration {

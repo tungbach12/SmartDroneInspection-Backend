@@ -8,9 +8,28 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 class AiInferenceConfigurationTest {
 
+  private static final String[] YOLO_SETTINGS = {
+    "app.ai.yolo.enabled=true",
+    "app.ai.yolo.base-url=http://localhost:8000",
+    "app.ai.yolo.predict-path=/predict",
+    "app.ai.yolo.connect-timeout=2s",
+    "app.ai.yolo.read-timeout=30s"
+  };
+
+  private static final String[] VISION_SETTINGS = {
+    "app.ai.compatible-vision.enabled=true",
+    "app.ai.compatible-vision.base-url=https://vision.example.test",
+    "app.ai.compatible-vision.model=capstone",
+    "app.ai.compatible-vision.api-key=key",
+    "app.ai.compatible-vision.timeout=60s"
+  };
+
   private final ApplicationContextRunner contextRunner =
       new ApplicationContextRunner()
-          .withUserConfiguration(AiInferenceConfiguration.class, YoloInferenceConfiguration.class);
+          .withUserConfiguration(
+              AiInferenceConfiguration.class,
+              YoloInferenceConfiguration.class,
+              AiInferenceRoutingConfiguration.class);
 
   @Test
   void noInferenceAdapterExistsUnlessAProviderIsEnabled() {
@@ -23,37 +42,45 @@ class AiInferenceConfigurationTest {
   }
 
   @Test
-  void theCompatibleChatProviderBecomesTheInferenceAdapter() {
+  void theCompatibleChatProviderAnswersWhenNoDetectorIsConfigured() {
     contextRunner
-        .withPropertyValues(
-            "app.ai.compatible-vision.enabled=true",
-            "app.ai.compatible-vision.base-url=https://vision.example.test",
-            "app.ai.compatible-vision.model=capstone",
-            "app.ai.compatible-vision.api-key=key",
-            "app.ai.compatible-vision.timeout=60s")
-        .run(context -> assertThat(context).hasSingleBean(AiInferencePort.class));
+        .withPropertyValues(VISION_SETTINGS)
+        .run(
+            context -> {
+              PrimaryWithFallbackInference routing =
+                  (PrimaryWithFallbackInference) context.getBean(AiInferencePort.class);
+              assertThat(routing.primary()).isInstanceOf(OpenAiCompatibleInferenceClient.class);
+              assertThat(routing.fallback()).isEmpty();
+            });
   }
 
   @Test
-  void bothProvidersCannotBeEnabledAtOnce() {
+  void theDetectorIsTheDefaultAndTheVisionEndpointIsTheOptionBehindIt() {
     contextRunner
-        .withPropertyValues(
-            "app.ai.yolo.enabled=true",
-            "app.ai.yolo.base-url=http://localhost:8000",
-            "app.ai.yolo.predict-path=/predict",
-            "app.ai.yolo.connect-timeout=2s",
-            "app.ai.yolo.read-timeout=30s",
-            "app.ai.compatible-vision.enabled=true",
-            "app.ai.compatible-vision.base-url=https://vision.example.test",
-            "app.ai.compatible-vision.model=capstone",
-            "app.ai.compatible-vision.api-key=key",
-            "app.ai.compatible-vision.timeout=60s")
+        .withPropertyValues(YOLO_SETTINGS)
+        .withPropertyValues(VISION_SETTINGS)
         .run(
-            context ->
-                assertThat(context.getStartupFailure())
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage(
-                        "Only one advisory image inference provider may be enabled at a time."));
+            context -> {
+              assertThat(context.getStartupFailure()).isNull();
+              PrimaryWithFallbackInference routing =
+                  (PrimaryWithFallbackInference) context.getBean(AiInferencePort.class);
+              assertThat(routing.primary()).isInstanceOf(YoloInferenceClient.class);
+              assertThat(routing.fallback().orElseThrow())
+                  .isInstanceOf(OpenAiCompatibleInferenceClient.class);
+            });
+  }
+
+  @Test
+  void theDetectorAnswersAloneWhenTheVisionOptionIsDisabled() {
+    contextRunner
+        .withPropertyValues(YOLO_SETTINGS)
+        .run(
+            context -> {
+              PrimaryWithFallbackInference routing =
+                  (PrimaryWithFallbackInference) context.getBean(AiInferencePort.class);
+              assertThat(routing.primary()).isInstanceOf(YoloInferenceClient.class);
+              assertThat(routing.fallback()).isEmpty();
+            });
   }
 
   @Test

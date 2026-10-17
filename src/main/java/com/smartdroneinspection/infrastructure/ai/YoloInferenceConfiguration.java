@@ -9,7 +9,6 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 @Configuration(proxyBeanMethods = false)
-@org.springframework.context.annotation.Conditional(SingleAiInferenceProviderCondition.class)
 @EnableConfigurationProperties(YoloInferenceProperties.class)
 @ConditionalOnProperty(prefix = "app.ai.yolo", name = "enabled", havingValue = "true")
 class YoloInferenceConfiguration {
@@ -27,8 +26,13 @@ class YoloInferenceConfiguration {
       throw new IllegalStateException(
           "YOLO inference endpoint and positive timeouts are required.");
     }
+    // HTTP/1.1 explicitly: the JDK client otherwise attempts an h2c upgrade on a plain-http
+    // endpoint, which an ASGI server such as uvicorn rejects with "Unsupported upgrade request".
     HttpClient httpClient =
-        HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build();
+        HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(properties.connectTimeout())
+            .build();
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(properties.readTimeout());
     return RestClient.builder()

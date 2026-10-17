@@ -1,0 +1,17 @@
+{
+  "id": "natsumeeei/smartdroneinspection-mbdd2025-yolo11s-training",
+  "title": "SmartDroneInspection MBDD2025 YOLO11s Training",
+  "code_file": "smartdroneinspection-mbdd2025-yolo11s-training.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "mennamahmoudd/mbdd2025-building-defects"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
