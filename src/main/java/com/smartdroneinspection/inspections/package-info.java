@@ -11,6 +11,8 @@
       "shared::auth",
       "shared::exception",
       "shared::storage",
-      "shared"
+      "shared",
+      "inspections::reportcontext",
+      "assets::reportcontext"
     })
 package com.smartdroneinspection.inspections;

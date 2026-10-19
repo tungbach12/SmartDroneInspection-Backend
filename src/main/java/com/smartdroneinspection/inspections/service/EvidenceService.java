@@ -1,5 +1,8 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.api.dto.EvidenceMediaTypeFilter;
+import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
+import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -15,6 +18,7 @@ import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
+import jakarta.persistence.criteria.Predicate;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,10 +28,15 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import javax.imageio.ImageIO;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +51,10 @@ import org.springframework.web.multipart.MultipartFile;
 public class EvidenceService {
 
   static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
+  private static final int MAX_EVIDENCE_PAGE_SIZE = 100;
+  private static final Sort EVIDENCE_ORDER =
+      Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
+  private static final char LIKE_ESCAPE = '\\';
   private static final Set<String> ALLOWED_TYPES =
       Set.of("image/png", "image/jpeg", "image/webp", "image/tiff", "video/mp4", "application/pdf");
 
@@ -159,7 +172,15 @@ public class EvidenceService {
     Optional<Evidence> existing =
         evidence.findByInspectionIdAndChecksumSha256(inspectionId, checksum);
     if (existing.isPresent()) {
-      return toResponse(existing.get());
+      Evidence duplicate = existing.get();
+      if (duplicate.isRetired()) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "EVIDENCE_DUPLICATE_RETIRED",
+            "Identical evidence already exists as a retired audit copy: "
+                + duplicate.getFileName());
+      }
+      return toResponse(duplicate, true);
     }
 
     String objectKey = "inspections/" + inspectionId + "/evidence/" + UUID.randomUUID();
@@ -192,6 +213,34 @@ public class EvidenceService {
             externalReference,
             null);
     return toResponse(evidence.saveAndFlush(record));
+  }
+
+  @Transactional
+  public EvidenceResponse updateLocation(
+      UUID actorId, UUID inspectionId, UUID evidenceId, String locationDescription) {
+    Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    requireEvidenceEditable(inspectionId, inspection);
+    Evidence record =
+        evidence
+            .findByIdAndInspectionId(evidenceId, inspectionId)
+            .orElseThrow(this::inspectionNotFound);
+    String normalized =
+        locationDescription == null || locationDescription.isBlank()
+            ? null
+            : locationDescription.trim();
+    if (!java.util.Objects.equals(record.getLocationDescription(), normalized)) {
+      record.setLocationDescription(normalized);
+      evidence.saveAndFlush(record);
+      findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+          .filter(finding -> evidenceId.equals(finding.getEvidenceId()))
+          .forEach(finding -> finding.setLocationDescription(normalized));
+      findings.flush();
+      if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
+        inspection.reopenFindings();
+        inspections.saveAndFlush(inspection);
+      }
+    }
+    return toResponse(record);
   }
 
   /**
@@ -307,6 +356,77 @@ public class EvidenceService {
     return evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
         .map(this::toResponse)
         .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public EvidencePageResponse query(
+      UUID actorId,
+      UUID inspectionId,
+      EvidenceStatusFilter status,
+      EvidenceMediaTypeFilter mediaType,
+      String search,
+      int page,
+      int pageSize) {
+    requireInspectionInScope(actorId, inspectionId);
+    int safePage = Math.max(page, 1);
+    int safePageSize = clampEvidencePageSize(pageSize);
+    Page<Evidence> result =
+        evidence.findAll(
+            evidenceFilter(inspectionId, status, mediaType, search),
+            PageRequest.of(safePage - 1, safePageSize, EVIDENCE_ORDER));
+    EvidenceRepository.EvidenceSummary summary = evidence.summarizeInspectionEvidence(inspectionId);
+    return new EvidencePageResponse(
+        result.getContent().stream().map(this::toResponse).toList(),
+        safePage,
+        safePageSize,
+        result.getTotalElements(),
+        result.getTotalPages(),
+        evidence.countByInspectionIdAndRetiredAtIsNull(inspectionId),
+        evidence.countByInspectionIdAndRetiredAtIsNotNull(inspectionId),
+        summary.getLatestCreatedAt(),
+        summary.getLatestRetiredAt());
+  }
+
+  private static Specification<Evidence> evidenceFilter(
+      UUID inspectionId,
+      EvidenceStatusFilter status,
+      EvidenceMediaTypeFilter mediaType,
+      String search) {
+    return (root, query, builder) -> {
+      var predicates = new java.util.ArrayList<Predicate>();
+      predicates.add(builder.equal(root.get("inspectionId"), inspectionId));
+      switch (status) {
+        case ACTIVE -> predicates.add(builder.isNull(root.get("retiredAt")));
+        case RETIRED -> predicates.add(builder.isNotNull(root.get("retiredAt")));
+        case ALL -> {}
+      }
+      var contentType = builder.lower(root.<String>get("contentType"));
+      switch (mediaType) {
+        case IMAGE -> predicates.add(builder.like(contentType, "image/%"));
+        case VIDEO -> predicates.add(builder.like(contentType, "video/%"));
+        case DOCUMENT -> {
+          predicates.add(builder.notLike(contentType, "image/%"));
+          predicates.add(builder.notLike(contentType, "video/%"));
+        }
+        case ALL -> {}
+      }
+      if (search != null && !search.isBlank()) {
+        String term = "%" + escapeLike(search.trim().toLowerCase(Locale.ROOT)) + "%";
+        predicates.add(
+            builder.or(
+                builder.like(builder.lower(root.<String>get("fileName")), term, LIKE_ESCAPE),
+                builder.like(contentType, term, LIKE_ESCAPE)));
+      }
+      return builder.and(predicates.toArray(Predicate[]::new));
+    };
+  }
+
+  private static String escapeLike(String term) {
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+  }
+
+  private static int clampEvidencePageSize(int pageSize) {
+    return Math.min(Math.max(pageSize, 1), MAX_EVIDENCE_PAGE_SIZE);
   }
 
   @Transactional(readOnly = true)
@@ -458,7 +578,33 @@ public class EvidenceService {
         record.getCreatedAt(),
         record.getRetiredByUserId(),
         record.getRetiredAt(),
-        record.getRetirementReason());
+        record.getRetirementReason(),
+        record.getLocationDescription(),
+        false);
+  }
+
+  private EvidenceResponse toResponse(Evidence record, boolean deduplicated) {
+    EvidenceResponse response = toResponse(record);
+    return new EvidenceResponse(
+        response.id(),
+        response.inspectionId(),
+        response.fieldSessionId(),
+        response.fileName(),
+        response.contentType(),
+        response.sizeBytes(),
+        response.checksumSha256(),
+        response.captureTime(),
+        response.source(),
+        response.latitude(),
+        response.longitude(),
+        response.externalReference(),
+        response.uploadStatus(),
+        response.createdAt(),
+        response.retiredByUserId(),
+        response.retiredAt(),
+        response.retirementReason(),
+        response.locationDescription(),
+        deduplicated);
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}

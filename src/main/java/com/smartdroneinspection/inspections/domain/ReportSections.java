@@ -21,6 +21,7 @@ import tools.jackson.databind.node.ObjectNode;
 public record ReportSections(
     String executiveSummary,
     String purposeScopeCriteria,
+    String inspectorCoverageAssessment,
     String methodEquipmentConditions,
     String conclusionsRecommendations,
     OverallCondition overallCondition,
@@ -37,7 +38,8 @@ public record ReportSections(
   public static final int MAX_SECTION_CHARS = 10_000;
   public static final int MAX_DISCLOSURE_CHARS = 2_000;
 
-  public static final ReportSections EMPTY = new ReportSections(null, null, null, null, null, null);
+  public static final ReportSections EMPTY =
+      new ReportSections(null, null, null, null, null, null, null);
 
   /**
    * Reads the authored sections out of a stored snapshot.
@@ -64,6 +66,7 @@ public record ReportSections(
     return new ReportSections(
         text(node, "executiveSummary"),
         text(node, "purposeScopeCriteria"),
+        text(node, "inspectorCoverageAssessment"),
         text(node, "methodEquipmentConditions"),
         text(node, "conclusionsRecommendations"),
         condition(text(node, "overallCondition")),
@@ -120,6 +123,7 @@ public record ReportSections(
     Map<String, String> values = new LinkedHashMap<>();
     values.put("executiveSummary", executiveSummary);
     values.put("purposeScopeCriteria", purposeScopeCriteria);
+    values.put("inspectorCoverageAssessment", inspectorCoverageAssessment);
     values.put("methodEquipmentConditions", methodEquipmentConditions);
     values.put("conclusionsRecommendations", conclusionsRecommendations);
     values.put("overallCondition", overallCondition == null ? null : overallCondition.name());

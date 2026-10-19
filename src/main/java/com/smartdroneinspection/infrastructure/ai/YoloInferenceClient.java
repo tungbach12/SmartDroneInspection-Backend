@@ -41,6 +41,7 @@ public class YoloInferenceClient implements AiInferencePort {
           .map(
               detection ->
                   new Detection(
+                      "yolo",
                       detection.modelName(),
                       detection.modelVersion(),
                       detection.predictedLabel(),

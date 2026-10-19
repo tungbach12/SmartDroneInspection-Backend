@@ -2,15 +2,11 @@ package com.smartdroneinspection.inspections.api.dto.response;
 
 import com.smartdroneinspection.inspections.domain.ReportSections;
 
-/**
- * The authored Report 3 §3.7.2 sections of a version, as the authoring form reads and writes them.
- *
- * <p>A null field is an absent section and renders as "not supplied". It is not an empty value the
- * author chose, and the client must not present it as one.
- */
+/** Authored section values. Null means the author has not supplied that field. */
 public record ReportSectionsResponse(
     String executiveSummary,
     String purposeScopeCriteria,
+    String inspectorCoverageAssessment,
     String methodEquipmentConditions,
     String conclusionsRecommendations,
     ReportSections.OverallCondition overallCondition,
@@ -20,6 +16,7 @@ public record ReportSectionsResponse(
     return new ReportSectionsResponse(
         sections.executiveSummary(),
         sections.purposeScopeCriteria(),
+        sections.inspectorCoverageAssessment(),
         sections.methodEquipmentConditions(),
         sections.conclusionsRecommendations(),
         sections.overallCondition(),

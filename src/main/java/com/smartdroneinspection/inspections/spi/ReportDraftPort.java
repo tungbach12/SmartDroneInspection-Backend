@@ -22,18 +22,13 @@ public interface ReportDraftPort {
    */
   SectionDraft draftSections(DraftContext context) throws IOException;
 
-  /**
-   * @param narrative retained so a caller that still needs prose has it; the authored sections are
-   *     the source of truth for what is displayed and stored
-   */
   record SectionDraft(
       String executiveSummary,
       String purposeScopeCriteria,
       String methodEquipmentConditions,
       String conclusionsRecommendations,
       String overallCondition,
-      String omissionDisclosure,
-      String narrative) {}
+      String omissionDisclosure) {}
 
   record DraftContext(
       InspectionSummary inspection,
@@ -59,7 +54,15 @@ public interface ReportDraftPort {
       String status) {}
 
   record FieldSessionSummary(
-      String sessionId, String status, String startedAt, String endedAt, String assignedDroneId) {}
+      String sessionId,
+      String status,
+      String startedAt,
+      String endedAt,
+      String preFlightChecklistNote,
+      String postponementReason,
+      String abortReason,
+      String limitations,
+      String assignedDroneId) {}
 
   record InspectionSummary(
       String objective,
@@ -78,7 +81,11 @@ public interface ReportDraftPort {
       String component,
       String locationDescription,
       String technicalNotes,
-      String recommendedAction) {}
+      String recommendedAction,
+      String description,
+      String observedCondition,
+      String priority,
+      String measurement) {}
 
   record EvidenceSummary(
       String fileName,
@@ -87,5 +94,7 @@ public interface ReportDraftPort {
       String latitude,
       String longitude,
       String source,
-      String fieldSessionId) {}
+      String fieldSessionId,
+      String locationDescription,
+      String externalReference) {}
 }

@@ -108,6 +108,7 @@ public class InspectionFieldSessionService {
             checklistTemplateId,
             readiness.getId(),
             readiness.getPreparationVersion());
+    session.recordPreFlightChecklistNote(preFlightChecklistNote);
     session.start(Instant.now());
 
     inspection.moveTo(InspectionStatus.IN_PROGRESS);

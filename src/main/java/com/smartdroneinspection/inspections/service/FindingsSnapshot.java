@@ -79,6 +79,8 @@ final class FindingsSnapshot {
                     .append(item.getMeasurement())
                     .append('|')
                     .append(item.getStatus())
+                    .append('|')
+                    .append(item.getInspectorConfirmedAt())
                     .append('\n'));
     try {
       return HexFormat.of()

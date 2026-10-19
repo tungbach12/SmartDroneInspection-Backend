@@ -96,6 +96,7 @@ public class OrganizationRegistrationService {
             orgAdmin.getFullName(),
             orgAdmin.roleValues(),
             orgAdmin.getActorZone().name(),
-            orgAdmin.getOrganizationId()));
+            orgAdmin.getOrganizationId(),
+            orgAdmin.isVisionFallbackEnabled()));
   }
 }

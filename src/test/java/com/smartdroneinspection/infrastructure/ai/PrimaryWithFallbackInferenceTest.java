@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class PrimaryWithFallbackInferenceTest {
 
   private static final AiInferencePort.Detection DETECTION =
-      new AiInferencePort.Detection("model", "v1", "crack", BigDecimal.valueOf(0.9), "{}");
+      new AiInferencePort.Detection("yolo", "model", "v1", "crack", BigDecimal.valueOf(0.9), "{}");
 
   @Test
   void answersFromThePrimaryDetectorWithoutTouchingTheFallback() throws IOException {
@@ -53,6 +53,20 @@ class PrimaryWithFallbackInferenceTest {
 
     assertThat(detections).containsExactly(DETECTION);
     assertThat(fallback.calls).isEqualTo(1);
+  }
+
+  @Test
+  void doesNotInvokeFallbackWhenInspectorDisabledIt() {
+    RecordingPort primary = new RecordingPort(List.of(), new IOException("detector is down"));
+    RecordingPort fallback = new RecordingPort(List.of(DETECTION), null);
+
+    assertThatThrownBy(
+            () ->
+                new PrimaryWithFallbackInference(primary, Optional.of(fallback))
+                    .analyze(new byte[] {1}, "image/jpeg", false))
+        .isInstanceOf(IOException.class)
+        .hasMessage("detector is down");
+    assertThat(fallback.calls).isZero();
   }
 
   @Test

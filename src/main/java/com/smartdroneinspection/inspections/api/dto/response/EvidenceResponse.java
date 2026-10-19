@@ -23,4 +23,6 @@ public record EvidenceResponse(
     Instant createdAt,
     UUID retiredByUserId,
     Instant retiredAt,
-    String retirementReason) {}
+    String retirementReason,
+    String locationDescription,
+    boolean deduplicated) {}

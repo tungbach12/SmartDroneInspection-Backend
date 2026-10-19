@@ -7,6 +7,8 @@
       "shared::exception",
       "users",
       "shared::storage",
-      "subscriptions"
+      "subscriptions",
+      "inspections::reportcontext",
+      "assets::reportcontext"
     })
 package com.smartdroneinspection.assets;

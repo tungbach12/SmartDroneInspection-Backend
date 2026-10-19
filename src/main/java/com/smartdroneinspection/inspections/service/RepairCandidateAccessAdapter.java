@@ -4,7 +4,6 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
-import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
@@ -47,8 +46,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
   public List<RepairCandidate> findRepairCandidates(UUID organizationId) {
     List<RepairCandidate> candidates = new ArrayList<>();
     List<VerifiedFinding> repairRequired =
-        findings.findByRepairRequiredTrueAndDecisionIn(
-            List.of(FindingDecision.CONFIRMED, FindingDecision.MODIFIED));
+        findings.findByRepairRequiredTrueAndInspectorConfirmedAtNotNull();
 
     for (VerifiedFinding finding : repairRequired) {
       candidateFor(organizationId, finding).ifPresent(candidates::add);
@@ -62,11 +60,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
       UUID organizationId, UUID reportVersionId, UUID findingId) {
     return findings
         .findById(findingId)
-        .filter(
-            finding ->
-                finding.isRepairRequired()
-                    && (finding.getDecision() == FindingDecision.CONFIRMED
-                        || finding.getDecision() == FindingDecision.MODIFIED))
+        .filter(finding -> finding.isRepairRequired() && finding.isOfficial())
         .flatMap(finding -> candidateFor(organizationId, finding))
         .filter(candidate -> candidate.reportVersionId().equals(reportVersionId));
   }

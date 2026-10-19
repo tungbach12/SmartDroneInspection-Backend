@@ -12,6 +12,7 @@ import java.util.UUID;
 public record AiFindingCandidateResponse(
     UUID id,
     UUID evidenceId,
+    String modelProvider,
     String modelName,
     String modelVersion,
     String predictedLabel,

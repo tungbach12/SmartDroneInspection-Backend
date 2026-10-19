@@ -64,7 +64,8 @@ class ReportDraftClientTest {
 
     assertThat(draft.executiveSummary())
         .isEqualTo("The north span girder G4 shows coating blistering.");
-    assertThat(draft.purposeScopeCriteria()).contains("confirm coating integrity");
+    assertThat(draft.purposeScopeCriteria()).isNull();
+    assertThat(requestBody.get()).doesNotContain("purposeScopeCriteria");
     assertThat(draft.methodEquipmentConditions()).contains("15m AGL");
     assertThat(draft.conclusionsRecommendations()).contains("Close inspection of G4");
     assertThat(draft.overallCondition()).isEqualTo("POOR");
@@ -80,7 +81,8 @@ class ReportDraftClientTest {
             .path("content")
             .asString();
     assertThat(prompt)
-        .contains("Confirmed Findings (official findings only):\n- Component: Lower chord")
+        .contains(
+            "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):\n- Component: Lower chord")
         .contains("Defect: Surface Crack")
         .contains("AI Detection Candidates (advisory, not official findings)")
         .contains("Candidate status (not official finding status): PENDING")
@@ -106,7 +108,7 @@ class ReportDraftClientTest {
         .contains(
             "Shot-list comparison entered by Inspector: Both walkways and the central span were covered")
         .contains("Inspector-recorded limitation reason: Wind limited north access")
-        .contains("not proof beyond the entered comparison")
+        .contains("not independent proof beyond the entered comparison")
         .doesNotContain("inspector-42")
         .doesNotContain("12:34:56Z")
         .doesNotContain("Inspector ID:")
@@ -114,7 +116,9 @@ class ReportDraftClientTest {
         .doesNotContain("checklist-1")
         .doesNotContain("uploader");
     assertThat(request).contains("\"stream\":false");
-    assertThat(prompt.indexOf("Confirmed Findings (official findings only):"))
+    assertThat(
+            prompt.indexOf(
+                "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):"))
         .isLessThan(prompt.indexOf("AI Detection Candidates (advisory, not official findings):"));
     assertThat(prompt.indexOf("AI Detection Candidates (advisory, not official findings):"))
         .isLessThan(prompt.indexOf("Recorded Field Sessions (platform records"));
@@ -210,7 +214,11 @@ class ReportDraftClientTest {
                 "Lower chord",
                 "Span 2, girder G3",
                 "Hairline crack observed",
-                "Monitor and re-inspect")),
+                "Monitor and re-inspect",
+                null,
+                null,
+                null,
+                null)),
         List.of(
             new EvidenceSummary(
                 "girder-01.png",
@@ -219,7 +227,9 @@ class ReportDraftClientTest {
                 "10.7769",
                 "106.7009",
                 "WEB_UPLOAD",
-                "session-1")),
+                "session-1",
+                null,
+                null)),
         List.of(
             new com.smartdroneinspection.inspections.spi.ReportDraftPort.CandidateSummary(
                 "candidate-1",
@@ -233,7 +243,15 @@ class ReportDraftClientTest {
                 "PENDING")),
         List.of(
             new com.smartdroneinspection.inspections.spi.ReportDraftPort.FieldSessionSummary(
-                "session-1", "IN_PROGRESS", "2026-10-12T10:00:00Z", null, "drone-1")),
+                "session-1",
+                "IN_PROGRESS",
+                "2026-10-12T10:00:00Z",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "drone-1")),
         new EvidenceQualitySummary(
             "ACCEPTED",
             "Both walkways and the central span were covered",

@@ -9,7 +9,13 @@ public interface AiInferencePort {
 
   List<Detection> analyze(byte[] image, String contentType) throws IOException;
 
+  default List<Detection> analyze(byte[] image, String contentType, boolean fallbackEnabled)
+      throws IOException {
+    return analyze(image, contentType);
+  }
+
   record Detection(
+      String provider,
       String modelName,
       String modelVersion,
       String predictedLabel,

@@ -40,10 +40,16 @@ class PrimaryWithFallbackInference implements AiInferencePort {
 
   @Override
   public List<Detection> analyze(byte[] image, String contentType) throws IOException {
+    return analyze(image, contentType, true);
+  }
+
+  @Override
+  public List<Detection> analyze(byte[] image, String contentType, boolean fallbackEnabled)
+      throws IOException {
     try {
       return primary.analyze(image, contentType);
     } catch (IOException failure) {
-      if (fallback.isEmpty()) {
+      if (!fallbackEnabled || fallback.isEmpty()) {
         throw failure;
       }
       log.warn(

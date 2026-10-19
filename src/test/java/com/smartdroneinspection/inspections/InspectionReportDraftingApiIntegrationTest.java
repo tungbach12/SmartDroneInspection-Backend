@@ -94,12 +94,11 @@ class InspectionReportDraftingApiIntegrationTest {
               "Proposed executive summary for "
                   + context.findings().size()
                   + " confirmed findings.",
-              "Objective: confirm coating integrity.",
+              null,
               "Visual and thermal optical survey at 15m AGL.",
               "Close inspection of the affected chord within 90 days.",
               "POOR",
-              "Submerged components were not observed.",
-              "legacy narrative kept for compatibility");
+              "Submerged components were not observed.");
         }
       };
     }
@@ -148,9 +147,7 @@ class InspectionReportDraftingApiIntegrationTest {
         .andExpect(
             jsonPath("$.data.sections.executiveSummary")
                 .value("Proposed executive summary for 0 confirmed findings."))
-        .andExpect(
-            jsonPath("$.data.sections.purposeScopeCriteria")
-                .value("Objective: confirm coating integrity."))
+        .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
         .andExpect(jsonPath("$.data.sections.overallCondition").value("POOR"))
         .andExpect(
             jsonPath("$.data.sections.omissionDisclosure")
@@ -170,6 +167,51 @@ class InspectionReportDraftingApiIntegrationTest {
     assertThat(objectMapper.readTree(context.inspection().acceptanceCriteria()))
         .isEqualTo(objectMapper.readTree("{\"criteria\":\"no visible structural damage\"}"));
     assertThat(context.checklistResponses()).isEmpty();
+  }
+
+  @Test
+  void draftIncludesStoredChecklistAnswersOnlyForSessionTemplateItems() throws Exception {
+    UUID templateId = UUID.randomUUID();
+    UUID itemId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "INSERT INTO checklist_templates (id, template_key, version_number, name, status, created_by_user_id, published_at, created_at, updated_at, row_version) "
+            + "VALUES (?, 'REPORT-CHECK', 1, 'Report checklist', 'ACTIVE', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        templateId,
+        fixture.inspectorId());
+    jdbcTemplate.update(
+        "INSERT INTO checklist_items (id, template_id, item_code, prompt, response_type, required, display_order, created_at) "
+            + "VALUES (?, ?, 'ACCESS', 'Was the span accessible?', 'PASS_FAIL', TRUE, 0, CURRENT_TIMESTAMP)",
+        itemId,
+        templateId);
+    UUID sessionId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, status, checklist_template_id, checklist_version, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, ?, ?, 'POSTPONED', ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        sessionId,
+        fixture.inspectionId(),
+        fixture.organizationId(),
+        fixture.inspectorId(),
+        templateId);
+    jdbcTemplate.update(
+        "INSERT INTO checklist_responses (id, inspection_id, checklist_item_id, response_value, notes, completed_by_user_id, completed_at, context, template_version, item_version, responder_user_id, answer, field_session_id, created_at, updated_at) "
+            + "VALUES (?, ?, ?, '\"PASS\"'::jsonb, 'Clear access', ?, CURRENT_TIMESTAMP, 'FIELD_SESSION', 1, 1, ?, '\"PASS\"'::jsonb, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        UUID.randomUUID(),
+        fixture.inspectionId(),
+        itemId,
+        fixture.inspectorId(),
+        fixture.inspectorId(),
+        sessionId);
+
+    draft();
+
+    assertThat(DraftingStub.LAST_CONTEXT.get().checklistResponses())
+        .singleElement()
+        .satisfies(
+            response -> {
+              assertThat(response.prompt()).isEqualTo("Was the span accessible?");
+              assertThat(response.responseValue()).isEqualTo("PASS");
+              assertThat(response.notes()).isEqualTo("Clear access");
+            });
   }
 
   @Test
@@ -312,18 +354,19 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void draftingNeverAltersAReviewedFinding() throws Exception {
-    insertConfirmedFinding("Corrosion", "HIGH");
+  void draftingNeverAltersAnInspectorConfirmedFinding() throws Exception {
+    UUID findingId = insertConfirmedFinding("Corrosion", "HIGH");
 
     String severityBefore = findingSeverity();
-    String decisionBefore = findingDecision();
+    String confirmedAtBefore = findingInspectorConfirmedAt();
     long findingsBefore = countFindings();
 
     draft();
 
     assertThat(countFindings()).isEqualTo(findingsBefore);
     assertThat(findingSeverity()).isEqualTo(severityBefore);
-    assertThat(findingDecision()).isEqualTo(decisionBefore);
+    assertThat(findingInspectorConfirmedAt()).isEqualTo(confirmedAtBefore);
+    assertThat(findingId).isNotNull();
   }
 
   @Test
@@ -343,21 +386,20 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void theManualDraftRemainsAvailableWhenDraftingIsUnconfigured() throws Exception {
+  void theManualDraftRemainsAvailableAsAnEmptyStructuredVersion() throws Exception {
     confirmFindings(true);
-    // The authoring path must not depend on a model. Report 3 requires a structured manual draft to
-    // remain possible, so this works with no drafting provider at all.
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("narrative", "Authored by hand.", "omissionDisclosure", "None."))))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.llmModel").value("manual-authoring"))
-        .andExpect(jsonPath("$.data.narrative").value("Authored by hand."));
+        .andExpect(jsonPath("$.data.sections.executiveSummary").doesNotExist())
+        .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
+        .andExpect(jsonPath("$.data.narrative").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.contentSnapshot")
+                .value(org.hamcrest.Matchers.containsString("MANUAL")));
   }
 
   // ------------------------------------------------------------------ helpers
@@ -430,22 +472,22 @@ class InspectionReportDraftingApiIntegrationTest {
         fixture.inspectionId());
   }
 
-  private String findingDecision() {
+  private String findingInspectorConfirmedAt() {
     return jdbcTemplate.queryForObject(
-        "SELECT decision FROM verified_findings WHERE inspection_id = ? LIMIT 1",
+        "SELECT inspector_confirmed_at::text FROM verified_findings WHERE inspection_id = ? LIMIT 1",
         String.class,
         fixture.inspectionId());
   }
 
-  private void insertConfirmedFinding(String defect, String severity) {
+  private UUID insertConfirmedFinding(String defect, String severity) {
     jdbcTemplate.update(
         """
         INSERT INTO verified_findings (id, inspection_id, created_by_user_id, source, finding_code,
                                        defect_label, severity, location_description, technical_notes,
-                                       status, decision, repair_required, created_at, updated_at,
-                                       row_version)
+                                       status, decision, inspector_confirmed_at, repair_required,
+                                       created_at, updated_at, row_version)
         VALUES (?, ?, ?, 'MANUAL', ?, ?, ?, 'Lower chord', 'Visible corrosion',
-                'OPEN', 'CONFIRMED', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+                'OPEN', 'CONFIRMED', CURRENT_TIMESTAMP, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         UUID.randomUUID(),
         fixture.inspectionId(),
@@ -453,6 +495,10 @@ class InspectionReportDraftingApiIntegrationTest {
         "F-" + UUID.randomUUID().toString().substring(0, 6),
         defect,
         severity);
+    return jdbcTemplate.queryForObject(
+        "SELECT id FROM verified_findings WHERE inspection_id = ? ORDER BY created_at DESC LIMIT 1",
+        UUID.class,
+        fixture.inspectionId());
   }
 
   private static RequestPostProcessor principal(UUID userId, String role) {
