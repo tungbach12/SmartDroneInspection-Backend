@@ -227,6 +227,28 @@ public class AuthService {
     audit.record(userId, userId, "AUTH_LOGOUT_ALL", "SUCCESS", ipAddress, userAgent, correlationId);
   }
 
+  @Transactional
+  public UserResponse updateVisionFallbackPreference(UUID userId, boolean enabled) {
+    User user =
+        users
+            .findDetailedById(userId)
+            .filter(User::active)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.UNAUTHORIZED,
+                        "ACCOUNT_INACTIVE",
+                        "Authentication is required."));
+    if (!user.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.INSPECTOR)) {
+      throw new AuthException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only an Inspector can update the AI fallback preference.");
+    }
+    user.setVisionFallbackEnabled(enabled);
+    return toResponse(user);
+  }
+
   @Transactional(readOnly = true)
   public UserResponse me(UUID userId) {
     User user =
@@ -289,7 +311,8 @@ public class AuthService {
         user.getFullName(),
         user.roleValues(),
         user.getActorZone().name(),
-        user.getOrganizationId());
+        user.getOrganizationId(),
+        user.isVisionFallbackEnabled());
   }
 
   public void revokeAllSessions(UUID userId, String reason) {

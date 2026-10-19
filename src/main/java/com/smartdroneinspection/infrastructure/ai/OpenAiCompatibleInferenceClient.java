@@ -115,6 +115,7 @@ public class OpenAiCompatibleInferenceClient implements AiInferencePort {
       validateBoundingBox(box);
       results.add(
           new Detection(
+              "compatible-vision",
               model,
               responseModel == null || responseModel.isBlank() ? model : responseModel,
               label.trim(),

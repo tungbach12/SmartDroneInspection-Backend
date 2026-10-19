@@ -65,6 +65,9 @@ public class FieldSession {
   @Column(name = "abort_reason", length = 2000)
   private String abortReason;
 
+  @Column(name = "pre_flight_checklist_note", length = 2000)
+  private String preFlightChecklistNote;
+
   @Column(name = "checklist_template_id")
   private UUID checklistTemplateId;
 
@@ -119,6 +122,13 @@ public class FieldSession {
    * <p>Starting stamps the instant rather than accepting one, so a caller cannot backdate a session
    * to sit inside an earlier planned window.
    */
+  public void recordPreFlightChecklistNote(String note) {
+    if (note == null || note.isBlank()) {
+      throw new IllegalArgumentException("Pre-flight checklist note is required");
+    }
+    this.preFlightChecklistNote = note.trim();
+  }
+
   public void start(Instant startedAt) {
     if (!IN_PROGRESS.equals(status) && !PLANNED.equals(status)) {
       throw new IllegalStateException("Only a planned or in-progress session can be started");
@@ -252,6 +262,10 @@ public class FieldSession {
 
   public String getLimitations() {
     return limitations;
+  }
+
+  public String getPreFlightChecklistNote() {
+    return preFlightChecklistNote;
   }
 
   public UUID getChecklistTemplateId() {

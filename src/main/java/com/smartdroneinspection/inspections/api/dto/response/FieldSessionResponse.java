@@ -20,6 +20,7 @@ public record FieldSessionResponse(
     UUID checklistTemplateId,
     Integer readinessVersion,
     String status,
+    String preFlightChecklistNote,
     Instant startedAt,
     Instant endedAt,
     String postponementReason,

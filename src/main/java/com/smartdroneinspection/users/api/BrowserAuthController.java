@@ -9,6 +9,7 @@ import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeReque
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.PasswordChangeRequest;
+import com.smartdroneinspection.users.api.dto.request.UpdateAiFallbackPreferenceRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
@@ -29,6 +30,7 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -130,6 +132,18 @@ public class BrowserAuthController {
         .header(HttpHeaders.SET_COOKIE, cookies.clear().toString())
         .cacheControl(CacheControl.noStore())
         .build();
+  }
+
+  @PutMapping("/me/ai-fallback-preference")
+  public ResponseEntity<ApiResponse<UserResponse>> updateAiFallbackPreference(
+      @AuthenticationPrincipal Jwt jwt,
+      @Valid @RequestBody UpdateAiFallbackPreferenceRequest request) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(
+            ApiResponse.success(
+                auth.updateVisionFallbackPreference(
+                    UUID.fromString(jwt.getSubject()), request.visionFallbackEnabled())));
   }
 
   @GetMapping("/me")

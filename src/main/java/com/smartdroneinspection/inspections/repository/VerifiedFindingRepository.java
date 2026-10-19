@@ -24,15 +24,12 @@ public interface VerifiedFindingRepository extends JpaRepository<VerifiedFinding
       nativeQuery = true)
   long countIncludingDeletedByInspectionId(@Param("inspectionId") UUID inspectionId);
 
-  List<VerifiedFinding> findByRepairRequiredTrueAndDecisionIn(
-      List<com.smartdroneinspection.inspections.domain.enums.FindingDecision> decisions);
+  List<VerifiedFinding> findByRepairRequiredTrueAndInspectorConfirmedAtNotNull();
 
   /** MF3-13 hands only confirmed, repair-required findings to MF4. */
   @Query(
       "select f from VerifiedFinding f where f.inspectionId = :inspectionId "
           + "and f.repairRequired = true and f.correctiveActionReviewedByUserId is not null "
-          + "and f.correctiveActionRequired = true and f.decision in "
-          + "(com.smartdroneinspection.inspections.domain.enums.FindingDecision.CONFIRMED, "
-          + "com.smartdroneinspection.inspections.domain.enums.FindingDecision.MODIFIED)")
+          + "and f.correctiveActionRequired = true and f.inspectorConfirmedAt is not null")
   List<VerifiedFinding> findRepairRequired(@Param("inspectionId") UUID inspectionId);
 }

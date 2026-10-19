@@ -6,6 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -48,6 +49,53 @@ class AdminUserApiIntegrationTest {
   void setUp() {
     mockMvc =
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
+  }
+
+  @Test
+  void inspectorCanDisableAndRestoreAutomaticVisionFallbackPreference() throws Exception {
+    Organization organization =
+        organizations.saveAndFlush(
+            new Organization("Inspector organization", "INS-" + UUID.randomUUID(), "Test fixture"));
+    User inspector =
+        new User(
+            "inspector-" + UUID.randomUUID() + "@example.test",
+            "Inspector",
+            "{argon2}encoded-password",
+            UserStatus.ACTIVE,
+            ActorZone.CUSTOMER_ORGANIZATION,
+            organization.getId());
+    inspector.addRole(UserRole.INSPECTOR);
+    inspector = users.saveAndFlush(inspector);
+    UUID inspectorId = inspector.getId();
+
+    mockMvc
+        .perform(
+            put("/api/v1/auth/me/ai-fallback-preference")
+                .with(
+                    jwt()
+                        .jwt(token -> token.subject(inspectorId.toString()))
+                        .authorities(new SimpleGrantedAuthority("ROLE_INSPECTOR")))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"visionFallbackEnabled\":false}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.visionFallbackEnabled").value(false));
+
+    assertThat(users.findDetailedById(inspectorId).orElseThrow().isVisionFallbackEnabled())
+        .isFalse();
+  }
+
+  @Test
+  void organizationAdminCannotChangeInspectorAiFallbackPreference() throws Exception {
+    User admin = saveAdmin();
+    mockMvc
+        .perform(
+            put("/api/v1/auth/me/ai-fallback-preference")
+                .with(admin(admin.getId()))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"visionFallbackEnabled\":false}"))
+        .andExpect(status().isForbidden());
   }
 
   @Test

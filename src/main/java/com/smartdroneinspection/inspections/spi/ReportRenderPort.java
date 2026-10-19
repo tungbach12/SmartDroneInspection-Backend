@@ -31,6 +31,8 @@ public interface ReportRenderPort {
       String organizationLabel,
       String authorName,
       String reviewerName,
+      String findingsConfirmedAt,
+      ReportContext reportContext,
       String authorVerifiedAt,
       String reviewedAt,
       String publishedAt,
@@ -39,9 +41,42 @@ public interface ReportRenderPort {
       List<FindingView> findings,
       List<EvidenceView> evidence) {}
 
+  record ReportContext(
+      String organizationName,
+      String assetCode,
+      String assetName,
+      String assetLocation,
+      String assetCategory,
+      String assignedDroneSerialNumber,
+      String assignedDroneManufacturer,
+      String assignedDroneModel,
+      String preparationStatus,
+      String shotList,
+      String evidenceTypes,
+      String accessConstraints,
+      String safetyObservations,
+      String permitDocumentReferences,
+      String readinessDecision,
+      String readinessDecisionDate,
+      String readinessReason,
+      String evidenceQualityDecision,
+      String evidenceQualityComparison,
+      String evidenceQualityLimitation,
+      List<String> checklistResponseSummaries,
+      List<String> fieldSessionSummaries,
+      String reviewerQualificationDisclosure) {
+    public ReportContext {
+      checklistResponseSummaries =
+          checklistResponseSummaries == null ? List.of() : List.copyOf(checklistResponseSummaries);
+      fieldSessionSummaries =
+          fieldSessionSummaries == null ? List.of() : List.copyOf(fieldSessionSummaries);
+    }
+  }
+
   record Sections(
       String executiveSummary,
       String purposeScopeCriteria,
+      String inspectorCoverageAssessment,
       String methodEquipmentConditions,
       String conclusionsRecommendations,
       String overallCondition,
@@ -49,6 +84,8 @@ public interface ReportRenderPort {
 
   record FindingView(
       String id,
+      String evidenceId,
+      String evidenceFileName,
       String component,
       String defectLabel,
       String severity,
@@ -62,7 +99,7 @@ public interface ReportRenderPort {
       String decidedAt,
       String measurement,
       String repairRequired,
-      List<String> evidenceFileNames) {}
+      boolean inspectorConfirmed) {}
 
   record EvidenceView(
       String id,
@@ -71,5 +108,10 @@ public interface ReportRenderPort {
       String checksumSha256,
       String captureTime,
       String componentLocation,
+      String source,
+      String fieldSessionId,
+      String externalReference,
+      String analysisStatus,
+      Integer detectionCount,
       byte[] content) {}
 }

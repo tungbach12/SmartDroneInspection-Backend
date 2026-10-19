@@ -101,6 +101,15 @@ public class Evidence {
   @Column(name = "retirement_reason", length = 2000)
   private String retirementReason;
 
+  @Column(name = "location_description", length = 1000)
+  private String locationDescription;
+
+  @Column(name = "analysis_completed_at")
+  private Instant analysisCompletedAt;
+
+  @Column(name = "analysis_detection_count")
+  private Integer analysisDetectionCount;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -182,6 +191,30 @@ public class Evidence {
 
   public String getRetirementReason() {
     return retirementReason;
+  }
+
+  public String getLocationDescription() {
+    return locationDescription;
+  }
+
+  public Instant getAnalysisCompletedAt() {
+    return analysisCompletedAt;
+  }
+
+  public Integer getAnalysisDetectionCount() {
+    return analysisDetectionCount;
+  }
+
+  public void markAnalysisCompleted(int detectionCount) {
+    this.analysisCompletedAt = Instant.now();
+    this.analysisDetectionCount = detectionCount;
+  }
+
+  public void setLocationDescription(String locationDescription) {
+    this.locationDescription =
+        locationDescription == null || locationDescription.isBlank()
+            ? null
+            : locationDescription.trim();
   }
 
   public UUID getId() {

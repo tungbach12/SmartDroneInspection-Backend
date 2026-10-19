@@ -59,6 +59,9 @@ public class User {
   @Column(name = "must_change_password", nullable = false)
   private boolean mustChangePassword;
 
+  @Column(name = "vision_fallback_enabled", nullable = false)
+  private boolean visionFallbackEnabled = true;
+
   @Column(name = "last_login_at")
   private Instant lastLoginAt;
 
@@ -136,6 +139,15 @@ public class User {
 
   public boolean isMustChangePassword() {
     return mustChangePassword;
+  }
+
+  public boolean isVisionFallbackEnabled() {
+    return visionFallbackEnabled;
+  }
+
+  public void setVisionFallbackEnabled(boolean visionFallbackEnabled) {
+    this.visionFallbackEnabled = visionFallbackEnabled;
+    this.updatedAt = Instant.now();
   }
 
   public List<UserRoleAssignment> getRoleAssignments() {

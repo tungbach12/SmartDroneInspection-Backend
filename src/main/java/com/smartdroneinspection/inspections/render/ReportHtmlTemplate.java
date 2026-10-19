@@ -61,6 +61,11 @@ final class ReportHtmlTemplate {
     body.append("<table class=\"kv\">");
     row(body, "Organization", context.organizationLabel());
     row(body, "Asset", context.assetLabel());
+    if (context.reportContext() != null) {
+      row(body, "Asset code", context.reportContext().assetCode());
+      row(body, "Asset location", context.reportContext().assetLocation());
+      row(body, "Asset category", context.reportContext().assetCategory());
+    }
     row(body, "Inspection objective", context.objective());
     row(body, "Report reference", context.documentRef());
     row(body, "Version / status", "v" + context.versionNo() + " · " + context.status());
@@ -93,12 +98,52 @@ final class ReportHtmlTemplate {
       StringBuilder body, ReportRenderPort.RenderContext context) {
     section(body, "3. Purpose, scope and criteria");
     paragraph(body, context.sections().purposeScopeCriteria());
+    if (hasText(context.sections().inspectorCoverageAssessment())) {
+      body.append("<p><b>Inspector's coverage assessment.</b> ")
+          .append(escape(context.sections().inspectorCoverageAssessment()))
+          .append("</p>");
+    }
   }
 
   private static void methodEquipmentConditions(
       StringBuilder body, ReportRenderPort.RenderContext context) {
     section(body, "4. Method, equipment and conditions");
     paragraph(body, context.sections().methodEquipmentConditions());
+    ReportRenderPort.ReportContext report = context.reportContext();
+    if (report != null) {
+      body.append("<table class=\"kv\">");
+      row(body, "Assigned Drone", droneLabel(report));
+      row(body, "Preparation status", report.preparationStatus());
+      row(body, "Planned shot list", report.shotList());
+      row(body, "Evidence types requested", report.evidenceTypes());
+      row(body, "Access constraints", report.accessConstraints());
+      row(body, "Safety observations", report.safetyObservations());
+      row(body, "Permit document references", report.permitDocumentReferences());
+      row(body, "Readiness decision", report.readinessDecision());
+      row(body, "Readiness decision date", report.readinessDecisionDate());
+      row(body, "Readiness reason", report.readinessReason());
+      row(body, "Evidence quality decision", report.evidenceQualityDecision());
+      row(body, "Evidence quality comparison", report.evidenceQualityComparison());
+      row(body, "Evidence quality limitation", report.evidenceQualityLimitation());
+      if (!report.fieldSessionSummaries().isEmpty()) {
+        row(body, "Recorded field sessions", String.join("; ", report.fieldSessionSummaries()));
+      }
+      row(body, "Reviewer qualification disclosure", report.reviewerQualificationDisclosure());
+      body.append("</table>");
+      if (!report.checklistResponseSummaries().isEmpty()) {
+        body.append("<h3>Recorded checklist responses</h3><ul>");
+        for (String response : report.checklistResponseSummaries()) {
+          body.append("<li>").append(escape(response)).append("</li>");
+        }
+        body.append("</ul>");
+      }
+      if (report.fieldSessionSummaries().stream()
+          .anyMatch(summary -> summary.contains("Pre-flight checklist note:"))) {
+        body.append(
+            "<p class=\"scope\">Pre-flight checklist content above is an Inspector-entered"
+                + " note, not item-level checklist verification or proof of flight.</p>");
+      }
+    }
   }
 
   private static void evidenceRegister(StringBuilder body, ReportRenderPort.RenderContext context) {
@@ -168,14 +213,12 @@ final class ReportHtmlTemplate {
       row(body, "Corrective work required", finding.repairRequired());
 
       ReportRenderPort.EvidenceView attachedEvidence = null;
-      if (!finding.evidenceFileNames().isEmpty()) {
-        for (ReportRenderPort.EvidenceView ev : context.evidence()) {
-          if (finding.evidenceFileNames().contains(ev.id())
-              || finding.evidenceFileNames().contains(ev.fileName())) {
-            attachedEvidence = ev;
-            break;
-          }
-        }
+      if (finding.evidenceId() != null) {
+        attachedEvidence =
+            context.evidence().stream()
+                .filter(ev -> finding.evidenceId().equals(ev.id()))
+                .findFirst()
+                .orElse(null);
       }
 
       if (attachedEvidence != null) {
@@ -184,10 +227,16 @@ final class ReportHtmlTemplate {
             .append(" (")
             .append(escape(attachedEvidence.id()))
             .append(")</td></tr>");
-      } else if (!finding.evidenceFileNames().isEmpty()) {
+      } else if (finding.evidenceId() != null) {
         body.append("<tr><th>Evidence</th><td>")
-            .append(escape(String.join(", ", finding.evidenceFileNames())))
-            .append("</td></tr>");
+            .append(
+                escape(
+                    finding.evidenceFileName() == null
+                        ? finding.evidenceId()
+                        : finding.evidenceFileName()))
+            .append(" (")
+            .append(escape(finding.evidenceId()))
+            .append(")</td></tr>");
       }
       body.append("</table>");
 
@@ -219,23 +268,25 @@ final class ReportHtmlTemplate {
     section(body, "7. Conclusions and recommendations");
     paragraph(body, context.sections().conclusionsRecommendations());
     body.append(
-        "<p class=\"scope\">This assessment is limited to the components observed during the"
-            + " inspection on the recorded date. It is not a statement of whole-asset safety, a"
-            + " certified non-destructive or load-capacity test, or a repair-completion"
-            + " certificate.</p>");
+        "<p class=\"scope\">This application report records the inspection evidence and"
+            + " findings shown above. It is not a statement of whole-asset safety, a certified"
+            + " non-destructive or load-capacity test, or a repair-completion certificate.</p>");
   }
 
   private static void appendices(StringBuilder body, ReportRenderPort.RenderContext context) {
     section(body, "8. Appendices");
     body.append(
-            "<p>Evidence photographs associated with confirmed findings are presented alongside their respective findings in section 6. ")
-        .append("All evidence items are indexed with their SHA-256 checksums in section 5. ")
-        .append("Checklist responses, session logs and source documents are held against the")
-        .append(" inspection record and are linked from the platform.</p>");
+        "<p>Evidence associated with confirmed findings is shown in section 6. The evidence"
+            + " register and recorded inspection context appear in sections 4 and 5.</p>");
 
     java.util.Set<String> findingEvidenceIds = new java.util.HashSet<>();
     for (ReportRenderPort.FindingView finding : context.findings()) {
-      findingEvidenceIds.addAll(finding.evidenceFileNames());
+      if (finding.evidenceId() != null) {
+        findingEvidenceIds.add(finding.evidenceId());
+      }
+      if (finding.evidenceFileName() != null) {
+        findingEvidenceIds.add(finding.evidenceFileName());
+      }
     }
 
     java.util.List<ReportRenderPort.EvidenceView> additionalEvidence =
@@ -303,6 +354,23 @@ final class ReportHtmlTemplate {
         .append(" of ")
         .append("<span class=\"page-count\"></span>")
         .append("</div>");
+  }
+
+  private static String droneLabel(ReportRenderPort.ReportContext report) {
+    StringBuilder label = new StringBuilder();
+    appendLabel(label, report.assignedDroneManufacturer());
+    appendLabel(label, report.assignedDroneModel());
+    appendLabel(label, report.assignedDroneSerialNumber());
+    return label.isEmpty() ? null : label.toString();
+  }
+
+  private static void appendLabel(StringBuilder label, String value) {
+    if (hasText(value)) {
+      if (!label.isEmpty()) {
+        label.append(" · ");
+      }
+      label.append(value);
+    }
   }
 
   private static void section(StringBuilder body, String title) {

@@ -138,6 +138,12 @@ class InspectionFieldSessionApiIntegrationTest {
             jdbcTemplate.queryForObject(
                 "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId))
         .isEqualTo("IN_PROGRESS");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT pre_flight_checklist_note FROM field_sessions WHERE inspection_id = ?",
+                String.class,
+                inspectionId))
+        .isEqualTo("Drone identified; bridge accessible");
   }
 
   @Test
@@ -148,6 +154,9 @@ class InspectionFieldSessionApiIntegrationTest {
         .perform(get("/api/v1/inspections/{i}/field-sessions", inspectionId).with(inspector()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"))
+        .andExpect(
+            jsonPath("$.data[0].preFlightChecklistNote")
+                .value("Drone identified; bridge accessible"))
         .andExpect(jsonPath("$.data[0].readinessDecisionId").exists());
   }
 

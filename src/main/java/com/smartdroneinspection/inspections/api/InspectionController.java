@@ -1,20 +1,23 @@
 package com.smartdroneinspection.inspections.api;
 
+import com.smartdroneinspection.inspections.api.dto.EvidenceMediaTypeFilter;
+import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CorrectiveActionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CorrectiveHandoffRequest;
 import com.smartdroneinspection.inspections.api.dto.request.DeleteFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecisionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.FindingDecisionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
-import com.smartdroneinspection.inspections.api.dto.request.ManualReportDraftRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.RetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewCandidateRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateResponse;
+import com.smartdroneinspection.inspections.api.dto.response.EvidenceAnalysisStatusResponse;
+import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
@@ -117,6 +120,33 @@ public class InspectionController {
     return ApiResponse.success(evidenceService.list(actorId(jwt), inspectionId));
   }
 
+  @GetMapping("/evidence/query")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  public ApiResponse<EvidencePageResponse> queryEvidence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(defaultValue = "ALL") EvidenceStatusFilter status,
+      @RequestParam(defaultValue = "ALL") EvidenceMediaTypeFilter mediaType,
+      @RequestParam(required = false) String search,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "50") int pageSize) {
+    return ApiResponse.success(
+        evidenceService.query(
+            actorId(jwt), inspectionId, status, mediaType, search, page, pageSize));
+  }
+
+  @PutMapping("/evidence/{evidenceId}/location")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceResponse> updateEvidenceLocation(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @Valid @RequestBody UpdateEvidenceLocationRequest request) {
+    return ApiResponse.success(
+        evidenceService.updateLocation(
+            actorId(jwt), inspectionId, evidenceId, request.locationDescription()));
+  }
+
   @PostMapping("/evidence/{evidenceId}/retire")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<EvidenceResponse> retireEvidence(
@@ -187,6 +217,13 @@ public class InspectionController {
       @RequestParam(name = "replace", defaultValue = "false") boolean replace) {
     return ApiResponse.success(
         findingService.analyze(actorId(jwt), inspectionId, evidenceId, replace));
+  }
+
+  @GetMapping("/evidence/analysis-status")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  public ApiResponse<List<EvidenceAnalysisStatusResponse>> listEvidenceAnalysisStatuses(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(findingService.listAnalysisStatuses(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/finding-candidates")
@@ -289,18 +326,6 @@ public class InspectionController {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
   }
 
-  @PostMapping("/findings/{findingId}/decision")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
-  public ApiResponse<VerifiedFindingResponse> decideFinding(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID findingId,
-      @Valid @RequestBody FindingDecisionRequest request) {
-    return ApiResponse.success(
-        findingService.decideFinding(
-            actorId(jwt), inspectionId, findingId, request.decision(), request.rationale()));
-  }
-
   @PutMapping("/findings/{findingId}/corrective-action")
   @PreAuthorize("hasRole('ORG_ADMIN')")
   public ApiResponse<VerifiedFindingResponse> recordCorrectiveAction(
@@ -332,12 +357,8 @@ public class InspectionController {
   @PostMapping("/report/draft/manual")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<InspectionReportVersionResponse> authorManualDraft(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @Valid @RequestBody ManualReportDraftRequest request) {
-    return ApiResponse.success(
-        reportService.authorManualDraft(
-            actorId(jwt), inspectionId, request.narrative(), request.omissionDisclosure()));
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(reportService.authorManualDraft(actorId(jwt), inspectionId));
   }
 
   @PostMapping("/report/versions/{versionId}/verify")

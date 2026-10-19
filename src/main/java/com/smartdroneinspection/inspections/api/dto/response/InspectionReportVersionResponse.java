@@ -5,11 +5,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * A report version with its human gates: who verified, who reviewed, and when it published.
- *
- * <p>The narrative and the omission disclosure are carried here so a reviewer reads the document
- * they are approving. They were persisted in {@code content_snapshot} from the first version, but
- * the response omitted them, so no client could ever display what it was signing off.
+ * A report version with its author and report-level review gates. Structured authored sections are
+ * exposed in {@code sections}; legacy narrative keys remain in old content snapshots for read
+ * compatibility but are not part of the client contract.
  */
 public record InspectionReportVersionResponse(
     UUID id,
@@ -32,7 +30,7 @@ public record InspectionReportVersionResponse(
     String findingsSnapshotHash,
     Instant publishedAt,
     Instant createdAt,
-    String narrative,
     String omissionDisclosure,
     String contentSnapshot,
-    ReportSectionsResponse sections) {}
+    ReportSectionsResponse sections,
+    InspectionReportContextResponse reportContext) {}

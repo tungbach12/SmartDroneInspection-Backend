@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Size;
  */
 public record ReportSectionsRequest(
     @Size(max = ReportSections.MAX_SECTION_CHARS) String executiveSummary,
+    @Size(max = ReportSections.MAX_SECTION_CHARS) String inspectorCoverageAssessment,
     @Size(max = ReportSections.MAX_SECTION_CHARS) String purposeScopeCriteria,
     @Size(max = ReportSections.MAX_SECTION_CHARS) String methodEquipmentConditions,
     @Size(max = ReportSections.MAX_SECTION_CHARS) String conclusionsRecommendations,

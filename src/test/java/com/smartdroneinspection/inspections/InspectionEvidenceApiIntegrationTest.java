@@ -5,12 +5,14 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -50,10 +52,15 @@ class InspectionEvidenceApiIntegrationTest {
       Base64.getDecoder()
           .decode(
               "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+  private static final byte[] PNG_BYTES_2 =
+      Base64.getDecoder()
+          .decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==");
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
+  @Autowired VerifiedFindingRepository findings;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -87,17 +94,108 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void repeatedUploadOfIdenticalBytesIsIdempotent() throws Exception {
+  void repeatedUploadOfIdenticalBytesIsMarkedAsDeduplicated() throws Exception {
     UUID first = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
-    UUID second = upload(fixture.inspectorId(), "INSPECTOR", "span-renamed.png", PNG_BYTES);
+    MvcResult sameNameDifferentBytes =
+        uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES_2);
+    assertThat(
+            objectMapper
+                .readTree(sameNameDifferentBytes.getResponse().getContentAsString())
+                .path("data")
+                .path("deduplicated")
+                .booleanValue())
+        .isFalse();
+
+    MvcResult duplicate =
+        uploadResponse(fixture.inspectorId(), "INSPECTOR", "renamed.png", PNG_BYTES);
+    UUID second =
+        UUID.fromString(
+            objectMapper
+                .readTree(duplicate.getResponse().getContentAsString())
+                .path("data")
+                .path("id")
+                .stringValue());
 
     assertThat(second).isEqualTo(first);
+    assertThat(
+            objectMapper
+                .readTree(duplicate.getResponse().getContentAsString())
+                .path("data")
+                .path("deduplicated")
+                .booleanValue())
+        .isTrue();
     Long storedRows =
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM evidence WHERE inspection_id = ?",
             Long.class,
             fixture.inspectionId());
-    assertThat(storedRows).isEqualTo(1L);
+    assertThat(storedRows).isEqualTo(2L);
+  }
+
+  @Test
+  void identicalRetiredUploadReturnsAnActionableConflictInsteadOfAFalseSuccess() throws Exception {
+    UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/retire",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Replacing the capture\"}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "renamed.png", "image/png", PNG_BYTES))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_DUPLICATE_RETIRED"));
+  }
+
+  @Test
+  void sharedEvidenceLocationUpdatesEveryLinkedFindingAndIsInspectorOnly() throws Exception {
+    UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
+    UUID firstFinding = createManualFinding(evidenceId);
+    UUID secondFinding = createManualFinding(evidenceId);
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Girder G4 east face\"}"))
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Girder G4 east face\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.locationDescription").value("Girder G4 east face"));
+
+    assertThat(
+            findings
+                .findByIdAndInspectionId(firstFinding, fixture.inspectionId())
+                .orElseThrow()
+                .getLocationDescription())
+        .isEqualTo("Girder G4 east face");
+    assertThat(
+            findings
+                .findByIdAndInspectionId(secondFinding, fixture.inspectionId())
+                .orElseThrow()
+                .getLocationDescription())
+        .isEqualTo("Girder G4 east face");
   }
 
   @Test
@@ -392,6 +490,31 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
+  private UUID createManualFinding(UUID evidenceId) throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/findings", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "evidenceId", evidenceId,
+                                "defectLabel", "Surface crack",
+                                "severity", "MEDIUM",
+                                "technicalNotes", "Visible surface crack"))))
+            .andExpect(status().isOk())
+            .andReturn();
+    return UUID.fromString(
+        objectMapper
+            .readTree(result.getResponse().getContentAsString())
+            .path("data")
+            .path("id")
+            .stringValue());
+  }
+
+  @Test
   void onlyTheAssignedInspectorMayDecideEvidenceQuality() throws Exception {
     mockMvc
         .perform(
@@ -403,20 +526,24 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   private UUID upload(UUID actorId, String role, String fileName, byte[] content) throws Exception {
-    MvcResult result =
-        mockMvc
-            .perform(
-                multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
-                    .file(new MockMultipartFile("file", fileName, "image/png", content))
-                    .with(principal(actorId, role)))
-            .andExpect(status().isOk())
-            .andReturn();
+    MvcResult result = uploadResponse(actorId, role, fileName, content);
     return UUID.fromString(
         objectMapper
             .readTree(result.getResponse().getContentAsString())
             .path("data")
             .path("id")
             .stringValue());
+  }
+
+  private MvcResult uploadResponse(UUID actorId, String role, String fileName, byte[] content)
+      throws Exception {
+    return mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", fileName, "image/png", content))
+                .with(principal(actorId, role)))
+        .andExpect(status().isOk())
+        .andReturn();
   }
 
   private static org.springframework.test.web.servlet.request.RequestPostProcessor principal(

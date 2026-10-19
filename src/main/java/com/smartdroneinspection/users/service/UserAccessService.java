@@ -23,14 +23,25 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserAccessService implements UserAccess {
 
   private final UserRepository users;
+  private final com.smartdroneinspection.users.repository.OrganizationRepository organizations;
   private final AdminUserService adminUsers;
   private final RolePolicy rolePolicy;
 
   public UserAccessService(
-      UserRepository users, AdminUserService adminUsers, RolePolicy rolePolicy) {
+      UserRepository users,
+      com.smartdroneinspection.users.repository.OrganizationRepository organizations,
+      AdminUserService adminUsers,
+      RolePolicy rolePolicy) {
     this.users = users;
+    this.organizations = organizations;
     this.adminUsers = adminUsers;
     this.rolePolicy = rolePolicy;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<String> findOrganizationName(UUID organizationId) {
+    return organizations.findById(organizationId).map(organization -> organization.getName());
   }
 
   @Override
@@ -46,6 +57,16 @@ public class UserAccessService implements UserAccess {
                     Set.copyOf(user.roleValues()),
                     user.getOrganizationId(),
                     user.getFullName()));
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean isVisionFallbackEnabled(UUID userId) {
+    return users
+        .findDetailedById(userId)
+        .filter(User::active)
+        .map(User::isVisionFallbackEnabled)
+        .orElse(true);
   }
 
   @Override

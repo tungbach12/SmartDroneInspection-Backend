@@ -104,6 +104,7 @@ public class InspectionFieldSessionController {
         session.getChecklistTemplateId(),
         session.getReadinessVersion(),
         session.getStatus(),
+        session.getPreFlightChecklistNote(),
         session.getStartedAt(),
         session.getEndedAt(),
         session.getPostponementReason(),

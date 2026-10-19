@@ -31,6 +31,7 @@ public record VerifiedFindingResponse(
     FindingDecision decision,
     UUID decidedByUserId,
     Instant decidedAt,
+    Instant inspectorConfirmedAt,
     boolean repairRequired,
     VerifiedFindingStatus status,
     boolean correctiveActionRequired,

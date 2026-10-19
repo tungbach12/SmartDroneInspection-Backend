@@ -4,15 +4,13 @@ import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest
 import com.smartdroneinspection.inspections.api.dto.request.ReviewCandidateRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateResponse;
+import com.smartdroneinspection.inspections.api.dto.response.EvidenceAnalysisStatusResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VerifiedFindingResponse;
 import com.smartdroneinspection.inspections.domain.AiFindingCandidate;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.AiFindingCandidateStatus;
-import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingSource;
 import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
@@ -23,6 +21,7 @@ import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
@@ -52,6 +51,7 @@ public class FindingService {
   private final InspectionReportVersionRepository reportVersions;
   private final InspectionRepository inspections;
   private final Optional<AiInferencePort> inference;
+  private final UserAccess userAccess;
 
   public FindingService(
       EvidenceRepository evidence,
@@ -62,7 +62,8 @@ public class FindingService {
       InspectionReportRepository reports,
       InspectionReportVersionRepository reportVersions,
       InspectionRepository inspections,
-      Optional<AiInferencePort> inference) {
+      Optional<AiInferencePort> inference,
+      UserAccess userAccess) {
     this.evidence = evidence;
     this.candidates = candidates;
     this.findings = findings;
@@ -72,6 +73,7 @@ public class FindingService {
     this.reportVersions = reportVersions;
     this.inspections = inspections;
     this.inference = inference;
+    this.userAccess = userAccess;
   }
 
   /** MF3-06: explicitly confirm the resolved findings set before entering report drafting. */
@@ -108,12 +110,20 @@ public class FindingService {
           "PENDING_CANDIDATES_EXIST",
           "Resolve every AI candidate before confirming findings");
     }
-    long findingCount = findings.countByInspectionId(inspectionId);
+    List<VerifiedFinding> inspectorFindings =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    long findingCount = inspectorFindings.size();
     if (findingCount == 0 && !noFindingsAcknowledged) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "NO_FINDINGS_ACKNOWLEDGMENT_REQUIRED",
           "Confirm that no finding was observed within the inspected scope");
+    }
+    for (VerifiedFinding finding : inspectorFindings) {
+      finding.confirmByInspector();
+    }
+    if (!inspectorFindings.isEmpty()) {
+      findings.saveAllAndFlush(inspectorFindings);
     }
     String snapshot = findingsSnapshotHash(inspectionId);
     if (inspection.getStatus()
@@ -140,6 +150,12 @@ public class FindingService {
         != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", "Findings are not currently confirmed");
+    }
+    if (inspection.hasFindingsConfirmation()) {
+      findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+          .filter(VerifiedFinding::isOfficial)
+          .forEach(VerifiedFinding::clearInspectorConfirmation);
+      findings.flush();
     }
     inspection.reopenFindings();
     inspections.saveAndFlush(inspection);
@@ -184,6 +200,9 @@ public class FindingService {
     // needs; a candidate the Inspector already reviewed carries that decision and survives.
     List<AiFindingCandidate> prior = candidates.findByEvidenceIdOrderByCreatedAtAsc(evidenceId);
     if (!replace) {
+      if (record.getAnalysisCompletedAt() != null) {
+        return prior.stream().map(this::toCandidateResponse).toList();
+      }
       if (!prior.isEmpty()) {
         return prior.stream().map(this::toCandidateResponse).toList();
       }
@@ -207,7 +226,10 @@ public class FindingService {
 
     List<AiInferencePort.Detection> detections;
     try {
-      detections = port.analyze(bytes, record.getContentType());
+      detections =
+          userAccess.isVisionFallbackEnabled(actorId)
+              ? port.analyze(bytes, record.getContentType())
+              : port.analyze(bytes, record.getContentType(), false);
     } catch (IOException ex) {
       // Evidence survives an inference outage, and the manual path stays available.
       throw new BusinessException(
@@ -225,7 +247,7 @@ public class FindingService {
                         inspectionId,
                         detection.modelName(),
                         detection.modelVersion(),
-                        null,
+                        detection.provider(),
                         detection.predictedLabel(),
                         detection.confidence(),
                         detection.boundingBox()))
@@ -242,8 +264,28 @@ public class FindingService {
       }
     }
     List<AiFindingCandidate> stored = candidates.saveAll(created);
+    record.markAnalysisCompleted(created.size());
+    evidence.saveAndFlush(record);
     return Stream.concat(stored.stream(), reviewed.stream())
         .map(this::toCandidateResponse)
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<EvidenceAnalysisStatusResponse> listAnalysisStatuses(
+      UUID actorId, UUID inspectionId) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+    return evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId).stream()
+        .filter(Evidence::isImage)
+        .filter(item -> item.getAnalysisCompletedAt() != null)
+        .map(
+            item ->
+                new EvidenceAnalysisStatusResponse(
+                    item.getId(),
+                    item.getAnalysisCompletedAt(),
+                    item.getAnalysisDetectionCount() == null
+                        ? 0
+                        : item.getAnalysisDetectionCount()))
         .toList();
   }
 
@@ -278,7 +320,7 @@ public class FindingService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "AI_CANDIDATE_NOT_FOUND", "Candidate not found"));
-    requireEvidence(inspectionId, candidate.getEvidenceId());
+    Evidence sourceEvidence = requireEvidence(inspectionId, candidate.getEvidenceId());
     if (candidate.getStatus() != AiFindingCandidateStatus.PENDING) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -313,7 +355,7 @@ public class FindingService {
                         nextFindingCode(inspectionId),
                         orDefault(request.defectLabel(), candidate.getPredictedLabel()),
                         request.severity(),
-                        request.locationDescription(),
+                        null,
                         orDefault(request.technicalNotes(), candidate.getPredictedLabel()),
                         request.recommendedAction(),
                         candidate.getBoundingBox(),
@@ -327,7 +369,7 @@ public class FindingService {
         source,
         orDefault(request.defectLabel(), candidate.getPredictedLabel()),
         request.severity(),
-        request.locationDescription(),
+        null,
         orDefault(request.technicalNotes(), candidate.getPredictedLabel()),
         request.recommendedAction(),
         request.component(),
@@ -336,6 +378,13 @@ public class FindingService {
         request.priority(),
         request.measurement(),
         Boolean.TRUE.equals(request.repairRequired()));
+    if (sourceEvidence.getLocationDescription() != null) {
+      finding.setLocationDescription(sourceEvidence.getLocationDescription());
+    } else if (request.locationDescription() != null) {
+      sourceEvidence.setLocationDescription(request.locationDescription());
+      evidence.saveAndFlush(sourceEvidence);
+      finding.setLocationDescription(request.locationDescription());
+    }
     return Optional.of(toFindingResponse(findings.saveAndFlush(finding)));
   }
 
@@ -368,11 +417,11 @@ public class FindingService {
     }
     VerifiedFinding linked =
         findings.findByInspectionIdAndAiCandidateId(inspectionId, candidateId).orElse(null);
-    if (linked != null && linked.getDecision() != null) {
+    if (linked != null && linked.getInspectorConfirmedAt() != null) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "CANDIDATE_REVISION_LOCKED",
-          "A reviewer has decided the linked finding");
+          "The Inspector has confirmed this finding; reopen the findings stage before editing it");
     }
     var report = reports.findByInspectionId(inspectionId).orElse(null);
     if (report != null
@@ -409,7 +458,7 @@ public class FindingService {
               nextFindingCode(inspectionId),
               orDefault(request.defectLabel(), candidate.getPredictedLabel()),
               request.severity(),
-              request.locationDescription(),
+              null,
               orDefault(request.technicalNotes(), candidate.getPredictedLabel()),
               request.recommendedAction(),
               candidate.getBoundingBox(),
@@ -424,7 +473,7 @@ public class FindingService {
           source,
           orDefault(request.defectLabel(), candidate.getPredictedLabel()),
           request.severity(),
-          request.locationDescription(),
+          null,
           orDefault(request.technicalNotes(), candidate.getPredictedLabel()),
           request.recommendedAction(),
           request.component(),
@@ -457,7 +506,7 @@ public class FindingService {
             nextFindingCode(inspectionId),
             request.defectLabel(),
             request.severity(),
-            request.locationDescription(),
+            null,
             request.technicalNotes(),
             request.recommendedAction(),
             null,
@@ -471,7 +520,7 @@ public class FindingService {
         VerifiedFindingSource.MANUAL,
         request.defectLabel(),
         request.severity(),
-        request.locationDescription(),
+        null,
         request.technicalNotes(),
         request.recommendedAction(),
         request.component(),
@@ -480,6 +529,12 @@ public class FindingService {
         request.priority(),
         request.measurement(),
         Boolean.TRUE.equals(request.repairRequired()));
+    if (record.getLocationDescription() != null) {
+      finding.setLocationDescription(record.getLocationDescription());
+    } else if (request.locationDescription() != null) {
+      record.setLocationDescription(request.locationDescription());
+      evidence.saveAndFlush(record);
+    }
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -496,7 +551,6 @@ public class FindingService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
-    archiveDecisionBeforeInspectorRevision(inspectionId, finding);
     Evidence record = requireEvidence(inspectionId, request.evidenceId());
     if (record.isRetired()) {
       throw new BusinessException(
@@ -515,7 +569,7 @@ public class FindingService {
         request.evidenceId(),
         request.defectLabel(),
         request.severity(),
-        request.locationDescription(),
+        null,
         request.technicalNotes(),
         request.recommendedAction(),
         request.component(),
@@ -545,7 +599,6 @@ public class FindingService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
-    archiveDecisionBeforeInspectorRevision(inspectionId, finding);
     try {
       finding.delete(actorId, reason);
     } catch (IllegalArgumentException | IllegalStateException ex) {
@@ -562,50 +615,6 @@ public class FindingService {
     }
     findings.saveAndFlush(finding);
     reopenFindings(inspection);
-  }
-
-  /** MF3-09: the reviewer records the final decision on a finding. */
-  @Transactional
-  public VerifiedFindingResponse decideFinding(
-      UUID actorId, UUID inspectionId, UUID findingId, FindingDecision decision, String rationale) {
-    evidenceService.requireInspectionInScope(actorId, inspectionId);
-    VerifiedFinding finding =
-        findings
-            .findByIdAndInspectionId(findingId, inspectionId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "FINDING_NOT_FOUND", "Finding not found"));
-    // Separation of duties takes precedence over workflow state: an Inspector who is also an
-    // ORG_ADMIN must never be able to decide their own proposal, even before report submission.
-    if (finding.getCreatedByUserId().equals(actorId)) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "FINDING_REVIEWER_INVALID",
-          "The finding author cannot decide their own finding");
-    }
-    var report = reports.findByInspectionId(inspectionId).orElse(null);
-    if (report == null || !ReportStatus.SUBMITTED.name().equals(report.getStatus())) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REPORT_STATE_CONFLICT",
-          "Findings are reviewed as part of a submitted report");
-    }
-    if (decision == null) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "FINDING_DECISION_INVALID", "A finding decision is required");
-    }
-    if (rationale == null || rationale.isBlank()) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "FINDING_DECISION_INVALID", "A decision rationale is required");
-    }
-    try {
-      finding.recordDecision(decision, actorId, rationale);
-    } catch (IllegalArgumentException ex) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "FINDING_DECISION_INVALID", ex.getMessage());
-    }
-    return toFindingResponse(findings.saveAndFlush(finding));
   }
 
   /** MF3-12: the reviewer records a corrective outcome after report publication. */
@@ -662,6 +671,12 @@ public class FindingService {
           "REPORT_STATE_CONFLICT",
           "Corrective actions are recorded after the report is published");
     }
+    if (finding.getInspectorConfirmedAt() == null) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDING_REVIEW_INCOMPLETE",
+          "Corrective action can only be recorded for an Inspector-confirmed finding in the published report");
+    }
     try {
       finding.updateCorrectiveAction(actorId, correctiveActionRequired, priority, dueAt, rationale);
     } catch (IllegalArgumentException | IllegalStateException ex) {
@@ -690,33 +705,6 @@ public class FindingService {
             .filter(candidate -> currentEvidenceIds.contains(candidate.getEvidenceId()))
             .toList(),
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
-  }
-
-  /**
-   * A reviewer decision is immutable while a submission is in review. If the reviewer returned the
-   * version, the Inspector may edit even a decided finding; archive the prior decision against that
-   * returned version before clearing it from the live finding.
-   */
-  private void archiveDecisionBeforeInspectorRevision(UUID inspectionId, VerifiedFinding finding) {
-    if (!finding.hasReviewerDecision()) return;
-    InspectionReport report = reports.findByInspectionId(inspectionId).orElse(null);
-    InspectionReportVersion current =
-        report == null
-            ? null
-            : reportVersions
-                .findByInspectionReportIdAndVersionNo(
-                    report.getId(), report.getCurrentVersionNumber())
-                .orElse(null);
-    if (current == null
-        || current.getStatus() != ReportStatus.RETURNED
-        || current.getReviewerUserId() == null) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FINDING_REVIEWER_DECISION_LOCKED",
-          "A reviewer-decided finding can only be edited after the reviewer returns its report");
-    }
-    finding.clearReviewerDecisionForRevision();
-    findings.saveAndFlush(finding);
   }
 
   private void rejectLockedFindingEdits(UUID inspectionId) {
@@ -777,6 +765,7 @@ public class FindingService {
     return new AiFindingCandidateResponse(
         candidate.getId(),
         candidate.getEvidenceId(),
+        candidate.getModelProvider(),
         candidate.getModelName(),
         candidate.getModelVersion(),
         candidate.getPredictedLabel(),
@@ -810,6 +799,7 @@ public class FindingService {
         finding.getDecision(),
         finding.getDecidedByUserId(),
         finding.getDecidedAt(),
+        finding.getInspectorConfirmedAt(),
         finding.isRepairRequired(),
         finding.getStatus(),
         finding.isCorrectiveActionRequired(),

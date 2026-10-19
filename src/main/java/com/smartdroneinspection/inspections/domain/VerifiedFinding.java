@@ -73,6 +73,9 @@ public class VerifiedFinding {
   @Column(nullable = false, length = 24)
   private VerifiedFindingStatus status;
 
+  @Column(name = "inspector_confirmed_at")
+  private Instant inspectorConfirmedAt;
+
   @Column(name = "resolved_at")
   private Instant resolvedAt;
 
@@ -188,6 +191,7 @@ public class VerifiedFinding {
         measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
     this.repairRequired = repairRequired;
     this.status = VerifiedFindingStatus.OPEN;
+    this.inspectorConfirmedAt = null;
     this.decision = null;
     this.decidedByUserId = null;
     this.createdAt = Instant.now();
@@ -196,6 +200,22 @@ public class VerifiedFinding {
   }
 
   /** Updates Inspector-provided fields while preserving any reviewer decision and audit. */
+  public void setLocationDescription(String locationDescription) {
+    String normalized =
+        locationDescription == null || locationDescription.isBlank()
+            ? null
+            : locationDescription.trim();
+    if (java.util.Objects.equals(this.locationDescription, normalized)) return;
+    this.locationDescription = normalized;
+    this.inspectorConfirmedAt = null;
+    this.updatedAt = Instant.now();
+  }
+
+  public void clearInspectorConfirmation() {
+    this.inspectorConfirmedAt = null;
+    this.updatedAt = Instant.now();
+  }
+
   public void reviseCandidateDetails(
       VerifiedFindingSource source,
       String defectLabel,
@@ -209,8 +229,9 @@ public class VerifiedFinding {
       String priority,
       String measurement,
       boolean repairRequired) {
-    if (decision != null) {
-      throw new IllegalStateException("A reviewed finding cannot be revised");
+    if (inspectorConfirmedAt != null) {
+      throw new IllegalStateException(
+          "A confirmed finding cannot be revised before reopening Findings");
     }
     this.source = source;
     this.defectLabel = defectLabel;
@@ -240,9 +261,6 @@ public class VerifiedFinding {
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("A deletion reason is required");
     }
-    if (hasReviewerDecision()) {
-      throw new IllegalStateException("A finding the reviewer decided cannot be deleted");
-    }
     this.deletedByUserId = actorId;
     this.deletedAt = Instant.now();
     this.deletionReason = reason;
@@ -265,7 +283,10 @@ public class VerifiedFinding {
     return deletionReason;
   }
 
-  /** MF3-09: the qualified reviewer records the final decision on this finding. */
+  /**
+   * Legacy decision field retained for existing persisted finding history; new workflow never
+   * writes it.
+   */
   public void recordDecision(FindingDecision newDecision, UUID decidedByUserId, String rationale) {
     if (newDecision == null || decidedByUserId == null) {
       throw new IllegalArgumentException("A decision and a deciding reviewer are required");
@@ -290,11 +311,9 @@ public class VerifiedFinding {
     if (reviewerId == null) {
       throw new IllegalArgumentException("A reviewer is required");
     }
-    if (!hasReviewerDecision()
-        || decision == FindingDecision.REJECTED
-        || !decidedByUserId.equals(reviewerId)) {
+    if (!isOfficial()) {
       throw new IllegalStateException(
-          "The finding decision reviewer must record its corrective action");
+          "The Organization Admin can only record corrective action for an Inspector-confirmed finding");
     }
     if (correctiveActionReviewedByUserId != null) {
       throw new IllegalStateException("Corrective action has already been recorded");
@@ -336,8 +355,9 @@ public class VerifiedFinding {
       String priority,
       String measurement,
       boolean repairRequired) {
-    if (hasReviewerDecision()) {
-      throw new IllegalStateException("A reviewer-decided finding cannot be revised");
+    if (inspectorConfirmedAt != null) {
+      throw new IllegalStateException(
+          "An Inspector-confirmed finding cannot be revised until Findings is reopened");
     }
     this.evidenceId = evidenceId;
     recordInspectorProposal(
@@ -353,6 +373,16 @@ public class VerifiedFinding {
         priority,
         measurement,
         repairRequired);
+  }
+
+  public void confirmByInspector() {
+    if (this.inspectorConfirmedAt != null) return;
+    this.inspectorConfirmedAt = Instant.now();
+    this.updatedAt = inspectorConfirmedAt;
+  }
+
+  public Instant getInspectorConfirmedAt() {
+    return inspectorConfirmedAt;
   }
 
   /**
@@ -388,13 +418,17 @@ public class VerifiedFinding {
     decidedByUserId = null;
     decidedAt = null;
     rationale = null;
+    inspectorConfirmedAt = null;
     correctiveActionRequired = true;
   }
 
-  /** Only an independent reviewer decision makes the finding official. */
+  /** Reportable when Inspector-confirmed, or when an explicitly reviewed legacy row is read. */
   public boolean isOfficial() {
-    return decidedByUserId != null
-        && (decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED);
+    // Preserve pre-cutover explicit reviewer decisions for historical rows and direct importers;
+    // current workflow rows use Inspector confirmation and leave decision null.
+    return inspectorConfirmedAt != null
+        || (decidedByUserId != null
+            && (decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED));
   }
 
   public String getCorrectiveActionPriority() {
@@ -447,8 +481,8 @@ public class VerifiedFinding {
   }
 
   /**
-   * Clears the live decision after a reviewer return for a findings revision. The immutable prior
-   * decision is written to reviewer_finding_decision_history before this method is called.
+   * Clears a legacy decision field during a returned findings revision; no new reviewer history is
+   * written.
    */
   public void clearReviewerDecisionForRevision() {
     decision = null;
