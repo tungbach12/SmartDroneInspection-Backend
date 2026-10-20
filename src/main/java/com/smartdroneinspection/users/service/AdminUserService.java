@@ -11,6 +11,7 @@ import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,6 +38,11 @@ public class AdminUserService {
     this.passwords = passwords;
     this.auth = auth;
     this.audit = audit;
+  }
+
+  @Transactional(readOnly = true)
+  public List<UserResponse> list() {
+    return users.findAllWithRoles().stream().map(user -> toResponse(user)).toList();
   }
 
   @Transactional
