@@ -279,6 +279,76 @@ class InspectionCreationApiIntegrationTest {
   }
 
   @Test
+  void cannotCreateInspectionWithScheduleConflictForSameInspectorOrDrone() throws Exception {
+    Instant start = Instant.now().plus(5, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+    Instant end = start.plus(4, ChronoUnit.HOURS);
+
+    String firstBody =
+        "{\"assetId\":\""
+            + assetId
+            + "\",\"objective\":\"First inspection\","
+            + "\"plannedStartAt\":\""
+            + start
+            + "\",\"plannedEndAt\":\""
+            + end
+            + "\"}";
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections")
+                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(firstBody))
+        .andExpect(status().isCreated());
+
+    Asset secondAsset =
+        assets.saveAndFlush(
+            new Asset(
+                organizationId,
+                categories.findAll().getFirst().getId(),
+                "BR-SECOND-" + UUID.randomUUID(),
+                "Second Bridge",
+                null,
+                "{\"label\":\"District 2\"}",
+                null,
+                null,
+                null,
+                adminId));
+    AssetPairAssignment pairing =
+        new AssetPairAssignment(
+            organizationId,
+            secondAsset.getId(),
+            inspectorId,
+            droneId,
+            Instant.now().minusSeconds(3600),
+            adminId);
+    pairing.activate("Default pair", null);
+    assetPairAssignments.saveAndFlush(pairing);
+
+    Instant overlappingStart = start.plus(1, ChronoUnit.HOURS);
+    Instant overlappingEnd = end.plus(1, ChronoUnit.HOURS);
+
+    String conflictingBody =
+        "{\"assetId\":\""
+            + secondAsset.getId()
+            + "\",\"objective\":\"Conflicting inspection\","
+            + "\"plannedStartAt\":\""
+            + overlappingStart
+            + "\",\"plannedEndAt\":\""
+            + overlappingEnd
+            + "\"}";
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections")
+                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(conflictingBody))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("SCHEDULE_CONFLICT"));
+  }
+
+  @Test
   void cannotCreateInspectionWithInvalidDates() throws Exception {
     Instant start = Instant.now().plus(2, ChronoUnit.DAYS);
     Instant end = start.minus(1, ChronoUnit.HOURS);

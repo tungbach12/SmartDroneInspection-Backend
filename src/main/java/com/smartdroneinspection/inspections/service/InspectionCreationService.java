@@ -122,6 +122,16 @@ public class InspectionCreationService {
       assetPairAssignmentId = activePair.map(AssetPairAssignment::getId).orElse(null);
     }
 
+    if (request.plannedStartAt() != null && request.plannedEndAt() != null) {
+      if (inspections.hasScheduleConflict(
+          organizationId, inspectorId, droneId, request.plannedStartAt(), request.plannedEndAt())) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "SCHEDULE_CONFLICT",
+            "The assigned inspector or drone has a schedule conflict with another active inspection in this window.");
+      }
+    }
+
     Inspection inspection =
         new Inspection(
             organizationId,
