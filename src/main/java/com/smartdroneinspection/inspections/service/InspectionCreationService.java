@@ -3,12 +3,14 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetPairAssignment;
 import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.FlightPermit;
 import com.smartdroneinspection.assets.domain.enums.AssetPairAssignmentStatus;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetPairAssignmentRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.assets.repository.FlightPermitRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -29,6 +31,7 @@ public class InspectionCreationService {
   private final AssetRepository assets;
   private final AssetPairAssignmentRepository assetPairAssignments;
   private final DroneRepository drones;
+  private final FlightPermitRepository permits;
   private final UserAccess userAccess;
 
   public InspectionCreationService(
@@ -36,11 +39,13 @@ public class InspectionCreationService {
       AssetRepository assets,
       AssetPairAssignmentRepository assetPairAssignments,
       DroneRepository drones,
+      FlightPermitRepository permits,
       UserAccess userAccess) {
     this.inspections = inspections;
     this.assets = assets;
     this.assetPairAssignments = assetPairAssignments;
     this.drones = drones;
+    this.permits = permits;
     this.userAccess = userAccess;
   }
 
@@ -178,24 +183,39 @@ public class InspectionCreationService {
             .findActiveUser(inspection.getInspectorId())
             .map(UserAccess.ActiveUser::fullName)
             .orElse(null);
-    String droneSerial =
+    Drone drone =
         inspection.getDroneId() != null
             ? drones
                 .findByIdAndOrganizationId(inspection.getDroneId(), inspection.getOrganizationId())
-                .map(Drone::getSerialNumber)
                 .orElse(null)
             : null;
+
+    FlightPermit permit =
+        permits
+            .findByOrganizationIdAndAssetIdOrderByCreatedAtDesc(
+                inspection.getOrganizationId(), inspection.getAssetId())
+            .stream()
+            .findFirst()
+            .orElse(null);
 
     return new InspectionResponse(
         inspection.getId(),
         inspection.getOrganizationId(),
         inspection.getAssetId(),
         assetName,
+        asset == null ? null : asset.getLocationText(),
         inspection.getAssetPairAssignmentId(),
         inspection.getInspectorId(),
         inspectorName,
         inspection.getDroneId(),
-        droneSerial,
+        drone == null ? null : drone.getSerialNumber(),
+        drone == null ? null : drone.getModel(),
+        drone == null ? null : drone.getServiceability().name(),
+        permit == null ? null : permit.getPermitReference(),
+        permit == null ? null : permit.getIssuingAuthority(),
+        permit == null ? null : permit.getValidFrom(),
+        permit == null ? null : permit.getValidUntil(),
+        permit == null ? null : permit.getReadinessStatus().name(),
         inspection.getObjective(),
         inspection.getScope(),
         inspection.getComponentScope(),
