@@ -14,4 +14,29 @@ public record CreateAssetRequest(
     @NotBlank @Size(max = 500) String locationText,
     BigDecimal latitude,
     BigDecimal longitude,
-    @Size(max = 1000) String ownershipInformation) {}
+    @Size(max = 1000) String ownershipInformation,
+    UUID defaultInspectorId,
+    UUID defaultDroneId) {
+
+  public CreateAssetRequest(
+      String code,
+      String name,
+      String description,
+      UUID categoryId,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation) {
+    this(
+        code,
+        name,
+        description,
+        categoryId,
+        locationText,
+        latitude,
+        longitude,
+        ownershipInformation,
+        null,
+        null);
+  }
+}

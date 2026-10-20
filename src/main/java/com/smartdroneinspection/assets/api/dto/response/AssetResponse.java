@@ -14,4 +14,31 @@ public record AssetResponse(
     BigDecimal longitude,
     String status,
     UUID categoryId,
-    Instant createdAt) {}
+    Instant createdAt,
+    AssetDefaultPairResponse defaultPair) {
+
+  public AssetResponse(
+      UUID id,
+      String code,
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String status,
+      UUID categoryId,
+      Instant createdAt) {
+    this(
+        id,
+        code,
+        name,
+        description,
+        locationText,
+        latitude,
+        longitude,
+        status,
+        categoryId,
+        createdAt,
+        null);
+  }
+}
