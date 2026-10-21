@@ -42,6 +42,19 @@ class AssetPairAssignmentTest {
   }
 
   @Test
+  void preparingDraftStoresDefaultReasonAndWindowWithoutActivatingOrAnswering() {
+    Instant validUntil = validFrom.plusSeconds(86_400);
+
+    pairing.prepareDraft("  Planned bridge inspection  ", validUntil);
+
+    assertThat(pairing.getStatus()).isEqualTo(AssetPairAssignmentStatus.DRAFT);
+    assertThat(pairing.getReason()).isEqualTo("Planned bridge inspection");
+    assertThat(pairing.getValidUntil()).isEqualTo(validUntil);
+    assertThat(pairing.getAssignmentResponse()).isNull();
+    assertThat(pairing.getRespondedAt()).isNull();
+  }
+
+  @Test
   void onlyTheAssignedInspectorMayAnswer() {
     pairing.activate("Primary crew", null);
 
@@ -95,6 +108,19 @@ class AssetPairAssignmentTest {
 
     pairing.supersede("Replaced by a second crew");
     assertThat(pairing.isActiveAt(validFrom.plusSeconds(60))).isFalse();
+  }
+
+  @Test
+  void supersedingAnAnsweredPairRequiresAndRetainsTheReason() {
+    pairing.activate("Primary crew", null);
+    pairing.respond(inspectorId, AssignmentResponse.ACCEPTED, null);
+
+    pairing.supersede("  Replaced for the next inspection cycle  ");
+
+    assertThat(pairing.getStatus()).isEqualTo(AssetPairAssignmentStatus.SUPERSEDED);
+    assertThat(pairing.getReason()).isEqualTo("Replaced for the next inspection cycle");
+    assertThat(pairing.getAssignmentResponse()).isEqualTo(AssignmentResponse.ACCEPTED);
+    assertThat(pairing.getRespondedAt()).isNotNull();
   }
 
   @Test

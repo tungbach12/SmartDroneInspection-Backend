@@ -176,17 +176,36 @@ public class AssetPairAssignment {
     return validUntil == null || !instant.isAfter(validUntil);
   }
 
+  public void prepareDraft(String assignmentReason, Instant validUntilAt) {
+    if (status != AssetPairAssignmentStatus.DRAFT) {
+      throw new IllegalStateException("Only a draft pairing can be prepared");
+    }
+    if (assignmentReason == null || assignmentReason.isBlank()) {
+      throw new IllegalArgumentException("Pairing reason is required");
+    }
+    if (validUntilAt != null && !validUntilAt.isAfter(validFrom)) {
+      throw new IllegalArgumentException("Pairing validity must end after it starts");
+    }
+    this.reason = assignmentReason.trim();
+    this.validUntil = validUntilAt;
+    this.updatedAt = Instant.now();
+  }
+
   public void activate(String activationReason, Instant validUntilAt) {
     if (status != AssetPairAssignmentStatus.DRAFT) {
       throw new IllegalStateException("Only a draft pairing can be activated");
+    }
+    if (activationReason == null || activationReason.isBlank()) {
+      throw new IllegalArgumentException("Pairing activation reason is required");
     }
     if (validUntilAt != null && !validUntilAt.isAfter(validFrom)) {
       throw new IllegalArgumentException("Pairing validity must end after it starts");
     }
     this.status = AssetPairAssignmentStatus.ACTIVE;
-    this.reason = activationReason;
+    this.reason = activationReason.trim();
     this.validUntil = validUntilAt;
-    this.updatedAt = Instant.now();
+    this.assignedAt = Instant.now();
+    this.updatedAt = assignedAt;
   }
 
   /**
@@ -229,10 +248,11 @@ public class AssetPairAssignment {
     if (status == AssetPairAssignmentStatus.SUPERSEDED) {
       throw new IllegalStateException("This pairing is already superseded");
     }
-    this.status = AssetPairAssignmentStatus.SUPERSEDED;
-    if (supersedeReason != null) {
-      this.reason = supersedeReason;
+    if (supersedeReason == null || supersedeReason.isBlank()) {
+      throw new IllegalArgumentException("Superseding a pairing requires a reason");
     }
+    this.status = AssetPairAssignmentStatus.SUPERSEDED;
+    this.reason = supersedeReason.trim();
     this.updatedAt = Instant.now();
   }
 }

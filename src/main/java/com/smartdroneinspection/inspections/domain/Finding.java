@@ -358,7 +358,7 @@ public class Finding {
   /** The Inspector confirms the finding: it becomes official and may enter a report. */
   public void confirmByInspector(UUID actorId) {
     if (this.inspectorConfirmedAt != null) return;
-    this.inspectorConfirmedAt = Instant.now();
+    this.inspectorConfirmedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     this.confirmedByUserId = actorId;
     this.status = FindingStatus.CONFIRMED;
     this.updatedAt = inspectorConfirmedAt;

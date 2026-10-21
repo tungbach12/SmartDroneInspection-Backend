@@ -35,6 +35,9 @@ public interface AssetPairAssignmentRepository extends JpaRepository<AssetPairAs
   Optional<AssetPairAssignment> findByOrganizationIdAndAssetIdAndStatus(
       UUID organizationId, UUID assetId, AssetPairAssignmentStatus status);
 
+  List<AssetPairAssignment> findByOrganizationIdAndAssetIdOrderByAssignedAtDesc(
+      UUID organizationId, UUID assetId);
+
   List<AssetPairAssignment> findByOrganizationIdOrderByAssignedAtDesc(UUID organizationId);
 
   /** Pairings an inspector has been given but has not yet answered (MF2-01 inbox). */

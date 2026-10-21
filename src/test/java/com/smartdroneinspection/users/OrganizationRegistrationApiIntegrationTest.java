@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import com.smartdroneinspection.subscriptions.domain.Subscription;
+import com.smartdroneinspection.subscriptions.repository.SubscriptionRepository;
 import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.repository.OrganizationRepository;
@@ -33,6 +35,7 @@ class OrganizationRegistrationApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired UserRepository users;
   @Autowired OrganizationRepository organizations;
+  @Autowired SubscriptionRepository subscriptions;
   @Autowired JdbcTemplate jdbcTemplate;
 
   private MockMvc mockMvc;
@@ -82,6 +85,10 @@ class OrganizationRegistrationApiIntegrationTest {
 
     Organization organization = organizations.findById(user.getOrganizationId()).orElseThrow();
     assertThat(organization.getStatus()).isEqualTo("ACTIVE");
+    assertThat(
+            subscriptions.findFirstByOrganizationIdAndStatus(
+                organization.getId(), Subscription.Status.ACTIVE))
+        .isEmpty();
     // database-design.md §6.1: the organization records the ORG_ADMIN who created it.
     assertThat(
             jdbcTemplate.queryForObject(

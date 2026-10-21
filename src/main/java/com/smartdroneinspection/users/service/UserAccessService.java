@@ -46,6 +46,12 @@ public class UserAccessService implements UserAccess {
 
   @Override
   @Transactional(readOnly = true)
+  public boolean organizationExists(UUID organizationId) {
+    return organizations.existsById(organizationId);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public Optional<ActiveUser> findActiveUser(UUID userId) {
     return users
         .findDetailedById(userId)
