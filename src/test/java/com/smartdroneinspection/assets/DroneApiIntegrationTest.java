@@ -152,11 +152,12 @@ class DroneApiIntegrationTest {
   @Test
   void sameSerialIsAcceptedInAnotherOrganization() throws Exception {
     String serial = serial();
+    long before = droneCount();
 
     createDrone(fixture.clientId(), serial).andExpect(status().isCreated());
     createDrone(fixture.otherClientId(), serial).andExpect(status().isCreated());
 
-    assertThat(droneCount()).isEqualTo(2);
+    assertThat(droneCount()).isEqualTo(before + 2);
   }
 
   @Test
