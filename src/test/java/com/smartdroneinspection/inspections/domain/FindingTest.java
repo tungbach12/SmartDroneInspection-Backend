@@ -73,6 +73,17 @@ class FindingTest {
   }
 
   @Test
+  void onlyPendingAiFindingsAreRejectedRatherThanRetainedAsDeletedFindings() {
+    Finding suggestion = detected();
+    Finding inspectorFinding = manual();
+
+    assertThat(suggestion.isPendingAiSuggestion()).isTrue();
+    suggestion.confirmByInspector(inspector);
+    assertThat(suggestion.isPendingAiSuggestion()).isFalse();
+    assertThat(inspectorFinding.isPendingAiSuggestion()).isFalse();
+  }
+
+  @Test
   void aManualFindingHasNoModelBehindIt() {
     Finding finding = manual();
 

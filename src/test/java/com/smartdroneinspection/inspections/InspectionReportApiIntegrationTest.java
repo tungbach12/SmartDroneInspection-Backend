@@ -594,6 +594,23 @@ class InspectionReportApiIntegrationTest {
                 .content("{\"reason\":\"Not a defect\"}"))
         .andExpect(status().isOk());
 
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM findings WHERE id = ?", Long.class, findingId))
+        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM findings WHERE id = ? AND deleted_at IS NOT NULL",
+                Long.class,
+                findingId))
+        .isZero();
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/findings/removed", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0));
+
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/findings/confirm", fixture.inspectionId())

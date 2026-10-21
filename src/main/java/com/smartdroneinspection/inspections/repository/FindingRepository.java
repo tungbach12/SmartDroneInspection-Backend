@@ -15,6 +15,8 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
 
   List<Finding> findByEvidenceIdOrderByCreatedAtAsc(UUID evidenceId);
 
+  void deleteByIdAndInspectionId(UUID id, UUID inspectionId);
+
   Optional<Finding> findByIdAndInspectionId(UUID id, UUID inspectionId);
 
   long countByInspectionId(UUID inspectionId);

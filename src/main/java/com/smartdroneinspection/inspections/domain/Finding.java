@@ -294,6 +294,11 @@ public class Finding {
     this.updatedAt = Instant.now();
   }
 
+  /** Whether this unconfirmed finding came from AI and should be rejected, not audit-deleted. */
+  public boolean isPendingAiSuggestion() {
+    return status == FindingStatus.PENDING && modelName != null;
+  }
+
   /**
    * MF3-06: removing a finding keeps who removed it, when and why.
    *

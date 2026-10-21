@@ -123,8 +123,7 @@ WHERE c.inspection_id IS NOT NULL
 -- finding.
 ALTER TABLE findings DROP COLUMN ai_candidate_id;
 
--- The suggestions the Inspector rejected are not findings: they were removed from the record, and
--- the review that says so lives in the evidence and report history.
+-- Rejected AI suggestions are not findings and are not retained as finding-level audit records.
 DELETE FROM ai_finding_candidates WHERE status = 'REJECTED';
 
 DROP TABLE ai_finding_candidates;

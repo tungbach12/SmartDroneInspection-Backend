@@ -428,14 +428,24 @@ public class FindingService {
   /**
    * MF3-06: remove a finding from the working set.
    *
-   * <p>The row stays for audit and reads filter it out, so the decision to remove it remains
-   * visible without cluttering the record the Inspector works from.
+   * <p>A pending AI suggestion is rejected and removed from retained finding records. Inspector-
+   * authored findings and confirmed findings keep the attributable deletion tombstone.
    */
   @Transactional
   public void deleteFinding(UUID actorId, UUID inspectionId, UUID findingId, String reason) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
     Finding finding = requireFinding(inspectionId, findingId);
+    if (finding.isPendingAiSuggestion()) {
+      if (reason == null || reason.isBlank()) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", "A rejection reason is required");
+      }
+      findings.deleteByIdAndInspectionId(findingId, inspectionId);
+      findings.flush();
+      reopenFindings(inspection);
+      return;
+    }
     try {
       finding.delete(actorId, reason);
     } catch (IllegalArgumentException | IllegalStateException ex) {
