@@ -33,6 +33,12 @@ public class User {
   @Column(name = "full_name", nullable = false, length = 200)
   private String fullName;
 
+  @Column(name = "phone_number", length = 32)
+  private String phoneNumber;
+
+  @Column(name = "avatar_url", length = 500)
+  private String avatarUrl;
+
   @Column(name = "password_hash", length = 1024)
   private String passwordHash;
 
@@ -90,9 +96,23 @@ public class User {
       UserStatus status,
       ActorZone actorZone,
       UUID organizationId) {
+    this(email, fullName, null, null, passwordHash, status, actorZone, organizationId);
+  }
+
+  public User(
+      String email,
+      String fullName,
+      String phoneNumber,
+      String avatarUrl,
+      String passwordHash,
+      UserStatus status,
+      ActorZone actorZone,
+      UUID organizationId) {
     this.email = email;
     this.normalizedEmail = normalizeEmail(email);
     this.fullName = fullName;
+    this.phoneNumber = phoneNumber;
+    this.avatarUrl = avatarUrl;
     this.passwordHash = passwordHash;
     this.status = status;
     this.actorZone = actorZone;
@@ -115,6 +135,24 @@ public class User {
 
   public String getFullName() {
     return fullName;
+  }
+
+  public String getPhoneNumber() {
+    return phoneNumber;
+  }
+
+  public void setPhoneNumber(String phoneNumber) {
+    this.phoneNumber = phoneNumber;
+    this.updatedAt = Instant.now();
+  }
+
+  public String getAvatarUrl() {
+    return avatarUrl;
+  }
+
+  public void setAvatarUrl(String avatarUrl) {
+    this.avatarUrl = avatarUrl;
+    this.updatedAt = Instant.now();
   }
 
   public String getPasswordHash() {
