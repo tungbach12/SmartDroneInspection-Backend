@@ -58,9 +58,16 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getMeasurement())
                     .append('|')
-                    .append(item.getInspectorConfirmedAt())
+                    .append(
+                        item.getInspectorConfirmedAt() == null
+                            ? null
+                            : item.getInspectorConfirmedAt()
+                                .truncatedTo(java.time.temporal.ChronoUnit.MICROS))
                     .append('|')
-                    .append(item.getDeletedAt())
+                    .append(
+                        item.getDeletedAt() == null
+                            ? null
+                            : item.getDeletedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS))
                     .append('\n'));
     try {
       return HexFormat.of()
