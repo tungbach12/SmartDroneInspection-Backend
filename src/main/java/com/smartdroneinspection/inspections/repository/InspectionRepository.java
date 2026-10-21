@@ -96,4 +96,17 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   List<Inspection> findByOrganizationIdAndStatusOrderByUpdatedAtDesc(
       UUID organizationId, InspectionStatus status);
+
+  @Query(
+      "select count(i) > 0 from Inspection i where i.organizationId = :organizationId "
+          + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
+          + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
+          + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
+  boolean hasScheduleConflict(
+      @Param("organizationId") UUID organizationId,
+      @Param("inspectorId") UUID inspectorId,
+      @Param("droneId") UUID droneId,
+      @Param("start") java.time.Instant start,
+      @Param("end") java.time.Instant end);
 }

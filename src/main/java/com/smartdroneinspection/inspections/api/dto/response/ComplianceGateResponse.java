@@ -17,7 +17,23 @@ public record ComplianceGateResponse(
     Instant plannedStartAt,
     List<Blocker> blockers,
     List<UUID> linkedPermitIds,
-    boolean requiresHumanVerification) {
+    boolean requiresHumanVerification,
+    List<PermitSummary> permits) {
+
+  public ComplianceGateResponse(
+      UUID inspectionId,
+      Instant plannedStartAt,
+      List<Blocker> blockers,
+      List<UUID> linkedPermitIds,
+      boolean requiresHumanVerification) {
+    this(
+        inspectionId,
+        plannedStartAt,
+        blockers,
+        linkedPermitIds,
+        requiresHumanVerification,
+        List.of());
+  }
 
   /**
    * One thing standing between this preparation and a readiness decision.
@@ -26,4 +42,15 @@ public record ComplianceGateResponse(
    * @param detail a sentence an administrator can act on
    */
   public record Blocker(String code, String detail) {}
+
+  /** Summary of an applicable organization flight permit backing this mission. */
+  public record PermitSummary(
+      UUID id,
+      String permitReference,
+      String issuingAuthority,
+      String permitType,
+      String areaReference,
+      Instant validFrom,
+      Instant validUntil,
+      String status) {}
 }

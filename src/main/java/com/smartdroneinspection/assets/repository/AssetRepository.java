@@ -31,6 +31,8 @@ public interface AssetRepository extends JpaRepository<Asset, UUID> {
 
   boolean existsByOrganizationIdAndCode(UUID organizationId, String code);
 
+  Optional<Asset> findByOrganizationIdAndCode(UUID organizationId, String code);
+
   Page<Asset> findByOrganizationId(UUID organizationId, Pageable pageable);
 
   @Query(

@@ -344,6 +344,13 @@ public class Inspection {
     return inspectorId != null && inspectorId.equals(candidateInspectorId);
   }
 
+  public void dispatch() {
+    if (status != InspectionStatus.DRAFT) {
+      throw new IllegalStateException("Only a draft inspection can be dispatched");
+    }
+    moveTo(InspectionStatus.ASSIGNED);
+  }
+
   public void startPreparation() {
     if (status != InspectionStatus.ASSIGNED) {
       throw new IllegalStateException("Only an assigned inspection can start preparation");
