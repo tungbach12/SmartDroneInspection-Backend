@@ -12,6 +12,8 @@ public interface UserAccess {
 
   Optional<String> findOrganizationName(UUID organizationId);
 
+  boolean organizationExists(UUID organizationId);
+
   boolean isVisionFallbackEnabled(UUID userId);
 
   Optional<WorkforceMember> findWorkforceMember(UUID userId, UUID organizationId);
