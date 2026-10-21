@@ -268,12 +268,7 @@ public class InspectionController {
     return ApiResponse.success(null);
   }
 
-  /**
-   * The findings the Inspector removed, for the caller that asks to see them.
-   *
-   * <p>Removing a finding hides it rather than erasing it, so the record of what was removed stays
-   * available behind its own route.
-   */
+  /** Explicitly deleted Inspector findings remain available with deletion attribution. */
   @GetMapping("/findings/removed")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
   public ApiResponse<List<FindingResponse>> listRemovedFindings(

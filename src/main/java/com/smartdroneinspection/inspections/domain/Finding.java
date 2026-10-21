@@ -26,9 +26,9 @@ import org.hibernate.type.SqlTypes;
  * narrower: has the Inspector confirmed this or not. That is {@link FindingStatus}, and it is the
  * only thing that decides whether a finding is official.
  *
- * <p>Removing a finding is a tombstone rather than a state, so a confirmed finding that was removed
- * still records that it was confirmed. Reads filter removed rows out; a caller that needs them asks
- * for them.
+ * <p>Explicitly deleting an Inspector working-set finding is a tombstone rather than a state, so a
+ * confirmed finding that was deleted still records that it was confirmed. Rejecting a pending AI
+ * suggestion removes it; it is not retained as a finding-level audit row.
  */
 @Entity
 @Table(name = "findings")

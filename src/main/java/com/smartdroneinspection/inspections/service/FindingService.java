@@ -309,7 +309,7 @@ public class FindingService {
         .toList();
   }
 
-  /** The findings the Inspector removed, for the caller that asks to see them. */
+  /** Explicitly deleted Inspector findings, retained with actor/time/reason attribution. */
   @Transactional(readOnly = true)
   public List<FindingResponse> listRemovedFindings(UUID actorId, UUID inspectionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
