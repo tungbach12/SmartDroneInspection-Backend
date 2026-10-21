@@ -12,7 +12,7 @@ it.
 | --- | --- |
 | Kaggle kernel | `natsumeeei/smartdroneinspection-mbdd2025-yolo11s-training` |
 | Dataset | [`asadibehnam/mbdd2025-uav-building-defect-detection`](https://www.kaggle.com/datasets/asadibehnam/mbdd2025-uav-building-defect-detection) — 14,471 VOC-annotated UAV images; Kaggle mirror of [MBDD2025 on Zenodo](https://doi.org/10.5281/zenodo.15622584), CC BY 4.0 |
-| Base model | YOLO11s pretrained weights, up to 100 epochs, imgsz 640, AdamW, cosine LR |
+| Base model | YOLO11s pretrained weights, 50 epochs, imgsz 640, AdamW, cosine LR, batch 32 |
 | Classes | `crack`, `leakage`, `abscission`, `corrosion`, `bulge` (fixed ID order in notebook) |
 
 Files in this folder:
@@ -27,11 +27,28 @@ ai-inference/
 └── models/
     ├── best.pt             YOLO11s weights used by the service
     ├── best.onnx           ONNX export (for embedding elsewhere)
-    └── training/           results.png, confusion_matrix.png (report evidence)
+    └── training/           results.png, confusion_matrix.png, PR_curve.png,
+                            test_metrics.json, provenance.json, training_results.csv
 ```
 
 `best.pt` and `best.onnx` are git-ignored: they are large binaries, and a rebuild
 should come from the kernel rather than from the repository.
+
+## Current deployed candidate
+
+The service currently serves the weights produced by the 50-epoch run recorded in
+`models/training/provenance.json`:
+
+| Metric (held-out test split, 1,448 unseen images) | Value |
+| --- | --- |
+| mAP@0.5 | 85.8% |
+| mAP@0.5:0.95 | 48.8% |
+| Precision | 85.7% |
+| Recall | 79.6% |
+
+Per-class mAP@0.5: `leakage` 94.7%, `corrosion` 88.5%, `bulge` 87.7%,
+`abscission` 80.1%, `crack` 77.9%. The best validation epoch was epoch 47;
+`models/training/training_results.csv` holds the full 50-epoch curve.
 
 ## Training and retrieving a candidate
 

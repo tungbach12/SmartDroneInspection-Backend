@@ -31,8 +31,10 @@ Thumbs.db
 
 # Agent planning scratch
 .superpowers/
+.scratch/
 
 # Advisory detection weights: large binaries rebuilt from the Kaggle kernel.
 # See ai-inference/README.md.
 ai-inference/models/*.pt
 ai-inference/models/*.onnx
+ai-inference/models/*.old
