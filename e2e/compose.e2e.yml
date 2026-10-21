@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?E2E_PROJECT is required}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?E2E-only PostgreSQL password is required}
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - e2e_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [e2e]
+
+  minio:
+    image: tungbach12/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?E2E-only MinIO user is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?E2E-only MinIO password is required}
+    ports:
+      - "127.0.0.1::9000"
+    volumes:
+      - e2e_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [e2e]
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:?E2E_PROJECT is required}
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?E2E-only PostgreSQL password is required}
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET:?E2E-only bucket name is required}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?E2E-only MinIO user is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?E2E-only MinIO password is required}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?E2E-only JWT signing secret is required}
+      AUTH_REFRESH_TOKEN_PEPPER: ${AUTH_REFRESH_TOKEN_PEPPER:?E2E-only refresh-token pepper is required}
+      AUTH_SECURE_COOKIES: "false"
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:?E2E browser origins are required}
+      AUTH_BOOTSTRAP_ENABLED: "true"
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:?E2E Platform ADMIN email is required}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:?E2E Platform ADMIN password is required}
+      AUTH_BOOTSTRAP_FULL_NAME: E2E Platform Administrator
+      EVIDENCE_MAX_FILE_SIZE: 10MB
+      EVIDENCE_MAX_REQUEST_SIZE: 20MB
+      REPORT_DRAFT_ENABLED: "false"
+      YOLO_INFERENCE_ENABLED: "false"
+      COMPATIBLE_VISION_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${E2E_BACKEND_PORT:?E2E backend port is required}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 40s
+      retries: 12
+    networks: [e2e]
+
+  web:
+    build:
+      context: ${FRONTEND_CONTEXT:?E2E Frontend worktree path is required}
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${E2E_WEB_PORT:?E2E web port is required}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [e2e]
+
+networks:
+  e2e:
+    name: ${E2E_PROJECT:?E2E project name is required}
+
+volumes:
+  e2e_postgres_data:
+    name: ${E2E_PROJECT:?E2E project name is required}-postgres
+  e2e_minio_data:
+    name: ${E2E_PROJECT:?E2E project name is required}-minio
