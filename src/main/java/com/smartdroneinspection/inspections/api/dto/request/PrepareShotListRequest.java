@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.api.dto.request;
 
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 
 /**
  * The MF2-03 preparation an inspector records on their phone or laptop.
@@ -14,4 +15,12 @@ public record PrepareShotListRequest(
     @Size(max = 20000) String shotList,
     @Size(max = 5000) String evidenceTypes,
     @Size(max = 5000) String accessConstraints,
-    @Size(max = 4000) String safetyObservations) {}
+    @Size(max = 4000) String safetyObservations,
+    Instant plannedStartAt,
+    Instant plannedEndAt) {
+
+  public PrepareShotListRequest(
+      String shotList, String evidenceTypes, String accessConstraints, String safetyObservations) {
+    this(shotList, evidenceTypes, accessConstraints, safetyObservations, null, null);
+  }
+}

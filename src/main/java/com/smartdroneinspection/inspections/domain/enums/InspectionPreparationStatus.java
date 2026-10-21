@@ -12,5 +12,6 @@ public enum InspectionPreparationStatus {
   DRAFT,
   SUBMITTED,
   RETURNED,
-  READY
+  READY,
+  SUPERSEDED
 }

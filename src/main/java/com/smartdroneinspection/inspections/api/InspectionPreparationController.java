@@ -44,16 +44,22 @@ public class InspectionPreparationController {
     this.compliance = compliance;
   }
 
-  /** The preparation history of this inspection, newest version first (MF2-03). */
+  /**
+   * The preparation history of this inspection, newest version first (MF2-03).
+   *
+   * <p>Readable by the reviewer as well as the author: MF2-07 asks a named reviewer to judge a
+   * specific submitted version, so a reviewer who cannot read that version has nothing to judge.
+   * Reading is separated from acting - the administrator still cannot draft or submit here.
+   */
   @GetMapping
-  @PreAuthorize("hasRole('INSPECTOR')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
   public ApiResponse<List<InspectionPreparationResponse>> listPreparations(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(preparations.listPreparations(subject(jwt), inspectionId));
   }
 
   @GetMapping("/{preparationId}")
-  @PreAuthorize("hasRole('INSPECTOR')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
   public ApiResponse<InspectionPreparationResponse> getPreparation(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID preparationId) {
     return ApiResponse.success(preparations.getPreparation(subject(jwt), preparationId));

@@ -55,7 +55,6 @@ public final class InspectionTestFixture {
                 "{\"criteria\":\"no visible structural damage\"}",
                 null,
                 null));
-    // MF3 starts from an ended field session.
     advanceToFieldCompleted(inspection);
     return new Data(
         organizationId,

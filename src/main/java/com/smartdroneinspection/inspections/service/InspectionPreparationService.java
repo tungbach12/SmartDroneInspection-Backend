@@ -15,6 +15,7 @@ import com.smartdroneinspection.users.UserAccess;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -82,13 +83,44 @@ public class InspectionPreparationService {
       }
       preparation = openDraft.orElseThrow();
     } else {
-      try {
+      boolean initialPreparation = inspection.getStatus() == InspectionStatus.ASSIGNED;
+      if (initialPreparation) {
         inspection.startPreparation();
-      } catch (IllegalStateException exception) {
+      } else if (inspection.getStatus() != InspectionStatus.PREPARING) {
         throw preparationNotAllowed();
       }
-      preparation = startFirstVersion(inspection, inspectorId);
-      inspections.save(inspection);
+      preparation =
+          initialPreparation
+              ? new InspectionPreparation(inspection.getId(), inspectorId, 1)
+              : startNextVersion(inspection, inspectorId);
+    }
+    boolean additionalSessionPreparation = preparation.getPreparationVersion() > 1;
+    if (additionalSessionPreparation
+        && (request.plannedStartAt() == null || request.plannedEndAt() == null)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PLANNED_WINDOW_REQUIRED",
+          "Set the planned start and end for the additional field session.");
+    }
+    if ((request.plannedStartAt() == null) != (request.plannedEndAt() == null)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PLANNED_WINDOW_INVALID",
+          "Both planned start and end are required when changing the session window.");
+    }
+    if (request.plannedStartAt() != null) {
+      if (!request.plannedStartAt().isAfter(Instant.now())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PLANNED_WINDOW_INVALID",
+            "The planned start must be in the future.");
+      }
+      try {
+        inspection.updatePlannedWindow(request.plannedStartAt(), request.plannedEndAt());
+      } catch (IllegalArgumentException exception) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST, "PLANNED_WINDOW_INVALID", exception.getMessage());
+      }
     }
 
     try {
@@ -101,6 +133,9 @@ public class InspectionPreparationService {
           HttpStatus.CONFLICT, "PREPARATION_NOT_EDITABLE", exception.getMessage());
     }
 
+    // The inspection may have moved to PREPARING or taken a new planned window, so it is saved
+    // before the preparation is flushed.
+    inspections.save(inspection);
     return toResponse(preparations.saveAndFlush(preparation));
   }
 
@@ -160,14 +195,14 @@ public class InspectionPreparationService {
           HttpStatus.CONFLICT, "PREPARATION_INCOMPLETE", exception.getMessage());
     }
 
+    inspections.save(inspection);
     return toResponse(preparations.saveAndFlush(preparation));
   }
 
   /** The preparation history of an inspection, newest version first. */
   @Transactional(readOnly = true)
-  public List<InspectionPreparationResponse> listPreparations(UUID inspectorId, UUID inspectionId) {
-    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
-    UUID organizationId = requireOrganization(inspector);
+  public List<InspectionPreparationResponse> listPreparations(UUID actorId, UUID inspectionId) {
+    UUID organizationId = requireReader(actorId);
     // A read-only listing only has to prove the inspection belongs to the caller's organization, so
     // it
     // uses the plain scoped lookup. The locking variant issues SELECT ... FOR NO KEY UPDATE, which
@@ -184,12 +219,12 @@ public class InspectionPreparationService {
 
   /** One preparation version, scoped through its inspection. */
   @Transactional(readOnly = true)
-  public InspectionPreparationResponse getPreparation(UUID inspectorId, UUID preparationId) {
-    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
+  public InspectionPreparationResponse getPreparation(UUID actorId, UUID preparationId) {
+    UUID organizationId = requireReader(actorId);
 
     return toResponse(
         preparations
-            .findByIdAndOrganizationId(preparationId, requireOrganization(inspector))
+            .findByIdAndOrganizationId(preparationId, organizationId)
             .orElseThrow(InspectionPreparationService::preparationNotFound));
   }
 
@@ -210,24 +245,35 @@ public class InspectionPreparationService {
     entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
   }
 
-  private InspectionPreparation startFirstVersion(Inspection inspection, UUID inspectorId) {
-    return new InspectionPreparation(
-        inspection.getId(), inspectorId, nextVersion(inspection.getId()));
-  }
-
-  private int nextVersion(UUID inspectionId) {
+  private InspectionPreparation startNextVersion(Inspection inspection, UUID inspectorId) {
     return preparations
-        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-        .map(preparation -> preparation.getPreparationVersion() + 1)
-        .orElse(1);
+        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
+        .map(
+            previous -> {
+              if (!previous.getInspectorUserId().equals(inspectorId)) {
+                throw preparationNotAllowed();
+              }
+              if (previous.getStatus() == InspectionPreparationStatus.RETURNED) {
+                previous.startRevision();
+                return preparations.save(previous);
+              }
+              throw preparationNotAllowed();
+            })
+        .orElseGet(() -> new InspectionPreparation(inspection.getId(), inspectorId, 1));
   }
 
   private InspectionPreparationResponse toResponse(InspectionPreparation preparation) {
+    Inspection inspection =
+        inspections
+            .findById(preparation.getInspectionId())
+            .orElseThrow(InspectionPreparationService::inspectionNotFound);
     return new InspectionPreparationResponse(
         preparation.getId(),
         preparation.getInspectionId(),
         preparation.getInspectorUserId(),
         preparation.getPreparationVersion(),
+        inspection.getPlannedStartAt(),
+        inspection.getPlannedEndAt(),
         preparation.getShotList(),
         preparation.getEvidenceTypes(),
         preparation.getAccessConstraints(),
@@ -251,6 +297,33 @@ public class InspectionPreparationService {
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Role " + Roles.INSPECTOR + " is required");
     }
     return actor;
+  }
+
+  /**
+   * The organization scope of a caller who may only read a preparation.
+   *
+   * <p>MF2-07 asks a named reviewer to judge a submitted preparation, so the reviewer has to be
+   * able to read it. The reviewer is not the author, though: the organization scope is what stops a
+   * preparation from another tenant being read, and the role check keeps an unrelated role out.
+   */
+  private UUID requireReader(UUID actorId) {
+    UserAccess.ActiveUser actor =
+        userAccess
+            .findActiveUser(actorId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
+    if (!actor.hasRole(Roles.INSPECTOR) && !actor.hasRole(Roles.ORG_ADMIN)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Role " + Roles.INSPECTOR + " or " + Roles.ORG_ADMIN + " is required");
+    }
+    if (actor.organizationId() == null) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "User has no organization scope");
+    }
+    return actor.organizationId();
   }
 
   private UUID requireOrganization(UserAccess.ActiveUser actor) {

@@ -2,14 +2,23 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
 import com.smartdroneinspection.inspections.domain.EvidenceQualityDecision;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
+import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceQualityDecisionType;
+import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
+import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceQualityDecisionRepository;
-import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
-import com.smartdroneinspection.users.UserAccess;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -26,21 +35,27 @@ public class EvidenceQualityService {
 
   private final InspectionRepository inspections;
   private final EvidenceQualityDecisionRepository decisions;
-  private final EvidenceRepository evidence;
   private final EvidenceService evidenceService;
-  private final UserAccess userAccess;
+  private final InspectionPreparationRepository preparations;
+  private final InspectionReadinessDecisionRepository readinessDecisions;
+  private final FieldSessionRepository sessions;
+  private final EntityManager entityManager;
 
   public EvidenceQualityService(
       InspectionRepository inspections,
       EvidenceQualityDecisionRepository decisions,
-      EvidenceRepository evidence,
       EvidenceService evidenceService,
-      UserAccess userAccess) {
+      InspectionPreparationRepository preparations,
+      InspectionReadinessDecisionRepository readinessDecisions,
+      FieldSessionRepository sessions,
+      EntityManager entityManager) {
     this.inspections = inspections;
     this.decisions = decisions;
-    this.evidence = evidence;
     this.evidenceService = evidenceService;
-    this.userAccess = userAccess;
+    this.preparations = preparations;
+    this.readinessDecisions = readinessDecisions;
+    this.sessions = sessions;
+    this.entityManager = entityManager;
   }
 
   @Transactional
@@ -58,7 +73,21 @@ public class EvidenceQualityService {
           "EVIDENCE_QUALITY_INVALID",
           "A substantive evidence decision is required");
     }
-    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    Inspection scopedInspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    Inspection inspection =
+        inspections
+            .findWithLockByIdAndOrganizationId(inspectionId, scopedInspection.getOrganizationId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
+    entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
+    if (!inspection.isInspectedBy(actorId)
+        || inspection.getOrganizationId() == null
+        || !inspection.getOrganizationId().equals(scopedInspection.getOrganizationId())) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found.");
+    }
     if (inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -87,10 +116,138 @@ public class EvidenceQualityService {
           "This decision requires a stated reason or limitation");
     }
 
+    if (decision == EvidenceQualityDecisionType.ADDITIONAL_SESSION_REQUIRED) {
+      // Everything is validated before anything is written, so a refusal leaves no decision row,
+      // no preparation change and no inspection state change.
+      AdditionalSessionHandoff handoff =
+          validateAdditionalSession(actorId, inspectionId, fieldSessionId);
+      EvidenceQualityDecision record =
+          new EvidenceQualityDecision(
+              inspectionId,
+              handoff.completedSessionId(),
+              decision,
+              shotListComparison,
+              limitationReason,
+              actorId);
+      EvidenceQualityDecision saved = decisions.saveAndFlush(record);
+      applyAdditionalSession(inspection, handoff, actorId);
+      return toResponse(saved);
+    }
+
     EvidenceQualityDecision record =
         new EvidenceQualityDecision(
             inspectionId, fieldSessionId, decision, shotListComparison, limitationReason, actorId);
     return toResponse(decisions.saveAndFlush(record));
+  }
+
+  /**
+   * The facts the additional-session handoff needs, resolved before any write.
+   *
+   * <p>The completed session anchors the decision to the visit it assesses, and the latest approved
+   * preparation plus its approval are what the handoff supersedes.
+   */
+  private record AdditionalSessionHandoff(
+      UUID completedSessionId,
+      InspectionPreparation preparation,
+      InspectionReadinessDecision approval) {}
+
+  private AdditionalSessionHandoff validateAdditionalSession(
+      UUID actorId, UUID inspectionId, UUID fieldSessionId) {
+    FieldSession latestCompletedSession =
+        sessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(session -> "FIELD_COMPLETED".equals(session.getStatus()))
+            .filter(session -> session.getInspectorUserId().equals(actorId))
+            .reduce((first, second) -> second)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "FIELD_SESSION_NOT_COMPLETED",
+                        "An additional session can only be requested after a completed field session."));
+    if (fieldSessionId != null && !fieldSessionId.equals(latestCompletedSession.getId())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_NOT_CURRENT",
+          "The evidence decision must refer to the latest completed field session.");
+    }
+    boolean hasEvidenceForSession =
+        evidenceService.listForFieldSession(inspectionId, latestCompletedSession.getId()).stream()
+            .anyMatch(item -> item.uploadStatus() == UploadStatus.AVAILABLE);
+    if (!hasEvidenceForSession) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_EVIDENCE_MISSING",
+          "Upload evidence from the completed field session before assessing it.");
+    }
+    InspectionPreparation latestPreparation =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "PREPARATION_MISSING",
+                        "An existing preparation is required before requesting another session."));
+    latestPreparation =
+        preparations
+            .findWithLockByIdAndInspectionId(latestPreparation.getId(), inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "PREPARATION_NOT_CURRENT",
+                        "The latest preparation could not be locked for the decision."));
+    InspectionReadinessDecision currentReadiness =
+        readinessDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
+    if (latestPreparation.getStatus() != InspectionPreparationStatus.READY
+        || !latestPreparation.getInspectorUserId().equals(actorId)
+        || currentReadiness == null
+        || currentReadiness.getDecision() != ReadinessDecisionType.APPROVED
+        || !latestPreparation.getId().equals(currentReadiness.getPreparationId())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "PREPARATION_NOT_CURRENT",
+          "An additional session requires the latest approved preparation.");
+    }
+    return new AdditionalSessionHandoff(
+        latestCompletedSession.getId(), latestPreparation, currentReadiness);
+  }
+
+  /**
+   * Applies the handoff: the prior approval is invalidated rather than rewritten, the approved
+   * preparation is superseded, a next-version draft is opened and the inspection returns to
+   * preparation. No field session, readiness approval, report version or evidence row is created.
+   */
+  private void applyAdditionalSession(
+      Inspection inspection, AdditionalSessionHandoff handoff, UUID actorId) {
+    InspectionPreparation preparation = handoff.preparation();
+    InspectionReadinessDecision approval = handoff.approval();
+    preparation.markSuperseded();
+    preparations.saveAndFlush(preparation);
+    readinessDecisions.saveAndFlush(
+        new InspectionReadinessDecision(
+            inspection.getId(),
+            preparation.getId(),
+            preparation.getPreparationVersion(),
+            ReadinessDecisionType.INVALIDATED,
+            actorId,
+            "Inspector requested an additional field session",
+            approval.getPermitSnapshot(),
+            approval.getCredentialSnapshot(),
+            approval.getDroneDocumentSnapshot(),
+            approval.getPermitSnapshotIds(),
+            approval.getCredentialSnapshotIds(),
+            approval.getDroneDocumentSnapshotIds(),
+            approval.getSourceHash()));
+    try {
+      inspection.requestAdditionalSession();
+    } catch (IllegalStateException exception) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", exception.getMessage());
+    }
+    preparations.saveAndFlush(
+        preparation.nextDraftVersion(preparation.getPreparationVersion() + 1));
+    inspections.saveAndFlush(inspection);
   }
 
   @Transactional(readOnly = true)

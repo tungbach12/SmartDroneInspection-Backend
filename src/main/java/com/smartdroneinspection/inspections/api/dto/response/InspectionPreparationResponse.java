@@ -10,6 +10,8 @@ public record InspectionPreparationResponse(
     UUID inspectionId,
     UUID inspectorUserId,
     int preparationVersion,
+    Instant plannedStartAt,
+    Instant plannedEndAt,
     String shotList,
     String evidenceTypes,
     String accessConstraints,

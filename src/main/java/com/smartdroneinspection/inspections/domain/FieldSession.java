@@ -28,10 +28,10 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "field_sessions")
 public class FieldSession {
 
-  static final String PLANNED = "PLANNED";
-  static final String IN_PROGRESS = "IN_PROGRESS";
-  static final String POSTPONED = "POSTPONED";
-  static final String ABORTED = "ABORTED";
+  public static final String PLANNED = "PLANNED";
+  public static final String IN_PROGRESS = "IN_PROGRESS";
+  public static final String POSTPONED = "POSTPONED";
+  public static final String ABORTED = "ABORTED";
 
   @Id @GeneratedValue private UUID id;
 
@@ -64,6 +64,9 @@ public class FieldSession {
 
   @Column(name = "abort_reason", length = 2000)
   private String abortReason;
+
+  @Column(name = "outcome_notes", length = 4000)
+  private String outcomeNotes;
 
   @Column(name = "pre_flight_checklist_note", length = 2000)
   private String preFlightChecklistNote;
@@ -161,6 +164,17 @@ public class FieldSession {
     this.updatedAt = endedAt;
   }
 
+  /** Records normal completion of field work (MF2-12). */
+  public void complete(String outcomeNotes) {
+    if (!IN_PROGRESS.equals(status)) {
+      throw new IllegalStateException("Only an in-progress session can be completed");
+    }
+    this.outcomeNotes = requireReason(outcomeNotes);
+    this.status = "FIELD_COMPLETED";
+    this.endedAt = Instant.now();
+    this.updatedAt = endedAt;
+  }
+
   private void requireOpenSession() {
     if (!IN_PROGRESS.equals(status)) {
       throw new IllegalStateException("Only a session in progress can be closed");
@@ -216,6 +230,10 @@ public class FieldSession {
     return PLANNED.equals(status) || IN_PROGRESS.equals(status);
   }
 
+  public boolean isInProgress() {
+    return IN_PROGRESS.equals(status);
+  }
+
   public UUID getId() {
     return id;
   }
@@ -258,6 +276,10 @@ public class FieldSession {
 
   public String getAbortReason() {
     return abortReason;
+  }
+
+  public String getOutcomeNotes() {
+    return outcomeNotes;
   }
 
   public String getLimitations() {

@@ -1,8 +1,7 @@
 package com.smartdroneinspection.inspections.service;
 
-import com.smartdroneinspection.inspections.domain.AiFindingCandidate;
 import com.smartdroneinspection.inspections.domain.Evidence;
-import com.smartdroneinspection.inspections.domain.VerifiedFinding;
+import com.smartdroneinspection.inspections.domain.Finding;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -10,15 +9,12 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 
-/** Stable digest of the evidence and Inspector-resolved findings reviewed at the MF3 gate. */
+/** Stable digest of the evidence and the findings the Inspector resolved at the MF3 gate. */
 final class FindingsSnapshot {
 
   private FindingsSnapshot() {}
 
-  static String hash(
-      List<Evidence> evidence,
-      List<AiFindingCandidate> candidates,
-      List<VerifiedFinding> findings) {
+  static String hash(List<Evidence> evidence, List<Finding> findings) {
     StringBuilder source = new StringBuilder();
     evidence.stream()
         .sorted(Comparator.comparing(item -> item.getId().toString()))
@@ -30,22 +26,6 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getChecksumSha256())
                     .append('\n'));
-    candidates.stream()
-        .sorted(Comparator.comparing(item -> item.getId().toString()))
-        .forEach(
-            item ->
-                source
-                    .append("C|")
-                    .append(item.getId())
-                    .append('|')
-                    .append(item.getStatus())
-                    .append('|')
-                    .append(item.getPredictedLabel())
-                    .append('|')
-                    .append(item.getBoundingBox())
-                    .append('|')
-                    .append(item.getRejectionReason())
-                    .append('\n'));
     findings.stream()
         .sorted(Comparator.comparing(item -> item.getId().toString()))
         .forEach(
@@ -56,7 +36,7 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getEvidenceId())
                     .append('|')
-                    .append(item.getSource())
+                    .append(item.getStatus())
                     .append('|')
                     .append(item.getDefectLabel())
                     .append('|')
@@ -78,9 +58,9 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getMeasurement())
                     .append('|')
-                    .append(item.getStatus())
-                    .append('|')
                     .append(item.getInspectorConfirmedAt())
+                    .append('|')
+                    .append(item.getDeletedAt())
                     .append('\n'));
     try {
       return HexFormat.of()

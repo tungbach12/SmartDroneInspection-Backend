@@ -5,6 +5,7 @@ import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
@@ -12,9 +13,10 @@ import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -65,7 +67,8 @@ public class EvidenceService {
   private final InspectionRepository inspections;
   private final EvidenceRepository evidence;
   private final InspectionReportRepository reports;
-  private final VerifiedFindingRepository findings;
+  private final FindingRepository findings;
+  private final FieldSessionRepository sessions;
   private final Optional<EvidenceObjectStore> objectStore;
   private final UserAccess userAccess;
 
@@ -73,13 +76,15 @@ public class EvidenceService {
       InspectionRepository inspections,
       EvidenceRepository evidence,
       InspectionReportRepository reports,
-      VerifiedFindingRepository findings,
+      FindingRepository findings,
+      FieldSessionRepository sessions,
       Optional<EvidenceObjectStore> objectStore,
       UserAccess userAccess) {
     this.inspections = inspections;
     this.evidence = evidence;
     this.reports = reports;
     this.findings = findings;
+    this.sessions = sessions;
     this.objectStore = objectStore;
     this.userAccess = userAccess;
   }
@@ -98,6 +103,9 @@ public class EvidenceService {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
+    if (fieldSessionId != null) {
+      requireSessionInScope(actorId, inspection, fieldSessionId);
+    }
     if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
       inspection.reopenFindings();
       inspections.saveAndFlush(inspection);
@@ -329,6 +337,28 @@ public class EvidenceService {
     return saved.stream().map(this::toResponse).toList();
   }
 
+  private void requireSessionInScope(UUID actorId, Inspection inspection, UUID fieldSessionId) {
+    FieldSession session =
+        sessions
+            .findByIdAndInspectionId(fieldSessionId, inspection.getId())
+            .filter(
+                candidate -> candidate.getOrganizationId().equals(inspection.getOrganizationId()))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "FIELD_SESSION_NOT_FOUND",
+                        "The field session was not found in this inspection."));
+    if (!session.getInspectorUserId().equals(actorId)
+        || (!"IN_PROGRESS".equals(session.getStatus())
+            && !"FIELD_COMPLETED".equals(session.getStatus()))) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_NOT_CURRENT",
+          "Evidence must belong to your active or completed field session.");
+    }
+  }
+
   private void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
     if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
         || inspection.getStatus() == InspectionStatus.REPAIR_PENDING
@@ -348,6 +378,16 @@ public class EvidenceService {
           "EVIDENCE_LOCKED",
           "Withdraw the submitted report or ask the reviewer to return it before changing evidence");
     }
+  }
+
+  @Transactional(readOnly = true)
+  public List<EvidenceResponse> listForFieldSession(UUID inspectionId, UUID fieldSessionId) {
+    return evidence
+        .findByInspectionIdAndFieldSessionIdAndRetiredAtIsNullOrderByCreatedAtAsc(
+            inspectionId, fieldSessionId)
+        .stream()
+        .map(this::toResponse)
+        .toList();
   }
 
   @Transactional(readOnly = true)

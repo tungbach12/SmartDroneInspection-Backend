@@ -21,7 +21,7 @@ class V25TargetSchemaFoundationTest {
   @Autowired JdbcTemplate jdbcTemplate;
 
   @Test
-  void createsTheTargetColumnContractAcrossAllFortyOneTables() {
+  void createsTheTargetColumnContractAcrossAllTargetTables() {
     Map<String, Set<String>> targetColumns =
         Map.ofEntries(
             Map.entry(
@@ -179,17 +179,16 @@ class V25TargetSchemaFoundationTest {
                 "evidence_quality_decisions",
                 Set.of("inspection_id", "decision", "decided_by_user_id", "decided_at")),
             Map.entry(
-                "ai_finding_candidates",
-                Set.of(
-                    "inspection_id", "evidence_id", "model_provider", "model_version", "status")),
-            Map.entry(
-                "verified_findings",
+                "findings",
                 Set.of(
                     "inspection_id",
+                    "evidence_id",
+                    "model_provider",
+                    "model_version",
+                    "status",
                     "component",
                     "description",
                     "severity",
-                    "decision",
                     "repair_required")),
             Map.entry(
                 "inspection_reports",
@@ -280,7 +279,7 @@ class V25TargetSchemaFoundationTest {
                     "aggregate_id",
                     "created_at")));
 
-    assertThat(targetColumns).hasSize(41);
+    assertThat(targetColumns).hasSize(40);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate

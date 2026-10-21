@@ -46,14 +46,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
-/**
- * The MF2-09 to MF2-11 field-session endpoints over HTTP.
- *
- * <p>{@link InspectionFieldSessionServiceTest} covers the recheck rules. This layer proves what
- * reaches a caller: that only the assigned Inspector starts or closes a session, that an
- * organization administrator cannot do it on their behalf, and that a refusal arrives as a stable
- * Problem Details code rather than a half-started session.
- */
+/** MF2-09 to MF2-12 field-session HTTP behavior and attribution. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @Transactional
@@ -134,10 +127,7 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data.readinessDecisionId").exists())
         .andExpect(jsonPath("$.data.startedAt").exists());
 
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId))
-        .isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT pre_flight_checklist_note FROM field_sessions WHERE inspection_id = ?",
@@ -174,10 +164,7 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("POSTPONED"))
         .andExpect(jsonPath("$.data.postponementReason").value("High wind above 10 m/s"));
 
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId))
-        .isEqualTo("READY_FOR_FLIGHT");
+    assertThat(statusOfInspection()).isEqualTo("READY_FOR_FLIGHT");
   }
 
   @Test
@@ -194,17 +181,85 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("ABORTED"))
         .andExpect(jsonPath("$.data.abortReason").value("Structure found unsafe on site"));
 
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId))
-        .isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
   }
 
-  /**
-   * The blank pre-flight note is caught by bean validation before the service runs, so this is a
-   * 400 rather than the 409 the service would raise for the same condition called directly. The
-   * service-level rule is covered in {@link InspectionFieldSessionServiceTest}.
-   */
+  @Test
+  void theOrganizationAdminCannotCompleteASession() throws Exception {
+    UUID sessionId = startSession();
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{i}/field-sessions/{s}/completion", inspectionId, sessionId)
+                .with(orgAdmin())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("outcomeNotes", "Session completed"))))
+        .andExpect(status().isForbidden());
+
+    assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
+  }
+
+  @Test
+  void theAssignedInspectorCompletesTheSessionAndReturnsTheInspectionToMf3() throws Exception {
+    UUID sessionId = startSession();
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{i}/field-sessions/{s}/completion", inspectionId, sessionId)
+                .with(inspector())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("outcomeNotes", "East face not accessible; photos recorded"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("FIELD_COMPLETED"))
+        .andExpect(jsonPath("$.data.endedAt").exists())
+        .andExpect(
+            jsonPath("$.data.outcomeNotes").value("East face not accessible; photos recorded"));
+
+    assertThat(statusOfInspection()).isEqualTo("FIELD_COMPLETED");
+    assertThat(sessionStatus(sessionId)).isEqualTo("FIELD_COMPLETED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
+                Long.class,
+                inspectionId))
+        .isEqualTo(1L);
+  }
+
+  @Test
+  void anotherInspectorCannotCompleteThisSession() throws Exception {
+    UUID sessionId = startSession();
+    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-completer");
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{i}/field-sessions/{s}/completion", inspectionId, sessionId)
+                .with(inspector(otherInspectorId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("outcomeNotes", "Session completed"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("SESSION_SCOPE_DENIED"));
+
+    assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
+  }
+
+  @Test
+  void completionRequiresOutcomeNotesAndLeavesTheSessionOpenOnRefusal() throws Exception {
+    UUID sessionId = startSession();
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{i}/field-sessions/{s}/completion", inspectionId, sessionId)
+                .with(inspector())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("outcomeNotes", "  "))))
+        .andExpect(status().isBadRequest());
+
+    assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
+  }
+
   @Test
   void aBlankPreFlightNoteIsRefused() throws Exception {
     mockMvc
@@ -252,11 +307,6 @@ class InspectionFieldSessionApiIntegrationTest {
     assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
   }
 
-  /**
-   * Another Inspector in the same organization is refused with 409 {@code SESSION_SCOPE_DENIED}:
-   * the session exists and belongs to this tenant, so the refusal is about ownership rather than
-   * visibility. 403 is reserved for the wrong role, as the ORG_ADMIN case above shows.
-   */
   @Test
   void anotherInspectorCannotPostponeThisSession() throws Exception {
     UUID sessionId = startSession();
@@ -278,10 +328,8 @@ class InspectionFieldSessionApiIntegrationTest {
   void anInspectorFromAnotherOrganizationSeesNoSession() throws Exception {
     UUID outsiderOrganizationId = UUID.randomUUID();
     jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
-        """,
+        "INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status) "
+            + "VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')",
         outsiderOrganizationId,
         "Outsider org",
         "Outsider org",
@@ -318,7 +366,6 @@ class InspectionFieldSessionApiIntegrationTest {
     mockMvc
         .perform(post("/api/v1/inspections/{i}/field-sessions", inspectionId))
         .andExpect(status().isUnauthorized());
-
     mockMvc
         .perform(get("/api/v1/inspections/{i}/field-sessions", inspectionId))
         .andExpect(status().isUnauthorized());
@@ -365,11 +412,8 @@ class InspectionFieldSessionApiIntegrationTest {
   private UUID createReadyInspection() {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
-        """
-        INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, status, objective,
-          planned_start_at, planned_end_at)
-        VALUES (?, ?, ?, ?, ?, 'READY_FOR_FLIGHT', 'Inspect main span', ?, ?)
-        """,
+        "INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, status, objective, planned_start_at, planned_end_at) "
+            + "VALUES (?, ?, ?, ?, ?, 'READY_FOR_FLIGHT', 'Inspect main span', ?, ?)",
         id,
         organizationId,
         assetId,
@@ -407,17 +451,18 @@ class InspectionFieldSessionApiIntegrationTest {
   }
 
   private long sessionCount() {
-    Long count =
-        jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
-            Long.class,
-            inspectionId);
-    return count == null ? 0L : count;
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM field_sessions WHERE inspection_id = ?", Long.class, inspectionId);
   }
 
   private String sessionStatus(UUID sessionId) {
     return jdbcTemplate.queryForObject(
         "SELECT status FROM field_sessions WHERE id = ?", String.class, sessionId);
+  }
+
+  private String statusOfInspection() {
+    return jdbcTemplate.queryForObject(
+        "SELECT status FROM inspections WHERE id = ?", String.class, inspectionId);
   }
 
   private RequestPostProcessor inspector() {

@@ -12,8 +12,10 @@ import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.inspections.api.dto.request.PrepareShotListRequest;
 import com.smartdroneinspection.inspections.api.dto.request.SubmitPreparationRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparationResponse;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.service.InspectionPreparationService;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.domain.User;
@@ -50,6 +52,7 @@ class InspectionPreparationServiceTest {
       """;
 
   @Autowired InspectionPreparationService service;
+  @Autowired InspectionPreparationRepository preparations;
   @Autowired UserRepository users;
   @Autowired AssetRepository assets;
   @Autowired AssetCategoryRepository categories;
@@ -127,6 +130,44 @@ class InspectionPreparationServiceTest {
 
     assertThat(drafted.status()).isEqualTo(InspectionPreparationStatus.DRAFT);
     assertThat(inspectionStatus()).isEqualTo(InspectionStatus.PREPARING);
+  }
+
+  @Test
+  void anAdditionalSessionPreparationCreatesANewVersionAndCanChangeThePlannedWindow() {
+    InspectionPreparation previous = new InspectionPreparation(inspectionId, inspectorId, 1);
+    previous.recordShotList(SPAN_SHOTS);
+    previous.recordSafetyObservations("Initial hazards");
+    previous.submit(inspectorId);
+    previous.markReady();
+    previous.markSuperseded();
+    preparations.saveAndFlush(previous);
+    preparations.saveAndFlush(previous.nextDraftVersion(2));
+    jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
+
+    var updatedStart = java.time.Instant.parse("2027-02-01T09:00:00Z");
+    InspectionPreparationResponse next =
+        service.prepareShotList(
+            inspectorId,
+            inspectionId,
+            new PrepareShotListRequest(
+                "[{\"component\":\"East face\",\"required\":true}]",
+                null,
+                "[{\"access\":\"New permit window\"}]",
+                "No hazards observed",
+                updatedStart,
+                updatedStart.plusSeconds(7200)));
+
+    assertThat(next.preparationVersion()).isEqualTo(2);
+    assertThat(next.shotList()).contains("East face");
+    assertThat(next.plannedStartAt()).isEqualTo(updatedStart);
+    assertThat(next.plannedEndAt()).isEqualTo(updatedStart.plusSeconds(7200));
+    assertThat(inspectionStatus()).isEqualTo(InspectionStatus.PREPARING);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM inspection_preparations WHERE id = ?",
+                String.class,
+                previous.getId()))
+        .isEqualTo("SUPERSEDED");
   }
 
   @Test

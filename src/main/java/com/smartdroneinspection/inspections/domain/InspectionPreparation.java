@@ -98,6 +98,16 @@ public class InspectionPreparation {
     this.updatedAt = createdAt;
   }
 
+  public InspectionPreparation nextDraftVersion(int nextVersion) {
+    InspectionPreparation next =
+        new InspectionPreparation(inspectionId, inspectorUserId, nextVersion);
+    next.shotList = shotList;
+    next.evidenceTypes = evidenceTypes;
+    next.accessConstraints = accessConstraints;
+    next.safetyObservations = safetyObservations;
+    return next;
+  }
+
   public UUID getId() {
     return id;
   }
@@ -243,6 +253,15 @@ public class InspectionPreparation {
   public void markReady() {
     requireSubmitted("marked ready");
     this.status = InspectionPreparationStatus.READY;
+    touch();
+  }
+
+  /** The prior approval no longer governs after the inspection requests another field visit. */
+  public void markSuperseded() {
+    if (status != InspectionPreparationStatus.READY) {
+      throw new IllegalStateException("Only a ready preparation can be superseded");
+    }
+    this.status = InspectionPreparationStatus.SUPERSEDED;
     touch();
   }
 

@@ -118,6 +118,8 @@ public class ComplianceGateService {
         preparation.getInspectionId(),
         preparation.getInspectorUserId(),
         preparation.getPreparationVersion(),
+        inspection.getPlannedStartAt(),
+        inspection.getPlannedEndAt(),
         preparation.getShotList(),
         preparation.getEvidenceTypes(),
         preparation.getAccessConstraints(),

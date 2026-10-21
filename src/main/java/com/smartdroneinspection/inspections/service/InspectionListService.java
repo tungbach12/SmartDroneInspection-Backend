@@ -2,8 +2,17 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.api.dto.response.InspectionListItemResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPageResponse;
+import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
+import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
+import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -44,12 +53,23 @@ public class InspectionListService {
 
   private final InspectionRepository inspections;
   private final InspectionReportRepository reports;
+  private final InspectionPreparationRepository preparations;
+  private final InspectionReadinessDecisionRepository readinessDecisions;
+  private final FindingRepository findings;
   private final UserAccess userAccess;
 
   public InspectionListService(
-      InspectionRepository inspections, InspectionReportRepository reports, UserAccess userAccess) {
+      InspectionRepository inspections,
+      InspectionReportRepository reports,
+      InspectionPreparationRepository preparations,
+      InspectionReadinessDecisionRepository readinessDecisions,
+      FindingRepository findings,
+      UserAccess userAccess) {
     this.inspections = inspections;
     this.reports = reports;
+    this.preparations = preparations;
+    this.readinessDecisions = readinessDecisions;
+    this.findings = findings;
     this.userAccess = userAccess;
   }
 
@@ -79,12 +99,90 @@ public class InspectionListService {
     Map<UUID, InspectionReport> reportByInspection = reportsFor(result.getContent());
     return new InspectionPageResponse(
         result.getContent().stream()
-            .map(inspection -> toItem(inspection, reportByInspection.get(inspection.getId())))
+            .map(
+                inspection ->
+                    toItem(
+                        inspection,
+                        reportByInspection.get(inspection.getId()),
+                        pendingAction(inspection, reportByInspection.get(inspection.getId()))))
             .toList(),
         safePage,
         safePageSize,
         result.getTotalElements(),
         result.getTotalPages());
+  }
+
+  /**
+   * The one decision the organization administrator is being asked for on this inspection.
+   *
+   * <p>MF3-09/10 keeps the reviewer's decision at report level: the administrator does not accept
+   * each evidence item or each finding. So the queue names a phase rather than a per-item task, and
+   * the phases are strictly ordered - readiness, then the report, then the post-publication
+   * corrective disposition (MF3-12).
+   *
+   * <p>Each phase is decided by what the server already records, never by the inspection status
+   * alone: {@code PREPARING} covers an open draft and a submitted preparation, and only the second
+   * one is waiting for a reviewer.
+   */
+  private String pendingAction(Inspection inspection, InspectionReport report) {
+    if (readinessReviewPending(inspection)) {
+      return "READINESS_REVIEW";
+    }
+    if (report != null) {
+      String reportStatus = report.getStatus();
+      if (ReportStatus.SUBMITTED.name().equals(reportStatus)) {
+        return "REPORT_REVIEW";
+      }
+      if (ReportStatus.PUBLISHED.name().equals(reportStatus)
+          && correctivePending(inspection.getId())) {
+        return "CORRECTIVE_DISPOSITION";
+      }
+    }
+    return "NONE";
+  }
+
+  /**
+   * A submitted preparation is waiting for a readiness decision.
+   *
+   * <p>A returned preparation is not: it is with the Inspector again, who reopens the draft and
+   * submits a new version. The reviewer is asked only for what is actually in front of them.
+   */
+  private boolean readinessReviewPending(Inspection inspection) {
+    if (inspection.getStatus() != InspectionStatus.PREPARING) {
+      return false;
+    }
+    InspectionPreparation latest =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
+            .orElse(null);
+    if (latest == null || latest.getStatus() != InspectionPreparationStatus.SUBMITTED) {
+      return false;
+    }
+    // A readiness decision already taken on this very version is not pending work any more.
+    return readinessDecisions
+        .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
+        .filter(decision -> decision.getPreparationId() != null)
+        .filter(decision -> decision.getPreparationId().equals(latest.getId()))
+        .filter(decision -> decision.getDecision() != ReadinessDecisionType.INVALIDATED)
+        .isEmpty();
+  }
+
+  /**
+   * A published report still needs a corrective outcome for every official finding (MF3-12).
+   *
+   * <p>An inspection with no official findings is dispositioned through the reasoned no-repair
+   * route, which is recorded on the report, so it is not a per-finding task.
+   */
+  private boolean correctivePending(UUID inspectionId) {
+    List<Finding> official =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(Finding::isOfficial)
+            .toList();
+    if (official.isEmpty()) {
+      return false;
+    }
+    return official.stream()
+        .anyMatch(finding -> finding.getCorrectiveActionReviewedByUserId() == null);
   }
 
   /**
@@ -117,7 +215,8 @@ public class InspectionListService {
     }
   }
 
-  private static InspectionListItemResponse toItem(Inspection inspection, InspectionReport report) {
+  private static InspectionListItemResponse toItem(
+      Inspection inspection, InspectionReport report, String pendingAction) {
     return new InspectionListItemResponse(
         inspection.getId(),
         inspection.getOrganizationId(),
@@ -131,7 +230,8 @@ public class InspectionListService {
         inspection.getUpdatedAt(),
         report == null ? null : report.getId(),
         report == null ? null : report.getStatus(),
-        report == null ? null : report.getCurrentVersionNumber());
+        report == null ? null : report.getCurrentVersionNumber(),
+        pendingAction);
   }
 
   private static PageRequest pageRequest(int page, int pageSize) {

@@ -133,14 +133,14 @@ public final class MaintenanceTestFixture {
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO verified_findings (id, inspection_id, created_by_user_id, source, finding_code,
-                                       defect_label, severity, location_description, technical_notes,
-                                       status, created_at, updated_at, row_version, description,
-                                       component, observed_condition, decision, decided_by_user_id,
-                                       decided_at, inspector_confirmed_at, repair_required)
-        VALUES (?, ?, ?, 'MANUAL', ?, 'Corrosion', 'HIGH', 'Main span', 'Corrosion observed',
-                'OPEN', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'Corrosion on main span',
-                'Support', 'Corrosion observed', 'CONFIRMED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE)
+        INSERT INTO findings (id, inspection_id, created_by_user_id, finding_code,
+                              defect_label, severity, location_description, technical_notes,
+                              status, created_at, updated_at, row_version, description,
+                              component, observed_condition, inspector_confirmed_at,
+                              confirmed_by_user_id, repair_required, corrective_action_required)
+        VALUES (?, ?, ?, ?, 'Corrosion', 'HIGH', 'Main span', 'Corrosion observed',
+                'CONFIRMED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'Corrosion on main span',
+                'Support', 'Corrosion observed', CURRENT_TIMESTAMP, ?, TRUE, TRUE)
         """,
         findingId,
         inspectionId,
@@ -207,18 +207,18 @@ public final class MaintenanceTestFixture {
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO verified_findings (
-            id, inspection_id, evidence_id, ai_candidate_id, created_by_user_id, source, finding_code,
+        INSERT INTO findings (
+            id, inspection_id, evidence_id, created_by_user_id, finding_code,
             defect_label, severity, location_description, bounding_box, technical_notes,
-            recommended_action, status, resolved_at, created_at, updated_at, row_version,
-            component, description, observed_condition, decision, decided_by_user_id, decided_at,
-            rationale, inspector_confirmed_at, repair_required)
-        SELECT ?, inspection_id, NULL, NULL, ?, 'MANUAL', ?, 'Additional corrosion', 'MEDIUM',
-               'North support', NULL, 'Additional corrosion observed', NULL, 'OPEN', NULL,
+            recommended_action, status, created_at, updated_at, row_version,
+            component, description, observed_condition, inspector_confirmed_at,
+            confirmed_by_user_id, repair_required, corrective_action_required)
+        SELECT ?, inspection_id, NULL, ?, ?, 'Additional corrosion', 'MEDIUM',
+               'North support', NULL, 'Additional corrosion observed', NULL, 'CONFIRMED',
                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'North support',
-               'Additional corrosion on north support', 'Corrosion observed', 'CONFIRMED', ?,
-               CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP, TRUE
-          FROM verified_findings WHERE id = ?
+               'Additional corrosion on north support', 'Corrosion observed', CURRENT_TIMESTAMP, ?,
+               TRUE, TRUE
+          FROM findings WHERE id = ?
         """,
         findingId,
         userId,

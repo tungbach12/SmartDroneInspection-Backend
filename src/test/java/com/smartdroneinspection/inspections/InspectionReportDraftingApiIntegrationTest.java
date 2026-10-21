@@ -9,10 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
@@ -57,8 +56,7 @@ class InspectionReportDraftingApiIntegrationTest {
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
   @Autowired FieldSessionRepository fieldSessions;
-  @Autowired VerifiedFindingRepository findings;
-  @Autowired AiFindingCandidateRepository candidates;
+  @Autowired FindingRepository findings;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
   @MockitoBean AiInferencePort inferencePort;
@@ -249,8 +247,8 @@ class InspectionReportDraftingApiIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of(
-                            "decision", "ADDITIONAL_SESSION_REQUIRED",
-                            "shotListComparison", "Later coverage requires another session",
+                            "decision", "LIMITED",
+                            "shotListComparison", "Coverage has a disclosed limitation",
                             "limitationReason", "Wind blocked the north approach"))))
         .andExpect(status().isOk());
 
@@ -267,8 +265,7 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void draftingLoadsCandidatesAndSessionsByInspectionAndKeepsCandidateSeparateFromFindings()
-      throws Exception {
+  void draftingLoadsTheDetectorProvenanceAndSessionsByInspection() throws Exception {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
@@ -287,16 +284,19 @@ class InspectionReportDraftingApiIntegrationTest {
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO ai_finding_candidates
-          (id, evidence_id, inspection_id, model_provider, model_name, model_version,
-           predicted_label, confidence, bounding_box, status, reviewed_by_user_id, reviewed_at,
-           rejection_reason, created_at)
-        VALUES (?, ?, ?, 'provider-test', 'detector-test', 'v7', 'Possible crack', 0.87,
-                '{"x":12}', 'REJECTED', ?, CURRENT_TIMESTAMP, 'Reviewed in fixture', CURRENT_TIMESTAMP)
+        INSERT INTO findings
+          (id, inspection_id, evidence_id, created_by_user_id, finding_code, defect_label,
+           severity, bounding_box, status, inspector_confirmed_at, confirmed_by_user_id,
+           model_provider, model_name, model_version, confidence,
+           technical_notes, repair_required, corrective_action_required, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, 'F-1', 'Possible crack', 'MEDIUM', '{"x":12}', 'CONFIRMED',
+                CURRENT_TIMESTAMP, ?, 'provider-test', 'detector-test', 'v7', 0.87, 'Possible crack',
+                FALSE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         candidateId,
-        evidenceId,
         fixture.inspectionId(),
+        evidenceId,
+        fixture.inspectorId(),
         fixture.inspectorId());
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
@@ -317,13 +317,16 @@ class InspectionReportDraftingApiIntegrationTest {
     draft();
 
     DraftContext context = DraftingStub.LAST_CONTEXT.get();
+    // The detector's provenance travels with the finding, so the drafting model is told which
+    // findings came from the detector and how confident it was.
     assertThat(context.candidates()).hasSize(1);
     assertThat(context.candidates().get(0).candidateId()).isEqualTo(candidateId.toString());
-    assertThat(context.candidates().get(0).status()).isEqualTo("REJECTED");
+    assertThat(context.candidates().get(0).status()).isEqualTo("CONFIRMED");
     assertThat(context.candidates().get(0).provider()).isEqualTo("provider-test");
     assertThat(objectMapper.readTree(context.candidates().get(0).boundingBoxJson()))
         .isEqualTo(objectMapper.readTree("{\"x\":12}"));
-    assertThat(context.findings()).isEmpty();
+    assertThat(context.findings()).hasSize(1);
+    assertThat(context.findings().get(0).defectLabel()).isEqualTo("Possible crack");
     assertThat(context.fieldSessions())
         .singleElement()
         .satisfies(
@@ -459,7 +462,7 @@ class InspectionReportDraftingApiIntegrationTest {
   private long countFindings() {
     Long count =
         jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM verified_findings WHERE inspection_id = ?",
+            "SELECT count(*) FROM findings WHERE inspection_id = ?",
             Long.class,
             fixture.inspectionId());
     return count == null ? 0 : count;
@@ -467,14 +470,14 @@ class InspectionReportDraftingApiIntegrationTest {
 
   private String findingSeverity() {
     return jdbcTemplate.queryForObject(
-        "SELECT severity FROM verified_findings WHERE inspection_id = ? LIMIT 1",
+        "SELECT severity FROM findings WHERE inspection_id = ? LIMIT 1",
         String.class,
         fixture.inspectionId());
   }
 
   private String findingInspectorConfirmedAt() {
     return jdbcTemplate.queryForObject(
-        "SELECT inspector_confirmed_at::text FROM verified_findings WHERE inspection_id = ? LIMIT 1",
+        "SELECT inspector_confirmed_at::text FROM findings WHERE inspection_id = ? LIMIT 1",
         String.class,
         fixture.inspectionId());
   }
@@ -482,21 +485,22 @@ class InspectionReportDraftingApiIntegrationTest {
   private UUID insertConfirmedFinding(String defect, String severity) {
     jdbcTemplate.update(
         """
-        INSERT INTO verified_findings (id, inspection_id, created_by_user_id, source, finding_code,
-                                       defect_label, severity, location_description, technical_notes,
-                                       status, decision, inspector_confirmed_at, repair_required,
-                                       created_at, updated_at, row_version)
-        VALUES (?, ?, ?, 'MANUAL', ?, ?, ?, 'Lower chord', 'Visible corrosion',
-                'OPEN', 'CONFIRMED', CURRENT_TIMESTAMP, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        INSERT INTO findings (id, inspection_id, created_by_user_id, finding_code,
+                              defect_label, severity, location_description, technical_notes,
+                              status, inspector_confirmed_at, confirmed_by_user_id, repair_required,
+                              created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, ?, ?, 'Lower chord', 'Visible corrosion',
+                'CONFIRMED', CURRENT_TIMESTAMP, ?, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         UUID.randomUUID(),
         fixture.inspectionId(),
         fixture.inspectorId(),
         "F-" + UUID.randomUUID().toString().substring(0, 6),
         defect,
-        severity);
+        severity,
+        fixture.inspectorId());
     return jdbcTemplate.queryForObject(
-        "SELECT id FROM verified_findings WHERE inspection_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT id FROM findings WHERE inspection_id = ? ORDER BY created_at DESC LIMIT 1",
         UUID.class,
         fixture.inspectionId());
   }

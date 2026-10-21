@@ -1,14 +1,14 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
-import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.RepairCandidate;
 import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
 import java.util.ArrayList;
@@ -28,13 +28,13 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
   private final InspectionRepository inspections;
   private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository reportVersions;
-  private final VerifiedFindingRepository findings;
+  private final FindingRepository findings;
 
   public RepairCandidateAccessAdapter(
       InspectionRepository inspections,
       InspectionReportRepository reports,
       InspectionReportVersionRepository reportVersions,
-      VerifiedFindingRepository findings) {
+      FindingRepository findings) {
     this.inspections = inspections;
     this.reports = reports;
     this.reportVersions = reportVersions;
@@ -45,10 +45,10 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
   @Transactional(readOnly = true)
   public List<RepairCandidate> findRepairCandidates(UUID organizationId) {
     List<RepairCandidate> candidates = new ArrayList<>();
-    List<VerifiedFinding> repairRequired =
+    List<Finding> repairRequired =
         findings.findByRepairRequiredTrueAndInspectorConfirmedAtNotNull();
 
-    for (VerifiedFinding finding : repairRequired) {
+    for (Finding finding : repairRequired) {
       candidateFor(organizationId, finding).ifPresent(candidates::add);
     }
     return List.copyOf(candidates);
@@ -65,8 +65,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
         .filter(candidate -> candidate.reportVersionId().equals(reportVersionId));
   }
 
-  private java.util.Optional<RepairCandidate> candidateFor(
-      UUID organizationId, VerifiedFinding finding) {
+  private java.util.Optional<RepairCandidate> candidateFor(UUID organizationId, Finding finding) {
     Inspection inspection =
         inspections
             .findByIdAndOrganizationId(finding.getInspectionId(), organizationId)
