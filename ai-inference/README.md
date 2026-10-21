@@ -11,9 +11,9 @@ it.
 | | |
 | --- | --- |
 | Kaggle kernel | `natsumeeei/smartdroneinspection-mbdd2025-yolo11s-training` |
-| Dataset | `mennamahmoudd/mbdd2025-building-defects` (14,471 UAV images) |
-| Base model | `yolo11s.pt`, 100 epochs, imgsz 640, AdamW, cosine LR |
-| Classes | `crack`, `leakage`, `abscission`, `corrosion`, `bulge` |
+| Dataset | [`asadibehnam/mbdd2025-uav-building-defect-detection`](https://www.kaggle.com/datasets/asadibehnam/mbdd2025-uav-building-defect-detection) — 14,471 VOC-annotated UAV images; Kaggle mirror of [MBDD2025 on Zenodo](https://doi.org/10.5281/zenodo.15622584), CC BY 4.0 |
+| Base model | YOLO11s pretrained weights, up to 100 epochs, imgsz 640, AdamW, cosine LR |
+| Classes | `crack`, `leakage`, `abscission`, `corrosion`, `bulge` (fixed ID order in notebook) |
 
 Files in this folder:
 
@@ -22,7 +22,7 @@ ai-inference/
 ├── app.py                  FastAPI service (raw-body contract, see below)
 ├── Dockerfile              CPU image; weights are mounted, not baked in
 ├── requirements.txt
-├── training-notebook.ipynb the Kaggle notebook that produced the weights
+├── training-notebook.ipynb Simple Kaggle preprocessing, training, and held-out evaluation
 ├── kernel-metadata.json    Kaggle kernel metadata (dataset source, GPU flags)
 └── models/
     ├── best.pt             YOLO11s weights used by the service
@@ -33,17 +33,28 @@ ai-inference/
 `best.pt` and `best.onnx` are git-ignored: they are large binaries, and a rebuild
 should come from the kernel rather than from the repository.
 
-## Re-downloading the weights
+## Training and retrieving a candidate
 
-The kernel is private, so this needs the Kaggle API token in
-`~/.kaggle/access_token` (or `~/.kaggle/kaggle.json`). The output also contains the
-converted dataset, which is thousands of files, so always filter to `export/`:
+The training kernel is private and requires an authorized Kaggle API token. The
+notebook is configured for `asadibehnam/mbdd2025-uav-building-defect-detection`;
+confirm that the Kaggle kernel is attached to this dataset before running it. The
+notebook pairs VOC annotations by filename stem, clips out-of-bounds boxes to image
+edges, and reports the number clipped or dropped. It trains/evaluates on a deterministic,
+dominant-class-stratified image-level 70/20/10 split. The dataset does not expose a verified building/flight group key in
+the notebook, so related views may cross splits; this limitation is documented in
+the notebook and candidate provenance.
+
+The run exports a **candidate** plus `test_metrics.json`, `split_manifest.csv`,
+`class_distribution.csv`, `provenance.json`, training results, and plots. Retrieve
+only the export directory:
 
 ```bash
 kaggle kernels output natsumeeei/smartdroneinspection-mbdd2025-yolo11s-training \
   -p .scratch/kaggle-export --file-pattern "^export/" --page-size 200
-cp .scratch/kaggle-export/export/best.pt ai-inference/models/best.pt
 ```
+
+Do not copy a candidate over `ai-inference/models/best.pt` until held-out metrics
+and predictions have been reviewed and promotion is explicitly approved.
 
 ## Running it
 

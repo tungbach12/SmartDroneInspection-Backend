@@ -9,7 +9,7 @@
   "enable_tpu": "false",
   "enable_internet": "true",
   "dataset_sources": [
-    "mennamahmoudd/mbdd2025-building-defects"
+    "asadibehnam/mbdd2025-uav-building-defect-detection"
   ],
   "competition_sources": [],
   "kernel_sources": [],
