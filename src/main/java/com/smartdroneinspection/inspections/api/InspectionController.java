@@ -418,9 +418,12 @@ public class InspectionController {
   @PostMapping("/report/corrective-handoff")
   @PreAuthorize("hasRole('ORG_ADMIN')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestBody(required = false) CorrectiveHandoffRequest request) {
+    List<UUID> findingIds = request == null ? null : request.findingIds();
     return ApiResponse.success(
-        reportService.completeCorrectiveActionHandoff(actorId(jwt), inspectionId));
+        reportService.completeCorrectiveActionHandoff(actorId(jwt), inspectionId, findingIds));
   }
 
   @PutMapping("/report/versions/{versionId}/sections")

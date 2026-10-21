@@ -336,6 +336,25 @@ public class Finding {
     this.updatedAt = Instant.now();
   }
 
+  /**
+   * MF3-12/13: the Organization Admin forwards this official finding to Maintenance as a repair
+   * candidate.
+   */
+  public void forwardToMaintenance(UUID reviewerId) {
+    if (reviewerId == null) {
+      throw new IllegalArgumentException("A reviewer is required to forward to maintenance");
+    }
+    if (!isOfficial()) {
+      throw new IllegalStateException(
+          "Only an Inspector-confirmed finding can be forwarded to maintenance");
+    }
+    this.correctiveActionRequired = true;
+    this.repairRequired = true;
+    this.correctiveActionReviewedByUserId = reviewerId;
+    this.correctiveActionReviewedAt = Instant.now();
+    this.updatedAt = this.correctiveActionReviewedAt;
+  }
+
   /** The Inspector confirms the finding: it becomes official and may enter a report. */
   public void confirmByInspector(UUID actorId) {
     if (this.inspectorConfirmedAt != null) return;

@@ -444,6 +444,23 @@ class InspectionFieldSessionServiceTest {
   }
 
   @Test
+  void anAbortedSessionCannotBeCompleted() {
+    FieldSession session =
+        service.start(
+            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    service.abort(inspectorId, inspectionId, session.getId(), "Structure unsafe");
+
+    assertThatThrownBy(
+            () ->
+                service.complete(inspectorId, inspectionId, session.getId(), "Outcome after abort"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("SESSION_NOT_IN_PROGRESS"));
+  }
+
+  @Test
   void anInspectionMayBeStartedAgainAfterAPostponement() {
     FieldSession first =
         service.start(

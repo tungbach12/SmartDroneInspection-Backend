@@ -1399,6 +1399,85 @@ class InspectionReportApiIntegrationTest {
         .isEqualTo(ReportStatus.RETURNED);
   }
 
+  private void reviewAndApproveVersion(UUID versionId) throws Exception {
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("approve", "true")
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+  }
+
+  private void publishVersion(UUID versionId) throws Exception {
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void adminCanBatchForwardSelectedFindingsToMaintenanceWithoutPerFindingDispositions()
+      throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    UUID findingId1 = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    reviewAndApproveVersion(versionId);
+    publishVersion(versionId);
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("findingIds", java.util.List.of(findingId1.toString())))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.repairRequiredFindingIds[0]").value(findingId1.toString()));
+
+    assertThat(
+            findings
+                .findByIdAndInspectionId(findingId1, fixture.inspectionId())
+                .orElseThrow()
+                .isRepairRequired())
+        .isTrue();
+  }
+
+  @Test
+  void adminCanPublishAndSelectZeroFindingsLeavingHandoffForLater() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+    createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+    reviewAndApproveVersion(versionId);
+    publishVersion(versionId);
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("findingIds", java.util.List.of()))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"))
+        .andExpect(jsonPath("$.data.repairRequiredFindingIds").isEmpty());
+  }
+
   @Test
   void inspectorCanCorrectAndSoftDeleteAnUndecidedFinding() throws Exception {
     UUID evidenceId = uploadEvidence();

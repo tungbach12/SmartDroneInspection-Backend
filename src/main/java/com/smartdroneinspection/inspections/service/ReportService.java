@@ -21,6 +21,7 @@ import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
@@ -688,15 +689,10 @@ public class ReportService {
    * but does not create a work order.
    */
   @Transactional
-  public ReportPublishedResponse completeCorrectiveActionHandoff(UUID actorId, UUID inspectionId) {
+  public ReportPublishedResponse completeCorrectiveActionHandoff(
+      UUID actorId, UUID inspectionId, List<UUID> selectedFindingIds) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    if (inspection.getCorrectiveHandoffAt() != null) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
-          "Corrective handoff has already been completed");
-    }
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version =
         versions
@@ -712,32 +708,80 @@ public class ReportService {
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
             .filter(Finding::isOfficial)
             .toList();
-    if (official.stream().anyMatch(finding -> !finding.isCorrectiveActionReviewed())) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "CORRECTIVE_ACTION_REVIEW_INCOMPLETE",
-          "Record corrective action or an explicit no-action outcome for every confirmed finding");
-    }
-    List<UUID> repairRequired =
-        official.stream().filter(Finding::isCorrectiveActionRequired).map(Finding::getId).toList();
-    if (official.isEmpty()) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "NO_CORRECTIVE_WORK_PENDING",
-          "Record an explicit no-corrective-work rationale for a scope without confirmed findings");
-    }
-    try {
-      inspection.recordCorrectiveHandoff(reviewer.id(), null);
-      if (repairRequired.isEmpty()) {
-        inspection.complete();
-      } else {
-        inspection.markRepairPending();
+
+    List<UUID> repairRequired;
+
+    if (selectedFindingIds != null) {
+      if (selectedFindingIds.isEmpty()) {
+        // Admin chose not to forward any findings at this time. The report remains published;
+        // findings can still be forwarded later.
+        return new ReportPublishedResponse(
+            version.getId(),
+            version.getVersionNo(),
+            version.getPublishedAt(),
+            List.of(),
+            inspection.getStatus());
       }
-    } catch (IllegalStateException | IllegalArgumentException ex) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
+      java.util.Set<UUID> officialIds =
+          official.stream().map(Finding::getId).collect(java.util.stream.Collectors.toSet());
+      for (UUID fid : selectedFindingIds) {
+        if (!officialIds.contains(fid)) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "FINDING_NOT_FOUND",
+              "Selected finding " + fid + " is not an official confirmed finding on this report");
+        }
+      }
+      for (Finding f : official) {
+        if (selectedFindingIds.contains(f.getId())) {
+          f.forwardToMaintenance(reviewer.id());
+        }
+      }
+      findings.saveAllAndFlush(official);
+      repairRequired = selectedFindingIds;
+
+      inspection.recordCorrectiveHandoff(reviewer.id(), null);
+      if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED) {
+        inspection.markRepairPending();
+        inspections.saveAndFlush(inspection);
+      }
+    } else {
+      if (inspection.getCorrectiveHandoffAt() != null) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
+            "Corrective handoff has already been completed");
+      }
+      if (official.stream().anyMatch(finding -> !finding.isCorrectiveActionReviewed())) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "CORRECTIVE_ACTION_REVIEW_INCOMPLETE",
+            "Record corrective action or an explicit no-action outcome for every confirmed finding");
+      }
+      repairRequired =
+          official.stream()
+              .filter(Finding::isCorrectiveActionRequired)
+              .map(Finding::getId)
+              .toList();
+      if (official.isEmpty()) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "NO_CORRECTIVE_WORK_PENDING",
+            "Record an explicit no-corrective-work rationale for a scope without confirmed findings");
+      }
+      try {
+        inspection.recordCorrectiveHandoff(reviewer.id(), null);
+        if (repairRequired.isEmpty()) {
+          inspection.complete();
+        } else {
+          inspection.markRepairPending();
+        }
+      } catch (IllegalStateException | IllegalArgumentException ex) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
+      }
+      inspections.saveAndFlush(inspection);
     }
-    inspections.saveAndFlush(inspection);
 
     events.publishEvent(
         new ReportPublishedEvent(
@@ -755,6 +799,11 @@ public class ReportService {
         version.getPublishedAt(),
         repairRequired,
         inspection.getStatus());
+  }
+
+  @Transactional
+  public ReportPublishedResponse completeCorrectiveActionHandoff(UUID actorId, UUID inspectionId) {
+    return completeCorrectiveActionHandoff(actorId, inspectionId, null);
   }
 
   /**

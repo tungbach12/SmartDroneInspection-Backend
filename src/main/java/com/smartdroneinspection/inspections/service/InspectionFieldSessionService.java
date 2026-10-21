@@ -224,17 +224,16 @@ public class InspectionFieldSessionService {
     if (!session.getInspectorUserId().equals(inspectorId)) {
       throw sessionFailure("SESSION_SCOPE_DENIED", "This field session is not assigned to you.");
     }
-    if (session.isOpen()) {
-      if (session.getReadinessDecisionId() == null
-          || !session
-              .getReadinessDecisionId()
-              .equals(currentReadinessDecision(inspectionId).getId())) {
-        throw sessionFailure(
-            "SESSION_READINESS_STALE",
-            "This session was opened against a readiness decision that is no longer current.");
-      }
-    } else if (!"ABORTED".equals(session.getStatus())) {
-      throw sessionFailure("SESSION_NOT_IN_PROGRESS", "This session is already ended.");
+    if (!session.isOpen() || !session.isInProgress()) {
+      throw sessionFailure("SESSION_NOT_IN_PROGRESS", "This session is not in progress.");
+    }
+    if (session.getReadinessDecisionId() == null
+        || !session
+            .getReadinessDecisionId()
+            .equals(currentReadinessDecision(inspectionId).getId())) {
+      throw sessionFailure(
+          "SESSION_READINESS_STALE",
+          "This session was opened against a readiness decision that is no longer current.");
     }
     if (inspection.getStatus() != InspectionStatus.IN_PROGRESS) {
       throw sessionFailure(

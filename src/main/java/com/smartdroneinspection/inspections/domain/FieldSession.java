@@ -28,10 +28,10 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "field_sessions")
 public class FieldSession {
 
-  static final String PLANNED = "PLANNED";
-  static final String IN_PROGRESS = "IN_PROGRESS";
-  static final String POSTPONED = "POSTPONED";
-  static final String ABORTED = "ABORTED";
+  public static final String PLANNED = "PLANNED";
+  public static final String IN_PROGRESS = "IN_PROGRESS";
+  public static final String POSTPONED = "POSTPONED";
+  public static final String ABORTED = "ABORTED";
 
   @Id @GeneratedValue private UUID id;
 
@@ -166,8 +166,8 @@ public class FieldSession {
 
   /** Records normal completion of field work (MF2-12). */
   public void complete(String outcomeNotes) {
-    if (!IN_PROGRESS.equals(status) && !ABORTED.equals(status)) {
-      throw new IllegalStateException("Only an in-progress or aborted session can be completed");
+    if (!IN_PROGRESS.equals(status)) {
+      throw new IllegalStateException("Only an in-progress session can be completed");
     }
     this.outcomeNotes = requireReason(outcomeNotes);
     this.status = "FIELD_COMPLETED";
@@ -228,6 +228,10 @@ public class FieldSession {
    */
   public boolean isOpen() {
     return PLANNED.equals(status) || IN_PROGRESS.equals(status);
+  }
+
+  public boolean isInProgress() {
+    return IN_PROGRESS.equals(status);
   }
 
   public UUID getId() {
