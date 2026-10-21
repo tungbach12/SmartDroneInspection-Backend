@@ -63,6 +63,8 @@ public class AdminUserService {
         new User(
             request.email().trim(),
             request.fullName().trim(),
+            request.phoneNumber() != null ? request.phoneNumber().trim() : null,
+            request.avatarUrl() != null ? request.avatarUrl().trim() : null,
             passwords.encode(temporaryPassword),
             UserStatus.ACTIVE,
             request.actorZone(),
@@ -154,6 +156,8 @@ public class AdminUserService {
         user.getId(),
         user.getEmail(),
         user.getFullName(),
+        user.getPhoneNumber(),
+        user.getAvatarUrl(),
         user.roleValues(),
         user.getActorZone().name(),
         user.getOrganizationId(),

@@ -309,6 +309,8 @@ public class AuthService {
         user.getId(),
         user.getEmail(),
         user.getFullName(),
+        user.getPhoneNumber(),
+        user.getAvatarUrl(),
         user.roleValues(),
         user.getActorZone().name(),
         user.getOrganizationId(),
