@@ -1367,9 +1367,13 @@ public class ReportService {
     if (node == null || node.isNull()) return;
     content.append(label).append(':');
     if (node.isArray()) {
-      node.forEach(item -> content.append("\n• ").append(item.asString()));
+      node.forEach(
+          item ->
+              content
+                  .append("\n• ")
+                  .append(item.isValueNode() ? item.asString("") : item.toString()));
     } else {
-      content.append("\n• ").append(node.asString());
+      content.append("\n• ").append(node.isValueNode() ? node.asString("") : node.toString());
     }
     content.append('\n');
   }
