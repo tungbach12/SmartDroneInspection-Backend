@@ -21,7 +21,6 @@ class FullDatabaseSchemaSqlContractTest {
         .contains("CREATE TABLE inspections")
         .contains("CREATE TABLE checklist_responses")
         .contains("CREATE TABLE evidence")
-        .contains("CREATE TABLE ai_finding_candidates")
         .contains("CREATE TABLE verified_findings")
         .contains("CREATE TABLE inspection_reports")
         .contains("CREATE TABLE report_versions")
@@ -86,7 +85,6 @@ class FullDatabaseSchemaSqlContractTest {
             "inspections",
             "checklist_responses",
             "evidence",
-            "ai_finding_candidates",
             "verified_findings",
             "inspection_reports",
             "report_versions",

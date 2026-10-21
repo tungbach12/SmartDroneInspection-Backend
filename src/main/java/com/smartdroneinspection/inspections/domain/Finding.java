@@ -1,9 +1,7 @@
 package com.smartdroneinspection.inspections.domain;
 
-import com.smartdroneinspection.inspections.domain.enums.FindingDecision;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
-import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingSource;
-import com.smartdroneinspection.inspections.domain.enums.VerifiedFindingStatus;
+import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,7 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -20,13 +18,22 @@ import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A human-confirmed finding. Only findings that carry a human decision are official; an unreviewed
- * AI candidate never becomes one. {@code repairRequired} is what MF3 hands to MF4.
+ * One observation about an inspection, whoever made it.
+ *
+ * <p>A finding is either a detector suggestion or something the Inspector saw. The difference
+ * matters only for provenance - the model that produced it, its confidence and its box - so those
+ * columns are nullable and a manual finding simply leaves them empty. What the workflow asks is
+ * narrower: has the Inspector confirmed this or not. That is {@link FindingStatus}, and it is the
+ * only thing that decides whether a finding is official.
+ *
+ * <p>Removing a finding is a tombstone rather than a state, so a confirmed finding that was removed
+ * still records that it was confirmed. Reads filter removed rows out; a caller that needs them asks
+ * for them.
  */
 @Entity
-@Table(name = "verified_findings")
+@Table(name = "findings")
 @SQLRestriction("deleted_at is null")
-public class VerifiedFinding {
+public class Finding {
 
   @Id @GeneratedValue private UUID id;
 
@@ -36,15 +43,12 @@ public class VerifiedFinding {
   @Column(name = "evidence_id")
   private UUID evidenceId;
 
-  @Column(name = "ai_candidate_id")
-  private UUID aiCandidateId;
-
   @Column(name = "created_by_user_id", nullable = false)
   private UUID createdByUserId;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
-  private VerifiedFindingSource source;
+  private FindingStatus status;
 
   @Column(name = "finding_code", nullable = false, length = 64)
   private String findingCode;
@@ -69,41 +73,39 @@ public class VerifiedFinding {
   @Column(name = "recommended_action", length = 4000)
   private String recommendedAction;
 
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 24)
-  private VerifiedFindingStatus status;
+  @Column(name = "model_name", length = 160)
+  private String modelName;
+
+  @Column(name = "model_version", length = 80)
+  private String modelVersion;
+
+  @Column(name = "model_provider", length = 96)
+  private String modelProvider;
+
+  @Column(name = "confidence", precision = 6, scale = 5)
+  private BigDecimal confidence;
 
   @Column(name = "inspector_confirmed_at")
   private Instant inspectorConfirmedAt;
 
-  @Column(name = "resolved_at")
-  private Instant resolvedAt;
+  @Column(name = "confirmed_by_user_id")
+  private UUID confirmedByUserId;
 
-  @Column(length = 200)
+  @Column(name = "component", length = 200)
   private String component;
 
-  @Column(length = 4000)
+  @Column(name = "description", length = 4000)
   private String description;
 
   @Column(name = "observed_condition", length = 4000)
   private String observedCondition;
 
-  @Column(length = 24)
+  @Column(name = "priority", length = 24)
   private String priority;
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "measurement", columnDefinition = "jsonb")
   private Map<String, String> measurement;
-
-  @Enumerated(EnumType.STRING)
-  @Column(length = 24)
-  private FindingDecision decision;
-
-  @Column(name = "decided_by_user_id")
-  private UUID decidedByUserId;
-
-  @Column(name = "decided_at")
-  private Instant decidedAt;
 
   @Column(name = "corrective_action_required", nullable = false)
   private boolean correctiveActionRequired = true;
@@ -123,9 +125,6 @@ public class VerifiedFinding {
   @Column(name = "corrective_action_rationale", length = 4000)
   private String correctiveActionRationale;
 
-  @Column(length = 4000)
-  private String rationale;
-
   @Column(name = "repair_required", nullable = false)
   private boolean repairRequired;
 
@@ -144,18 +143,21 @@ public class VerifiedFinding {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  @Version
   @Column(name = "row_version", nullable = false)
   private long rowVersion;
 
-  protected VerifiedFinding() {}
+  protected Finding() {}
 
-  public VerifiedFinding(
+  /**
+   * A finding the detector produced.
+   *
+   * <p>The model provenance travels with it so the suggestion that was judged stays traceable, and
+   * the finding starts {@code PENDING}: the Inspector has not looked at it yet.
+   */
+  public Finding(
       UUID inspectionId,
       UUID evidenceId,
-      UUID aiCandidateId,
       UUID createdByUserId,
-      VerifiedFindingSource source,
       String findingCode,
       String defectLabel,
       FindingSeverity severity,
@@ -168,12 +170,14 @@ public class VerifiedFinding {
       String observedCondition,
       String priority,
       String measurement,
-      boolean repairRequired) {
+      boolean repairRequired,
+      String modelName,
+      String modelVersion,
+      String modelProvider,
+      BigDecimal confidence) {
     this.inspectionId = inspectionId;
     this.evidenceId = evidenceId;
-    this.aiCandidateId = aiCandidateId;
     this.createdByUserId = createdByUserId;
-    this.source = source;
     this.findingCode = findingCode;
     this.defectLabel = defectLabel;
     this.severity = severity;
@@ -185,39 +189,28 @@ public class VerifiedFinding {
     this.description = description;
     this.observedCondition = observedCondition;
     this.priority = priority;
-    // measurement is a jsonb column while the Inspector writes prose, so the text is stored as a
-    // single summary entry and handed back unchanged through the API.
-    this.measurement =
-        measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
+    this.measurement = normalizeMeasurement(measurement);
     this.repairRequired = repairRequired;
-    this.status = VerifiedFindingStatus.OPEN;
-    this.inspectorConfirmedAt = null;
-    this.decision = null;
-    this.decidedByUserId = null;
+    this.modelName = modelName;
+    this.modelVersion = modelVersion;
+    this.modelProvider = modelProvider;
+    this.confidence = confidence;
+    this.status = FindingStatus.PENDING;
     this.createdAt = Instant.now();
-    this.decidedAt = null;
     this.updatedAt = createdAt;
   }
 
-  /** Updates Inspector-provided fields while preserving any reviewer decision and audit. */
-  public void setLocationDescription(String locationDescription) {
-    String normalized =
-        locationDescription == null || locationDescription.isBlank()
-            ? null
-            : locationDescription.trim();
-    if (java.util.Objects.equals(this.locationDescription, normalized)) return;
-    this.locationDescription = normalized;
-    this.inspectorConfirmedAt = null;
-    this.updatedAt = Instant.now();
-  }
-
-  public void clearInspectorConfirmation() {
-    this.inspectorConfirmedAt = null;
-    this.updatedAt = Instant.now();
-  }
-
-  public void reviseCandidateDetails(
-      VerifiedFindingSource source,
+  /**
+   * A finding the Inspector recorded from what they saw.
+   *
+   * <p>It has no model behind it, so the provenance columns stay empty rather than carrying a
+   * placeholder.
+   */
+  public Finding(
+      UUID inspectionId,
+      UUID evidenceId,
+      UUID createdByUserId,
+      String findingCode,
       String defectLabel,
       FindingSeverity severity,
       String locationDescription,
@@ -229,11 +222,62 @@ public class VerifiedFinding {
       String priority,
       String measurement,
       boolean repairRequired) {
-    if (inspectorConfirmedAt != null) {
-      throw new IllegalStateException(
-          "A confirmed finding cannot be revised before reopening Findings");
-    }
-    this.source = source;
+    this(
+        inspectionId,
+        evidenceId,
+        createdByUserId,
+        findingCode,
+        defectLabel,
+        severity,
+        locationDescription,
+        technicalNotes,
+        recommendedAction,
+        null,
+        component,
+        description,
+        observedCondition,
+        priority,
+        measurement,
+        repairRequired,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  /** Updates Inspector-provided fields while preserving the confirmation and the audit trail. */
+  public void setLocationDescription(String locationDescription) {
+    String normalized =
+        locationDescription == null || locationDescription.isBlank()
+            ? null
+            : locationDescription.trim();
+    if (java.util.Objects.equals(this.locationDescription, normalized)) return;
+    this.locationDescription = normalized;
+    this.inspectorConfirmedAt = null;
+    this.updatedAt = Instant.now();
+  }
+
+  /**
+   * The Inspector's edit of a finding.
+   *
+   * <p>Editing changes the content, so the earlier acceptance no longer speaks for it: the finding
+   * goes back to {@code PENDING} and the Inspector has to accept it again. That is what keeps a
+   * confirmation a statement about the content it was given for.
+   */
+  public void revise(
+      UUID evidenceId,
+      String defectLabel,
+      FindingSeverity severity,
+      String locationDescription,
+      String technicalNotes,
+      String recommendedAction,
+      String component,
+      String description,
+      String observedCondition,
+      String priority,
+      String measurement,
+      boolean repairRequired) {
+    this.evidenceId = evidenceId;
     this.defectLabel = defectLabel;
     this.severity = severity;
     this.locationDescription = locationDescription;
@@ -243,16 +287,18 @@ public class VerifiedFinding {
     this.description = description;
     this.observedCondition = observedCondition;
     this.priority = priority;
-    this.measurement =
-        measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
+    this.measurement = normalizeMeasurement(measurement);
     this.repairRequired = repairRequired;
+    this.inspectorConfirmedAt = null;
+    this.status = FindingStatus.PENDING;
     this.updatedAt = Instant.now();
   }
 
   /**
-   * MF3-06: removing a finding from the record keeps who removed it, when and why. The row stays
-   * for audit; reads filter deleted findings out, and the source candidate is reopened separately
-   * so the Inspector can decide it again.
+   * MF3-06: removing a finding keeps who removed it, when and why.
+   *
+   * <p>The row stays for audit and reads filter it out. A removed finding can be restored, which
+   * clears the tombstone and returns it to the Inspector as unconfirmed.
    */
   public void delete(UUID actorId, String reason) {
     if (actorId == null) {
@@ -267,39 +313,35 @@ public class VerifiedFinding {
     this.updatedAt = deletedAt;
   }
 
-  public boolean isDeleted() {
-    return deletedAt != null;
-  }
-
-  public UUID getDeletedByUserId() {
-    return deletedByUserId;
-  }
-
-  public Instant getDeletedAt() {
-    return deletedAt;
-  }
-
-  public String getDeletionReason() {
-    return deletionReason;
-  }
-
-  /**
-   * Legacy decision field retained for existing persisted finding history; new workflow never
-   * writes it.
-   */
-  public void recordDecision(FindingDecision newDecision, UUID decidedByUserId, String rationale) {
-    if (newDecision == null || decidedByUserId == null) {
-      throw new IllegalArgumentException("A decision and a deciding reviewer are required");
+  /** Puts a removed finding back in front of the Inspector, as it was before it was removed. */
+  public void restore() {
+    if (deletedAt == null) {
+      throw new IllegalStateException("This finding was not removed");
     }
-    this.decision = newDecision;
-    this.decidedByUserId = decidedByUserId;
-    this.decidedAt = Instant.now();
-    this.rationale = rationale;
-    this.correctiveActionRequired = newDecision != FindingDecision.REJECTED;
-    this.correctiveActionReviewedByUserId = null;
-    this.correctiveActionReviewedAt = null;
-    this.repairRequired = false;
-    this.updatedAt = decidedAt;
+    this.deletedByUserId = null;
+    this.deletedAt = null;
+    this.deletionReason = null;
+    this.updatedAt = Instant.now();
+  }
+
+  public void clearInspectorConfirmation() {
+    this.inspectorConfirmedAt = null;
+    this.confirmedByUserId = null;
+    this.status = FindingStatus.PENDING;
+    this.updatedAt = Instant.now();
+  }
+
+  /** The Inspector confirms the finding: it becomes official and may enter a report. */
+  public void confirmByInspector(UUID actorId) {
+    if (this.inspectorConfirmedAt != null) return;
+    this.inspectorConfirmedAt = Instant.now();
+    this.confirmedByUserId = actorId;
+    this.status = FindingStatus.CONFIRMED;
+    this.updatedAt = inspectorConfirmedAt;
+  }
+
+  public UUID getConfirmedByUserId() {
+    return confirmedByUserId;
   }
 
   public void updateCorrectiveAction(
@@ -341,114 +383,15 @@ public class VerifiedFinding {
     this.updatedAt = correctiveActionReviewedAt;
   }
 
-  /** Corrects an Inspector proposal and its evidence reference before report submission. */
-  public void reviseInspectorProposal(
-      UUID evidenceId,
-      String defectLabel,
-      FindingSeverity severity,
-      String locationDescription,
-      String technicalNotes,
-      String recommendedAction,
-      String component,
-      String description,
-      String observedCondition,
-      String priority,
-      String measurement,
-      boolean repairRequired) {
-    if (inspectorConfirmedAt != null) {
-      throw new IllegalStateException(
-          "An Inspector-confirmed finding cannot be revised until Findings is reopened");
-    }
-    this.evidenceId = evidenceId;
-    recordInspectorProposal(
-        source,
-        defectLabel,
-        severity,
-        locationDescription,
-        technicalNotes,
-        recommendedAction,
-        component,
-        description,
-        observedCondition,
-        priority,
-        measurement,
-        repairRequired);
-  }
-
-  public void confirmByInspector() {
-    if (this.inspectorConfirmedAt != null) return;
-    this.inspectorConfirmedAt = Instant.now();
-    this.updatedAt = inspectorConfirmedAt;
-  }
-
-  public Instant getInspectorConfirmedAt() {
-    return inspectorConfirmedAt;
-  }
-
   /**
-   * Inspector has reviewed this proposal; the independent reviewer still decides its disposition.
+   * Official: the Inspector confirmed it, so it may enter a report and carry a corrective outcome.
    */
-  public void recordInspectorProposal(
-      VerifiedFindingSource source,
-      String defectLabel,
-      FindingSeverity severity,
-      String locationDescription,
-      String technicalNotes,
-      String recommendedAction,
-      String component,
-      String description,
-      String observedCondition,
-      String priority,
-      String measurement,
-      boolean repairRequired) {
-    reviseCandidateDetails(
-        source,
-        defectLabel,
-        severity,
-        locationDescription,
-        technicalNotes,
-        recommendedAction,
-        component,
-        description,
-        observedCondition,
-        priority,
-        measurement,
-        repairRequired);
-    decision = null;
-    decidedByUserId = null;
-    decidedAt = null;
-    rationale = null;
-    inspectorConfirmedAt = null;
-    correctiveActionRequired = true;
-  }
-
-  /** Reportable when Inspector-confirmed, or when an explicitly reviewed legacy row is read. */
   public boolean isOfficial() {
-    // Preserve pre-cutover explicit reviewer decisions for historical rows and direct importers;
-    // current workflow rows use Inspector confirmation and leave decision null.
-    return inspectorConfirmedAt != null
-        || (decidedByUserId != null
-            && (decision == FindingDecision.CONFIRMED || decision == FindingDecision.MODIFIED));
+    return inspectorConfirmedAt != null && status == FindingStatus.CONFIRMED;
   }
 
-  public String getCorrectiveActionPriority() {
-    return correctiveActionPriority;
-  }
-
-  public Instant getCorrectiveActionDueAt() {
-    return correctiveActionDueAt;
-  }
-
-  public UUID getCorrectiveActionReviewedByUserId() {
-    return correctiveActionReviewedByUserId;
-  }
-
-  public Instant getCorrectiveActionReviewedAt() {
-    return correctiveActionReviewedAt;
-  }
-
-  public String getCorrectiveActionRationale() {
-    return correctiveActionRationale;
+  public boolean isDeleted() {
+    return deletedAt != null;
   }
 
   public boolean isCorrectiveActionRequired() {
@@ -456,51 +399,19 @@ public class VerifiedFinding {
   }
 
   public boolean isCorrectiveActionReviewed() {
-    return correctiveActionReviewedByUserId != null && correctiveActionReviewedAt != null;
+    return correctiveActionReviewedByUserId != null;
   }
 
-  /**
-   * MF3-12: the corrective-action outcome belongs to the published report version that precedes it.
-   * Publishing a version clears an outcome recorded earlier, so a disposition from an earlier cycle
-   * is never presented as the outcome of the new version; the reviewer records a fresh one.
-   */
+  /** Clears a corrective outcome so a republished report does not inherit the previous one. */
   public void clearCorrectiveActionOutcome() {
-    if (!isCorrectiveActionReviewed()) {
-      return;
-    }
-    correctiveActionRequired = true;
-    correctiveActionPriority = null;
-    correctiveActionDueAt = null;
-    correctiveActionReviewedByUserId = null;
-    correctiveActionReviewedAt = null;
-    correctiveActionRationale = null;
-  }
-
-  public boolean hasReviewerDecision() {
-    return decidedByUserId != null && decision != null;
-  }
-
-  /**
-   * Clears a legacy decision field during a returned findings revision; no new reviewer history is
-   * written.
-   */
-  public void clearReviewerDecisionForRevision() {
-    decision = null;
-    decidedByUserId = null;
-    decidedAt = null;
-    rationale = null;
-    repairRequired = false;
-    correctiveActionRequired = true;
-    correctiveActionPriority = null;
-    correctiveActionDueAt = null;
-    correctiveActionReviewedByUserId = null;
-    correctiveActionReviewedAt = null;
-    correctiveActionRationale = null;
-    updatedAt = Instant.now();
-  }
-
-  public String getRationale() {
-    return rationale;
+    this.correctiveActionRequired = true;
+    this.correctiveActionPriority = null;
+    this.correctiveActionDueAt = null;
+    this.correctiveActionReviewedByUserId = null;
+    this.correctiveActionReviewedAt = null;
+    this.correctiveActionRationale = null;
+    this.repairRequired = false;
+    this.updatedAt = Instant.now();
   }
 
   public UUID getId() {
@@ -515,16 +426,12 @@ public class VerifiedFinding {
     return evidenceId;
   }
 
-  public UUID getAiCandidateId() {
-    return aiCandidateId;
-  }
-
   public UUID getCreatedByUserId() {
     return createdByUserId;
   }
 
-  public VerifiedFindingSource getSource() {
-    return source;
+  public FindingStatus getStatus() {
+    return status;
   }
 
   public String getFindingCode() {
@@ -551,6 +458,30 @@ public class VerifiedFinding {
     return recommendedAction;
   }
 
+  public String getBoundingBox() {
+    return boundingBox;
+  }
+
+  public String getModelName() {
+    return modelName;
+  }
+
+  public String getModelVersion() {
+    return modelVersion;
+  }
+
+  public String getModelProvider() {
+    return modelProvider;
+  }
+
+  public BigDecimal getConfidence() {
+    return confidence;
+  }
+
+  public Instant getInspectorConfirmedAt() {
+    return inspectorConfirmedAt;
+  }
+
   public String getComponent() {
     return component;
   }
@@ -567,27 +498,64 @@ public class VerifiedFinding {
     return priority;
   }
 
-  public String getMeasurement() {
+  public Map<String, String> getMeasurement() {
+    return measurement;
+  }
+
+  /** The measurement as the Inspector wrote it, for the API and the report. */
+  public String getMeasurementSummary() {
     return measurement == null ? null : measurement.get("summary");
   }
 
-  public FindingDecision getDecision() {
-    return decision;
-  }
-
-  public UUID getDecidedByUserId() {
-    return decidedByUserId;
-  }
-
-  public Instant getDecidedAt() {
-    return decidedAt;
-  }
-
   public boolean isRepairRequired() {
-    return repairRequired && correctiveActionRequired;
+    return repairRequired;
   }
 
-  public VerifiedFindingStatus getStatus() {
-    return status;
+  public String getCorrectiveActionPriority() {
+    return correctiveActionPriority;
+  }
+
+  public Instant getCorrectiveActionDueAt() {
+    return correctiveActionDueAt;
+  }
+
+  public UUID getCorrectiveActionReviewedByUserId() {
+    return correctiveActionReviewedByUserId;
+  }
+
+  public Instant getCorrectiveActionReviewedAt() {
+    return correctiveActionReviewedAt;
+  }
+
+  public String getCorrectiveActionRationale() {
+    return correctiveActionRationale;
+  }
+
+  public UUID getDeletedByUserId() {
+    return deletedByUserId;
+  }
+
+  public Instant getDeletedAt() {
+    return deletedAt;
+  }
+
+  public String getDeletionReason() {
+    return deletionReason;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
+  }
+
+  /**
+   * measurement is a jsonb column while the Inspector writes prose, so the text is stored as a
+   * single summary entry and handed back unchanged through the API.
+   */
+  private static Map<String, String> normalizeMeasurement(String measurement) {
+    return measurement == null || measurement.isBlank() ? null : Map.of("summary", measurement);
   }
 }

@@ -24,4 +24,5 @@ public record FieldSessionResponse(
     Instant startedAt,
     Instant endedAt,
     String postponementReason,
-    String abortReason) {}
+    String abortReason,
+    String outcomeNotes) {}

@@ -11,8 +11,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
+import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
+import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
+import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -60,7 +65,9 @@ class InspectionEvidenceApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
-  @Autowired VerifiedFindingRepository findings;
+  @Autowired InspectionPreparationRepository preparations;
+  @Autowired InspectionReadinessDecisionRepository readinessDecisions;
+  @Autowired FindingRepository findings;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -326,6 +333,241 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
+  void anAdditionalSessionDecisionReturnsToPreparationAndPreservesEarlierVersions()
+      throws Exception {
+    InspectionPreparation previous =
+        new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
+    previous.recordShotList("{\"shots\":[\"main span\"]}");
+    previous.recordSafetyObservations("No hazards observed");
+    previous.submit(fixture.inspectorId());
+    previous = preparations.saveAndFlush(previous);
+    previous.markReady();
+    previous = preparations.saveAndFlush(previous);
+    readinessDecisions.saveAndFlush(
+        new InspectionReadinessDecision(
+            fixture.inspectionId(),
+            previous.getId(),
+            previous.getPreparationVersion(),
+            ReadinessDecisionType.APPROVED,
+            fixture.reviewerId(),
+            null,
+            "{}",
+            "{}",
+            "{}",
+            "[]",
+            "[]",
+            "[]",
+            "a".repeat(64)));
+    UUID completedSessionId = insertCompletedFieldSession();
+    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES, completedSessionId);
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ADDITIONAL_SESSION_REQUIRED",
+                            "fieldSessionId", completedSessionId,
+                            "shotListComparison", "Main span covered; east face not observed",
+                            "limitationReason", "The east face requires a new access window"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.decision").value("ADDITIONAL_SESSION_REQUIRED"));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM inspections WHERE id = ?",
+                String.class,
+                fixture.inspectionId()))
+        .isEqualTo("PREPARING");
+    var history =
+        preparations.findByInspectionIdOrderByPreparationVersionDesc(fixture.inspectionId());
+    assertThat(history).hasSize(2);
+    assertThat(history.getFirst().getPreparationVersion()).isEqualTo(2);
+    assertThat(history.getFirst().getStatus().name()).isEqualTo("DRAFT");
+    assertThat(history.get(1).getStatus().name()).isEqualTo("SUPERSEDED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT decision FROM inspection_readiness_decisions WHERE inspection_id = ? "
+                    + "ORDER BY decided_at DESC LIMIT 1",
+                String.class,
+                fixture.inspectionId()))
+        .isEqualTo("INVALIDATED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT decision FROM inspection_readiness_decisions WHERE inspection_id = ? "
+                    + "ORDER BY decided_at DESC LIMIT 1 OFFSET 1",
+                String.class,
+                fixture.inspectionId()))
+        .isEqualTo("APPROVED");
+    assertThat(history.getFirst().getShotList()).contains("main span");
+    assertThat(history.get(1).getId()).isEqualTo(previous.getId());
+    // The handoff creates no session and no evidence row; the completed visit and its captures
+    // stay as they were.
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
+                Long.class,
+                fixture.inspectionId()))
+        .isEqualTo(1L);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM evidence WHERE inspection_id = ?",
+                Long.class,
+                fixture.inspectionId()))
+        .isEqualTo(1L);
+  }
+
+  @Test
+  void evidenceUploadCanBeAssociatedWithACompletedSession() throws Exception {
+    InspectionPreparation preparation =
+        new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
+    preparation.recordShotList("[{\"component\":\"main span\"}]");
+    preparation.recordSafetyObservations("No hazards observed");
+    preparation.submit(fixture.inspectorId());
+    preparation = preparations.saveAndFlush(preparation);
+    preparation.markReady();
+    preparation = preparations.saveAndFlush(preparation);
+    UUID readinessId =
+        readinessDecisions
+            .saveAndFlush(
+                new InspectionReadinessDecision(
+                    fixture.inspectionId(),
+                    preparation.getId(),
+                    preparation.getPreparationVersion(),
+                    ReadinessDecisionType.APPROVED,
+                    fixture.reviewerId(),
+                    null,
+                    "{}",
+                    "[]",
+                    "[]",
+                    "[]",
+                    "[]",
+                    "[]",
+                    "a".repeat(64)))
+            .getId();
+    UUID sessionId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, "
+            + "readiness_decision_id, status, started_at, ended_at, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, ?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+            + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        sessionId,
+        fixture.inspectionId(),
+        fixture.organizationId(),
+        fixture.inspectorId(),
+        readinessId);
+
+    MvcResult response =
+        uploadResponse(
+            fixture.inspectorId(), "INSPECTOR", "completed-session.png", PNG_BYTES, sessionId);
+    assertThat(
+            objectMapper
+                .readTree(response.getResponse().getContentAsString())
+                .at("/data/fieldSessionId")
+                .asString())
+        .isEqualTo(sessionId.toString());
+  }
+
+  @Test
+  void additionalSessionDecisionMustMatchCompletedSessionAndItsEvidence() throws Exception {
+    UUID completedSessionId = insertCompletedFieldSession();
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ADDITIONAL_SESSION_REQUIRED",
+                            "fieldSessionId", UUID.randomUUID(),
+                            "shotListComparison", "East face was not observed",
+                            "limitationReason", "The access window was missed"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FIELD_SESSION_NOT_CURRENT"));
+
+    MvcResult upload =
+        uploadResponse(
+            fixture.inspectorId(), "INSPECTOR", "capture.png", PNG_BYTES, completedSessionId);
+    UUID evidenceId =
+        UUID.fromString(
+            objectMapper
+                .readTree(upload.getResponse().getContentAsString())
+                .at("/data/id")
+                .asString());
+    jdbcTemplate.update(
+        "UPDATE evidence SET retired_at = CURRENT_TIMESTAMP WHERE id = ?", evidenceId);
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ADDITIONAL_SESSION_REQUIRED",
+                            "fieldSessionId", completedSessionId,
+                            "shotListComparison", "East face was not observed",
+                            "limitationReason", "The access window was missed"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FIELD_SESSION_EVIDENCE_MISSING"));
+  }
+
+  @Test
+  void anAdditionalSessionDecisionNeedsACompletedSessionWithItsOwnEvidence() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ADDITIONAL_SESSION_REQUIRED",
+                            "shotListComparison", "The east face was not observed",
+                            "limitationReason", "Access was unavailable"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FIELD_SESSION_NOT_COMPLETED"));
+  }
+
+  @Test
+  void additionalSessionDecisionRequiresTheLatestApprovedPreparation() throws Exception {
+    UUID completedSessionId = insertCompletedFieldSession();
+    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES, completedSessionId);
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision", "ADDITIONAL_SESSION_REQUIRED",
+                            "fieldSessionId", completedSessionId,
+                            "shotListComparison", "The east face was not observed",
+                            "limitationReason", "Access was unavailable"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("PREPARATION_MISSING"));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM inspections WHERE id = ?",
+                String.class,
+                fixture.inspectionId()))
+        .isEqualTo("FIELD_COMPLETED");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM evidence_quality_decisions WHERE inspection_id = ?",
+                Long.class,
+                fixture.inspectionId()))
+        .isZero();
+  }
+
+  @Test
   void aShotListComparisonContainingQuotesSurvivesTheRoundTrip() throws Exception {
     upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
 
@@ -535,15 +777,35 @@ class InspectionEvidenceApiIntegrationTest {
             .stringValue());
   }
 
+  /** A completed field session for this inspection, which an additional session must follow. */
+  private UUID insertCompletedFieldSession() {
+    UUID sessionId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, "
+            + "status, started_at, ended_at, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+            + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        sessionId,
+        fixture.inspectionId(),
+        fixture.organizationId(),
+        fixture.inspectorId());
+    return sessionId;
+  }
+
   private MvcResult uploadResponse(UUID actorId, String role, String fileName, byte[] content)
       throws Exception {
-    return mockMvc
-        .perform(
-            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
-                .file(new MockMultipartFile("file", fileName, "image/png", content))
-                .with(principal(actorId, role)))
-        .andExpect(status().isOk())
-        .andReturn();
+    return uploadResponse(actorId, role, fileName, content, null);
+  }
+
+  private MvcResult uploadResponse(
+      UUID actorId, String role, String fileName, byte[] content, UUID fieldSessionId)
+      throws Exception {
+    var request =
+        multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+            .file(new MockMultipartFile("file", fileName, "image/png", content))
+            .with(principal(actorId, role));
+    if (fieldSessionId != null) request.param("fieldSessionId", fieldSessionId.toString());
+    return mockMvc.perform(request).andExpect(status().isOk()).andReturn();
   }
 
   private static org.springframework.test.web.servlet.request.RequestPostProcessor principal(

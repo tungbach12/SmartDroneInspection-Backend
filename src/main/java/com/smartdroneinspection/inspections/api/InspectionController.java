@@ -11,19 +11,18 @@ import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecis
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.RetireEvidenceRequest;
-import com.smartdroneinspection.inspections.api.dto.request.ReviewCandidateRequest;
+import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
-import com.smartdroneinspection.inspections.api.dto.response.AiFindingCandidateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceAnalysisStatusResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
+import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
-import com.smartdroneinspection.inspections.api.dto.response.VerifiedFindingResponse;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.service.EvidenceQualityService;
@@ -36,7 +35,6 @@ import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -94,6 +92,7 @@ public class InspectionController {
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @RequestParam("file") MultipartFile file,
+      @RequestParam(required = false) UUID fieldSessionId,
       @RequestParam(defaultValue = "WEB_UPLOAD") EvidenceSource source,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
           Instant captureTime,
@@ -104,7 +103,7 @@ public class InspectionController {
         evidenceService.upload(
             actorId(jwt),
             inspectionId,
-            null,
+            fieldSessionId,
             file,
             source,
             captureTime,
@@ -210,7 +209,7 @@ public class InspectionController {
 
   @PostMapping("/evidence/{evidenceId}/analyze")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<List<AiFindingCandidateResponse>> analyzeEvidence(
+  public ApiResponse<List<FindingResponse>> analyzeEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID evidenceId,
@@ -226,45 +225,20 @@ public class InspectionController {
     return ApiResponse.success(findingService.listAnalysisStatuses(actorId(jwt), inspectionId));
   }
 
-  @GetMapping("/finding-candidates")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
-  public ApiResponse<List<AiFindingCandidateResponse>> listCandidates(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
-    return ApiResponse.success(findingService.listCandidates(actorId(jwt), inspectionId));
-  }
-
-  @PostMapping("/finding-candidates/{candidateId}/review")
+  @PostMapping("/findings/{findingId}/confirmation")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ResponseEntity<ApiResponse<VerifiedFindingResponse>> reviewCandidate(
+  public ApiResponse<FindingResponse> confirmFinding(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID candidateId,
-      @Valid @RequestBody ReviewCandidateRequest request) {
-    Optional<VerifiedFindingResponse> finding =
-        findingService.reviewCandidate(actorId(jwt), inspectionId, candidateId, request);
-    // A rejection records a decision without creating a finding, so there is nothing to return.
-    return finding
-        .map(result -> ResponseEntity.ok(ApiResponse.success(result)))
-        .orElseGet(() -> ResponseEntity.noContent().build());
-  }
-
-  @PutMapping("/finding-candidates/{candidateId}/reviewed-revision")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ResponseEntity<ApiResponse<VerifiedFindingResponse>> reviseReviewedCandidate(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID candidateId,
-      @Valid @RequestBody ReviewCandidateRequest request) {
-    Optional<VerifiedFindingResponse> finding =
-        findingService.reviseReviewedCandidate(actorId(jwt), inspectionId, candidateId, request);
-    return finding
-        .map(result -> ResponseEntity.ok(ApiResponse.success(result)))
-        .orElseGet(() -> ResponseEntity.noContent().build());
+      @PathVariable UUID findingId,
+      @Valid @RequestBody ReviewFindingRequest request) {
+    return ApiResponse.success(
+        findingService.confirmFinding(actorId(jwt), inspectionId, findingId, request));
   }
 
   @PostMapping("/findings")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<VerifiedFindingResponse> createManualFinding(
+  public ApiResponse<FindingResponse> createManualFinding(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @Valid @RequestBody ManualFindingRequest request) {
@@ -274,7 +248,7 @@ public class InspectionController {
 
   @PutMapping("/findings/{findingId}")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<VerifiedFindingResponse> updateFinding(
+  public ApiResponse<FindingResponse> updateFinding(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID findingId,
@@ -292,6 +266,29 @@ public class InspectionController {
       @Valid @RequestBody DeleteFindingRequest request) {
     findingService.deleteFinding(actorId(jwt), inspectionId, findingId, request.reason());
     return ApiResponse.success(null);
+  }
+
+  /**
+   * The findings the Inspector removed, for the caller that asks to see them.
+   *
+   * <p>Removing a finding hides it rather than erasing it, so the record of what was removed stays
+   * available behind its own route.
+   */
+  @GetMapping("/findings/removed")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  public ApiResponse<List<FindingResponse>> listRemovedFindings(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(findingService.listRemovedFindings(actorId(jwt), inspectionId));
+  }
+
+  @PostMapping("/findings/{findingId}/restore")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<FindingResponse> restoreFinding(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId) {
+    return ApiResponse.success(
+        findingService.restoreFinding(actorId(jwt), inspectionId, findingId));
   }
 
   @GetMapping("/workflow-state")
@@ -321,14 +318,14 @@ public class InspectionController {
 
   @GetMapping("/findings")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
-  public ApiResponse<List<VerifiedFindingResponse>> listFindings(
+  public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
   }
 
   @PutMapping("/findings/{findingId}/corrective-action")
   @PreAuthorize("hasRole('ORG_ADMIN')")
-  public ApiResponse<VerifiedFindingResponse> recordCorrectiveAction(
+  public ApiResponse<FindingResponse> recordCorrectiveAction(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID findingId,

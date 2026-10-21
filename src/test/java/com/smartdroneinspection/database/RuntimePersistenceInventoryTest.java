@@ -47,8 +47,7 @@ class RuntimePersistenceInventoryTest {
           "field_sessions",
           "evidence",
           "evidence_quality_decisions",
-          "ai_finding_candidates",
-          "verified_findings",
+          "findings",
           "inspection_reports",
           "inspection_report_versions",
           // MF4 slice: work order aggregate with its team, task, estimate and cost line,
@@ -89,8 +88,7 @@ class RuntimePersistenceInventoryTest {
           "checklist_responses",
           "evidence",
           "evidence_quality_decisions",
-          "ai_finding_candidates",
-          "verified_findings",
+          "findings",
           "inspection_reports",
           "inspection_report_versions",
           "report_version_evidence",
@@ -123,7 +121,7 @@ class RuntimePersistenceInventoryTest {
   }
 
   @Test
-  void applicationTableInventoryContainsOnlyTheFortyOneTargetTables() {
+  void applicationTableInventoryContainsOnlyTheTargetTables() {
     Set<String> actualApplicationTables =
         jdbcTemplate
             .queryForList(
@@ -137,7 +135,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(41);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(40);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

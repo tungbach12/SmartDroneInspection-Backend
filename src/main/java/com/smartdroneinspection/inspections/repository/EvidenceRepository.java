@@ -25,6 +25,9 @@ public interface EvidenceRepository
 
   List<Evidence> findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(UUID inspectionId);
 
+  List<Evidence> findByInspectionIdAndFieldSessionIdAndRetiredAtIsNullOrderByCreatedAtAsc(
+      UUID inspectionId, UUID fieldSessionId);
+
   Optional<Evidence> findByIdAndInspectionId(UUID id, UUID inspectionId);
 
   Page<Evidence> findByInspectionId(UUID inspectionId, Pageable pageable);

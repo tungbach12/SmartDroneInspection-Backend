@@ -65,6 +65,9 @@ public class FieldSession {
   @Column(name = "abort_reason", length = 2000)
   private String abortReason;
 
+  @Column(name = "outcome_notes", length = 4000)
+  private String outcomeNotes;
+
   @Column(name = "pre_flight_checklist_note", length = 2000)
   private String preFlightChecklistNote;
 
@@ -157,6 +160,17 @@ public class FieldSession {
     requireOpenSession();
     this.abortReason = requireReason(abortReason);
     this.status = ABORTED;
+    this.endedAt = Instant.now();
+    this.updatedAt = endedAt;
+  }
+
+  /** Records normal completion of field work (MF2-12). */
+  public void complete(String outcomeNotes) {
+    if (!IN_PROGRESS.equals(status) && !ABORTED.equals(status)) {
+      throw new IllegalStateException("Only an in-progress or aborted session can be completed");
+    }
+    this.outcomeNotes = requireReason(outcomeNotes);
+    this.status = "FIELD_COMPLETED";
     this.endedAt = Instant.now();
     this.updatedAt = endedAt;
   }
@@ -258,6 +272,10 @@ public class FieldSession {
 
   public String getAbortReason() {
     return abortReason;
+  }
+
+  public String getOutcomeNotes() {
+    return outcomeNotes;
   }
 
   public String getLimitations() {

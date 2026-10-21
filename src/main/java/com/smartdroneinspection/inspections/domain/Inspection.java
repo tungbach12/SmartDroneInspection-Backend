@@ -351,6 +351,28 @@ public class Inspection {
     moveTo(InspectionStatus.PREPARING);
   }
 
+  public void requestAdditionalSession() {
+    if (status != InspectionStatus.FIELD_COMPLETED) {
+      throw new IllegalStateException(
+          "An additional session can only be requested after field work is completed");
+    }
+    moveTo(InspectionStatus.PREPARING);
+  }
+
+  public void completeFieldSession() {
+    requireStatus(InspectionStatus.IN_PROGRESS);
+    moveTo(InspectionStatus.FIELD_COMPLETED);
+  }
+
+  public void updatePlannedWindow(Instant plannedStartAt, Instant plannedEndAt) {
+    if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
+      throw new IllegalArgumentException("Planned end must be after planned start");
+    }
+    this.plannedStartAt = plannedStartAt;
+    this.plannedEndAt = plannedEndAt;
+    this.updatedAt = Instant.now();
+  }
+
   public void moveTo(InspectionStatus nextStatus) {
     Objects.requireNonNull(nextStatus, "Inspection status is required");
     if (nextStatus == this.status) {

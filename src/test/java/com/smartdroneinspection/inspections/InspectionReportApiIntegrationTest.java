@@ -17,13 +17,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.domain.enums.AiFindingCandidateStatus;
+import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
-import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.service.EvidenceQualityService;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -74,9 +73,8 @@ class InspectionReportApiIntegrationTest {
   @Autowired InspectionRepository inspections;
   @Autowired InspectionReportRepository reports;
   @Autowired InspectionReportVersionRepository reportVersions;
-  @Autowired VerifiedFindingRepository findings;
+  @Autowired FindingRepository findings;
   @Autowired EvidenceQualityService qualityService;
-  @Autowired AiFindingCandidateRepository candidates;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
   @MockitoBean AiInferencePort inferencePort;
@@ -115,8 +113,8 @@ class InspectionReportApiIntegrationTest {
                             "component", "Lower chord",
                             "repairRequired", true))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.source").value("MANUAL"))
-        .andExpect(jsonPath("$.data.aiCandidateId").doesNotExist())
+        .andExpect(jsonPath("$.data.status").value("PENDING"))
+        .andExpect(jsonPath("$.data.modelName").doesNotExist())
         .andExpect(jsonPath("$.data.repairRequired").value(true));
 
     mockMvc
@@ -335,13 +333,11 @@ class InspectionReportApiIntegrationTest {
         .andExpect(jsonPath("$.data[0].confidence").value(0.81))
         .andExpect(jsonPath("$.data[0].status").value("PENDING"));
 
-    assertThat(candidates.countByEvidenceId(evidenceId)).isEqualTo(1);
+    assertThat(findings.findByEvidenceIdOrderByCreatedAtAsc(evidenceId)).hasSize(1);
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT status FROM ai_finding_candidates WHERE evidence_id = ?",
-                String.class,
-                evidenceId))
-        .isEqualTo(AiFindingCandidateStatus.PENDING.name());
+                "SELECT status FROM findings WHERE evidence_id = ?", String.class, evidenceId))
+        .isEqualTo("PENDING");
   }
 
   @Test
@@ -372,9 +368,9 @@ class InspectionReportApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(1));
 
-    String firstCandidateId =
+    String firstFindingId =
         jdbcTemplate.queryForObject(
-            "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?", String.class, evidenceId);
+            "SELECT id FROM findings WHERE evidence_id = ?", String.class, evidenceId);
 
     mockMvc
         .perform(
@@ -385,13 +381,13 @@ class InspectionReportApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(1))
-        .andExpect(jsonPath("$.data[0].id").value(firstCandidateId));
+        .andExpect(jsonPath("$.data[0].id").value(firstFindingId));
 
-    assertThat(candidates.countByEvidenceId(evidenceId)).isEqualTo(1);
+    assertThat(findings.findByEvidenceIdOrderByCreatedAtAsc(evidenceId)).hasSize(1);
   }
 
   @Test
-  void anExplicitReRunReplacesUnreviewedCandidatesAndKeepsTheReviewedOnes() throws Exception {
+  void anExplicitReRunReplacesUnreviewedFindingsAndKeepsTheReviewedOnes() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();
     when(inferencePort.analyze(any(), eq("image/png")))
@@ -417,22 +413,20 @@ class InspectionReportApiIntegrationTest {
     UUID suggested =
         UUID.fromString(
             jdbcTemplate.queryForObject(
-                "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?",
-                String.class,
-                evidenceId));
+                "SELECT id FROM findings WHERE evidence_id = ?", String.class, evidenceId));
 
-    // A candidate the Inspector already decided carries that decision, so a changed detector must
+    // A finding the Inspector already decided carries that decision, so a changed detector must
     // not erase it.
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+                    "/api/v1/inspections/{id}/findings/{findingId}/confirmation",
                     fixture.inspectionId(),
                     suggested)
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\":\"REJECTED\",\"reason\":\"Not a defect\"}"))
-        .andExpect(status().isNoContent());
+                .content("{}"))
+        .andExpect(status().isOk());
 
     // A pass without the explicit re-run still answers with the existing set.
     mockMvc
@@ -469,18 +463,17 @@ class InspectionReportApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(2));
 
-    assertThat(candidates.countByEvidenceId(evidenceId)).isEqualTo(2);
+    assertThat(findings.findByEvidenceIdOrderByCreatedAtAsc(evidenceId)).hasSize(2);
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM ai_finding_candidates"
+                "SELECT count(*) FROM findings"
                     + " WHERE evidence_id = ? AND status = 'PENDING' AND model_name = 'yolo11s'",
                 Integer.class,
                 evidenceId))
         .isEqualTo(1);
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM ai_finding_candidates"
-                    + " WHERE evidence_id = ? AND status = 'REJECTED'",
+                "SELECT count(*) FROM findings" + " WHERE evidence_id = ? AND status = 'CONFIRMED'",
                 Integer.class,
                 evidenceId))
         .isEqualTo(1);
@@ -508,70 +501,48 @@ class InspectionReportApiIntegrationTest {
                     evidenceId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk());
-    UUID candidateId =
+    UUID findingId =
         UUID.fromString(
             jdbcTemplate.queryForObject(
-                "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?",
-                String.class,
-                evidenceId));
+                "SELECT id FROM findings WHERE evidence_id = ?", String.class, evidenceId));
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+                    "/api/v1/inspections/{id}/findings/{findingId}/confirmation",
                     fixture.inspectionId(),
-                    candidateId)
+                    findingId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-            {"decision":"CONFIRMED","defectLabel":"Surface crack","severity":"HIGH",
+            {"defectLabel":"Surface crack","severity":"HIGH",
              "locationDescription":"Girder G4","technicalNotes":"Visible crack"}
             """))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM verified_findings WHERE ai_candidate_id = ?",
+                "SELECT COUNT(*) FROM findings WHERE id = ? AND status = 'CONFIRMED'",
                 Long.class,
-                candidateId))
+                findingId))
         .isEqualTo(1L);
+    // Confirming a finding the Inspector already confirmed is refused, because the content would
+    // change underneath a decision that was already made.
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+                    "/api/v1/inspections/{id}/findings/{findingId}/confirmation",
                     fixture.inspectionId(),
-                    candidateId)
+                    findingId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"decision":"CONFIRMED","defectLabel":"Surface crack","severity":"HIGH",
+                    {"defectLabel":"Surface crack","severity":"HIGH",
                      "locationDescription":"Girder G4","technicalNotes":"Visible crack"}
                     """))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("CANDIDATE_ALREADY_REVIEWED"));
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/reviewed-revision",
-                    fixture.inspectionId(),
-                    candidateId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-            {"decision":"REJECTED","reason":"False positive"}
-            """))
-        .andExpect(status().isNoContent());
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM ai_finding_candidates WHERE id = ?", String.class, candidateId))
-        .isEqualTo("REJECTED");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM verified_findings WHERE ai_candidate_id = ?",
-                Long.class,
-                candidateId))
-        .isZero();
+        .andExpect(jsonPath("$.code").value("FINDING_ALREADY_CONFIRMED"));
   }
 
   @Test
@@ -604,24 +575,24 @@ class InspectionReportApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"noFindingsAcknowledged\":false}"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("PENDING_CANDIDATES_EXIST"));
+        .andExpect(jsonPath("$.code").value("PENDING_FINDINGS_EXIST"));
 
-    UUID candidateId =
+    UUID findingId =
         UUID.fromString(
             jdbcTemplate.queryForObject(
-                "SELECT id FROM ai_finding_candidates WHERE evidence_id = ?",
-                String.class,
-                evidenceId));
+                "SELECT id FROM findings WHERE evidence_id = ?", String.class, evidenceId));
+    // A suggestion the Inspector does not want is removed from the working set rather than
+    // decided about, so the gate opens once nothing is left undecided.
     mockMvc
         .perform(
-            post(
-                    "/api/v1/inspections/{id}/finding-candidates/{candidateId}/review",
+            delete(
+                    "/api/v1/inspections/{id}/findings/{findingId}",
                     fixture.inspectionId(),
-                    candidateId)
+                    findingId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\":\"REJECTED\",\"reason\":\"Not a defect\"}"))
-        .andExpect(status().isNoContent());
+                .content("{\"reason\":\"Not a defect\"}"))
+        .andExpect(status().isOk());
 
     mockMvc
         .perform(
@@ -933,12 +904,14 @@ class InspectionReportApiIntegrationTest {
     UUID versionId = createManualDraftVersion();
     verifyAndSubmitVersion(versionId);
 
+    // The reviewer approves the report as a whole, so the finding carries no separate verdict of
+    // its own: the Inspector's confirmation is the only decision on it.
     assertThat(
             findings
                 .findByIdAndInspectionId(findingId, fixture.inspectionId())
                 .orElseThrow()
-                .getDecision())
-        .isNull();
+                .getStatus())
+        .isEqualTo(FindingStatus.CONFIRMED);
 
     mockMvc
         .perform(
@@ -1230,7 +1203,7 @@ class InspectionReportApiIntegrationTest {
     // to.
     jdbcTemplate.update(
         """
-        UPDATE verified_findings
+        UPDATE findings
            SET corrective_action_required = FALSE,
                corrective_action_reviewed_by_user_id = ?,
                corrective_action_reviewed_at = ?,
@@ -1274,13 +1247,13 @@ class InspectionReportApiIntegrationTest {
 
     Integer reviewed =
         jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM verified_findings WHERE id = ?"
+            "SELECT count(*) FROM findings WHERE id = ?"
                 + " AND corrective_action_reviewed_by_user_id IS NOT NULL",
             Integer.class,
             findingId);
     Boolean required =
         jdbcTemplate.queryForObject(
-            "SELECT corrective_action_required FROM verified_findings WHERE id = ?",
+            "SELECT corrective_action_required FROM findings WHERE id = ?",
             Boolean.class,
             findingId);
     assertThat(reviewed).isZero();
@@ -1446,7 +1419,7 @@ class InspectionReportApiIntegrationTest {
     assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId())).isEmpty();
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM verified_findings WHERE id = ? AND deleted_by_user_id = ? AND deletion_reason = ? AND deleted_at IS NOT NULL",
+                "SELECT count(*) FROM findings WHERE id = ? AND deleted_by_user_id = ? AND deletion_reason = ? AND deleted_at IS NOT NULL",
                 Integer.class,
                 findingId,
                 fixture.inspectorId(),
@@ -1758,18 +1731,20 @@ class InspectionReportApiIntegrationTest {
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO verified_findings (id, inspection_id, created_by_user_id, source, finding_code,
-                                       defect_label, severity, location_description, technical_notes,
-                                       status, decision, repair_required, component, description,
-                                       observed_condition, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, 'MANUAL', ?, 'Corrosion', 'HIGH', 'Lower chord', 'Visible corrosion',
-                'OPEN', 'CONFIRMED', ?, 'Lower chord', 'Corrosion', 'Surface corrosion observed',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        INSERT INTO findings (id, inspection_id, created_by_user_id, finding_code,
+                              defect_label, severity, location_description, technical_notes,
+                              status, inspector_confirmed_at, confirmed_by_user_id,
+                              repair_required, corrective_action_required, component, description,
+                              observed_condition, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, 'Corrosion', 'HIGH', 'Lower chord', 'Visible corrosion',
+                'CONFIRMED', CURRENT_TIMESTAMP, ?, ?, TRUE, 'Lower chord', 'Corrosion',
+                'Surface corrosion observed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         findingId,
         fixture.inspectionId(),
         fixture.inspectorId(),
         "F-" + UUID.randomUUID().toString().substring(0, 6),
+        fixture.inspectorId(),
         repairRequired);
     return findingId;
   }

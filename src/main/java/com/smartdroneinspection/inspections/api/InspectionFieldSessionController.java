@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.api;
 
 import com.smartdroneinspection.inspections.api.dto.request.AbortFieldSessionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.PostponeFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
@@ -81,6 +82,19 @@ public class InspectionFieldSessionController {
         response(fieldSessions.postpone(subject(jwt), inspectionId, sessionId, request.reason())));
   }
 
+  /** Records the completed outcome and hands the inspection back to MF3 (MF2-12). */
+  @PostMapping("/{sessionId}/completion")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<FieldSessionResponse> complete(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId,
+      @Valid @RequestBody EndFieldSessionRequest request) {
+    return ApiResponse.success(
+        response(
+            fieldSessions.complete(subject(jwt), inspectionId, sessionId, request.outcomeNotes())));
+  }
+
   /** The session cannot continue and will not resume under this record (MF2-11). */
   @PostMapping("/{sessionId}/abort")
   @PreAuthorize("hasRole('INSPECTOR')")
@@ -108,7 +122,8 @@ public class InspectionFieldSessionController {
         session.getStartedAt(),
         session.getEndedAt(),
         session.getPostponementReason(),
-        session.getAbortReason());
+        session.getAbortReason(),
+        session.getOutcomeNotes());
   }
 
   private UUID subject(Jwt jwt) {

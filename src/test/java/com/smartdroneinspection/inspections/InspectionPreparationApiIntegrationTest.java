@@ -283,6 +283,35 @@ class InspectionPreparationApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
   }
 
+  /**
+   * MF2-07 asks a named reviewer to judge a submitted preparation, so the reviewer has to be able
+   * to read it. A reviewer who only got a 403 would have nothing to review, and the readiness panel
+   * could never even mount.
+   */
+  @Test
+  void anOrganizationAdminCanReadThePreparationTheyReview() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/inspections/{i}/preparation", inspectionId).with(orgAdmin()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data").isArray());
+  }
+
+  /** Reading is separated from acting: the reviewer still cannot draft or submit. */
+  @Test
+  void anOrganizationAdminCanReadButNotChangeThePreparation() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/inspections/{i}/preparation", inspectionId).with(orgAdmin()))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/preparation", inspectionId)
+                .with(orgAdmin())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("shotList", SHOT_LIST))))
+        .andExpect(status().isForbidden());
+  }
+
   private UUID createInspector(UUID ownerOrganizationId) {
     User inspector =
         new User(

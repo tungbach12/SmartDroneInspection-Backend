@@ -2,10 +2,13 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
+import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -40,6 +43,7 @@ public class InspectionFieldSessionService {
 
   private final InspectionRepository inspections;
   private final InspectionReadinessDecisionRepository decisions;
+  private final InspectionPreparationRepository preparations;
   private final FieldSessionRepository sessions;
   private final UserAccess userAccess;
   private final EntityManager entityManager;
@@ -47,11 +51,13 @@ public class InspectionFieldSessionService {
   public InspectionFieldSessionService(
       InspectionRepository inspections,
       InspectionReadinessDecisionRepository decisions,
+      InspectionPreparationRepository preparations,
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
     this.inspections = inspections;
     this.decisions = decisions;
+    this.preparations = preparations;
     this.sessions = sessions;
     this.userAccess = userAccess;
     this.entityManager = entityManager;
@@ -98,6 +104,21 @@ public class InspectionFieldSessionService {
     }
 
     InspectionReadinessDecision readiness = currentReadinessDecision(inspectionId);
+    InspectionPreparation currentPreparation =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .orElseThrow(
+                () ->
+                    sessionFailure(
+                        "READINESS_NOT_APPROVED",
+                        "No current approved preparation covers this inspection."));
+    if (currentPreparation.getStatus() != InspectionPreparationStatus.READY
+        || !currentPreparation.getId().equals(readiness.getPreparationId())
+        || currentPreparation.getPreparationVersion() != readiness.getPreparationVersion()) {
+      throw sessionFailure(
+          "READINESS_NOT_APPROVED",
+          "The approved readiness decision does not cover the latest preparation.");
+    }
 
     FieldSession session =
         FieldSession.opening(
@@ -179,6 +200,55 @@ public class InspectionFieldSessionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "SESSION_NOT_IN_PROGRESS", exception.getMessage());
     }
+    return sessions.saveAndFlush(session);
+  }
+
+  /** Closes a normally completed field session and returns the inspection to MF3 (MF2-12). */
+  @Transactional
+  public FieldSession complete(
+      UUID inspectorId, UUID inspectionId, UUID sessionId, String outcomeNotes) {
+    if (outcomeNotes == null || outcomeNotes.isBlank()) {
+      throw sessionFailure(
+          "SESSION_OUTCOME_REQUIRED", "Record the completed field-session outcome.");
+    }
+    UUID organizationId = requireInspector(inspectorId);
+    Inspection inspection = lockInspection(inspectionId, organizationId);
+    if (!inspection.isInspectedBy(inspectorId)) {
+      throw sessionFailure("SESSION_SCOPE_DENIED", "This inspection is not assigned to you.");
+    }
+    FieldSession session =
+        sessions
+            .findByIdAndInspectionId(sessionId, inspectionId)
+            .filter(candidate -> candidate.getOrganizationId().equals(organizationId))
+            .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
+    if (!session.getInspectorUserId().equals(inspectorId)) {
+      throw sessionFailure("SESSION_SCOPE_DENIED", "This field session is not assigned to you.");
+    }
+    if (session.isOpen()) {
+      if (session.getReadinessDecisionId() == null
+          || !session
+              .getReadinessDecisionId()
+              .equals(currentReadinessDecision(inspectionId).getId())) {
+        throw sessionFailure(
+            "SESSION_READINESS_STALE",
+            "This session was opened against a readiness decision that is no longer current.");
+      }
+    } else if (!"ABORTED".equals(session.getStatus())) {
+      throw sessionFailure("SESSION_NOT_IN_PROGRESS", "This session is already ended.");
+    }
+    if (inspection.getStatus() != InspectionStatus.IN_PROGRESS) {
+      throw sessionFailure(
+          "SESSION_NOT_IN_PROGRESS", "The inspection has no active field session.");
+    }
+    try {
+      session.complete(outcomeNotes);
+      inspection.completeFieldSession();
+    } catch (IllegalArgumentException exception) {
+      throw sessionFailure("SESSION_OUTCOME_REQUIRED", exception.getMessage());
+    } catch (IllegalStateException exception) {
+      throw sessionFailure("SESSION_NOT_IN_PROGRESS", exception.getMessage());
+    }
+    inspections.saveAndFlush(inspection);
     return sessions.saveAndFlush(session);
   }
 

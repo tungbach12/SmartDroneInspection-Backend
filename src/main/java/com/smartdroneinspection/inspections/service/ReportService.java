@@ -11,30 +11,28 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionReportCon
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
-import com.smartdroneinspection.inspections.domain.AiFindingCandidate;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.EvidenceQualityDecision;
 import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
-import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
-import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceQualityDecisionRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceQualitySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
@@ -94,8 +92,7 @@ public class ReportService {
   private final EvidenceQualityDecisionRepository qualityDecisions;
   private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
   private final EvidenceRepository evidence;
-  private final VerifiedFindingRepository findings;
-  private final AiFindingCandidateRepository candidates;
+  private final FindingRepository findings;
   private final FieldSessionRepository fieldSessions;
   private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository versions;
@@ -115,8 +112,7 @@ public class ReportService {
       ReportContextAccess reportContextAccess,
       org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
       EvidenceRepository evidence,
-      VerifiedFindingRepository findings,
-      AiFindingCandidateRepository candidates,
+      FindingRepository findings,
       FieldSessionRepository fieldSessions,
       EvidenceQualityDecisionRepository qualityDecisions,
       InspectionReportRepository reports,
@@ -135,7 +131,6 @@ public class ReportService {
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
     this.evidence = evidence;
-    this.candidates = candidates;
     this.fieldSessions = fieldSessions;
     this.findings = findings;
     this.reports = reports;
@@ -185,10 +180,6 @@ public class ReportService {
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
     List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
-    List<AiFindingCandidate> inspectionCandidates =
-        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
-            .filter(candidate -> currentEvidenceIds.contains(candidate.getEvidenceId()))
-            .toList();
     List<FieldSession> recordedSessions =
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     List<InspectionPreparation> recordedPreparations =
@@ -201,7 +192,15 @@ public class ReportService {
         reportContextAccess
             .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
-    List<VerifiedFinding> confirmedFindings = inspectorFindings(inspectionId);
+    List<Finding> confirmedFindings = inspectorFindings(inspectionId);
+
+    // The drafting model is told about the suggestions the detector made. A finding carries that
+    // provenance when it has one, so the suggestions are the findings that came from the model.
+    List<Finding> detectionFindings =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(finding -> finding.getModelName() != null)
+            .filter(finding -> currentEvidenceIds.contains(finding.getEvidenceId()))
+            .toList();
 
     ReportDraftPort port =
         draftPort.orElseThrow(
@@ -242,7 +241,7 @@ public class ReportService {
                                   finding.getDescription(),
                                   finding.getObservedCondition(),
                                   finding.getPriority(),
-                                  finding.getMeasurement()))
+                                  finding.getMeasurementSummary()))
                       .toList(),
                   confirmedEvidence.stream()
                       .map(
@@ -266,21 +265,21 @@ public class ReportService {
                                   item.getLocationDescription(),
                                   item.getExternalReference()))
                       .toList(),
-                  inspectionCandidates.stream()
+                  detectionFindings.stream()
                       .map(
-                          candidate ->
+                          detection ->
                               new ReportDraftPort.CandidateSummary(
-                                  candidate.getId().toString(),
-                                  candidate.getEvidenceId().toString(),
-                                  candidate.getModelProvider(),
-                                  candidate.getModelName(),
-                                  candidate.getModelVersion(),
-                                  candidate.getPredictedLabel(),
-                                  candidate.getConfidence() == null
+                                  detection.getId().toString(),
+                                  detection.getEvidenceId().toString(),
+                                  detection.getModelProvider(),
+                                  detection.getModelName(),
+                                  detection.getModelVersion(),
+                                  detection.getDefectLabel(),
+                                  detection.getConfidence() == null
                                       ? null
-                                      : candidate.getConfidence().toPlainString(),
-                                  candidate.getBoundingBox(),
-                                  candidate.getStatus().name()))
+                                      : detection.getConfidence().toPlainString(),
+                                  detection.getBoundingBox(),
+                                  detection.getStatus().name()))
                       .toList(),
                   recordedSessions.stream()
                       .map(
@@ -351,7 +350,7 @@ public class ReportService {
 
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
-    List<VerifiedFinding> confirmedFindings = inspectorFindings(inspectionId);
+    List<Finding> confirmedFindings = inspectorFindings(inspectionId);
     String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
 
     int versionNo = report.nextVersionNumber();
@@ -392,9 +391,9 @@ public class ReportService {
     return report;
   }
 
-  private List<VerifiedFinding> inspectorFindings(UUID inspectionId) {
+  private List<Finding> inspectorFindings(UUID inspectionId) {
     return findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-        .filter(VerifiedFinding::isOfficial)
+        .filter(Finding::isOfficial)
         .toList();
   }
 
@@ -402,9 +401,9 @@ public class ReportService {
    * MF3-06/09/10: only Inspector-confirmed findings are rendered; Admin reviews the report as a
    * whole.
    */
-  private List<VerifiedFinding> reportableFindings(UUID inspectionId) {
+  private List<Finding> reportableFindings(UUID inspectionId) {
     return findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-        .filter(VerifiedFinding::isOfficial)
+        .filter(Finding::isOfficial)
         .toList();
   }
 
@@ -512,13 +511,8 @@ public class ReportService {
   private String currentFindingsSnapshotHash(UUID inspectionId) {
     List<Evidence> currentEvidence =
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
-    List<UUID> currentEvidenceIds = currentEvidence.stream().map(Evidence::getId).toList();
     return FindingsSnapshot.hash(
-        currentEvidence,
-        candidates.findByInspectionIdOrderByCreatedAtDesc(inspectionId).stream()
-            .filter(candidate -> currentEvidenceIds.contains(candidate.getEvidenceId()))
-            .toList(),
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
+        currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
 
   private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReportVersion version) {
@@ -613,11 +607,11 @@ public class ReportService {
   private void reopenFindingsForRevision(UUID inspectionId, UUID versionId) {
     Inspection inspection = inspections.findById(inspectionId).orElse(null);
     if (inspection == null) return;
-    List<VerifiedFinding> confirmed =
+    List<Finding> confirmed =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(VerifiedFinding::isOfficial)
+            .filter(Finding::isOfficial)
             .toList();
-    confirmed.forEach(VerifiedFinding::clearInspectorConfirmation);
+    confirmed.forEach(Finding::clearInspectorConfirmation);
     if (!confirmed.isEmpty()) findings.saveAllAndFlush(confirmed);
     inspection.reopenFindings();
     inspections.saveAndFlush(inspection);
@@ -668,12 +662,12 @@ public class ReportService {
     // MF3-12: any corrective-action outcome recorded before this publication belongs to an earlier
     // version or to the pre-cutover review decision. Clearing it keeps the new version from being
     // presented with a disposition nobody recorded after it, and the reviewer records a fresh one.
-    List<VerifiedFinding> staleOutcomes =
+    List<Finding> staleOutcomes =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(VerifiedFinding::isOfficial)
-            .filter(VerifiedFinding::isCorrectiveActionReviewed)
+            .filter(Finding::isOfficial)
+            .filter(Finding::isCorrectiveActionReviewed)
             .toList();
-    staleOutcomes.forEach(VerifiedFinding::clearCorrectiveActionOutcome);
+    staleOutcomes.forEach(Finding::clearCorrectiveActionOutcome);
     if (!staleOutcomes.isEmpty()) {
       findings.saveAll(staleOutcomes);
     }
@@ -714,9 +708,9 @@ public class ReportService {
                         "REPORT_STATE_CONFLICT",
                         "Publish the report before handing corrective items to maintenance"));
 
-    List<VerifiedFinding> official =
+    List<Finding> official =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(VerifiedFinding::isOfficial)
+            .filter(Finding::isOfficial)
             .toList();
     if (official.stream().anyMatch(finding -> !finding.isCorrectiveActionReviewed())) {
       throw new BusinessException(
@@ -725,10 +719,7 @@ public class ReportService {
           "Record corrective action or an explicit no-action outcome for every confirmed finding");
     }
     List<UUID> repairRequired =
-        official.stream()
-            .filter(VerifiedFinding::isCorrectiveActionRequired)
-            .map(VerifiedFinding::getId)
-            .toList();
+        official.stream().filter(Finding::isCorrectiveActionRequired).map(Finding::getId).toList();
     if (official.isEmpty()) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -795,7 +786,7 @@ public class ReportService {
                         "Publish the report before declaring no corrective work"));
     boolean hasOfficialFindings =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .anyMatch(VerifiedFinding::isOfficial);
+            .anyMatch(Finding::isOfficial);
     if (!inspection.hasFindingsConfirmation()) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -1011,8 +1002,8 @@ public class ReportService {
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId)) {
       evidenceById.put(item.getId(), item);
     }
-    List<VerifiedFinding> confirmed = reportableFindings(inspectionId);
-    for (VerifiedFinding finding : confirmed) {
+    List<Finding> confirmed = reportableFindings(inspectionId);
+    for (Finding finding : confirmed) {
       List<String> evidenceRefs = new ArrayList<>();
       if (finding.getEvidenceId() != null) {
         evidenceRefs.add(finding.getEvidenceId().toString());
@@ -1046,8 +1037,11 @@ public class ReportService {
               finding.getDescription(),
               finding.getTechnicalNotes(),
               finding.getRecommendedAction(),
-              "Inspector confirmed",
-              displayName(finding.getCreatedByUserId()),
+              finding.getStatus().name(),
+              displayName(
+                  finding.getConfirmedByUserId() == null
+                      ? finding.getCreatedByUserId()
+                      : finding.getConfirmedByUserId()),
               finding.getInspectorConfirmedAt() == null
                   ? null
                   : finding.getInspectorConfirmedAt().toString(),
@@ -1081,7 +1075,7 @@ public class ReportService {
                   ? null
                   : item.getAnalysisDetectionCount() == 0
                       ? "Completed; zero detections"
-                      : "Completed; candidates created",
+                      : "Completed; findings detected",
               item.getAnalysisDetectionCount(),
               content));
     }
@@ -1240,7 +1234,7 @@ public class ReportService {
   private static String buildContentSnapshot(
       Inspection inspection,
       List<Evidence> confirmedEvidence,
-      List<VerifiedFinding> confirmedFindings,
+      List<Finding> confirmedFindings,
       ReportDraftPort.SectionDraft proposal,
       ReportDraftPort port) {
     StringBuilder snapshot = new StringBuilder();
@@ -1273,9 +1267,7 @@ public class ReportService {
    * limitation.
    */
   private String buildManualContentSnapshot(
-      Inspection inspection,
-      List<Evidence> confirmedEvidence,
-      List<VerifiedFinding> confirmedFindings) {
+      Inspection inspection, List<Evidence> confirmedEvidence, List<Finding> confirmedFindings) {
     ObjectNode snapshot = objectMapper.createObjectNode();
     snapshot.put("model", MANUAL_MODEL_NAME);
     snapshot.put("assetId", inspection.getAssetId().toString());
@@ -1392,7 +1384,7 @@ public class ReportService {
     }
   }
 
-  private String evidenceByFindingSession(VerifiedFinding finding, List<Evidence> currentEvidence) {
+  private String evidenceByFindingSession(Finding finding, List<Evidence> currentEvidence) {
     return finding.getEvidenceId() == null
         ? null
         : currentEvidence.stream()
@@ -1456,6 +1448,7 @@ public class ReportService {
                         session.getPreFlightChecklistNote(),
                         session.getPostponementReason(),
                         session.getAbortReason(),
+                        session.getOutcomeNotes(),
                         session.getLimitations(),
                         drone == null ? null : drone.serialNumber(),
                         drone == null ? null : drone.manufacturer(),
@@ -1520,6 +1513,7 @@ public class ReportService {
             contextField("Pre-flight checklist note", session.getPreFlightChecklistNote()),
             contextField("Postponement reason", session.getPostponementReason()),
             contextField("Abort reason", session.getAbortReason()),
+            contextField("Field-session outcome", session.getOutcomeNotes()),
             contextField("Recorded limitations", session.getLimitations()),
             contextField("Assigned Drone", drone == null ? null : droneLabel(drone)))
         .filter(Objects::nonNull)

@@ -82,6 +82,7 @@ public class InspectionReadinessService {
     requireReviewableInspection(inspection);
     requireIndependentReviewer(reviewerId, inspection);
     InspectionPreparation preparation = lockCurrentSubmittedPreparation(inspection, preparationId);
+    requireNoCurrentApprovalForAnotherPreparation(inspection, preparation);
     Instant decidedAt = Instant.now();
 
     WorkforceCredentialSummary reviewerCredential =
@@ -547,6 +548,30 @@ public class InspectionReadinessService {
                         HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
     entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
     return inspection;
+  }
+
+  /**
+   * Refuses to review a preparation while a different preparation still holds the current approval.
+   *
+   * <p>Only an {@code APPROVED} decision can authorize a later start, so only that decision blocks
+   * a new review. A returned preparation is reopened and resubmitted under the same version, and
+   * the additional-session handoff already appends an invalidation, so neither blocks the reviewer.
+   */
+  private void requireNoCurrentApprovalForAnotherPreparation(
+      Inspection inspection, InspectionPreparation preparation) {
+    decisions
+        .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
+        .filter(decision -> decision.getDecision() == ReadinessDecisionType.APPROVED)
+        .filter(
+            decision ->
+                !preparation.getId().equals(decision.getPreparationId())
+                    || preparation.getPreparationVersion() != decision.getPreparationVersion())
+        .ifPresent(
+            decision -> {
+              throw readinessFailure(
+                  "READINESS_INVALIDATION_REQUIRED",
+                  "The prior approval must be invalidated before reviewing another preparation.");
+            });
   }
 
   private InspectionPreparation lockCurrentSubmittedPreparation(

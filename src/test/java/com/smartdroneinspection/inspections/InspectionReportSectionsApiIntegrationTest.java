@@ -12,7 +12,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.repository.AiFindingCandidateRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -53,7 +52,6 @@ class InspectionReportSectionsApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
-  @Autowired AiFindingCandidateRepository candidates;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired EvidenceObjectStore objectStore;
@@ -480,17 +478,19 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO verified_findings (id, inspection_id, evidence_id, created_by_user_id, source, finding_code,
-                                       defect_label, severity, location_description, technical_notes,
-                                       status, decision, inspector_confirmed_at, repair_required, component, description,
-                                       observed_condition, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, 'MANUAL', 'F-001', 'Fatigue Crack', 'HIGH', 'North girder flange',
-                '50mm surface crack', 'OPEN', 'CONFIRMED', CURRENT_TIMESTAMP, TRUE, 'Flange', 'Fatigue crack',
+        INSERT INTO findings (id, inspection_id, evidence_id, created_by_user_id, finding_code,
+                              defect_label, severity, location_description, technical_notes,
+                              status, inspector_confirmed_at, confirmed_by_user_id, repair_required,
+                              corrective_action_required, component, description, observed_condition,
+                              created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, 'F-001', 'Fatigue Crack', 'HIGH', 'North girder flange',
+                '50mm surface crack', 'CONFIRMED', CURRENT_TIMESTAMP, ?, TRUE, TRUE, 'Flange', 'Fatigue crack',
                 'Cracking observed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         findingId,
         fixture.inspectionId(),
         evidenceId,
+        fixture.inspectorId(),
         fixture.inspectorId());
 
     confirmFindings(false);
@@ -542,30 +542,18 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO ai_finding_candidates (id, evidence_id, inspection_id, model_name, model_version,
-                                           predicted_label, confidence, bounding_box, status,
-                                           reviewed_by_user_id, reviewed_at, created_at)
-        VALUES (?, ?, ?, 'gemini-test', 'v1', 'GussetPlateSectionLoss', 0.98, '{}', 'CONFIRMED',
-                ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO findings (id, inspection_id, evidence_id, created_by_user_id, finding_code,
+                              defect_label, severity, bounding_box, status, model_name, model_version,
+                              confidence, technical_notes, repair_required, corrective_action_required,
+                              inspector_confirmed_at, confirmed_by_user_id, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, 'F-001', 'GussetPlateSectionLoss', 'MEDIUM', '{}', 'CONFIRMED',
+                'gemini-test', 'v1', 0.98, 'Confirmed by the assigned Inspector', FALSE, TRUE,
+                CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         candidateId,
-        evidenceId,
-        fixture.inspectionId(),
-        fixture.inspectorId());
-
-    jdbcTemplate.update(
-        """
-        INSERT INTO verified_findings (id, inspection_id, evidence_id, ai_candidate_id, created_by_user_id, source, finding_code,
-                                       defect_label, severity, technical_notes, status, repair_required,
-                                       inspector_confirmed_at, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, ?, 'AI_CONFIRMED', 'F-001', 'GussetPlateSectionLoss', 'MEDIUM',
-                'Confirmed by the assigned Inspector', 'OPEN', FALSE,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-        """,
-        UUID.randomUUID(),
         fixture.inspectionId(),
         evidenceId,
-        candidateId,
+        fixture.inspectorId(),
         fixture.inspectorId());
 
     confirmFindings(false);
@@ -608,15 +596,19 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO ai_finding_candidates (id, evidence_id, inspection_id, model_name, model_version,
-                                           predicted_label, confidence, bounding_box, status,
-                                           reviewed_by_user_id, reviewed_at, rejection_reason, created_at)
-        VALUES (?, ?, ?, 'test-model', 'v1', 'spurious-corroded-seam', 0.9, '{}', 'REJECTED',
-                ?, CURRENT_TIMESTAMP, 'False positive', CURRENT_TIMESTAMP)
+        INSERT INTO findings (id, inspection_id, evidence_id, created_by_user_id, finding_code,
+                              defect_label, severity, bounding_box, status, model_name, model_version,
+                              confidence, technical_notes, repair_required, corrective_action_required,
+                              deleted_by_user_id, deleted_at,
+                              deletion_reason, created_at, updated_at, row_version)
+        VALUES (?, ?, ?, ?, 'F-1', 'spurious-corroded-seam', 'MEDIUM', '{}', 'PENDING',
+                'test-model', 'v1', 0.9, 'False positive', FALSE, TRUE, ?, CURRENT_TIMESTAMP, 'False positive',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         candidateId,
-        evidenceId,
         fixture.inspectionId(),
+        evidenceId,
+        fixture.inspectorId(),
         fixture.inspectorId());
     confirmFindings(true);
     UUID versionId = insertDraftVersion();

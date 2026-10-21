@@ -69,13 +69,7 @@ class PersistenceEntityOwnershipTest {
             "evidence_quality_decisions",
             "com.smartdroneinspection.inspections.domain.EvidenceQualityDecision"),
         Arguments.of(
-            "inspections",
-            "ai_finding_candidates",
-            "com.smartdroneinspection.inspections.domain.AiFindingCandidate"),
-        Arguments.of(
-            "inspections",
-            "verified_findings",
-            "com.smartdroneinspection.inspections.domain.VerifiedFinding"),
+            "inspections", "findings", "com.smartdroneinspection.inspections.domain.Finding"),
         Arguments.of(
             "inspections",
             "inspection_reports",

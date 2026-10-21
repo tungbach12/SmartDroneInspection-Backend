@@ -77,6 +77,8 @@ class InspectionFieldSessionServiceTest {
   private UUID inspectionId;
   private UUID readinessDecisionId;
   private UUID checklistTemplateId;
+  private long initialSessionCount;
+  private long initialPreparationCount;
   private InspectionFieldSessionService service;
 
   @BeforeEach
@@ -108,10 +110,20 @@ class InspectionFieldSessionServiceTest {
         drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
     inspectionId = createReadyInspection();
     readinessDecisionId = insertApprovedReadinessDecision();
+    initialSessionCount =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
+            Long.class,
+            inspectionId);
+    initialPreparationCount =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM inspection_preparations WHERE inspection_id = ?",
+            Long.class,
+            inspectionId);
 
     service =
         new InspectionFieldSessionService(
-            inspections, decisions, sessions, userAccess, entityManager);
+            inspections, decisions, preparations, sessions, userAccess, entityManager);
   }
 
   @Test
@@ -125,8 +137,12 @@ class InspectionFieldSessionServiceTest {
     assertThat(session.getInspectorUserId()).isEqualTo(inspectorId);
     assertThat(session.getDroneId()).isEqualTo(droneId);
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
-    assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM field_sessions", Long.class))
-        .isEqualTo(1L);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
+                Long.class,
+                inspectionId))
+        .isEqualTo(initialSessionCount + 1);
   }
 
   @Test
@@ -142,6 +158,71 @@ class InspectionFieldSessionServiceTest {
                 Integer.class,
                 session.getId()))
         .isEqualTo(1);
+  }
+
+  @Test
+  void approvalForAPreviousPreparationCannotStartAfterANewerPreparationIsCurrent() {
+    InspectionPreparation oldPreparation =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .orElseThrow();
+    long versionCountBefore = preparationCountForInspection();
+    oldPreparation.markSuperseded();
+    preparations.saveAndFlush(oldPreparation);
+    InspectionPreparation current = oldPreparation.nextDraftVersion(2);
+    current.recordShotList("{\"shots\":[\"east face\"]}");
+    current.recordSafetyObservations("No hazards observed");
+    preparations.saveAndFlush(current);
+
+    assertThatThrownBy(
+            () ->
+                service.start(inspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("READINESS_NOT_APPROVED"));
+    assertNoSessionStarted();
+    assertThat(preparationCountForInspection()).isEqualTo(versionCountBefore + 1);
+  }
+
+  @Test
+  void aSessionCanStartAgainAfterTheAdditionalSessionHandoffIsApproved() {
+    jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
+    applyAdditionalSessionHandoff();
+    InspectionPreparation next =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .orElseThrow();
+    next.recordShotList("{\"shots\":[\"east face\"]}");
+    next.recordSafetyObservations("No hazards observed");
+    next.submit(inspectorId);
+    next = preparations.saveAndFlush(next);
+    next.markReady();
+    preparations.saveAndFlush(next);
+    decisions.saveAndFlush(
+        new InspectionReadinessDecision(
+            inspectionId,
+            next.getId(),
+            next.getPreparationVersion(),
+            ReadinessDecisionType.APPROVED,
+            reviewerId,
+            null,
+            "{\"source_envelope\":{}}",
+            "[]",
+            "[]",
+            "[]",
+            "[]",
+            "[]",
+            "b".repeat(64)));
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'READY_FOR_FLIGHT' WHERE id = ?", inspectionId);
+
+    FieldSession session =
+        service.start(
+            inspectorId, inspectionId, checklistTemplateId, "Confirmed east face is accessible");
+
+    assertThat(session.getStatus()).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
   }
 
   @Test
@@ -279,8 +360,12 @@ class InspectionFieldSessionServiceTest {
             error ->
                 assertThat(((BusinessException) error).code())
                     .isEqualTo("SESSION_ALREADY_IN_PROGRESS"));
-    assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM field_sessions", Long.class))
-        .isEqualTo(1L);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
+                Long.class,
+                inspectionId))
+        .isEqualTo(initialSessionCount + 1);
   }
 
   @Test
@@ -341,6 +426,21 @@ class InspectionFieldSessionServiceTest {
             error ->
                 assertThat(((BusinessException) error).code()).isEqualTo("ABORT_REASON_REQUIRED"));
     assertThat(sessionStatus(session.getId())).isEqualTo("IN_PROGRESS");
+  }
+
+  @Test
+  void normalCompletionReturnsTheInspectionToMf3WithRecordedOutcome() {
+    FieldSession session =
+        service.start(
+            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+
+    FieldSession completed =
+        service.complete(inspectorId, inspectionId, session.getId(), "East span surveyed");
+
+    assertThat(completed.getStatus()).isEqualTo("FIELD_COMPLETED");
+    assertThat(completed.getEndedAt()).isNotNull();
+    assertThat(completed.getOutcomeNotes()).isEqualTo("East span surveyed");
+    assertThat(statusOfInspection()).isEqualTo("FIELD_COMPLETED");
   }
 
   @Test
@@ -438,9 +538,20 @@ class InspectionFieldSessionServiceTest {
     return service.start(inspectorId, inspectionId, checklistTemplateId, preFlightNote);
   }
 
+  private long preparationCountForInspection() {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM inspection_preparations WHERE inspection_id = ?",
+        Long.class,
+        inspectionId);
+  }
+
   private void assertNoSessionStarted() {
-    assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM field_sessions", Long.class))
-        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
+                Long.class,
+                inspectionId))
+        .isEqualTo(initialSessionCount);
     assertThat(statusOfInspection()).isIn("READY_FOR_FLIGHT", "PREPARING");
   }
 
@@ -505,6 +616,38 @@ class InspectionFieldSessionServiceTest {
             "[]",
             "a".repeat(64));
     return decisions.saveAndFlush(decision).getId();
+  }
+
+  /**
+   * The MF3 additional-session handoff: the prior approval is invalidated, the approved preparation
+   * is superseded and a next-version draft is opened.
+   */
+  private void applyAdditionalSessionHandoff() {
+    InspectionPreparation preparation =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .orElseThrow();
+    InspectionReadinessDecision approval =
+        decisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElseThrow();
+    preparation.markSuperseded();
+    preparations.saveAndFlush(preparation);
+    decisions.saveAndFlush(
+        new InspectionReadinessDecision(
+            inspectionId,
+            preparation.getId(),
+            preparation.getPreparationVersion(),
+            ReadinessDecisionType.INVALIDATED,
+            inspectorId,
+            "Inspector requested an additional field session",
+            approval.getPermitSnapshot(),
+            approval.getCredentialSnapshot(),
+            approval.getDroneDocumentSnapshot(),
+            approval.getPermitSnapshotIds(),
+            approval.getCredentialSnapshotIds(),
+            approval.getDroneDocumentSnapshotIds(),
+            approval.getSourceHash()));
+    preparations.saveAndFlush(
+        preparation.nextDraftVersion(preparation.getPreparationVersion() + 1));
   }
 
   private UUID readinessDecisionIdOf(UUID sessionId) {
