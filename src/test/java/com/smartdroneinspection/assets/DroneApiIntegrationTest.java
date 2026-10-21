@@ -158,6 +158,10 @@ class DroneApiIntegrationTest {
     createDrone(fixture.otherClientId(), serial).andExpect(status().isCreated());
 
     assertThat(droneCount()).isEqualTo(before + 2);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM drones WHERE serial_number = ?", Long.class, serial))
+        .isEqualTo(2);
   }
 
   @Test

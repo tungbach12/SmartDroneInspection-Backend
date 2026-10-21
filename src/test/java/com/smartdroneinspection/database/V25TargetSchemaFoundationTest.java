@@ -338,28 +338,37 @@ class V25TargetSchemaFoundationTest {
         categoryId,
         "ASSET-" + assetId.toString().toUpperCase());
     UUID droneId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO drones (id, organization_id, serial_number, serviceability) VALUES (?, ?, ?, 'ACTIVE')",
-        droneId,
-        primaryOrganization,
-        "DRONE-" + droneId);
+    try {
+      jdbcTemplate.update(
+          "INSERT INTO drones (id, organization_id, serial_number, serviceability) VALUES (?, ?, ?, 'ACTIVE')",
+          droneId,
+          primaryOrganization,
+          "DRONE-" + droneId);
 
-    assertThatThrownBy(
-            () ->
-                jdbcTemplate.update(
-                    """
-                    INSERT INTO asset_pair_assignments
-                      (id, organization_id, asset_id, inspector_user_id, drone_id, valid_from,
-                       status, assigned_by_user_id)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'ACTIVE', ?)
-                    """,
-                    UUID.randomUUID(),
-                    primaryOrganization,
-                    assetId,
-                    foreignInspector,
-                    droneId,
-                    primaryAdmin))
-        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+      assertThatThrownBy(
+              () ->
+                  jdbcTemplate.update(
+                      """
+                      INSERT INTO asset_pair_assignments
+                        (id, organization_id, asset_id, inspector_user_id, drone_id, valid_from,
+                         status, assigned_by_user_id)
+                      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'ACTIVE', ?)
+                      """,
+                      UUID.randomUUID(),
+                      primaryOrganization,
+                      assetId,
+                      foreignInspector,
+                      droneId,
+                      primaryAdmin))
+          .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    } finally {
+      jdbcTemplate.update("DELETE FROM drones WHERE id = ?", droneId);
+      jdbcTemplate.update("DELETE FROM assets WHERE id = ?", assetId);
+      jdbcTemplate.update("DELETE FROM asset_categories WHERE id = ?", categoryId);
+      jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?)", primaryAdmin, foreignInspector);
+      jdbcTemplate.update(
+          "DELETE FROM organizations WHERE id IN (?, ?)", primaryOrganization, otherOrganization);
+    }
   }
 
   private UUID insertOrgAdmin(UUID organizationId, String label) {
