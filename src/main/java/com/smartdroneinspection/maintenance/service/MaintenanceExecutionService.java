@@ -1,5 +1,6 @@
 package com.smartdroneinspection.maintenance.service;
 
+import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateChangeOrderRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateReportVersionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.ReconcileCostsRequest;
@@ -17,6 +18,7 @@ import com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder;
 import com.smartdroneinspection.maintenance.domain.MaintenanceCostLine;
 import com.smartdroneinspection.maintenance.domain.MaintenanceEstimateVersion;
 import com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion;
+import com.smartdroneinspection.maintenance.domain.MaintenanceTask;
 import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
 import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
 import com.smartdroneinspection.maintenance.domain.enums.ChangeOrderStatus;
@@ -24,6 +26,11 @@ import com.smartdroneinspection.maintenance.domain.enums.CostLineState;
 import com.smartdroneinspection.maintenance.domain.enums.EstimateStatus;
 import com.smartdroneinspection.maintenance.domain.enums.ReportVersionStatus;
 import com.smartdroneinspection.maintenance.domain.enums.WorkLogStatus;
+import com.smartdroneinspection.maintenance.events.AcceptanceRecordedEvent;
+import com.smartdroneinspection.maintenance.events.ChangeOrderApprovedEvent;
+import com.smartdroneinspection.maintenance.events.WorkOrderClosedEvent;
+import com.smartdroneinspection.maintenance.render.MaintenanceReportRenderContext;
+import com.smartdroneinspection.maintenance.render.MaintenanceReportRenderer;
 import com.smartdroneinspection.maintenance.repository.MaintenanceAcceptanceDecisionRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceChangeOrderRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceCostLineRepository;
@@ -34,12 +41,28 @@ import com.smartdroneinspection.maintenance.repository.MaintenanceTeamMemberRepo
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkLogRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkOrderRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +76,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MaintenanceExecutionService {
 
+  private static final Logger log = LoggerFactory.getLogger(MaintenanceExecutionService.class);
+
   private final MaintenanceWorkOrderRepository workOrders;
   private final MaintenanceTeamMemberRepository teamMembers;
   private final MaintenanceTaskRepository tasks;
@@ -64,6 +89,9 @@ public class MaintenanceExecutionService {
   private final MaintenanceAcceptanceDecisionRepository acceptanceDecisions;
   private final WorkOrderService workOrderService;
   private final UserAccess userAccess;
+  private final ApplicationEventPublisher eventPublisher;
+  private final Optional<EvidenceObjectStore> objectStore;
+  private final MaintenanceReportRenderer reportRenderer;
 
   public MaintenanceExecutionService(
       MaintenanceWorkOrderRepository workOrders,
@@ -76,7 +104,10 @@ public class MaintenanceExecutionService {
       MaintenanceReportVersionRepository reportVersions,
       MaintenanceAcceptanceDecisionRepository acceptanceDecisions,
       WorkOrderService workOrderService,
-      UserAccess userAccess) {
+      UserAccess userAccess,
+      ApplicationEventPublisher eventPublisher,
+      Optional<EvidenceObjectStore> objectStore,
+      MaintenanceReportRenderer reportRenderer) {
     this.workOrders = workOrders;
     this.teamMembers = teamMembers;
     this.tasks = tasks;
@@ -88,6 +119,9 @@ public class MaintenanceExecutionService {
     this.acceptanceDecisions = acceptanceDecisions;
     this.workOrderService = workOrderService;
     this.userAccess = userAccess;
+    this.eventPublisher = eventPublisher;
+    this.objectStore = objectStore;
+    this.reportRenderer = reportRenderer;
   }
 
   /** MF4-09: an approved work order is released to the team. */
@@ -256,6 +290,18 @@ public class MaintenanceExecutionService {
       throw conflict(ex);
     }
     changeOrders.saveAndFlush(change);
+    if (approve && eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new ChangeOrderApprovedEvent(
+              order.getId(),
+              change.getChangeNumber(),
+              order.getOrganizationId(),
+              actorId,
+              change.getRequestedByUserId(),
+              order.getTeamLeadUserId(),
+              change.getProposedDelta(),
+              Instant.now()));
+    }
     return ChangeOrderResponse.from(change);
   }
 
@@ -357,6 +403,7 @@ public class MaintenanceExecutionService {
         case ACCEPTED -> {
           order.accept(actorId);
           report.approveReport();
+          storePublishedArtefact(order, report);
         }
         case REWORK_REQUIRED -> {
           order.requireReworkAfterAcceptance(actorId, request.technicalComments());
@@ -365,6 +412,19 @@ public class MaintenanceExecutionService {
         case REINSPECTION_REQUIRED -> {
           order.requireReinspection(actorId, request.technicalComments());
           report.returnToAuthor(request.technicalComments());
+          if (eventPublisher != null) {
+            eventPublisher.publishEvent(
+                new ReinspectionRequestedEvent(
+                    order.getId(),
+                    report.getId(),
+                    order.getOrganizationId(),
+                    order.getAssetId(),
+                    order.getSourceReportVersionId(),
+                    order.getSourceFindingId(),
+                    actorId,
+                    request.technicalComments(),
+                    Instant.now()));
+          }
         }
         case REJECTED ->
             throw new BusinessException(
@@ -388,6 +448,20 @@ public class MaintenanceExecutionService {
     acceptanceDecisions.saveAndFlush(decision);
     workOrders.saveAndFlush(order);
     reportVersions.saveAndFlush(report);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new AcceptanceRecordedEvent(
+              order.getId(),
+              report.getId(),
+              order.getOrganizationId(),
+              order.getAssetId(),
+              actorId,
+              decision.getDecision(),
+              decision.getTechnicalComments(),
+              order.getTeamLeadUserId(),
+              order.getReportAuthorUserId(),
+              decision.getDecidedAt()));
+    }
     return AcceptanceDecisionResponse.from(decision);
   }
 
@@ -499,7 +573,296 @@ public class MaintenanceExecutionService {
     requireIndependentReviewer(order, actorId);
     transition(order::close);
     workOrders.saveAndFlush(order);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new WorkOrderClosedEvent(
+              order.getId(),
+              order.getOrganizationId(),
+              order.getAssetId(),
+              actorId,
+              Instant.now()));
+    }
     return WorkOrderResponse.from(order);
+  }
+
+  @Transactional
+  public ResponseEntity<byte[]> getReportPdf(
+      UUID actorId, UUID workOrderId, int versionNo, boolean preview) {
+    MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    MaintenanceReportVersion report = requireReport(order, versionNo);
+
+    if (preview) {
+      if (!actorId.equals(order.getReportAuthorUserId())
+          && !actorId.equals(order.getTeamLeadUserId())) {
+        throw denied("Only the report author or team lead may preview this draft");
+      }
+      MaintenanceReportRenderContext context = buildRenderContext(order, report);
+      try {
+        byte[] pdf = reportRenderer.render(context, true);
+        return pdfResponse(pdf, "inline", documentReference(order, report) + "-preview.pdf");
+      } catch (IOException ex) {
+        throw new BusinessException(
+            HttpStatus.SERVICE_UNAVAILABLE, "REPORT_RENDER_UNAVAILABLE", ex.getMessage());
+      }
+    }
+
+    String objectKey = report.getRenderedObjectKey();
+    if (objectKey == null || objectKey.isBlank()) {
+      MaintenanceReportRenderContext context = buildRenderContext(order, report);
+      try {
+        byte[] pdf = reportRenderer.render(context, false);
+        objectKey = maintenanceReportObjectKey(report.getId());
+        if (objectStore != null && objectStore.isPresent()) {
+          try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
+            objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
+          }
+        }
+        if (report.getStatus() == ReportVersionStatus.APPROVED) {
+          report.recordArtefact(objectKey, sha256Hex(pdf));
+          reportVersions.saveAndFlush(report);
+        }
+        return pdfResponse(pdf, "attachment", documentReference(order, report) + ".pdf");
+      } catch (IOException ex) {
+        throw new BusinessException(
+            HttpStatus.SERVICE_UNAVAILABLE, "REPORT_RENDER_UNAVAILABLE", ex.getMessage());
+      }
+    }
+
+    try {
+      byte[] content =
+          objectStore
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.SERVICE_UNAVAILABLE,
+                          "STORAGE_UNAVAILABLE",
+                          "Object store is unavailable"))
+              .open(objectKey)
+              .readAllBytes();
+      return pdfResponse(content, "attachment", documentReference(order, report) + ".pdf");
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE, "REPORT_STORAGE_READ_FAILED", ex.getMessage());
+    }
+  }
+
+  private static String maintenanceReportObjectKey(UUID reportVersionId) {
+    return "maintenance-reports/" + reportVersionId + ".pdf";
+  }
+
+  private static String documentReference(
+      MaintenanceWorkOrder order, MaintenanceReportVersion report) {
+    return "SDI-MNT-WO-"
+        + order.getId().toString().substring(0, 8).toUpperCase()
+        + "-V"
+        + report.getVersionNo();
+  }
+
+  private static String sha256Hex(byte[] bytes) {
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+      StringBuilder hex = new StringBuilder(digest.length * 2);
+      for (byte b : digest) {
+        hex.append(String.format("%02x", b));
+      }
+      return hex.toString();
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException("SHA-256 unavailable", ex);
+    }
+  }
+
+  private void storePublishedArtefact(MaintenanceWorkOrder order, MaintenanceReportVersion report) {
+    if (reportRenderer == null) {
+      return;
+    }
+    try {
+      MaintenanceReportRenderContext context = buildRenderContext(order, report);
+      byte[] pdf = reportRenderer.render(context, false);
+      String objectKey = maintenanceReportObjectKey(report.getId());
+      if (objectStore != null && objectStore.isPresent()) {
+        try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
+          objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
+        }
+      }
+      report.recordArtefact(objectKey, sha256Hex(pdf));
+    } catch (IOException ex) {
+      log.warn("Failed to render or store completion report PDF artifact: {}", ex.getMessage());
+    }
+  }
+
+  private static ResponseEntity<byte[]> pdfResponse(
+      byte[] content, String disposition, String filename) {
+    return ResponseEntity.ok()
+        .contentType(MediaType.APPLICATION_PDF)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.builder(disposition).filename(filename).build().toString())
+        .body(content);
+  }
+
+  private MaintenanceReportRenderContext buildRenderContext(
+      MaintenanceWorkOrder order, MaintenanceReportVersion report) {
+    String docRef = documentReference(order, report);
+
+    String authorName =
+        userAccess
+            .findActiveUser(report.getAuthorUserId())
+            .map(UserAccess.ActiveUser::fullName)
+            .orElse("Author");
+    String leadName =
+        userAccess
+            .findActiveUser(order.getTeamLeadUserId())
+            .map(UserAccess.ActiveUser::fullName)
+            .orElse("Lead");
+    String reviewerName =
+        userAccess
+            .findActiveUser(order.getAcceptingReviewerUserId())
+            .map(UserAccess.ActiveUser::fullName)
+            .orElse("Reviewer");
+    String budgetApproverName =
+        userAccess
+            .findActiveUser(order.getBudgetApproverUserId())
+            .map(UserAccess.ActiveUser::fullName)
+            .orElse("Approver");
+
+    List<MaintenanceReportRenderContext.TeamMemberView> memberViews =
+        teamMembers.findByWorkOrderIdAndActiveTrueOrderByCreatedAtAsc(order.getId()).stream()
+            .map(
+                m ->
+                    new MaintenanceReportRenderContext.TeamMemberView(
+                        userAccess
+                            .findActiveUser(m.getEngineerUserId())
+                            .map(UserAccess.ActiveUser::fullName)
+                            .orElse("Member"),
+                        m.getMemberRole().name(),
+                        m.getReason()))
+            .toList();
+
+    List<MaintenanceTask> taskList = tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId());
+    Map<UUID, Integer> taskNumberMap =
+        taskList.stream()
+            .collect(Collectors.toMap(MaintenanceTask::getId, MaintenanceTask::getTaskNumber));
+
+    List<MaintenanceReportRenderContext.TaskView> taskViews =
+        taskList.stream()
+            .map(
+                t ->
+                    new MaintenanceReportRenderContext.TaskView(
+                        t.getTaskNumber(),
+                        t.getName(),
+                        t.getMethod(),
+                        t.getStatus().name(),
+                        t.getAssignedEngineerUserId() != null
+                            ? userAccess
+                                .findActiveUser(t.getAssignedEngineerUserId())
+                                .map(UserAccess.ActiveUser::fullName)
+                                .orElse("Unassigned")
+                            : "Unassigned"))
+            .toList();
+
+    List<MaintenanceReportRenderContext.WorkLogView> logViews =
+        workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId()).stream()
+            .map(
+                wl ->
+                    new MaintenanceReportRenderContext.WorkLogView(
+                        taskNumberMap.getOrDefault(wl.getTaskId(), 1),
+                        userAccess
+                            .findActiveUser(wl.getEngineerUserId())
+                            .map(UserAccess.ActiveUser::fullName)
+                            .orElse("Engineer"),
+                        wl.getStartedAt() != null ? wl.getStartedAt().toString() : "N/A",
+                        wl.getEndedAt() != null ? wl.getEndedAt().toString() : "N/A",
+                        wl.getHours() != null ? wl.getHours().toString() : "0",
+                        wl.getAsLeftCondition(),
+                        wl.getTestReadings()))
+            .toList();
+
+    List<MaintenanceReportRenderContext.ChangeOrderView> changeViews =
+        changeOrders.findByWorkOrderIdOrderByChangeNumberDesc(order.getId()).stream()
+            .map(
+                co ->
+                    new MaintenanceReportRenderContext.ChangeOrderView(
+                        co.getChangeNumber(),
+                        co.getReason(),
+                        co.getProposedDelta() != null ? co.getProposedDelta().toString() : "0",
+                        co.getStatus().name(),
+                        co.getDecidedAt() != null ? co.getDecidedAt().toString() : "Pending"))
+            .toList();
+
+    MaintenanceReportRenderContext.CostStatementView costStatement = null;
+    Optional<MaintenanceEstimateVersion> approvedEstimate =
+        estimates.findByWorkOrderIdAndStatus(order.getId(), EstimateStatus.APPROVED);
+    if (approvedEstimate.isPresent()) {
+      MaintenanceEstimateVersion est = approvedEstimate.get();
+      BigDecimal baseline = est.getBaselineTotal();
+      BigDecimal changeDelta =
+          changeOrders.sumDeltaByWorkOrderIdAndStatus(order.getId(), ChangeOrderStatus.APPROVED);
+      BigDecimal effective = changeDelta == null ? BigDecimal.ZERO : changeDelta;
+      BigDecimal authorized = baseline.add(effective).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal actual =
+          costLines.sumAmountByWorkOrderIdAndState(order.getId(), CostLineState.ACTUAL);
+      BigDecimal actualTotal =
+          actual == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : actual;
+      BigDecimal variance = actualTotal.subtract(authorized).setScale(2, RoundingMode.HALF_UP);
+      BigDecimal variancePercent =
+          authorized.signum() == 0
+              ? null
+              : variance
+                  .multiply(BigDecimal.valueOf(100))
+                  .divide(authorized, 2, RoundingMode.HALF_UP);
+
+      costStatement =
+          new MaintenanceReportRenderContext.CostStatementView(
+              est.getCurrency(),
+              baseline.toString(),
+              effective.toString(),
+              authorized.toString(),
+              actualTotal.toString(),
+              variance.toString(),
+              variancePercent != null ? variancePercent.toString() + "%" : "N/A");
+    }
+
+    MaintenanceReportRenderContext.AcceptanceView acceptanceView = null;
+    Optional<MaintenanceAcceptanceDecision> decisionOpt =
+        acceptanceDecisions.findFirstByWorkOrderIdOrderByDecidedAtDesc(order.getId());
+    if (decisionOpt.isPresent()) {
+      MaintenanceAcceptanceDecision dec = decisionOpt.get();
+      acceptanceView =
+          new MaintenanceReportRenderContext.AcceptanceView(
+              dec.getDecision().name(),
+              userAccess
+                  .findActiveUser(dec.getReviewerUserId())
+                  .map(UserAccess.ActiveUser::fullName)
+                  .orElse("Reviewer"),
+              dec.getDecidedAt() != null ? dec.getDecidedAt().toString() : "N/A",
+              dec.getTechnicalComments(),
+              dec.getSignatureReference());
+    }
+
+    return new MaintenanceReportRenderContext(
+        docRef,
+        report.getVersionNo(),
+        report.getStatus().name(),
+        order.getOrganizationId().toString(),
+        order.getAssetId().toString(),
+        order.getSourceFindingId().toString(),
+        "Corrective maintenance for finding " + order.getSourceFindingId(),
+        "Approved corrective defect repair",
+        "Technical acceptance by independent reviewer",
+        authorName,
+        report.getAuthorVerifiedAt() != null
+            ? report.getAuthorVerifiedAt().toString()
+            : "Not verified",
+        leadName,
+        reviewerName,
+        budgetApproverName,
+        memberViews,
+        taskViews,
+        logViews,
+        changeViews,
+        costStatement,
+        report.getContentSnapshot(),
+        acceptanceView);
   }
 
   @Transactional(readOnly = true)

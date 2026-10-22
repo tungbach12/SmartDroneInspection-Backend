@@ -89,6 +89,30 @@ public class Notification {
     return recipientUserId;
   }
 
+  public UUID getOrganizationId() {
+    return organizationId;
+  }
+
+  public String getEventType() {
+    return eventType;
+  }
+
+  public NotificationChannel getChannel() {
+    return channel;
+  }
+
+  public String getTitle() {
+    return title;
+  }
+
+  public String getBody() {
+    return body;
+  }
+
+  public String getTargetPath() {
+    return targetPath;
+  }
+
   public NotificationStatus getStatus() {
     return status;
   }

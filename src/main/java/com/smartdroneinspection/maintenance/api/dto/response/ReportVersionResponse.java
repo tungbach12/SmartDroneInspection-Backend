@@ -16,7 +16,9 @@ public record ReportVersionResponse(
     String changeSnapshotHash,
     String workLogSnapshotHash,
     String actualCostSnapshotHash,
-    String contentSnapshot) {
+    String contentSnapshot,
+    String renderedObjectKey,
+    String renderedChecksumSha256) {
 
   public static ReportVersionResponse from(MaintenanceReportVersion report) {
     return new ReportVersionResponse(
@@ -29,6 +31,8 @@ public record ReportVersionResponse(
         report.getChangeSnapshotHash(),
         report.getWorkLogSnapshotHash(),
         report.getActualCostSnapshotHash(),
-        report.getContentSnapshot());
+        report.getContentSnapshot(),
+        report.getRenderedObjectKey(),
+        report.getRenderedChecksumSha256());
   }
 }

@@ -139,4 +139,8 @@ public class MaintenanceAcceptanceDecision {
   public Instant getDecidedAt() {
     return decidedAt;
   }
+
+  public String getSignatureReference() {
+    return signatureReference;
+  }
 }

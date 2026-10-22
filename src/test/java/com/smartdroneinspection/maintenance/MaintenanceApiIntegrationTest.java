@@ -2,6 +2,7 @@ package com.smartdroneinspection.maintenance;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -929,6 +930,20 @@ class MaintenanceApiIntegrationTest {
                 .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders/{id}/reports/1/pdf", workOrderId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Content-Type", "application/pdf"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/maintenance/work-orders/{id}/reports/1/pdf?preview=true", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Content-Type", "application/pdf"));
   }
 
   private UUID createTask(UUID workOrderId) throws Exception {
