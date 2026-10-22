@@ -166,11 +166,20 @@ class InspectionReadinessSourcesApiIntegrationTest {
   }
 
   @Test
-  void anUnauthenticatedCallerIsRefused() throws Exception {
-    mockMvc.perform(get("/api/v1/workforce/credentials/me")).andExpect(status().isUnauthorized());
+  void anUnauthenticatedCallerIsRefusedAndSecurityErrorsAreLocalized() throws Exception {
     mockMvc
-        .perform(get("/api/v1/inspections/{id}/readiness/sources", inspectionId))
-        .andExpect(status().isUnauthorized());
+        .perform(get("/api/v1/workforce/credentials/me"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
+        .andExpect(jsonPath("$.detail").value("Authentication is required."));
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/readiness/sources", inspectionId)
+                .header("Accept-Language", "vi"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"))
+        .andExpect(jsonPath("$.title").value("Chưa xác thực"))
+        .andExpect(jsonPath("$.detail").value("Vui lòng đăng nhập để tiếp tục."));
   }
 
   private UUID createUser(UUID organizationId, UserRole role, String label) {

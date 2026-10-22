@@ -1,6 +1,8 @@
 package com.smartdroneinspection.shared.config;
 
+import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.RequestTraceId;
+import com.smartdroneinspection.shared.exception.ProblemText;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -34,9 +36,11 @@ import tools.jackson.databind.ObjectMapper;
 public class SecurityConfig {
 
   private final ObjectMapper objectMapper;
+  private final ProblemText problemText;
 
-  public SecurityConfig(ObjectMapper objectMapper) {
+  public SecurityConfig(ObjectMapper objectMapper, ProblemText problemText) {
     this.objectMapper = objectMapper;
+    this.problemText = problemText;
   }
 
   @Bean
@@ -123,7 +127,12 @@ public class SecurityConfig {
     configuration.setAllowedOrigins(properties.getAllowedOrigins());
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
-        List.of("Authorization", "Content-Type", "X-XSRF-TOKEN", "X-Correlation-ID"));
+        List.of(
+            "Authorization",
+            "Content-Type",
+            "X-XSRF-TOKEN",
+            "X-Correlation-ID",
+            "Accept-Language"));
     configuration.setExposedHeaders(List.of("X-Correlation-ID"));
     configuration.setAllowCredentials(true);
     configuration.setMaxAge(3600L);
@@ -148,11 +157,14 @@ public class SecurityConfig {
       HttpServletRequest request, HttpServletResponse response, HttpStatus status, String code)
       throws IOException {
     String detail =
-        status == HttpStatus.UNAUTHORIZED ? "Authentication is required." : "Access is denied.";
+        problemText.detail(
+            code,
+            status == HttpStatus.UNAUTHORIZED ? "Authentication is required." : "Access is denied.",
+            RequestLocale.from(request));
     var problem =
         java.util.Map.of(
             "type", "about:blank",
-            "title", status.getReasonPhrase(),
+            "title", problemText.title(status, RequestLocale.from(request)),
             "status", status.value(),
             "detail", detail,
             "instance", URI.create(request.getRequestURI()).toString(),

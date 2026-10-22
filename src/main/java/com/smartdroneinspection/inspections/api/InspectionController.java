@@ -30,7 +30,9 @@ import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.ReportService;
+import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -339,8 +341,11 @@ public class InspectionController {
   @PostMapping("/report/draft")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<InspectionReportVersionResponse> generateDraft(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
-    return ApiResponse.success(reportService.generateDraft(actorId(jwt), inspectionId));
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        reportService.generateDraft(actorId(jwt), inspectionId, RequestLocale.from(request)));
   }
 
   /**
@@ -401,8 +406,10 @@ public class InspectionController {
   public ApiResponse<ReportPublishedResponse> publishVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID versionId) {
-    return ApiResponse.success(reportService.publish(actorId(jwt), inspectionId, versionId));
+      @PathVariable UUID versionId,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        reportService.publish(actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
   }
 
   @PostMapping("/report/no-corrective-work")
@@ -442,8 +449,10 @@ public class InspectionController {
   public ResponseEntity<byte[]> previewReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID versionId) {
-    return reportService.preview(actorId(jwt), inspectionId, versionId);
+      @PathVariable UUID versionId,
+      HttpServletRequest request) {
+    return reportService.preview(
+        actorId(jwt), inspectionId, versionId, RequestLocale.from(request));
   }
 
   @GetMapping("/report/versions/{versionId}/document")

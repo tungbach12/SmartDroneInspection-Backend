@@ -549,7 +549,8 @@ class ComplianceApiIntegrationTest {
   private String statusConstraintDefinition() {
     return jdbcTemplate.queryForObject(
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint"
-            + " WHERE conname = 'ck_flight_permits_status'",
+            + " WHERE conname = 'ck_flight_permits_status'"
+            + " AND connamespace = current_schema()::regnamespace",
         String.class);
   }
 
