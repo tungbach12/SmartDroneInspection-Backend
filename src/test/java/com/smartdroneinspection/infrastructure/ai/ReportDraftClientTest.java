@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -117,6 +118,14 @@ class ReportDraftClientTest {
         .doesNotContain("uploader");
     assertThat(request).contains("\"stream\":false");
     assertThat(
+            new tools.jackson.databind.ObjectMapper()
+                .readTree(request)
+                .path("messages")
+                .get(0)
+                .path("content")
+                .asString())
+        .contains("Write all narrative sections in English.");
+    assertThat(
             prompt.indexOf(
                 "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):"))
         .isLessThan(prompt.indexOf("AI Detection Candidates (advisory, not official findings):"));
@@ -127,6 +136,44 @@ class ReportDraftClientTest {
                 prompt.indexOf("AI Detection Candidates"),
                 prompt.indexOf("Recorded Field Sessions")))
         .doesNotContain("Component: Lower chord");
+  }
+
+  @Test
+  void requestsNarrativeInTheSelectedLanguageAndKeepsUserNotesVerbatim() throws Exception {
+    AtomicReference<String> requestBody = new AtomicReference<>();
+    startServer(
+        exchange -> {
+          requestBody.set(
+              new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+          respond(exchange, 200, chatCompletionBody(SECTION_REPLY));
+        });
+
+    DraftContext english = context();
+    DraftContext vietnamese =
+        new DraftContext(
+            english.inspection(),
+            english.checklistResponses(),
+            english.findings(),
+            english.evidence(),
+            english.candidates(),
+            english.fieldSessions(),
+            english.evidenceQuality(),
+            Locale.forLanguageTag("vi"));
+    client("key", "model").draftSections(vietnamese);
+
+    var messages =
+        new tools.jackson.databind.ObjectMapper().readTree(requestBody.get()).path("messages");
+    String systemPrompt = messages.get(0).path("content").asString();
+    String userPrompt = messages.get(1).path("content").asString();
+    assertThat(systemPrompt)
+        .contains("Write all narrative sections in Vietnamese.")
+        .contains("Preserve supplied source values verbatim")
+        .contains("Translate only system-generated narrative into the selected language.");
+    assertThat(userPrompt)
+        .contains("Inspect main-span coating")
+        .contains("Notes: Normal wear")
+        .contains("Normal wear");
+    assertThat(systemPrompt).doesNotContain("Normal wear");
   }
 
   @Test

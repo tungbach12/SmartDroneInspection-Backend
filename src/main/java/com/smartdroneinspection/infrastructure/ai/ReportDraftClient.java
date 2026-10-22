@@ -85,6 +85,15 @@ public class ReportDraftClient implements ReportDraftPort {
   @Override
   public SectionDraft draftSections(DraftContext context) throws IOException {
     String prompt = buildPrompt(context);
+    String languageInstruction =
+        context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage())
+            ? "Write all narrative sections in Vietnamese."
+            : "Write all narrative sections in English.";
+    String sourcePreservationInstruction =
+        "Preserve supplied source values verbatim; never translate or paraphrase inspector-authored notes, finding text, checklist responses, or other user-authored content. "
+            + "Translate only system-generated narrative into the selected language.";
+    String systemInstructions =
+        SYSTEM_INSTRUCTIONS + "\n- " + languageInstruction + "\n- " + sourcePreservationInstruction;
     Map<String, Object> requestPayload =
         Map.of(
             "model",
@@ -99,7 +108,7 @@ public class ReportDraftClient implements ReportDraftPort {
             Map.of("type", "json_object"),
             "messages",
             List.of(
-                Map.of("role", "system", "content", SYSTEM_INSTRUCTIONS),
+                Map.of("role", "system", "content", systemInstructions),
                 Map.of("role", "user", "content", prompt)));
 
     try {

@@ -25,6 +25,7 @@ import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
+import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceQualityDecisionRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
@@ -51,6 +52,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -79,7 +81,7 @@ import tools.jackson.databind.node.ObjectNode;
 @Service
 public class ReportService {
 
-  private static final String PROMPT_VERSION = "mf3-report-v2";
+  private static final String PROMPT_VERSION = "mf3-report-v3-bilingual";
 
   /** Recorded as the version model when the Inspector authors the draft without automated help. */
   private static final String MANUAL_MODEL_NAME = "manual-authoring";
@@ -152,6 +154,12 @@ public class ReportService {
    */
   @Transactional
   public InspectionReportVersionResponse generateDraft(UUID actorId, UUID inspectionId) {
+    return generateDraft(actorId, inspectionId, Locale.ENGLISH);
+  }
+
+  @Transactional
+  public InspectionReportVersionResponse generateDraft(
+      UUID actorId, UUID inspectionId, Locale locale) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
 
     requireCurrentFindingsConfirmation(inspection);
@@ -228,7 +236,7 @@ public class ReportService {
                           ? null
                           : inspection.getPlannedEndAt().toString(),
                       inspection.getDroneId() == null ? null : inspection.getDroneId().toString()),
-                  buildChecklistSummaries(inspectionId),
+                  buildChecklistSummaries(inspectionId, locale),
                   confirmedFindings.stream()
                       .map(
                           finding ->
@@ -302,7 +310,8 @@ public class ReportService {
                                       ? null
                                       : session.getDroneId().toString()))
                       .toList(),
-                  evidenceQuality));
+                  evidenceQuality,
+                  locale));
     } catch (IOException ex) {
       // A failed generation permits a manual draft under the same review gates. No placeholder text
       // is written into a section: a section the author did not write and the model did not supply
@@ -621,6 +630,12 @@ public class ReportService {
   /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
   @Transactional
   public ReportPublishedResponse publish(UUID actorId, UUID inspectionId, UUID versionId) {
+    return publish(actorId, inspectionId, versionId, Locale.ENGLISH);
+  }
+
+  @Transactional
+  public ReportPublishedResponse publish(
+      UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     UserAccess.ActiveUser publisher = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport report = requireReportForInspection(inspectionId);
@@ -637,7 +652,7 @@ public class ReportService {
     // can be marked published. A failure here rolls the publish back rather than leaving a
     // published
     // version with no artefact.
-    storePublishedArtefact(inspectionId, version);
+    storePublishedArtefact(inspectionId, version, locale);
     versions.saveAndFlush(version);
 
     // MF3-11: a new published version supersedes any previously published version of this report.
@@ -887,8 +902,9 @@ public class ReportService {
    * overwrites the bytes stored for an already-published one. The checksum is taken from the bytes
    * that were stored, so it describes what a later reader would actually download.
    */
-  private void storePublishedArtefact(UUID inspectionId, InspectionReportVersion version) {
-    byte[] pdf = renderArtefact(inspectionId, version, false);
+  private void storePublishedArtefact(
+      UUID inspectionId, InspectionReportVersion version, Locale locale) {
+    byte[] pdf = renderArtefact(inspectionId, version, false, locale);
     String objectKey = reportObjectKey(version.getId());
     try (InputStream input = new ByteArrayInputStream(pdf)) {
       requireObjectStore().put(objectKey, PDF_MEDIA_TYPE, pdf.length, input);
@@ -910,6 +926,12 @@ public class ReportService {
    */
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> preview(UUID actorId, UUID inspectionId, UUID versionId) {
+    return preview(actorId, inspectionId, versionId, Locale.ENGLISH);
+  }
+
+  @Transactional(readOnly = true)
+  public ResponseEntity<byte[]> preview(
+      UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
     if (!version.getAuthorUserId().equals(actorId)) {
@@ -919,7 +941,7 @@ public class ReportService {
           "Only the report author may preview this draft");
     }
     return pdfResponse(
-        renderArtefact(inspectionId, version, true),
+        renderArtefact(inspectionId, version, true, locale),
         "inline",
         documentReference(version) + "-preview.pdf");
   }
@@ -949,9 +971,9 @@ public class ReportService {
   }
 
   private byte[] renderArtefact(
-      UUID inspectionId, InspectionReportVersion version, boolean preview) {
+      UUID inspectionId, InspectionReportVersion version, boolean preview, Locale locale) {
     try {
-      return renderPort.render(buildRenderContext(inspectionId, version, preview));
+      return renderPort.render(buildRenderContext(inspectionId, version, preview, locale));
     } catch (IOException ex) {
       throw new BusinessException(
           HttpStatus.SERVICE_UNAVAILABLE,
@@ -1003,7 +1025,7 @@ public class ReportService {
    * bytes are loaded here so the PDF embeds the stored original rather than a reference to it.
    */
   private ReportRenderPort.RenderContext buildRenderContext(
-      UUID inspectionId, InspectionReportVersion version, boolean preview) {
+      UUID inspectionId, InspectionReportVersion version, boolean preview, Locale locale) {
     Inspection inspection = inspections.findById(inspectionId).orElseThrow();
     Identity reportIdentity =
         reportContextAccess
@@ -1034,7 +1056,8 @@ public class ReportService {
             preparation,
             readiness,
             latestQuality,
-            recordedSessions);
+            recordedSessions,
+            locale);
     ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
     JsonNode snapshot;
     try {
@@ -1042,7 +1065,7 @@ public class ReportService {
     } catch (JacksonException exception) {
       snapshot = objectMapper.createObjectNode();
     }
-    String purposeScopeCriteria = composePurposeScopeCriteria(inspection, snapshot);
+    String purposeScopeCriteria = composePurposeScopeCriteria(inspection, snapshot, locale);
 
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
     Map<UUID, List<String>> componentLocationByEvidence = new LinkedHashMap<>();
@@ -1097,7 +1120,7 @@ public class ReportService {
               finding.getMeasurement() == null
                   ? null
                   : objectMapper.writeValueAsString(finding.getMeasurement()),
-              finding.isRepairRequired() ? "Yes" : "No",
+              ReportHtmlTemplate.localized(locale, finding.isRepairRequired() ? "Yes" : "No"),
               finding.isOfficial()));
     }
 
@@ -1122,9 +1145,11 @@ public class ReportService {
               item.getExternalReference(),
               item.getAnalysisDetectionCount() == null
                   ? null
-                  : item.getAnalysisDetectionCount() == 0
-                      ? "Completed; zero detections"
-                      : "Completed; findings detected",
+                  : ReportHtmlTemplate.localized(
+                      locale,
+                      item.getAnalysisDetectionCount() == 0
+                          ? "Completed; zero detections"
+                          : "Completed; findings detected"),
               item.getAnalysisDetectionCount(),
               content));
     }
@@ -1159,7 +1184,8 @@ public class ReportService {
             sections.overallCondition() == null ? null : sections.overallCondition().name(),
             sections.omissionDisclosure()),
         findingViews,
-        evidenceViews);
+        evidenceViews,
+        locale);
   }
 
   /**
@@ -1331,18 +1357,31 @@ public class ReportService {
     }
   }
 
-  private String composePurposeScopeCriteria(Inspection inspection, JsonNode snapshot) {
+  private String composePurposeScopeCriteria(
+      Inspection inspection, JsonNode snapshot, Locale locale) {
     StringBuilder content = new StringBuilder();
     appendStructuredValue(
-        content, "Objective", objectMapper.getNodeFactory().textNode(inspection.getObjective()));
-    appendStructuredValue(content, "Scope", jsonField(inspection.getScope(), "summary"));
-    appendArrayValues(content, "Included components", inspection.getComponentScope(), "items");
+        content,
+        ReportHtmlTemplate.localized(locale, "Objective"),
+        objectMapper.getNodeFactory().textNode(inspection.getObjective()));
+    appendStructuredValue(
+        content,
+        ReportHtmlTemplate.localized(locale, "Scope"),
+        jsonField(inspection.getScope(), "summary"));
     appendArrayValues(
-        content, "Acceptance criteria", inspection.getAcceptanceCriteria(), "criteria");
+        content,
+        ReportHtmlTemplate.localized(locale, "Included components"),
+        inspection.getComponentScope(),
+        "items");
+    appendArrayValues(
+        content,
+        ReportHtmlTemplate.localized(locale, "Acceptance criteria"),
+        inspection.getAcceptanceCriteria(),
+        "criteria");
     preparations
         .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
         .map(preparation -> parseJson(preparation.getShotList()))
-        .ifPresent(shotList -> appendShotList(content, shotList));
+        .ifPresent(shotList -> appendShotList(content, shotList, locale));
     return content.isEmpty() ? null : content.toString();
   }
 
@@ -1378,9 +1417,10 @@ public class ReportService {
     content.append('\n');
   }
 
-  private void appendShotList(StringBuilder content, JsonNode shotList) {
+  private void appendShotList(StringBuilder content, JsonNode shotList, Locale locale) {
     if (shotList == null || !shotList.isArray() || shotList.isEmpty()) return;
-    content.append("Planned shot-list:");
+    content.append(ReportHtmlTemplate.localized(locale, "Planned shot-list"));
+    content.append(':');
     shotList.forEach(
         item -> {
           String code = item.path("code").asString("");
@@ -1388,7 +1428,9 @@ public class ReportService {
           if (!code.isBlank() || !angle.isBlank()) {
             content.append("\n• ").append(code);
             if (!angle.isBlank()) content.append(" — ").append(angle);
-            if (item.path("required").asBoolean(false)) content.append(" (required)");
+            if (item.path("required").asBoolean(false)) {
+              content.append(ReportHtmlTemplate.localized(locale, " (required)"));
+            }
           }
         });
     content.append('\n');
@@ -1402,9 +1444,13 @@ public class ReportService {
   }
 
   private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(UUID inspectionId) {
-    record ResponseRow(String prompt, String answer, String notes) {}
+    return buildChecklistSummaries(inspectionId, Locale.ENGLISH);
+  }
+
+  private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(
+      UUID inspectionId, Locale locale) {
     return jdbcTemplate.query(
-        "SELECT item.prompt, COALESCE(response.answer, response.response_value)::text AS answer, response.notes "
+        "SELECT item.prompt, item.prompt_vi, COALESCE(response.answer, response.response_value)::text AS answer, response.notes "
             + "FROM checklist_responses response "
             + "JOIN field_sessions session "
             + "  ON session.id = response.field_session_id "
@@ -1414,11 +1460,19 @@ public class ReportService {
             + " AND item.template_id = session.checklist_template_id "
             + "WHERE response.inspection_id = ? "
             + "ORDER BY response.completed_at NULLS LAST, response.created_at",
-        (result, rowNum) ->
-            new ReportDraftPort.ChecklistEntrySummary(
-                result.getString("prompt"),
-                responseLabel(result.getString("answer")),
-                result.getString("notes")),
+        (result, rowNum) -> {
+          String englishPrompt = result.getString("prompt");
+          String vietnamesePrompt = result.getString("prompt_vi");
+          String prompt =
+              locale != null
+                      && "vi".equalsIgnoreCase(locale.getLanguage())
+                      && vietnamesePrompt != null
+                      && !vietnamesePrompt.isBlank()
+                  ? vietnamesePrompt
+                  : englishPrompt;
+          return new ReportDraftPort.ChecklistEntrySummary(
+              prompt, responseLabel(result.getString("answer")), result.getString("notes"));
+        },
         inspectionId);
   }
 
@@ -1520,7 +1574,8 @@ public class ReportService {
       InspectionPreparation preparation,
       InspectionReadinessDecision readiness,
       EvidenceQualityDecision quality,
-      List<FieldSession> sessions) {
+      List<FieldSession> sessions,
+      Locale locale) {
     InspectionPreparation prep = preparation;
     return new ReportRenderPort.ReportContext(
         identity == null ? null : identity.organizationName(),
@@ -1545,37 +1600,47 @@ public class ReportService {
         quality == null ? null : quality.getDecision().name(),
         quality == null ? null : quality.getShotListComparison(),
         quality == null ? null : quality.getLimitationReason(),
-        buildChecklistSummaries(inspection.getId()).stream()
+        buildChecklistSummaries(inspection.getId(), locale).stream()
             .map(
                 entry ->
-                    entry.prompt()
+                    ReportHtmlTemplate.localized(locale, "Checklist response")
                         + ": "
+                        + entry.prompt()
+                        + " — "
                         + entry.responseValue()
-                        + (entry.notes() == null ? "" : " (Notes: " + entry.notes() + ")"))
+                        + (entry.notes() == null
+                            ? ""
+                            : " ("
+                                + ReportHtmlTemplate.localized(locale, "Notes")
+                                + ": "
+                                + entry.notes()
+                                + ")"))
             .toList(),
-        sessions.stream().map(session -> fieldSessionSummary(session, drone)).toList(),
-        "Reviewer role and separation were recorded; professional credential qualification was not validated by the application.");
+        sessions.stream().map(session -> fieldSessionSummary(session, drone, locale)).toList(),
+        ReportHtmlTemplate.localized(
+            locale,
+            "Reviewer role and separation were recorded; professional credential qualification was not validated by the application."));
   }
 
-  private String fieldSessionSummary(FieldSession session, DroneContext drone) {
+  private String fieldSessionSummary(FieldSession session, DroneContext drone, Locale locale) {
     return java.util.stream.Stream.of(
-            "Session " + session.getId(),
-            "Status: " + session.getStatus(),
-            contextField("Started", session.getStartedAt()),
-            contextField("Ended", session.getEndedAt()),
-            contextField("Pre-flight checklist note", session.getPreFlightChecklistNote()),
-            contextField("Postponement reason", session.getPostponementReason()),
-            contextField("Abort reason", session.getAbortReason()),
-            contextField("Field-session outcome", session.getOutcomeNotes()),
-            contextField("Recorded limitations", session.getLimitations()),
-            contextField("Assigned Drone", drone == null ? null : droneLabel(drone)))
+            ReportHtmlTemplate.localized(locale, "Session ") + session.getId(),
+            ReportHtmlTemplate.localized(locale, "Status") + ": " + session.getStatus(),
+            contextField(locale, "Started", session.getStartedAt()),
+            contextField(locale, "Ended", session.getEndedAt()),
+            contextField(locale, "Pre-flight checklist note", session.getPreFlightChecklistNote()),
+            contextField(locale, "Postponement reason", session.getPostponementReason()),
+            contextField(locale, "Abort reason", session.getAbortReason()),
+            contextField(locale, "Field-session outcome", session.getOutcomeNotes()),
+            contextField(locale, "Recorded limitations", session.getLimitations()),
+            contextField(locale, "Assigned Drone", drone == null ? null : droneLabel(drone)))
         .filter(Objects::nonNull)
         .collect(java.util.stream.Collectors.joining(" · "));
   }
 
-  private static String contextField(String label, Object value) {
+  private static String contextField(Locale locale, String label, Object value) {
     if (value == null || value.toString().isBlank()) return null;
-    return label + ": " + value;
+    return ReportHtmlTemplate.localized(locale, label) + ": " + value;
   }
 
   private static String droneLabel(DroneContext drone) {

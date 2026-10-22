@@ -28,6 +28,8 @@ class RuntimePersistenceInventoryTest {
           "auth_sessions",
           "checklist_items",
           "checklist_templates",
+          // MF2-11: the Inspector's recorded answers against the checklist items.
+          "checklist_responses",
           "drones",
           "drone_documents",
           "flight_permits",

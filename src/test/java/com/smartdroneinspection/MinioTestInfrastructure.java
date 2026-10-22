@@ -1,5 +1,6 @@
 package com.smartdroneinspection;
 
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -38,9 +39,15 @@ public class MinioTestInfrastructure
   // A GitHub runner cannot pull it anonymously, so this mirrors the exact bytes into this
   // organization's Docker Hub namespace and pins the digest, so no upstream re-tag can move it.
   // Source digest equals the cached quay.io/minio/minio:latest image.
-  private static final DockerImageName MINIO =
-      DockerImageName.parse(
-          "tungbach12/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2");
+  private static final String PINNED_MINIO =
+      "tungbach12/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2";
+  // That mirror holds the amd64 bytes only, so an arm64 host cannot start it. Docker Hub's
+  // minio/minio tag is a multi-arch manifest with a native arm64 image, which is what an ARM64
+  // developer machine needs. The pinned digest stays the default so CI keeps the reproducible
+  // image it was verified against; only a host that cannot run that image falls back.
+  private static final String MULTI_ARCH_MINIO = "minio/minio:latest";
+
+  private static final DockerImageName MINIO = resolveMinioImage();
 
   private static final GenericContainer<?> SERVER = startOnce();
 
@@ -64,6 +71,22 @@ public class MinioTestInfrastructure
   static String endpoint() {
     SERVER.start();
     return "http://" + SERVER.getHost() + ":" + SERVER.getMappedPort(9000);
+  }
+
+  /**
+   * Picks the image the current host can actually execute.
+   *
+   * <p>The pinned mirror is amd64-only, and a host without x86 emulation cannot start it. Rather
+   * than failing every integration suite with a container launch error, an arm64 host uses the
+   * multi-arch upstream tag, which resolves to a native arm64 image. The container still runs the
+   * same MinIO server and the same bucket, so the storage contract under test is unchanged.
+   */
+  private static DockerImageName resolveMinioImage() {
+    String architecture = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+    if (architecture.contains("aarch64") || architecture.contains("arm64")) {
+      return DockerImageName.parse(MULTI_ARCH_MINIO);
+    }
+    return DockerImageName.parse(PINNED_MINIO);
   }
 
   private static GenericContainer<?> startOnce() {

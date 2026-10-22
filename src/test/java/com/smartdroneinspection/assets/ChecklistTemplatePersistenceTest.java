@@ -10,6 +10,7 @@ import com.smartdroneinspection.assets.domain.enums.ChecklistResponseType;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import jakarta.persistence.EntityManager;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,6 +70,39 @@ class ChecklistTemplatePersistenceTest {
         .extracting(item -> item.getDisplayOrder())
         .containsExactly(0, 1);
     assertThat(reloaded.getItems()).hasSize(2);
+  }
+
+  @Test
+  void persistsAndSelectsVietnameseSystemManagedChecklistText() {
+    UUID createdByUserId = persistCreator();
+    ChecklistTemplate template =
+        new ChecklistTemplate(
+            "bilingual-bridge", 1, null, "Bridge Basic", null, "Cầu cơ bản", null, createdByUserId);
+    template.addItem(
+        "surface-crack",
+        "Structure",
+        "Check visible surface cracks",
+        "Kết cấu",
+        "Kiểm tra vết nứt nhìn thấy",
+        ChecklistResponseType.PASS_FAIL,
+        true,
+        0,
+        "Look for cracks",
+        "Quan sát vết nứt",
+        null);
+    template.publish();
+    ChecklistTemplate saved = checklistTemplateRepository.saveAndFlush(template);
+    entityManager.clear();
+
+    ChecklistTemplate reloaded =
+        checklistTemplateRepository.findDetailedById(saved.getId()).orElseThrow();
+    var item = reloaded.getItems().getFirst();
+
+    assertThat(reloaded.localizedName(Locale.forLanguageTag("vi"))).isEqualTo("Cầu cơ bản");
+    assertThat(item.localizedPrompt(Locale.forLanguageTag("vi")))
+        .isEqualTo("Kiểm tra vết nứt nhìn thấy");
+    assertThat(item.localizedGuidance(Locale.forLanguageTag("vi"))).isEqualTo("Quan sát vết nứt");
+    assertThat(item.localizedPrompt(Locale.ENGLISH)).isEqualTo("Check visible surface cracks");
   }
 
   @Test
