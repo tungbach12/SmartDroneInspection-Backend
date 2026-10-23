@@ -1,5 +1,6 @@
 package com.smartdroneinspection.shared.exception;
 
+import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.RequestTraceId;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -21,6 +22,12 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+  private final ProblemText problemText;
+
+  public GlobalExceptionHandler(ProblemText problemText) {
+    this.problemText = problemText;
+  }
 
   @ExceptionHandler(AuthException.class)
   public ProblemDetail handleAuthentication(AuthException ex, HttpServletRequest request) {
@@ -112,8 +119,10 @@ public class GlobalExceptionHandler {
 
   private ProblemDetail problem(
       HttpStatus status, String code, String message, HttpServletRequest request, String traceId) {
-    var detail = ProblemDetail.forStatusAndDetail(status, message);
-    detail.setTitle(status.getReasonPhrase());
+    var locale = RequestLocale.from(request);
+    var localizedMessage = problemText.detail(code, message, locale);
+    var detail = ProblemDetail.forStatusAndDetail(status, localizedMessage);
+    detail.setTitle(problemText.title(status, locale));
     detail.setInstance(URI.create(request.getRequestURI()));
     detail.setProperty("code", code);
     detail.setProperty("timestamp", Instant.now().toString());

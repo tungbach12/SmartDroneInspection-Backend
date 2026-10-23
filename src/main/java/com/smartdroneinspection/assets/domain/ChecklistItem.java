@@ -39,8 +39,14 @@ public class ChecklistItem {
   @Column(name = "section_name", length = 160)
   private String sectionName;
 
-  @Column(nullable = false, length = 1000)
+  @Column(name = "section_name_vi", length = 160)
+  private String sectionNameVi;
+
+  @Column(name = "prompt", nullable = false, length = 1000)
   private String prompt;
+
+  @Column(name = "prompt_vi", length = 1000)
+  private String promptVi;
 
   @Enumerated(EnumType.STRING)
   @Column(name = "response_type", nullable = false, length = 24)
@@ -52,8 +58,11 @@ public class ChecklistItem {
   @Column(name = "display_order", nullable = false)
   private int displayOrder;
 
-  @Column(length = 2000)
+  @Column(name = "guidance", length = 2000)
   private String guidance;
+
+  @Column(name = "guidance_vi", length = 2000)
+  private String guidanceVi;
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "validation_config", columnDefinition = "jsonb")
@@ -74,17 +83,48 @@ public class ChecklistItem {
       int displayOrder,
       String guidance,
       String validationConfig) {
+    this(
+        template,
+        itemCode,
+        sectionName,
+        prompt,
+        null,
+        null,
+        responseType,
+        required,
+        displayOrder,
+        guidance,
+        null,
+        validationConfig);
+  }
+
+  ChecklistItem(
+      ChecklistTemplate template,
+      String itemCode,
+      String sectionName,
+      String prompt,
+      String sectionNameVi,
+      String promptVi,
+      ChecklistResponseType responseType,
+      boolean required,
+      int displayOrder,
+      String guidance,
+      String guidanceVi,
+      String validationConfig) {
     if (displayOrder < 0) {
       throw new IllegalArgumentException("Checklist item display order must not be negative");
     }
     this.template = template;
     this.itemCode = normalizeCode(itemCode);
     this.sectionName = sectionName;
+    this.sectionNameVi = sectionNameVi;
     this.prompt = prompt;
+    this.promptVi = promptVi;
     this.responseType = responseType;
     this.required = required;
     this.displayOrder = displayOrder;
     this.guidance = guidance;
+    this.guidanceVi = guidanceVi;
     this.validationConfig = validationConfig;
     this.createdAt = Instant.now();
   }
@@ -115,6 +155,28 @@ public class ChecklistItem {
 
   public String getGuidance() {
     return guidance;
+  }
+
+  public String localizedPrompt(Locale locale) {
+    return localized(prompt, promptVi, locale);
+  }
+
+  public String localizedSectionName(Locale locale) {
+    return localized(sectionName, sectionNameVi, locale);
+  }
+
+  public String localizedGuidance(Locale locale) {
+    return localized(guidance, guidanceVi, locale);
+  }
+
+  private static String localized(String english, String vietnamese, Locale locale) {
+    if (locale != null
+        && "vi".equalsIgnoreCase(locale.getLanguage())
+        && vietnamese != null
+        && !vietnamese.isBlank()) {
+      return vietnamese;
+    }
+    return english;
   }
 
   public ChecklistResponseType getResponseType() {

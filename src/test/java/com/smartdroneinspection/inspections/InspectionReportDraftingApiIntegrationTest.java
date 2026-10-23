@@ -19,6 +19,8 @@ import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.IOException;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -179,8 +181,8 @@ class InspectionReportDraftingApiIntegrationTest {
         templateId,
         fixture.inspectorId());
     jdbcTemplate.update(
-        "INSERT INTO checklist_items (id, template_id, item_code, prompt, response_type, required, display_order, created_at) "
-            + "VALUES (?, ?, 'ACCESS', 'Was the span accessible?', 'PASS_FAIL', TRUE, 0, CURRENT_TIMESTAMP)",
+        "INSERT INTO checklist_items (id, template_id, item_code, prompt, prompt_vi, response_type, required, display_order, created_at) "
+            + "VALUES (?, ?, 'ACCESS', 'Was the span accessible?', 'Nhịp cầu có thể tiếp cận không?', 'PASS_FAIL', TRUE, 0, CURRENT_TIMESTAMP)",
         itemId,
         templateId);
     UUID sessionId = UUID.randomUUID();
@@ -202,13 +204,14 @@ class InspectionReportDraftingApiIntegrationTest {
         fixture.inspectorId(),
         sessionId);
 
-    draft();
+    draft("vi");
 
+    assertThat(DraftingStub.LAST_CONTEXT.get().locale()).isEqualTo(Locale.forLanguageTag("vi"));
     assertThat(DraftingStub.LAST_CONTEXT.get().checklistResponses())
         .singleElement()
         .satisfies(
             response -> {
-              assertThat(response.prompt()).isEqualTo("Was the span accessible?");
+              assertThat(response.prompt()).isEqualTo("Nhịp cầu có thể tiếp cận không?");
               assertThat(response.responseValue()).isEqualTo("PASS");
               assertThat(response.notes()).isEqualTo("Clear access");
             });
@@ -378,14 +381,17 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   private UUID draft() throws Exception {
+    return draft(null);
+  }
+
+  private UUID draft(String language) throws Exception {
     confirmFindings(true);
+    var request =
+        post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
+            .with(principal(fixture.inspectorId(), "INSPECTOR"));
+    if (language != null) request.header("Accept-Language", language);
     org.springframework.test.web.servlet.MvcResult result =
-        mockMvc
-            .perform(
-                post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
-                    .with(principal(fixture.inspectorId(), "INSPECTOR")))
-            .andExpect(status().isOk())
-            .andReturn();
+        mockMvc.perform(request).andExpect(status().isOk()).andReturn();
     return UUID.fromString(
         objectMapper
             .readTree(result.getResponse().getContentAsString())

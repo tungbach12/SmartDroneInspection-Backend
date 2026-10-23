@@ -38,11 +38,17 @@ public class ChecklistTemplate {
   @Column(name = "asset_category_id")
   private UUID assetCategoryId;
 
-  @Column(nullable = false, length = 200)
+  @Column(name = "name", nullable = false, length = 200)
   private String name;
+
+  @Column(name = "name_vi", length = 200)
+  private String nameVi;
 
   @Column(length = 2000)
   private String description;
+
+  @Column(name = "description_vi", length = 2000)
+  private String descriptionVi;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
@@ -81,6 +87,26 @@ public class ChecklistTemplate {
       String name,
       String description,
       UUID createdByUserId) {
+    this(
+        templateKey,
+        versionNumber,
+        assetCategoryId,
+        name,
+        description,
+        null,
+        null,
+        createdByUserId);
+  }
+
+  public ChecklistTemplate(
+      String templateKey,
+      int versionNumber,
+      UUID assetCategoryId,
+      String name,
+      String description,
+      String nameVi,
+      String descriptionVi,
+      UUID createdByUserId) {
     if (versionNumber <= 0) {
       throw new IllegalArgumentException("Checklist template version must be positive");
     }
@@ -89,6 +115,8 @@ public class ChecklistTemplate {
     this.assetCategoryId = assetCategoryId;
     this.name = name;
     this.description = description;
+    this.nameVi = nameVi;
+    this.descriptionVi = descriptionVi;
     this.status = ChecklistTemplateStatus.DRAFT;
     this.createdByUserId = createdByUserId;
     this.createdAt = Instant.now();
@@ -104,6 +132,32 @@ public class ChecklistTemplate {
       int displayOrder,
       String guidance,
       String validationConfig) {
+    return addItem(
+        itemCode,
+        sectionName,
+        prompt,
+        null,
+        null,
+        responseType,
+        required,
+        displayOrder,
+        guidance,
+        null,
+        validationConfig);
+  }
+
+  public ChecklistItem addItem(
+      String itemCode,
+      String sectionName,
+      String prompt,
+      String sectionNameVi,
+      String promptVi,
+      ChecklistResponseType responseType,
+      boolean required,
+      int displayOrder,
+      String guidance,
+      String guidanceVi,
+      String validationConfig) {
     if (status != ChecklistTemplateStatus.DRAFT) {
       throw new IllegalStateException("Published checklist template is immutable");
     }
@@ -113,10 +167,13 @@ public class ChecklistTemplate {
             itemCode,
             sectionName,
             prompt,
+            sectionNameVi,
+            promptVi,
             responseType,
             required,
             displayOrder,
             guidance,
+            guidanceVi,
             validationConfig);
     items.add(item);
     updatedAt = Instant.now();
@@ -153,6 +210,24 @@ public class ChecklistTemplate {
 
   public String getName() {
     return name;
+  }
+
+  public String localizedName(Locale locale) {
+    return localized(name, nameVi, locale);
+  }
+
+  public String localizedDescription(Locale locale) {
+    return localized(description, descriptionVi, locale);
+  }
+
+  private static String localized(String english, String vietnamese, Locale locale) {
+    if (locale != null
+        && "vi".equalsIgnoreCase(locale.getLanguage())
+        && vietnamese != null
+        && !vietnamese.isBlank()) {
+      return vietnamese;
+    }
+    return english;
   }
 
   public int getVersionNumber() {

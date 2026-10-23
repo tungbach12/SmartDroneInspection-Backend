@@ -2,6 +2,7 @@ package com.smartdroneinspection.inspections.spi;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Outbound port for rendering a report version to its delivered document.
@@ -38,7 +39,47 @@ public interface ReportRenderPort {
       String publishedAt,
       Sections sections,
       List<FindingView> findings,
-      List<EvidenceView> evidence) {}
+      List<EvidenceView> evidence,
+      Locale locale) {
+    public RenderContext(
+        String documentRef,
+        int versionNo,
+        String status,
+        String objective,
+        String assetLabel,
+        String organizationLabel,
+        String authorName,
+        String reviewerName,
+        String findingsConfirmedAt,
+        ReportContext reportContext,
+        String authorVerifiedAt,
+        String reviewedAt,
+        String publishedAt,
+        String evidenceSnapshotHash,
+        Sections sections,
+        List<FindingView> findings,
+        List<EvidenceView> evidence) {
+      this(
+          documentRef,
+          versionNo,
+          status,
+          objective,
+          assetLabel,
+          organizationLabel,
+          authorName,
+          reviewerName,
+          findingsConfirmedAt,
+          reportContext,
+          authorVerifiedAt,
+          reviewedAt,
+          publishedAt,
+          evidenceSnapshotHash,
+          sections,
+          findings,
+          evidence,
+          Locale.ENGLISH);
+    }
+  }
 
   record ReportContext(
       String organizationName,

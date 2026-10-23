@@ -73,6 +73,10 @@ class PersistenceEntityOwnershipTest {
         Arguments.of(
             "inspections",
             "inspection_report_versions",
-            "com.smartdroneinspection.inspections.domain.InspectionReportVersion"));
+            "com.smartdroneinspection.inspections.domain.InspectionReportVersion"),
+        Arguments.of(
+            "inspections",
+            "checklist_responses",
+            "com.smartdroneinspection.inspections.domain.ChecklistResponse"));
   }
 }

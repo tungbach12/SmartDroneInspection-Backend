@@ -2,6 +2,7 @@ package com.smartdroneinspection.inspections.spi;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 
 /** Outbound port for generating draft report narratives from sanitized inspection data. */
 public interface ReportDraftPort {
@@ -36,7 +37,25 @@ public interface ReportDraftPort {
       List<FindingSummary> findings,
       List<EvidenceSummary> evidence,
       List<CandidateSummary> candidates,
-      List<FieldSessionSummary> fieldSessions) {}
+      List<FieldSessionSummary> fieldSessions,
+      Locale locale) {
+    public DraftContext(
+        InspectionSummary inspection,
+        List<ChecklistEntrySummary> checklistResponses,
+        List<FindingSummary> findings,
+        List<EvidenceSummary> evidence,
+        List<CandidateSummary> candidates,
+        List<FieldSessionSummary> fieldSessions) {
+      this(
+          inspection,
+          checklistResponses,
+          findings,
+          evidence,
+          candidates,
+          fieldSessions,
+          Locale.ENGLISH);
+    }
+  }
 
   record CandidateSummary(
       String candidateId,
