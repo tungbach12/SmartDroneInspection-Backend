@@ -1,23 +1,41 @@
--- V29: Storage and HNSW vector index for RAG repair standards and specifications
+-- V43: Storage and vector index for RAG repair standards and specifications
 
-CREATE TABLE IF NOT EXISTS repair_knowledge_chunks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    standard_code VARCHAR(64) NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    category VARCHAR(64) NOT NULL,
-    defect_patterns VARCHAR(255) NOT NULL,
-    content TEXT NOT NULL,
-    reference_url VARCHAR(500),
-    embedding vector(1536),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_category
-    ON repair_knowledge_chunks(category);
-
-CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_hnsw
-    ON repair_knowledge_chunks USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE TABLE IF NOT EXISTS repair_knowledge_chunks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            standard_code VARCHAR(64) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(64) NOT NULL,
+            defect_patterns VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            reference_url VARCHAR(500),
+            embedding vector(1536),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_category
+            ON repair_knowledge_chunks(category);
+        CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_hnsw
+            ON repair_knowledge_chunks USING hnsw (embedding vector_cosine_ops)
+            WITH (m = 16, ef_construction = 64);
+    ELSE
+        CREATE TABLE IF NOT EXISTS repair_knowledge_chunks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            standard_code VARCHAR(64) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(64) NOT NULL,
+            defect_patterns VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            reference_url VARCHAR(500),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_category
+            ON repair_knowledge_chunks(category);
+    END IF;
+END
+$$;
 
 -- Seed standard engineering guidelines for infrastructure repair
 INSERT INTO repair_knowledge_chunks (standard_code, title, category, defect_patterns, content, reference_url)
