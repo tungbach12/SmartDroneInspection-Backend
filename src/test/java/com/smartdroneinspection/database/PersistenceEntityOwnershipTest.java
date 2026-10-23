@@ -77,6 +77,14 @@ class PersistenceEntityOwnershipTest {
         Arguments.of(
             "inspections",
             "checklist_responses",
-            "com.smartdroneinspection.inspections.domain.ChecklistResponse"));
+            "com.smartdroneinspection.inspections.domain.ChecklistResponse"),
+        Arguments.of(
+            "subscriptions",
+            "payment_transactions",
+            "com.smartdroneinspection.subscriptions.domain.PaymentTransaction"),
+        Arguments.of(
+            "maintenance",
+            "repair_knowledge_chunks",
+            "com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk"));
   }
 }

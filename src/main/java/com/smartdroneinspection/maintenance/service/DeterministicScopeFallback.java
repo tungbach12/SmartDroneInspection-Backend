@@ -16,9 +16,7 @@ public class DeterministicScopeFallback {
   public SuggestedScope fallback(
       String defectLabel, String description, String component, String measurement) {
     String textToAnalyze =
-        ((defectLabel != null ? defectLabel : "")
-                + " "
-                + (description != null ? description : ""))
+        ((defectLabel != null ? defectLabel : "") + " " + (description != null ? description : ""))
             .toLowerCase(Locale.ROOT);
 
     if (textToAnalyze.contains("crack")

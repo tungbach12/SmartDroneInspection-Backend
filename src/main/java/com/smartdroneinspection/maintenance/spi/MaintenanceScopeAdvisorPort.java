@@ -30,6 +30,5 @@ public interface MaintenanceScopeAdvisorPort {
       List<String> referenceStandards,
       List<SuggestedTask> suggestedTasks) {}
 
-  record SuggestedTask(
-      int taskNumber, String name, String method, String acceptanceCriteria) {}
+  record SuggestedTask(int taskNumber, String name, String method, String acceptanceCriteria) {}
 }

@@ -76,20 +76,15 @@ public class MaintenanceScopeAdvisorService {
     if (request.sourceReportVersionId() != null && request.sourceFindingId() != null) {
       Optional<RepairCandidate> candidateOpt =
           repairCandidateAccess.findRepairCandidate(
-              actor.organizationId(),
-              request.sourceReportVersionId(),
-              request.sourceFindingId());
+              actor.organizationId(), request.sourceReportVersionId(), request.sourceFindingId());
 
       if (candidateOpt.isPresent()) {
         RepairCandidate candidate = candidateOpt.get();
         findingCode = candidate.findingCode();
         defectLabel = candidate.defectLabel();
         severity = candidate.severity();
-        description = candidate.description();
+        description = candidate.technicalNotes();
         recommendedAction = candidate.recommendedAction();
-        component = candidate.component();
-        locationDescription = candidate.locationDescription();
-        measurement = candidate.measurement();
       }
     }
 
@@ -134,7 +129,9 @@ public class MaintenanceScopeAdvisorService {
           return toResponse(aiScope, port.modelName(), false);
         }
       } catch (IOException | RuntimeException e) {
-        log.warn("AI scope advisor failed; activating deterministic engineering fallback: {}", e.getMessage());
+        log.warn(
+            "AI scope advisor failed; activating deterministic engineering fallback: {}",
+            e.getMessage());
       }
     }
 
@@ -184,7 +181,8 @@ public class MaintenanceScopeAdvisorService {
     List<SuggestedTaskDto> taskDtos = new ArrayList<>();
     if (scope.suggestedTasks() != null) {
       for (var t : scope.suggestedTasks()) {
-        taskDtos.add(new SuggestedTaskDto(t.taskNumber(), t.name(), t.method(), t.acceptanceCriteria()));
+        taskDtos.add(
+            new SuggestedTaskDto(t.taskNumber(), t.name(), t.method(), t.acceptanceCriteria()));
       }
     }
 

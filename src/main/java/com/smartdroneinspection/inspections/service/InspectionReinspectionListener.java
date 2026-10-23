@@ -1,10 +1,10 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import java.time.Instant;
 import java.util.Optional;
@@ -20,10 +20,10 @@ public class InspectionReinspectionListener {
   private static final Logger log = LoggerFactory.getLogger(InspectionReinspectionListener.class);
 
   private final InspectionRepository inspections;
-  private final VerifiedFindingRepository findings;
+  private final FindingRepository findings;
 
   public InspectionReinspectionListener(
-      InspectionRepository inspections, VerifiedFindingRepository findings) {
+      InspectionRepository inspections, FindingRepository findings) {
     this.inspections = inspections;
     this.findings = findings;
   }
@@ -35,9 +35,8 @@ public class InspectionReinspectionListener {
         event.workOrderId(),
         event.sourceFindingId());
 
-    Optional<VerifiedFinding> findingOpt = findings.findById(event.sourceFindingId());
-    String defectLabel =
-        findingOpt.map(VerifiedFinding::getDefectLabel).orElse("Unspecified defect");
+    Optional<Finding> findingOpt = findings.findById(event.sourceFindingId());
+    String defectLabel = findingOpt.map(Finding::getDefectLabel).orElse("Unspecified defect");
     String objective =
         "Re-inspection for Work Order "
             + event.workOrderId()

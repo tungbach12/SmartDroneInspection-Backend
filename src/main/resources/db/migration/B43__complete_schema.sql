@@ -12,7 +12,6 @@ SET idle_in_transaction_session_timeout = 0;
 SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '${baseline_schema}', false);
 SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
@@ -22,12 +21,12 @@ SET row_security = off;
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA ${baseline_extension_schema};
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
-        CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA ${baseline_extension_schema};
+        CREATE EXTENSION IF NOT EXISTS vector;
     ELSE
         RAISE NOTICE 'pgvector extension is not installed; skipping.';
     END IF;
@@ -50,7 +49,7 @@ SET default_table_access_method = heap;
 -- Name: asset_categories; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.asset_categories (
+CREATE TABLE asset_categories (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     code character varying(64) NOT NULL,
     name character varying(160) NOT NULL,
@@ -68,7 +67,7 @@ CREATE TABLE ${baseline_schema}.asset_categories (
 -- Name: asset_documents; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.asset_documents (
+CREATE TABLE asset_documents (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     asset_id uuid NOT NULL,
     uploaded_by_user_id uuid NOT NULL,
@@ -91,7 +90,7 @@ CREATE TABLE ${baseline_schema}.asset_documents (
 -- Name: asset_pair_assignments; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.asset_pair_assignments (
+CREATE TABLE asset_pair_assignments (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     asset_id uuid NOT NULL,
@@ -119,21 +118,21 @@ CREATE TABLE ${baseline_schema}.asset_pair_assignments (
 -- Name: COLUMN asset_pair_assignments.assignment_response; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN ${baseline_schema}.asset_pair_assignments.assignment_response IS 'Inspector answer to the assignment: ACCEPTED or REJECTED (MF2-01). NULL until the assigned inspector responds. Independent of status, which tracks the pair''s own validity window rather than the answer.';
+COMMENT ON COLUMN asset_pair_assignments.assignment_response IS 'Inspector answer to the assignment: ACCEPTED or REJECTED (MF2-01). NULL until the assigned inspector responds. Independent of status, which tracks the pair''s own validity window rather than the answer.';
 
 
 --
 -- Name: COLUMN asset_pair_assignments.responded_at; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN ${baseline_schema}.asset_pair_assignments.responded_at IS 'Instant the assigned inspector answered. Records when the response arrived so a missed or late answer is distinguishable from no answer at all.';
+COMMENT ON COLUMN asset_pair_assignments.responded_at IS 'Instant the assigned inspector answered. Records when the response arrived so a missed or late answer is distinguishable from no answer at all.';
 
 
 --
 -- Name: assets; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.assets (
+CREATE TABLE assets (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     category_id uuid NOT NULL,
@@ -159,7 +158,7 @@ CREATE TABLE ${baseline_schema}.assets (
 -- Name: audit_events; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.audit_events (
+CREATE TABLE audit_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid,
     actor_user_id uuid,
@@ -180,7 +179,7 @@ CREATE TABLE ${baseline_schema}.audit_events (
 -- Name: auth_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.auth_sessions (
+CREATE TABLE auth_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     user_id uuid NOT NULL,
     client_type character varying(16) NOT NULL,
@@ -195,7 +194,7 @@ CREATE TABLE ${baseline_schema}.auth_sessions (
 -- Name: checklist_items; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.checklist_items (
+CREATE TABLE checklist_items (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     template_id uuid NOT NULL,
     item_code character varying(64) NOT NULL,
@@ -221,7 +220,7 @@ CREATE TABLE ${baseline_schema}.checklist_items (
 -- Name: checklist_responses; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.checklist_responses (
+CREATE TABLE checklist_responses (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
     checklist_item_id uuid NOT NULL,
@@ -245,7 +244,7 @@ CREATE TABLE ${baseline_schema}.checklist_responses (
 -- Name: checklist_templates; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.checklist_templates (
+CREATE TABLE checklist_templates (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     template_key character varying(64) NOT NULL,
     version_number integer NOT NULL,
@@ -274,7 +273,7 @@ CREATE TABLE ${baseline_schema}.checklist_templates (
 -- Name: drone_documents; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.drone_documents (
+CREATE TABLE drone_documents (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     drone_id uuid NOT NULL,
     document_type character varying(48) NOT NULL,
@@ -298,7 +297,7 @@ CREATE TABLE ${baseline_schema}.drone_documents (
 -- Name: drones; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.drones (
+CREATE TABLE drones (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     serial_number character varying(128) NOT NULL,
@@ -320,7 +319,7 @@ CREATE TABLE ${baseline_schema}.drones (
 -- Name: event_publication; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.event_publication (
+CREATE TABLE event_publication (
     id uuid NOT NULL,
     listener_id text NOT NULL,
     event_type text NOT NULL,
@@ -337,7 +336,7 @@ CREATE TABLE ${baseline_schema}.event_publication (
 -- Name: evidence; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.evidence (
+CREATE TABLE evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid,
     maintenance_work_log_id uuid,
@@ -374,7 +373,7 @@ CREATE TABLE ${baseline_schema}.evidence (
 -- Name: field_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.field_sessions (
+CREATE TABLE field_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
     organization_id uuid NOT NULL,
@@ -403,7 +402,7 @@ CREATE TABLE ${baseline_schema}.field_sessions (
 -- Name: findings; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.findings (
+CREATE TABLE findings (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
     evidence_id uuid,
@@ -434,7 +433,7 @@ CREATE TABLE ${baseline_schema}.findings (
 -- Name: flight_permits; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.flight_permits (
+CREATE TABLE flight_permits (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     asset_id uuid,
@@ -463,7 +462,7 @@ CREATE TABLE ${baseline_schema}.flight_permits (
 -- Name: inspection_preparations; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.inspection_preparations (
+CREATE TABLE inspection_preparations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
     inspector_user_id uuid NOT NULL,
@@ -487,14 +486,14 @@ CREATE TABLE ${baseline_schema}.inspection_preparations (
 -- Name: TABLE inspection_preparations; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE ${baseline_schema}.inspection_preparations IS 'Storage contract only; MF1-MF4 workflow execution is outside this cutover.';
+COMMENT ON TABLE inspection_preparations IS 'Storage contract only; MF1-MF4 workflow execution is outside this cutover.';
 
 
 --
 -- Name: inspection_readiness_decisions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.inspection_readiness_decisions (
+CREATE TABLE inspection_readiness_decisions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
     preparation_id uuid,
@@ -515,7 +514,7 @@ CREATE TABLE ${baseline_schema}.inspection_readiness_decisions (
 -- Name: inspection_report_versions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.inspection_report_versions (
+CREATE TABLE inspection_report_versions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_report_id uuid NOT NULL,
     version_no integer NOT NULL,
@@ -541,7 +540,7 @@ CREATE TABLE ${baseline_schema}.inspection_report_versions (
 -- Name: inspection_reports; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.inspection_reports (
+CREATE TABLE inspection_reports (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
     author_user_id uuid NOT NULL,
@@ -559,14 +558,14 @@ CREATE TABLE ${baseline_schema}.inspection_reports (
 -- Name: TABLE inspection_reports; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE ${baseline_schema}.inspection_reports IS 'MF3 report aggregate. The human gates live on inspection_report_versions; see Report 3 sections 3.7.1 and 3.7.3.';
+COMMENT ON TABLE inspection_reports IS 'MF3 report aggregate. The human gates live on inspection_report_versions; see Report 3 sections 3.7.1 and 3.7.3.';
 
 
 --
 -- Name: inspection_schedules; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.inspection_schedules (
+CREATE TABLE inspection_schedules (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     asset_id uuid NOT NULL,
     next_due_at timestamp with time zone NOT NULL,
@@ -587,7 +586,7 @@ CREATE TABLE ${baseline_schema}.inspection_schedules (
 -- Name: inspections; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.inspections (
+CREATE TABLE inspections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     asset_id uuid NOT NULL,
     status character varying(32) NOT NULL,
@@ -616,7 +615,7 @@ CREATE TABLE ${baseline_schema}.inspections (
 -- Name: maintenance_acceptance_decisions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_acceptance_decisions (
+CREATE TABLE maintenance_acceptance_decisions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     report_version_id uuid NOT NULL,
@@ -636,7 +635,7 @@ CREATE TABLE ${baseline_schema}.maintenance_acceptance_decisions (
 -- Name: maintenance_change_orders; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_change_orders (
+CREATE TABLE maintenance_change_orders (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     change_number integer NOT NULL,
@@ -663,7 +662,7 @@ CREATE TABLE ${baseline_schema}.maintenance_change_orders (
 -- Name: maintenance_cost_lines; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_cost_lines (
+CREATE TABLE maintenance_cost_lines (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     estimate_version_id uuid,
@@ -692,7 +691,7 @@ CREATE TABLE ${baseline_schema}.maintenance_cost_lines (
 -- Name: maintenance_estimate_versions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_estimate_versions (
+CREATE TABLE maintenance_estimate_versions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     version_no integer NOT NULL,
@@ -716,7 +715,7 @@ CREATE TABLE ${baseline_schema}.maintenance_estimate_versions (
 -- Name: maintenance_report_versions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_report_versions (
+CREATE TABLE maintenance_report_versions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     version_no integer NOT NULL,
@@ -744,7 +743,7 @@ CREATE TABLE ${baseline_schema}.maintenance_report_versions (
 -- Name: maintenance_tasks; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_tasks (
+CREATE TABLE maintenance_tasks (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     task_number integer NOT NULL,
@@ -769,7 +768,7 @@ CREATE TABLE ${baseline_schema}.maintenance_tasks (
 -- Name: maintenance_team_members; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_team_members (
+CREATE TABLE maintenance_team_members (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     engineer_user_id uuid NOT NULL,
@@ -789,7 +788,7 @@ CREATE TABLE ${baseline_schema}.maintenance_team_members (
 -- Name: maintenance_work_logs; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_work_logs (
+CREATE TABLE maintenance_work_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     engineer_user_id uuid NOT NULL,
     started_at timestamp with time zone NOT NULL,
@@ -813,7 +812,7 @@ CREATE TABLE ${baseline_schema}.maintenance_work_logs (
 -- Name: maintenance_work_orders; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.maintenance_work_orders (
+CREATE TABLE maintenance_work_orders (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     asset_id uuid NOT NULL,
@@ -840,14 +839,14 @@ CREATE TABLE ${baseline_schema}.maintenance_work_orders (
 -- Name: TABLE maintenance_work_orders; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE ${baseline_schema}.maintenance_work_orders IS 'Storage contract only; MF1-MF4 workflow execution is outside this cutover.';
+COMMENT ON TABLE maintenance_work_orders IS 'Storage contract only; MF1-MF4 workflow execution is outside this cutover.';
 
 
 --
 -- Name: notifications; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.notifications (
+CREATE TABLE notifications (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     recipient_user_id uuid NOT NULL,
     organization_id uuid,
@@ -879,7 +878,7 @@ CREATE TABLE ${baseline_schema}.notifications (
 -- Name: organizations; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.organizations (
+CREATE TABLE organizations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -897,7 +896,7 @@ CREATE TABLE ${baseline_schema}.organizations (
 -- Name: refresh_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.refresh_tokens (
+CREATE TABLE refresh_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_id uuid NOT NULL,
     token_hash character varying(64) NOT NULL,
@@ -913,7 +912,7 @@ CREATE TABLE ${baseline_schema}.refresh_tokens (
 -- Name: report_version_evidence; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.report_version_evidence (
+CREATE TABLE report_version_evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     report_version_id uuid NOT NULL,
     evidence_id uuid NOT NULL,
@@ -925,7 +924,7 @@ CREATE TABLE ${baseline_schema}.report_version_evidence (
 -- Name: report_version_findings; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.report_version_findings (
+CREATE TABLE report_version_findings (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     report_version_id uuid NOT NULL,
     finding_id uuid NOT NULL,
@@ -937,7 +936,7 @@ CREATE TABLE ${baseline_schema}.report_version_findings (
 -- Name: subscriptions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.subscriptions (
+CREATE TABLE subscriptions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     plan_code character varying(32) NOT NULL,
@@ -963,7 +962,7 @@ CREATE TABLE ${baseline_schema}.subscriptions (
 -- Name: payment_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.payment_transactions (
+CREATE TABLE payment_transactions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     subscription_id uuid NOT NULL,
     paypal_order_id character varying(64) NOT NULL,
@@ -984,7 +983,7 @@ CREATE TABLE ${baseline_schema}.payment_transactions (
 -- Name: user_roles; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.user_roles (
+CREATE TABLE user_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     user_id uuid NOT NULL,
     role character varying(64) NOT NULL,
@@ -996,14 +995,14 @@ CREATE TABLE ${baseline_schema}.user_roles (
 -- Name: CONSTRAINT ck_user_roles_role ON user_roles; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON CONSTRAINT ck_user_roles_role ON ${baseline_schema}.user_roles IS 'Target role vocabulary: ADMIN, ORG_ADMIN, INSPECTOR, MAINTENANCE_ENGINEER.';
+COMMENT ON CONSTRAINT ck_user_roles_role ON user_roles IS 'Target role vocabulary: ADMIN, ORG_ADMIN, INSPECTOR, MAINTENANCE_ENGINEER.';
 
 
 --
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.users (
+CREATE TABLE users (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     email character varying(320) NOT NULL,
     normalized_email character varying(320) NOT NULL,
@@ -1034,7 +1033,7 @@ CREATE TABLE ${baseline_schema}.users (
 -- Name: workforce_credentials; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE ${baseline_schema}.workforce_credentials (
+CREATE TABLE workforce_credentials (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1059,7 +1058,7 @@ CREATE TABLE ${baseline_schema}.workforce_credentials (
 -- Name: asset_categories asset_categories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_categories
+ALTER TABLE ONLY asset_categories
     ADD CONSTRAINT asset_categories_pkey PRIMARY KEY (id);
 
 
@@ -1067,7 +1066,7 @@ ALTER TABLE ONLY ${baseline_schema}.asset_categories
 -- Name: asset_documents asset_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_documents
+ALTER TABLE ONLY asset_documents
     ADD CONSTRAINT asset_documents_pkey PRIMARY KEY (id);
 
 
@@ -1075,7 +1074,7 @@ ALTER TABLE ONLY ${baseline_schema}.asset_documents
 -- Name: asset_pair_assignments asset_pair_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
+ALTER TABLE ONLY asset_pair_assignments
     ADD CONSTRAINT asset_pair_assignments_pkey PRIMARY KEY (id);
 
 
@@ -1083,7 +1082,7 @@ ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
 -- Name: assets assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.assets
+ALTER TABLE ONLY assets
     ADD CONSTRAINT assets_pkey PRIMARY KEY (id);
 
 
@@ -1091,7 +1090,7 @@ ALTER TABLE ONLY ${baseline_schema}.assets
 -- Name: audit_events audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.audit_events
+ALTER TABLE ONLY audit_events
     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
 
 
@@ -1099,7 +1098,7 @@ ALTER TABLE ONLY ${baseline_schema}.audit_events
 -- Name: auth_sessions auth_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.auth_sessions
+ALTER TABLE ONLY auth_sessions
     ADD CONSTRAINT auth_sessions_pkey PRIMARY KEY (id);
 
 
@@ -1107,7 +1106,7 @@ ALTER TABLE ONLY ${baseline_schema}.auth_sessions
 -- Name: checklist_items checklist_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_items
+ALTER TABLE ONLY checklist_items
     ADD CONSTRAINT checklist_items_pkey PRIMARY KEY (id);
 
 
@@ -1115,7 +1114,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_items
 -- Name: checklist_responses checklist_responses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
+ALTER TABLE ONLY checklist_responses
     ADD CONSTRAINT checklist_responses_pkey PRIMARY KEY (id);
 
 
@@ -1123,7 +1122,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_responses
 -- Name: checklist_templates checklist_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_templates
+ALTER TABLE ONLY checklist_templates
     ADD CONSTRAINT checklist_templates_pkey PRIMARY KEY (id);
 
 
@@ -1131,7 +1130,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_templates
 -- Name: drone_documents drone_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drone_documents
+ALTER TABLE ONLY drone_documents
     ADD CONSTRAINT drone_documents_pkey PRIMARY KEY (id);
 
 
@@ -1139,7 +1138,7 @@ ALTER TABLE ONLY ${baseline_schema}.drone_documents
 -- Name: drones drones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drones
+ALTER TABLE ONLY drones
     ADD CONSTRAINT drones_pkey PRIMARY KEY (id);
 
 
@@ -1147,7 +1146,7 @@ ALTER TABLE ONLY ${baseline_schema}.drones
 -- Name: event_publication event_publication_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.event_publication
+ALTER TABLE ONLY event_publication
     ADD CONSTRAINT event_publication_pkey PRIMARY KEY (id);
 
 
@@ -1155,7 +1154,7 @@ ALTER TABLE ONLY ${baseline_schema}.event_publication
 -- Name: evidence evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
+ALTER TABLE ONLY evidence
     ADD CONSTRAINT evidence_pkey PRIMARY KEY (id);
 
 
@@ -1163,7 +1162,7 @@ ALTER TABLE ONLY ${baseline_schema}.evidence
 -- Name: field_sessions field_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
+ALTER TABLE ONLY field_sessions
     ADD CONSTRAINT field_sessions_pkey PRIMARY KEY (id);
 
 
@@ -1171,7 +1170,7 @@ ALTER TABLE ONLY ${baseline_schema}.field_sessions
 -- Name: flight_permits flight_permits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
+ALTER TABLE ONLY flight_permits
     ADD CONSTRAINT flight_permits_pkey PRIMARY KEY (id);
 
 
@@ -1179,7 +1178,7 @@ ALTER TABLE ONLY ${baseline_schema}.flight_permits
 -- Name: inspection_preparations inspection_preparations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_preparations
+ALTER TABLE ONLY inspection_preparations
     ADD CONSTRAINT inspection_preparations_pkey PRIMARY KEY (id);
 
 
@@ -1187,7 +1186,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_preparations
 -- Name: inspection_readiness_decisions inspection_readiness_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_readiness_decisions
+ALTER TABLE ONLY inspection_readiness_decisions
     ADD CONSTRAINT inspection_readiness_decisions_pkey PRIMARY KEY (id);
 
 
@@ -1195,7 +1194,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_readiness_decisions
 -- Name: inspection_report_versions inspection_report_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
+ALTER TABLE ONLY inspection_report_versions
     ADD CONSTRAINT inspection_report_versions_pkey PRIMARY KEY (id);
 
 
@@ -1203,7 +1202,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
 -- Name: inspection_reports inspection_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_reports
+ALTER TABLE ONLY inspection_reports
     ADD CONSTRAINT inspection_reports_pkey PRIMARY KEY (id);
 
 
@@ -1211,7 +1210,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_reports
 -- Name: inspection_schedules inspection_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_schedules
+ALTER TABLE ONLY inspection_schedules
     ADD CONSTRAINT inspection_schedules_pkey PRIMARY KEY (id);
 
 
@@ -1219,7 +1218,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_schedules
 -- Name: inspections inspections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
+ALTER TABLE ONLY inspections
     ADD CONSTRAINT inspections_pkey PRIMARY KEY (id);
 
 
@@ -1227,7 +1226,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspections
 -- Name: maintenance_acceptance_decisions maintenance_acceptance_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_acceptance_decisions
+ALTER TABLE ONLY maintenance_acceptance_decisions
     ADD CONSTRAINT maintenance_acceptance_decisions_pkey PRIMARY KEY (id);
 
 
@@ -1235,7 +1234,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_acceptance_decisions
 -- Name: maintenance_change_orders maintenance_change_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
+ALTER TABLE ONLY maintenance_change_orders
     ADD CONSTRAINT maintenance_change_orders_pkey PRIMARY KEY (id);
 
 
@@ -1243,7 +1242,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
 -- Name: maintenance_cost_lines maintenance_cost_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
+ALTER TABLE ONLY maintenance_cost_lines
     ADD CONSTRAINT maintenance_cost_lines_pkey PRIMARY KEY (id);
 
 
@@ -1251,7 +1250,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
 -- Name: maintenance_estimate_versions maintenance_estimate_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
+ALTER TABLE ONLY maintenance_estimate_versions
     ADD CONSTRAINT maintenance_estimate_versions_pkey PRIMARY KEY (id);
 
 
@@ -1259,7 +1258,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
 -- Name: maintenance_report_versions maintenance_report_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_report_versions
+ALTER TABLE ONLY maintenance_report_versions
     ADD CONSTRAINT maintenance_report_versions_pkey PRIMARY KEY (id);
 
 
@@ -1267,7 +1266,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_report_versions
 -- Name: maintenance_tasks maintenance_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_tasks
+ALTER TABLE ONLY maintenance_tasks
     ADD CONSTRAINT maintenance_tasks_pkey PRIMARY KEY (id);
 
 
@@ -1275,7 +1274,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_tasks
 -- Name: maintenance_team_members maintenance_team_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_team_members
+ALTER TABLE ONLY maintenance_team_members
     ADD CONSTRAINT maintenance_team_members_pkey PRIMARY KEY (id);
 
 
@@ -1283,7 +1282,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_team_members
 -- Name: maintenance_work_logs maintenance_work_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_logs
+ALTER TABLE ONLY maintenance_work_logs
     ADD CONSTRAINT maintenance_work_logs_pkey PRIMARY KEY (id);
 
 
@@ -1291,7 +1290,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_work_logs
 -- Name: maintenance_work_orders maintenance_work_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
+ALTER TABLE ONLY maintenance_work_orders
     ADD CONSTRAINT maintenance_work_orders_pkey PRIMARY KEY (id);
 
 
@@ -1299,7 +1298,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
 -- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.notifications
+ALTER TABLE ONLY notifications
     ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
 
 
@@ -1307,7 +1306,7 @@ ALTER TABLE ONLY ${baseline_schema}.notifications
 -- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.organizations
+ALTER TABLE ONLY organizations
     ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
 
 
@@ -1315,7 +1314,7 @@ ALTER TABLE ONLY ${baseline_schema}.organizations
 -- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.refresh_tokens
+ALTER TABLE ONLY refresh_tokens
     ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
 
 
@@ -1323,7 +1322,7 @@ ALTER TABLE ONLY ${baseline_schema}.refresh_tokens
 -- Name: report_version_evidence report_version_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_evidence
+ALTER TABLE ONLY report_version_evidence
     ADD CONSTRAINT report_version_evidence_pkey PRIMARY KEY (id);
 
 
@@ -1331,7 +1330,7 @@ ALTER TABLE ONLY ${baseline_schema}.report_version_evidence
 -- Name: report_version_findings report_version_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_findings
+ALTER TABLE ONLY report_version_findings
     ADD CONSTRAINT report_version_findings_pkey PRIMARY KEY (id);
 
 
@@ -1339,13 +1338,13 @@ ALTER TABLE ONLY ${baseline_schema}.report_version_findings
 -- Name: subscriptions subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.subscriptions
+ALTER TABLE ONLY subscriptions
     ADD CONSTRAINT subscriptions_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY ${baseline_schema}.payment_transactions
+ALTER TABLE ONLY payment_transactions
     ADD CONSTRAINT payment_transactions_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY ${baseline_schema}.payment_transactions
+ALTER TABLE ONLY payment_transactions
     ADD CONSTRAINT uq_payment_transactions_capture UNIQUE (paypal_capture_id);
 
 
@@ -1353,7 +1352,7 @@ ALTER TABLE ONLY ${baseline_schema}.payment_transactions
 -- Name: asset_categories uq_asset_categories_code; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_categories
+ALTER TABLE ONLY asset_categories
     ADD CONSTRAINT uq_asset_categories_code UNIQUE (code);
 
 
@@ -1361,7 +1360,7 @@ ALTER TABLE ONLY ${baseline_schema}.asset_categories
 -- Name: asset_documents uq_asset_documents_checksum; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_documents
+ALTER TABLE ONLY asset_documents
     ADD CONSTRAINT uq_asset_documents_checksum UNIQUE (asset_id, checksum_sha256);
 
 
@@ -1369,7 +1368,7 @@ ALTER TABLE ONLY ${baseline_schema}.asset_documents
 -- Name: asset_documents uq_asset_documents_object_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_documents
+ALTER TABLE ONLY asset_documents
     ADD CONSTRAINT uq_asset_documents_object_key UNIQUE (object_key);
 
 
@@ -1377,7 +1376,7 @@ ALTER TABLE ONLY ${baseline_schema}.asset_documents
 -- Name: checklist_items uq_checklist_item_code; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_items
+ALTER TABLE ONLY checklist_items
     ADD CONSTRAINT uq_checklist_item_code UNIQUE (template_id, item_code);
 
 
@@ -1385,7 +1384,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_items
 -- Name: checklist_items uq_checklist_item_order; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_items
+ALTER TABLE ONLY checklist_items
     ADD CONSTRAINT uq_checklist_item_order UNIQUE (template_id, display_order);
 
 
@@ -1393,7 +1392,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_items
 -- Name: checklist_responses uq_checklist_responses_item; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
+ALTER TABLE ONLY checklist_responses
     ADD CONSTRAINT uq_checklist_responses_item UNIQUE (inspection_id, checklist_item_id);
 
 
@@ -1401,7 +1400,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_responses
 -- Name: checklist_templates uq_checklist_template_version; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_templates
+ALTER TABLE ONLY checklist_templates
     ADD CONSTRAINT uq_checklist_template_version UNIQUE (template_key, version_number);
 
 
@@ -1409,7 +1408,7 @@ ALTER TABLE ONLY ${baseline_schema}.checklist_templates
 -- Name: drone_documents uq_drone_documents_object_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drone_documents
+ALTER TABLE ONLY drone_documents
     ADD CONSTRAINT uq_drone_documents_object_key UNIQUE (object_key);
 
 
@@ -1417,7 +1416,7 @@ ALTER TABLE ONLY ${baseline_schema}.drone_documents
 -- Name: drones uq_drones_organization_serial; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drones
+ALTER TABLE ONLY drones
     ADD CONSTRAINT uq_drones_organization_serial UNIQUE (organization_id, serial_number);
 
 
@@ -1425,7 +1424,7 @@ ALTER TABLE ONLY ${baseline_schema}.drones
 -- Name: evidence uq_evidence_object_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
+ALTER TABLE ONLY evidence
     ADD CONSTRAINT uq_evidence_object_key UNIQUE (object_key);
 
 
@@ -1433,7 +1432,7 @@ ALTER TABLE ONLY ${baseline_schema}.evidence
 -- Name: findings uq_findings_code; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.findings
+ALTER TABLE ONLY findings
     ADD CONSTRAINT uq_findings_code UNIQUE (inspection_id, finding_code);
 
 
@@ -1441,7 +1440,7 @@ ALTER TABLE ONLY ${baseline_schema}.findings
 -- Name: inspection_preparations uq_inspection_preparations_version; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_preparations
+ALTER TABLE ONLY inspection_preparations
     ADD CONSTRAINT uq_inspection_preparations_version UNIQUE (inspection_id, preparation_version);
 
 
@@ -1449,7 +1448,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_preparations
 -- Name: inspection_report_versions uq_inspection_report_versions_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
+ALTER TABLE ONLY inspection_report_versions
     ADD CONSTRAINT uq_inspection_report_versions_number UNIQUE (inspection_report_id, version_no);
 
 
@@ -1457,7 +1456,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
 -- Name: inspection_reports uq_inspection_reports_inspection; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_reports
+ALTER TABLE ONLY inspection_reports
     ADD CONSTRAINT uq_inspection_reports_inspection UNIQUE (inspection_id);
 
 
@@ -1465,7 +1464,7 @@ ALTER TABLE ONLY ${baseline_schema}.inspection_reports
 -- Name: maintenance_change_orders uq_maintenance_change_orders_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
+ALTER TABLE ONLY maintenance_change_orders
     ADD CONSTRAINT uq_maintenance_change_orders_number UNIQUE (work_order_id, change_number);
 
 
@@ -1473,7 +1472,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
 -- Name: maintenance_estimate_versions uq_maintenance_estimate_versions_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
+ALTER TABLE ONLY maintenance_estimate_versions
     ADD CONSTRAINT uq_maintenance_estimate_versions_number UNIQUE (work_order_id, version_no);
 
 
@@ -1481,7 +1480,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
 -- Name: maintenance_report_versions uq_maintenance_report_versions_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_report_versions
+ALTER TABLE ONLY maintenance_report_versions
     ADD CONSTRAINT uq_maintenance_report_versions_number UNIQUE (work_order_id, version_no);
 
 
@@ -1489,7 +1488,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_report_versions
 -- Name: maintenance_tasks uq_maintenance_tasks_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_tasks
+ALTER TABLE ONLY maintenance_tasks
     ADD CONSTRAINT uq_maintenance_tasks_number UNIQUE (work_order_id, task_number);
 
 
@@ -1497,7 +1496,7 @@ ALTER TABLE ONLY ${baseline_schema}.maintenance_tasks
 -- Name: refresh_tokens uq_refresh_tokens_hash; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.refresh_tokens
+ALTER TABLE ONLY refresh_tokens
     ADD CONSTRAINT uq_refresh_tokens_hash UNIQUE (token_hash);
 
 
@@ -1505,7 +1504,7 @@ ALTER TABLE ONLY ${baseline_schema}.refresh_tokens
 -- Name: report_version_evidence uq_report_version_evidence; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_evidence
+ALTER TABLE ONLY report_version_evidence
     ADD CONSTRAINT uq_report_version_evidence UNIQUE (report_version_id, evidence_id);
 
 
@@ -1513,7 +1512,7 @@ ALTER TABLE ONLY ${baseline_schema}.report_version_evidence
 -- Name: report_version_findings uq_report_version_findings; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_findings
+ALTER TABLE ONLY report_version_findings
     ADD CONSTRAINT uq_report_version_findings UNIQUE (report_version_id, finding_id);
 
 
@@ -1521,7 +1520,7 @@ ALTER TABLE ONLY ${baseline_schema}.report_version_findings
 -- Name: user_roles uq_user_roles; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.user_roles
+ALTER TABLE ONLY user_roles
     ADD CONSTRAINT uq_user_roles UNIQUE (user_id, role);
 
 
@@ -1529,7 +1528,7 @@ ALTER TABLE ONLY ${baseline_schema}.user_roles
 -- Name: users uq_users_normalized_email; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.users
+ALTER TABLE ONLY users
     ADD CONSTRAINT uq_users_normalized_email UNIQUE (normalized_email);
 
 
@@ -1537,7 +1536,7 @@ ALTER TABLE ONLY ${baseline_schema}.users
 -- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.user_roles
+ALTER TABLE ONLY user_roles
     ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
 
 
@@ -1545,7 +1544,7 @@ ALTER TABLE ONLY ${baseline_schema}.user_roles
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.users
+ALTER TABLE ONLY users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
 
@@ -1553,7 +1552,7 @@ ALTER TABLE ONLY ${baseline_schema}.users
 -- Name: findings verified_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.findings
+ALTER TABLE ONLY findings
     ADD CONSTRAINT verified_findings_pkey PRIMARY KEY (id);
 
 
@@ -1561,7 +1560,7 @@ ALTER TABLE ONLY ${baseline_schema}.findings
 -- Name: workforce_credentials workforce_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.workforce_credentials
+ALTER TABLE ONLY workforce_credentials
     ADD CONSTRAINT workforce_credentials_pkey PRIMARY KEY (id);
 
 
@@ -1569,1409 +1568,1492 @@ ALTER TABLE ONLY ${baseline_schema}.workforce_credentials
 -- Name: event_publication_by_completion_date_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX event_publication_by_completion_date_idx ON ${baseline_schema}.event_publication USING btree (completion_date);
+CREATE INDEX event_publication_by_completion_date_idx ON event_publication USING btree (completion_date);
 
 
 --
 -- Name: event_publication_serialized_event_hash_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX event_publication_serialized_event_hash_idx ON ${baseline_schema}.event_publication USING hash (serialized_event);
+CREATE INDEX event_publication_serialized_event_hash_idx ON event_publication USING hash (serialized_event);
 
 
 --
 -- Name: ix_asset_documents_asset_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_asset_documents_asset_time ON ${baseline_schema}.asset_documents USING btree (asset_id, created_at DESC);
+CREATE INDEX ix_asset_documents_asset_time ON asset_documents USING btree (asset_id, created_at DESC);
 
 
 --
 -- Name: ix_asset_pair_assignments_asset_status_from; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_asset_pair_assignments_asset_status_from ON ${baseline_schema}.asset_pair_assignments USING btree (asset_id, status, valid_from);
+CREATE INDEX ix_asset_pair_assignments_asset_status_from ON asset_pair_assignments USING btree (asset_id, status, valid_from);
 
 
 --
 -- Name: ix_assets_category; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_assets_category ON ${baseline_schema}.assets USING btree (category_id);
+CREATE INDEX ix_assets_category ON assets USING btree (category_id);
 
 
 --
 -- Name: ix_assets_organization_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_assets_organization_status ON ${baseline_schema}.assets USING btree (organization_id, status, name);
+CREATE INDEX ix_assets_organization_status ON assets USING btree (organization_id, status, name);
 
 
 --
 -- Name: ix_audit_events_org_aggregate_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_audit_events_org_aggregate_time ON ${baseline_schema}.audit_events USING btree (organization_id, aggregate_type, aggregate_id, created_at);
+CREATE INDEX ix_audit_events_org_aggregate_time ON audit_events USING btree (organization_id, aggregate_type, aggregate_id, created_at);
 
 
 --
 -- Name: ix_auth_sessions_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_auth_sessions_active ON ${baseline_schema}.auth_sessions USING btree (user_id, revoked_at);
+CREATE INDEX ix_auth_sessions_active ON auth_sessions USING btree (user_id, revoked_at);
 
 
 --
 -- Name: ix_auth_sessions_user; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_auth_sessions_user ON ${baseline_schema}.auth_sessions USING btree (user_id);
+CREATE INDEX ix_auth_sessions_user ON auth_sessions USING btree (user_id);
 
 
 --
 -- Name: ix_checklist_items_template; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_checklist_items_template ON ${baseline_schema}.checklist_items USING btree (template_id);
+CREATE INDEX ix_checklist_items_template ON checklist_items USING btree (template_id);
 
 
 --
 -- Name: ix_checklist_responses_inspection; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_checklist_responses_inspection ON ${baseline_schema}.checklist_responses USING btree (inspection_id, completed_at);
+CREATE INDEX ix_checklist_responses_inspection ON checklist_responses USING btree (inspection_id, completed_at);
 
 
 --
 -- Name: ix_checklist_templates_category; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_checklist_templates_category ON ${baseline_schema}.checklist_templates USING btree (asset_category_id);
+CREATE INDEX ix_checklist_templates_category ON checklist_templates USING btree (asset_category_id);
 
 
 --
 -- Name: ix_checklist_templates_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_checklist_templates_status ON ${baseline_schema}.checklist_templates USING btree (status);
+CREATE INDEX ix_checklist_templates_status ON checklist_templates USING btree (status);
 
 
 --
 -- Name: ix_drone_documents_drone_status_validity; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_drone_documents_drone_status_validity ON ${baseline_schema}.drone_documents USING btree (drone_id, status, valid_until);
+CREATE INDEX ix_drone_documents_drone_status_validity ON drone_documents USING btree (drone_id, status, valid_until);
 
 
 --
 -- Name: ix_drones_organization_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_drones_organization_status ON ${baseline_schema}.drones USING btree (organization_id, serviceability);
+CREATE INDEX ix_drones_organization_status ON drones USING btree (organization_id, serviceability);
 
 
 --
 -- Name: ix_evidence_inspection_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_evidence_inspection_time ON ${baseline_schema}.evidence USING btree (inspection_id, created_at DESC) WHERE (inspection_id IS NOT NULL);
+CREATE INDEX ix_evidence_inspection_time ON evidence USING btree (inspection_id, created_at DESC) WHERE (inspection_id IS NOT NULL);
 
 
 --
 -- Name: ix_evidence_work_log_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_evidence_work_log_time ON ${baseline_schema}.evidence USING btree (maintenance_work_log_id, created_at DESC) WHERE (maintenance_work_log_id IS NOT NULL);
+CREATE INDEX ix_evidence_work_log_time ON evidence USING btree (maintenance_work_log_id, created_at DESC) WHERE (maintenance_work_log_id IS NOT NULL);
 
 
 --
 -- Name: ix_field_sessions_inspection_status_started; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_field_sessions_inspection_status_started ON ${baseline_schema}.field_sessions USING btree (inspection_id, status, started_at);
+CREATE INDEX ix_field_sessions_inspection_status_started ON field_sessions USING btree (inspection_id, status, started_at);
 
 
 --
 -- Name: ix_findings_evidence; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_findings_evidence ON ${baseline_schema}.findings USING btree (evidence_id);
+CREATE INDEX ix_findings_evidence ON findings USING btree (evidence_id);
 
 
 --
 -- Name: ix_findings_inspection_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_findings_inspection_status ON ${baseline_schema}.findings USING btree (inspection_id, status, severity);
+CREATE INDEX ix_findings_inspection_status ON findings USING btree (inspection_id, status, severity);
 
 
 --
 -- Name: ix_flight_permits_org_status_validity; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_flight_permits_org_status_validity ON ${baseline_schema}.flight_permits USING btree (organization_id, status, valid_from, valid_until);
+CREATE INDEX ix_flight_permits_org_status_validity ON flight_permits USING btree (organization_id, status, valid_from, valid_until);
 
 
 --
 -- Name: ix_inspection_preparations_inspection_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_preparations_inspection_status ON ${baseline_schema}.inspection_preparations USING btree (inspection_id, status);
+CREATE INDEX ix_inspection_preparations_inspection_status ON inspection_preparations USING btree (inspection_id, status);
 
 
 --
 -- Name: ix_inspection_report_versions_report_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_report_versions_report_status ON ${baseline_schema}.inspection_report_versions USING btree (inspection_report_id, status, version_no DESC);
+CREATE INDEX ix_inspection_report_versions_report_status ON inspection_report_versions USING btree (inspection_report_id, status, version_no DESC);
 
 
 --
 -- Name: ix_inspection_reports_author_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_reports_author_status ON ${baseline_schema}.inspection_reports USING btree (author_user_id, status, updated_at DESC);
+CREATE INDEX ix_inspection_reports_author_status ON inspection_reports USING btree (author_user_id, status, updated_at DESC);
 
 
 --
 -- Name: ix_inspection_schedules_asset; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_schedules_asset ON ${baseline_schema}.inspection_schedules USING btree (asset_id);
+CREATE INDEX ix_inspection_schedules_asset ON inspection_schedules USING btree (asset_id);
 
 
 --
 -- Name: ix_inspection_schedules_due; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_schedules_due ON ${baseline_schema}.inspection_schedules USING btree (status, next_due_at);
+CREATE INDEX ix_inspection_schedules_due ON inspection_schedules USING btree (status, next_due_at);
 
 
 --
 -- Name: ix_inspections_org_asset_status_planned; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspections_org_asset_status_planned ON ${baseline_schema}.inspections USING btree (organization_id, asset_id, status, planned_start_at);
+CREATE INDEX ix_inspections_org_asset_status_planned ON inspections USING btree (organization_id, asset_id, status, planned_start_at);
 
 
 --
 -- Name: ix_maintenance_acceptance_work_order_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_acceptance_work_order_time ON ${baseline_schema}.maintenance_acceptance_decisions USING btree (work_order_id, decided_at DESC);
+CREATE INDEX ix_maintenance_acceptance_work_order_time ON maintenance_acceptance_decisions USING btree (work_order_id, decided_at DESC);
 
 
 --
 -- Name: ix_maintenance_change_orders_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_change_orders_status ON ${baseline_schema}.maintenance_change_orders USING btree (work_order_id, status);
+CREATE INDEX ix_maintenance_change_orders_status ON maintenance_change_orders USING btree (work_order_id, status);
 
 
 --
 -- Name: ix_maintenance_cost_lines_work_order_kind_state; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_cost_lines_work_order_kind_state ON ${baseline_schema}.maintenance_cost_lines USING btree (work_order_id, line_kind, state);
+CREATE INDEX ix_maintenance_cost_lines_work_order_kind_state ON maintenance_cost_lines USING btree (work_order_id, line_kind, state);
 
 
 --
 -- Name: ix_maintenance_estimate_versions_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_estimate_versions_status ON ${baseline_schema}.maintenance_estimate_versions USING btree (work_order_id, status);
+CREATE INDEX ix_maintenance_estimate_versions_status ON maintenance_estimate_versions USING btree (work_order_id, status);
 
 
 --
 -- Name: ix_maintenance_report_versions_work_order; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_report_versions_work_order ON ${baseline_schema}.maintenance_report_versions USING btree (work_order_id, version_no DESC);
+CREATE INDEX ix_maintenance_report_versions_work_order ON maintenance_report_versions USING btree (work_order_id, version_no DESC);
 
 
 --
 -- Name: ix_maintenance_tasks_work_order_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_tasks_work_order_status ON ${baseline_schema}.maintenance_tasks USING btree (work_order_id, status);
+CREATE INDEX ix_maintenance_tasks_work_order_status ON maintenance_tasks USING btree (work_order_id, status);
 
 
 --
 -- Name: ix_maintenance_team_members_work_order_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_team_members_work_order_active ON ${baseline_schema}.maintenance_team_members USING btree (work_order_id, active);
+CREATE INDEX ix_maintenance_team_members_work_order_active ON maintenance_team_members USING btree (work_order_id, active);
 
 
 --
 -- Name: ix_maintenance_work_logs_engineer_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_work_logs_engineer_status ON ${baseline_schema}.maintenance_work_logs USING btree (engineer_user_id, status, started_at DESC);
+CREATE INDEX ix_maintenance_work_logs_engineer_status ON maintenance_work_logs USING btree (engineer_user_id, status, started_at DESC);
 
 
 --
 -- Name: ix_maintenance_work_orders_org_status_due; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_work_orders_org_status_due ON ${baseline_schema}.maintenance_work_orders USING btree (organization_id, status, due_at);
+CREATE INDEX ix_maintenance_work_orders_org_status_due ON maintenance_work_orders USING btree (organization_id, status, due_at);
 
 
 --
 -- Name: ix_maintenance_work_orders_source_finding_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_work_orders_source_finding_status ON ${baseline_schema}.maintenance_work_orders USING btree (source_finding_id, status);
+CREATE INDEX ix_maintenance_work_orders_source_finding_status ON maintenance_work_orders USING btree (source_finding_id, status);
 
 
 --
 -- Name: ix_notifications_delivery; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_notifications_delivery ON ${baseline_schema}.notifications USING btree (status, created_at);
+CREATE INDEX ix_notifications_delivery ON notifications USING btree (status, created_at);
 
 
 --
 -- Name: ix_notifications_recipient_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_notifications_recipient_status ON ${baseline_schema}.notifications USING btree (recipient_user_id, status, created_at DESC);
+CREATE INDEX ix_notifications_recipient_status ON notifications USING btree (recipient_user_id, status, created_at DESC);
 
 
 --
 -- Name: ix_readiness_decisions_inspection_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_readiness_decisions_inspection_time ON ${baseline_schema}.inspection_readiness_decisions USING btree (inspection_id, decided_at DESC);
+CREATE INDEX ix_readiness_decisions_inspection_time ON inspection_readiness_decisions USING btree (inspection_id, decided_at DESC);
 
 
 --
 -- Name: ix_refresh_tokens_session; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_refresh_tokens_session ON ${baseline_schema}.refresh_tokens USING btree (session_id);
+CREATE INDEX ix_refresh_tokens_session ON refresh_tokens USING btree (session_id);
 
 
 --
 -- Name: ix_report_version_evidence_evidence; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_report_version_evidence_evidence ON ${baseline_schema}.report_version_evidence USING btree (evidence_id);
+CREATE INDEX ix_report_version_evidence_evidence ON report_version_evidence USING btree (evidence_id);
 
 
 --
 -- Name: ix_report_version_findings_finding; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_report_version_findings_finding ON ${baseline_schema}.report_version_findings USING btree (finding_id);
+CREATE INDEX ix_report_version_findings_finding ON report_version_findings USING btree (finding_id);
 
 
 --
 -- Name: ix_subscriptions_organization_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_subscriptions_organization_status ON ${baseline_schema}.subscriptions USING btree (organization_id, status);
+CREATE INDEX ix_subscriptions_organization_status ON subscriptions USING btree (organization_id, status);
 
 
 --
 -- Name: ix_user_roles_role; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_user_roles_role ON ${baseline_schema}.user_roles USING btree (role);
+CREATE INDEX ix_user_roles_role ON user_roles USING btree (role);
 
 
 --
 -- Name: ix_user_roles_user; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_user_roles_user ON ${baseline_schema}.user_roles USING btree (user_id);
+CREATE INDEX ix_user_roles_user ON user_roles USING btree (user_id);
 
 
 --
 -- Name: ix_users_organization; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_users_organization ON ${baseline_schema}.users USING btree (organization_id);
+CREATE INDEX ix_users_organization ON users USING btree (organization_id);
 
 
 --
 -- Name: ix_users_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_users_status ON ${baseline_schema}.users USING btree (status);
+CREATE INDEX ix_users_status ON users USING btree (status);
 
 
 --
 -- Name: ix_workforce_credentials_org_user_status_expiry; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_workforce_credentials_org_user_status_expiry ON ${baseline_schema}.workforce_credentials USING btree (organization_id, user_id, status, expires_at);
+CREATE INDEX ix_workforce_credentials_org_user_status_expiry ON workforce_credentials USING btree (organization_id, user_id, status, expires_at);
 
 
 --
 -- Name: uq_asset_pair_assignments_active_asset; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_asset_pair_assignments_active_asset ON ${baseline_schema}.asset_pair_assignments USING btree (asset_id) WHERE ((status)::text = 'ACTIVE'::text);
+CREATE UNIQUE INDEX uq_asset_pair_assignments_active_asset ON asset_pair_assignments USING btree (asset_id) WHERE ((status)::text = 'ACTIVE'::text);
 
 
 --
 -- Name: uq_asset_pair_assignments_id_scope; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_asset_pair_assignments_id_scope ON ${baseline_schema}.asset_pair_assignments USING btree (id, organization_id, asset_id);
+CREATE UNIQUE INDEX uq_asset_pair_assignments_id_scope ON asset_pair_assignments USING btree (id, organization_id, asset_id);
 
 
 --
 -- Name: uq_assets_id_organization; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_assets_id_organization ON ${baseline_schema}.assets USING btree (id, organization_id);
+CREATE UNIQUE INDEX uq_assets_id_organization ON assets USING btree (id, organization_id);
 
 
 --
 -- Name: uq_assets_organization_asset_code; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_assets_organization_asset_code ON ${baseline_schema}.assets USING btree (organization_id, asset_code) WHERE (asset_code IS NOT NULL);
+CREATE UNIQUE INDEX uq_assets_organization_asset_code ON assets USING btree (organization_id, asset_code) WHERE (asset_code IS NOT NULL);
 
 
 --
 -- Name: uq_drones_id_organization; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_drones_id_organization ON ${baseline_schema}.drones USING btree (id, organization_id);
+CREATE UNIQUE INDEX uq_drones_id_organization ON drones USING btree (id, organization_id);
 
 
 --
 -- Name: uq_inspection_schedules_id_asset; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_inspection_schedules_id_asset ON ${baseline_schema}.inspection_schedules USING btree (id, asset_id);
+CREATE UNIQUE INDEX uq_inspection_schedules_id_asset ON inspection_schedules USING btree (id, asset_id);
 
 
 --
 -- Name: uq_inspections_id_organization; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_inspections_id_organization ON ${baseline_schema}.inspections USING btree (id, organization_id);
+CREATE UNIQUE INDEX uq_inspections_id_organization ON inspections USING btree (id, organization_id);
 
 
 --
 -- Name: uq_inspections_schedule_due_cycle; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_inspections_schedule_due_cycle ON ${baseline_schema}.inspections USING btree (schedule_id, due_cycle_key) WHERE ((schedule_id IS NOT NULL) AND (due_cycle_key IS NOT NULL));
+CREATE UNIQUE INDEX uq_inspections_schedule_due_cycle ON inspections USING btree (schedule_id, due_cycle_key) WHERE ((schedule_id IS NOT NULL) AND (due_cycle_key IS NOT NULL));
 
 
 --
 -- Name: uq_maintenance_team_lead_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_maintenance_team_lead_active ON ${baseline_schema}.maintenance_team_members USING btree (work_order_id) WHERE (active AND ((member_role)::text = 'LEAD'::text));
+CREATE UNIQUE INDEX uq_maintenance_team_lead_active ON maintenance_team_members USING btree (work_order_id) WHERE (active AND ((member_role)::text = 'LEAD'::text));
 
 
 --
 -- Name: uq_maintenance_team_report_author_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_maintenance_team_report_author_active ON ${baseline_schema}.maintenance_team_members USING btree (work_order_id) WHERE (active AND ((member_role)::text = 'REPORT_AUTHOR'::text));
+CREATE UNIQUE INDEX uq_maintenance_team_report_author_active ON maintenance_team_members USING btree (work_order_id) WHERE (active AND ((member_role)::text = 'REPORT_AUTHOR'::text));
 
 
 --
 -- Name: uq_organizations_registration_code; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_organizations_registration_code ON ${baseline_schema}.organizations USING btree (registration_code) WHERE (registration_code IS NOT NULL);
+CREATE UNIQUE INDEX uq_organizations_registration_code ON organizations USING btree (registration_code) WHERE (registration_code IS NOT NULL);
 
 
 --
 -- Name: uq_subscriptions_active_organization; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_subscriptions_active_organization ON ${baseline_schema}.subscriptions USING btree (organization_id) WHERE ((status)::text = 'ACTIVE'::text);
+CREATE UNIQUE INDEX uq_subscriptions_active_organization ON subscriptions USING btree (organization_id) WHERE ((status)::text = 'ACTIVE'::text);
 
 
 --
 -- Name: uq_users_id_organization; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_users_id_organization ON ${baseline_schema}.users USING btree (id, organization_id);
+CREATE UNIQUE INDEX uq_users_id_organization ON users USING btree (id, organization_id);
 
 
 --
 -- Name: asset_categories asset_categories_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_categories
-    ADD CONSTRAINT asset_categories_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_categories
+    ADD CONSTRAINT asset_categories_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_documents asset_documents_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_documents
-    ADD CONSTRAINT asset_documents_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES ${baseline_schema}.assets(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_documents
+    ADD CONSTRAINT asset_documents_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_documents asset_documents_uploaded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_documents
-    ADD CONSTRAINT asset_documents_uploaded_by_user_id_fkey FOREIGN KEY (uploaded_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_documents
+    ADD CONSTRAINT asset_documents_uploaded_by_user_id_fkey FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments asset_pair_assignments_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES ${baseline_schema}.assets(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT asset_pair_assignments_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments asset_pair_assignments_assigned_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT asset_pair_assignments_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments asset_pair_assignments_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES ${baseline_schema}.drones(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT asset_pair_assignments_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES drones(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments asset_pair_assignments_inspector_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT asset_pair_assignments_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments asset_pair_assignments_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT asset_pair_assignments_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: assets assets_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.assets
-    ADD CONSTRAINT assets_category_id_fkey FOREIGN KEY (category_id) REFERENCES ${baseline_schema}.asset_categories(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY assets
+    ADD CONSTRAINT assets_category_id_fkey FOREIGN KEY (category_id) REFERENCES asset_categories(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: assets assets_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.assets
-    ADD CONSTRAINT assets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY assets
+    ADD CONSTRAINT assets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: audit_events audit_events_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.audit_events
-    ADD CONSTRAINT audit_events_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY audit_events
+    ADD CONSTRAINT audit_events_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL;
 
 
 --
 -- Name: audit_events audit_events_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.audit_events
-    ADD CONSTRAINT audit_events_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY audit_events
+    ADD CONSTRAINT audit_events_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: auth_sessions auth_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.auth_sessions
-    ADD CONSTRAINT auth_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY auth_sessions
+    ADD CONSTRAINT auth_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 
 --
 -- Name: checklist_items checklist_items_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_items
-    ADD CONSTRAINT checklist_items_template_id_fkey FOREIGN KEY (template_id) REFERENCES ${baseline_schema}.checklist_templates(id) ON DELETE CASCADE;
+ALTER TABLE ONLY checklist_items
+    ADD CONSTRAINT checklist_items_template_id_fkey FOREIGN KEY (template_id) REFERENCES checklist_templates(id) ON DELETE CASCADE;
 
 
 --
 -- Name: checklist_responses checklist_responses_checklist_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
-    ADD CONSTRAINT checklist_responses_checklist_item_id_fkey FOREIGN KEY (checklist_item_id) REFERENCES ${baseline_schema}.checklist_items(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_responses
+    ADD CONSTRAINT checklist_responses_checklist_item_id_fkey FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: checklist_responses checklist_responses_completed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
-    ADD CONSTRAINT checklist_responses_completed_by_user_id_fkey FOREIGN KEY (completed_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_responses
+    ADD CONSTRAINT checklist_responses_completed_by_user_id_fkey FOREIGN KEY (completed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: checklist_responses checklist_responses_field_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
-    ADD CONSTRAINT checklist_responses_field_session_id_fkey FOREIGN KEY (field_session_id) REFERENCES ${baseline_schema}.field_sessions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_responses
+    ADD CONSTRAINT checklist_responses_field_session_id_fkey FOREIGN KEY (field_session_id) REFERENCES field_sessions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: checklist_responses checklist_responses_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
-    ADD CONSTRAINT checklist_responses_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE CASCADE;
+ALTER TABLE ONLY checklist_responses
+    ADD CONSTRAINT checklist_responses_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE CASCADE;
 
 
 --
 -- Name: checklist_responses checklist_responses_responder_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
-    ADD CONSTRAINT checklist_responses_responder_user_id_fkey FOREIGN KEY (responder_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_responses
+    ADD CONSTRAINT checklist_responses_responder_user_id_fkey FOREIGN KEY (responder_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: checklist_templates checklist_templates_asset_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_templates
-    ADD CONSTRAINT checklist_templates_asset_category_id_fkey FOREIGN KEY (asset_category_id) REFERENCES ${baseline_schema}.asset_categories(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_templates
+    ADD CONSTRAINT checklist_templates_asset_category_id_fkey FOREIGN KEY (asset_category_id) REFERENCES asset_categories(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: checklist_templates checklist_templates_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_templates
-    ADD CONSTRAINT checklist_templates_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_templates
+    ADD CONSTRAINT checklist_templates_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: drone_documents drone_documents_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drone_documents
-    ADD CONSTRAINT drone_documents_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES ${baseline_schema}.drones(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY drone_documents
+    ADD CONSTRAINT drone_documents_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES drones(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: drone_documents drone_documents_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drone_documents
-    ADD CONSTRAINT drone_documents_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY drone_documents
+    ADD CONSTRAINT drone_documents_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: drone_documents drone_documents_uploaded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drone_documents
-    ADD CONSTRAINT drone_documents_uploaded_by_user_id_fkey FOREIGN KEY (uploaded_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY drone_documents
+    ADD CONSTRAINT drone_documents_uploaded_by_user_id_fkey FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: drones drones_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.drones
-    ADD CONSTRAINT drones_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY drones
+    ADD CONSTRAINT drones_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: evidence evidence_field_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
-    ADD CONSTRAINT evidence_field_session_id_fkey FOREIGN KEY (field_session_id) REFERENCES ${baseline_schema}.field_sessions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT evidence_field_session_id_fkey FOREIGN KEY (field_session_id) REFERENCES field_sessions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: evidence evidence_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
-    ADD CONSTRAINT evidence_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT evidence_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: field_sessions field_sessions_checklist_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
-    ADD CONSTRAINT field_sessions_checklist_template_id_fkey FOREIGN KEY (checklist_template_id) REFERENCES ${baseline_schema}.checklist_templates(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY field_sessions
+    ADD CONSTRAINT field_sessions_checklist_template_id_fkey FOREIGN KEY (checklist_template_id) REFERENCES checklist_templates(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: field_sessions field_sessions_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
-    ADD CONSTRAINT field_sessions_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES ${baseline_schema}.drones(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY field_sessions
+    ADD CONSTRAINT field_sessions_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES drones(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: field_sessions field_sessions_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
-    ADD CONSTRAINT field_sessions_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY field_sessions
+    ADD CONSTRAINT field_sessions_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: field_sessions field_sessions_inspector_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
-    ADD CONSTRAINT field_sessions_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY field_sessions
+    ADD CONSTRAINT field_sessions_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: field_sessions field_sessions_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
-    ADD CONSTRAINT field_sessions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY field_sessions
+    ADD CONSTRAINT field_sessions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: field_sessions field_sessions_readiness_decision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.field_sessions
-    ADD CONSTRAINT field_sessions_readiness_decision_id_fkey FOREIGN KEY (readiness_decision_id) REFERENCES ${baseline_schema}.inspection_readiness_decisions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY field_sessions
+    ADD CONSTRAINT field_sessions_readiness_decision_id_fkey FOREIGN KEY (readiness_decision_id) REFERENCES inspection_readiness_decisions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments fk_asset_pair_assignments_asset_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT fk_asset_pair_assignments_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES ${baseline_schema}.assets(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT fk_asset_pair_assignments_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES assets(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments fk_asset_pair_assignments_drone_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT fk_asset_pair_assignments_drone_tenant FOREIGN KEY (drone_id, organization_id) REFERENCES ${baseline_schema}.drones(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT fk_asset_pair_assignments_drone_tenant FOREIGN KEY (drone_id, organization_id) REFERENCES drones(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: asset_pair_assignments fk_asset_pair_assignments_inspector_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.asset_pair_assignments
-    ADD CONSTRAINT fk_asset_pair_assignments_inspector_tenant FOREIGN KEY (inspector_user_id, organization_id) REFERENCES ${baseline_schema}.users(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY asset_pair_assignments
+    ADD CONSTRAINT fk_asset_pair_assignments_inspector_tenant FOREIGN KEY (inspector_user_id, organization_id) REFERENCES users(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: checklist_responses fk_checklist_responses_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.checklist_responses
-    ADD CONSTRAINT fk_checklist_responses_evidence FOREIGN KEY (evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY checklist_responses
+    ADD CONSTRAINT fk_checklist_responses_evidence FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: evidence fk_evidence_inspection; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
-    ADD CONSTRAINT fk_evidence_inspection FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT fk_evidence_inspection FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: evidence fk_evidence_target_task; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
-    ADD CONSTRAINT fk_evidence_target_task FOREIGN KEY (maintenance_task_id) REFERENCES ${baseline_schema}.maintenance_tasks(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT fk_evidence_target_task FOREIGN KEY (maintenance_task_id) REFERENCES maintenance_tasks(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: evidence fk_evidence_target_work_order; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
-    ADD CONSTRAINT fk_evidence_target_work_order FOREIGN KEY (maintenance_work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT fk_evidence_target_work_order FOREIGN KEY (maintenance_work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: evidence fk_evidence_work_log; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.evidence
-    ADD CONSTRAINT fk_evidence_work_log FOREIGN KEY (maintenance_work_log_id) REFERENCES ${baseline_schema}.maintenance_work_logs(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT fk_evidence_work_log FOREIGN KEY (maintenance_work_log_id) REFERENCES maintenance_work_logs(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: flight_permits fk_flight_permits_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
-    ADD CONSTRAINT fk_flight_permits_evidence FOREIGN KEY (source_evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY flight_permits
+    ADD CONSTRAINT fk_flight_permits_evidence FOREIGN KEY (source_evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: flight_permits fk_flight_permits_source_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
-    ADD CONSTRAINT fk_flight_permits_source_evidence FOREIGN KEY (source_evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY flight_permits
+    ADD CONSTRAINT fk_flight_permits_source_evidence FOREIGN KEY (source_evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections fk_inspections_asset_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT fk_inspections_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES ${baseline_schema}.assets(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT fk_inspections_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES assets(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections fk_inspections_drone_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT fk_inspections_drone_tenant FOREIGN KEY (drone_id, organization_id) REFERENCES ${baseline_schema}.drones(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT fk_inspections_drone_tenant FOREIGN KEY (drone_id, organization_id) REFERENCES drones(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections fk_inspections_inspector_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT fk_inspections_inspector_tenant FOREIGN KEY (inspector_id, organization_id) REFERENCES ${baseline_schema}.users(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT fk_inspections_inspector_tenant FOREIGN KEY (inspector_id, organization_id) REFERENCES users(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections fk_inspections_pair_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT fk_inspections_pair_tenant FOREIGN KEY (asset_pair_assignment_id, organization_id, asset_id) REFERENCES ${baseline_schema}.asset_pair_assignments(id, organization_id, asset_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT fk_inspections_pair_tenant FOREIGN KEY (asset_pair_assignment_id, organization_id, asset_id) REFERENCES asset_pair_assignments(id, organization_id, asset_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections fk_inspections_schedule_asset; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT fk_inspections_schedule_asset FOREIGN KEY (schedule_id, asset_id) REFERENCES ${baseline_schema}.inspection_schedules(id, asset_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT fk_inspections_schedule_asset FOREIGN KEY (schedule_id, asset_id) REFERENCES inspection_schedules(id, asset_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_logs fk_maintenance_work_logs_target_task; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_logs
-    ADD CONSTRAINT fk_maintenance_work_logs_target_task FOREIGN KEY (task_id) REFERENCES ${baseline_schema}.maintenance_tasks(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_logs
+    ADD CONSTRAINT fk_maintenance_work_logs_target_task FOREIGN KEY (task_id) REFERENCES maintenance_tasks(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders fk_maintenance_work_orders_asset_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT fk_maintenance_work_orders_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES ${baseline_schema}.assets(id, organization_id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT fk_maintenance_work_orders_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES assets(id, organization_id) ON DELETE RESTRICT;
 
 
 --
 -- Name: findings fk_verified_finding_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.findings
-    ADD CONSTRAINT fk_verified_finding_evidence FOREIGN KEY (evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY findings
+    ADD CONSTRAINT fk_verified_finding_evidence FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: workforce_credentials fk_workforce_credentials_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.workforce_credentials
-    ADD CONSTRAINT fk_workforce_credentials_evidence FOREIGN KEY (evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY workforce_credentials
+    ADD CONSTRAINT fk_workforce_credentials_evidence FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: flight_permits flight_permits_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
-    ADD CONSTRAINT flight_permits_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES ${baseline_schema}.assets(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY flight_permits
+    ADD CONSTRAINT flight_permits_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: flight_permits flight_permits_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
-    ADD CONSTRAINT flight_permits_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY flight_permits
+    ADD CONSTRAINT flight_permits_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: flight_permits flight_permits_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
-    ADD CONSTRAINT flight_permits_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY flight_permits
+    ADD CONSTRAINT flight_permits_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: flight_permits flight_permits_source_evidence_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.flight_permits
-    ADD CONSTRAINT flight_permits_source_evidence_id_fkey FOREIGN KEY (source_evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY flight_permits
+    ADD CONSTRAINT flight_permits_source_evidence_id_fkey FOREIGN KEY (source_evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_preparations inspection_preparations_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_preparations
-    ADD CONSTRAINT inspection_preparations_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_preparations
+    ADD CONSTRAINT inspection_preparations_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_preparations inspection_preparations_inspector_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_preparations
-    ADD CONSTRAINT inspection_preparations_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_preparations
+    ADD CONSTRAINT inspection_preparations_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_readiness_decisions inspection_readiness_decisions_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_readiness_decisions
-    ADD CONSTRAINT inspection_readiness_decisions_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_readiness_decisions
+    ADD CONSTRAINT inspection_readiness_decisions_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_readiness_decisions inspection_readiness_decisions_preparation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_readiness_decisions
-    ADD CONSTRAINT inspection_readiness_decisions_preparation_id_fkey FOREIGN KEY (preparation_id) REFERENCES ${baseline_schema}.inspection_preparations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_readiness_decisions
+    ADD CONSTRAINT inspection_readiness_decisions_preparation_id_fkey FOREIGN KEY (preparation_id) REFERENCES inspection_preparations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_readiness_decisions inspection_readiness_decisions_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_readiness_decisions
-    ADD CONSTRAINT inspection_readiness_decisions_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_readiness_decisions
+    ADD CONSTRAINT inspection_readiness_decisions_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_report_versions inspection_report_versions_inspection_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_inspection_report_id_fkey FOREIGN KEY (inspection_report_id) REFERENCES ${baseline_schema}.inspection_reports(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_report_versions
+    ADD CONSTRAINT inspection_report_versions_inspection_report_id_fkey FOREIGN KEY (inspection_report_id) REFERENCES inspection_reports(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_report_versions inspection_report_versions_reviewer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_report_versions
+    ADD CONSTRAINT inspection_report_versions_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_report_versions inspection_report_versions_source_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_source_version_id_fkey FOREIGN KEY (source_version_id) REFERENCES ${baseline_schema}.inspection_report_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_report_versions
+    ADD CONSTRAINT inspection_report_versions_source_version_id_fkey FOREIGN KEY (source_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_reports inspection_reports_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_reports
-    ADD CONSTRAINT inspection_reports_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_reports
+    ADD CONSTRAINT inspection_reports_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_reports inspection_reports_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_reports
-    ADD CONSTRAINT inspection_reports_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_reports
+    ADD CONSTRAINT inspection_reports_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspection_schedules inspection_schedules_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspection_schedules
-    ADD CONSTRAINT inspection_schedules_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES ${baseline_schema}.assets(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_schedules
+    ADD CONSTRAINT inspection_schedules_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections inspections_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT inspections_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES ${baseline_schema}.assets(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT inspections_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections inspections_asset_pair_assignment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT inspections_asset_pair_assignment_id_fkey FOREIGN KEY (asset_pair_assignment_id) REFERENCES ${baseline_schema}.asset_pair_assignments(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT inspections_asset_pair_assignment_id_fkey FOREIGN KEY (asset_pair_assignment_id) REFERENCES asset_pair_assignments(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections inspections_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT inspections_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES ${baseline_schema}.drones(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT inspections_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES drones(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections inspections_inspector_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT inspections_inspector_id_fkey FOREIGN KEY (inspector_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT inspections_inspector_id_fkey FOREIGN KEY (inspector_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections inspections_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT inspections_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT inspections_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: inspections inspections_schedule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.inspections
-    ADD CONSTRAINT inspections_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES ${baseline_schema}.inspection_schedules(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspections
+    ADD CONSTRAINT inspections_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES inspection_schedules(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_acceptance_decisions maintenance_acceptance_decisions_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_acceptance_decisions
-    ADD CONSTRAINT maintenance_acceptance_decisions_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES ${baseline_schema}.maintenance_report_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_acceptance_decisions
+    ADD CONSTRAINT maintenance_acceptance_decisions_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES maintenance_report_versions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_acceptance_decisions maintenance_acceptance_decisions_reviewer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_acceptance_decisions
-    ADD CONSTRAINT maintenance_acceptance_decisions_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_acceptance_decisions
+    ADD CONSTRAINT maintenance_acceptance_decisions_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_acceptance_decisions maintenance_acceptance_decisions_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_acceptance_decisions
-    ADD CONSTRAINT maintenance_acceptance_decisions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_acceptance_decisions
+    ADD CONSTRAINT maintenance_acceptance_decisions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_change_orders maintenance_change_orders_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
-    ADD CONSTRAINT maintenance_change_orders_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_change_orders
+    ADD CONSTRAINT maintenance_change_orders_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_change_orders maintenance_change_orders_requested_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
-    ADD CONSTRAINT maintenance_change_orders_requested_by_user_id_fkey FOREIGN KEY (requested_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_change_orders
+    ADD CONSTRAINT maintenance_change_orders_requested_by_user_id_fkey FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_change_orders maintenance_change_orders_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_change_orders
-    ADD CONSTRAINT maintenance_change_orders_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_change_orders
+    ADD CONSTRAINT maintenance_change_orders_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_cost_lines maintenance_cost_lines_change_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
-    ADD CONSTRAINT maintenance_cost_lines_change_order_id_fkey FOREIGN KEY (change_order_id) REFERENCES ${baseline_schema}.maintenance_change_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_cost_lines
+    ADD CONSTRAINT maintenance_cost_lines_change_order_id_fkey FOREIGN KEY (change_order_id) REFERENCES maintenance_change_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_cost_lines maintenance_cost_lines_entered_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
-    ADD CONSTRAINT maintenance_cost_lines_entered_by_user_id_fkey FOREIGN KEY (entered_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_cost_lines
+    ADD CONSTRAINT maintenance_cost_lines_entered_by_user_id_fkey FOREIGN KEY (entered_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_cost_lines maintenance_cost_lines_estimate_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
-    ADD CONSTRAINT maintenance_cost_lines_estimate_version_id_fkey FOREIGN KEY (estimate_version_id) REFERENCES ${baseline_schema}.maintenance_estimate_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_cost_lines
+    ADD CONSTRAINT maintenance_cost_lines_estimate_version_id_fkey FOREIGN KEY (estimate_version_id) REFERENCES maintenance_estimate_versions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_cost_lines maintenance_cost_lines_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
-    ADD CONSTRAINT maintenance_cost_lines_task_id_fkey FOREIGN KEY (task_id) REFERENCES ${baseline_schema}.maintenance_tasks(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_cost_lines
+    ADD CONSTRAINT maintenance_cost_lines_task_id_fkey FOREIGN KEY (task_id) REFERENCES maintenance_tasks(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_cost_lines maintenance_cost_lines_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_cost_lines
-    ADD CONSTRAINT maintenance_cost_lines_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_cost_lines
+    ADD CONSTRAINT maintenance_cost_lines_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_estimate_versions maintenance_estimate_versions_approved_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
-    ADD CONSTRAINT maintenance_estimate_versions_approved_by_user_id_fkey FOREIGN KEY (approved_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_estimate_versions
+    ADD CONSTRAINT maintenance_estimate_versions_approved_by_user_id_fkey FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_estimate_versions maintenance_estimate_versions_prepared_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
-    ADD CONSTRAINT maintenance_estimate_versions_prepared_by_user_id_fkey FOREIGN KEY (prepared_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_estimate_versions
+    ADD CONSTRAINT maintenance_estimate_versions_prepared_by_user_id_fkey FOREIGN KEY (prepared_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_estimate_versions maintenance_estimate_versions_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_estimate_versions
-    ADD CONSTRAINT maintenance_estimate_versions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_estimate_versions
+    ADD CONSTRAINT maintenance_estimate_versions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_report_versions maintenance_report_versions_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_report_versions
-    ADD CONSTRAINT maintenance_report_versions_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_report_versions
+    ADD CONSTRAINT maintenance_report_versions_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_report_versions maintenance_report_versions_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_report_versions
-    ADD CONSTRAINT maintenance_report_versions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_report_versions
+    ADD CONSTRAINT maintenance_report_versions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_tasks maintenance_tasks_assigned_engineer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_tasks
-    ADD CONSTRAINT maintenance_tasks_assigned_engineer_user_id_fkey FOREIGN KEY (assigned_engineer_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_tasks
+    ADD CONSTRAINT maintenance_tasks_assigned_engineer_user_id_fkey FOREIGN KEY (assigned_engineer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_tasks maintenance_tasks_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_tasks
-    ADD CONSTRAINT maintenance_tasks_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_tasks
+    ADD CONSTRAINT maintenance_tasks_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_team_members maintenance_team_members_assigned_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_team_members
-    ADD CONSTRAINT maintenance_team_members_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_team_members
+    ADD CONSTRAINT maintenance_team_members_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_team_members maintenance_team_members_engineer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_team_members
-    ADD CONSTRAINT maintenance_team_members_engineer_user_id_fkey FOREIGN KEY (engineer_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_team_members
+    ADD CONSTRAINT maintenance_team_members_engineer_user_id_fkey FOREIGN KEY (engineer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_team_members maintenance_team_members_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_team_members
-    ADD CONSTRAINT maintenance_team_members_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_team_members
+    ADD CONSTRAINT maintenance_team_members_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_logs maintenance_work_logs_engineer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_logs
-    ADD CONSTRAINT maintenance_work_logs_engineer_user_id_fkey FOREIGN KEY (engineer_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_logs
+    ADD CONSTRAINT maintenance_work_logs_engineer_user_id_fkey FOREIGN KEY (engineer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_logs maintenance_work_logs_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_logs
-    ADD CONSTRAINT maintenance_work_logs_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES ${baseline_schema}.maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_logs
+    ADD CONSTRAINT maintenance_work_logs_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_accepting_reviewer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_accepting_reviewer_user_id_fkey FOREIGN KEY (accepting_reviewer_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_accepting_reviewer_user_id_fkey FOREIGN KEY (accepting_reviewer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES ${baseline_schema}.assets(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_budget_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_budget_approver_user_id_fkey FOREIGN KEY (budget_approver_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_budget_approver_user_id_fkey FOREIGN KEY (budget_approver_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_report_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_report_author_user_id_fkey FOREIGN KEY (report_author_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_report_author_user_id_fkey FOREIGN KEY (report_author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_source_finding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_source_finding_id_fkey FOREIGN KEY (source_finding_id) REFERENCES ${baseline_schema}.findings(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_source_finding_id_fkey FOREIGN KEY (source_finding_id) REFERENCES findings(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_source_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_source_report_version_id_fkey FOREIGN KEY (source_report_version_id) REFERENCES ${baseline_schema}.inspection_report_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_source_report_version_id_fkey FOREIGN KEY (source_report_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: maintenance_work_orders maintenance_work_orders_team_lead_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_team_lead_user_id_fkey FOREIGN KEY (team_lead_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_work_orders
+    ADD CONSTRAINT maintenance_work_orders_team_lead_user_id_fkey FOREIGN KEY (team_lead_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: notifications notifications_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.notifications
-    ADD CONSTRAINT notifications_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE SET NULL;
+ALTER TABLE ONLY notifications
+    ADD CONSTRAINT notifications_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL;
 
 
 --
 -- Name: notifications notifications_recipient_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.notifications
-    ADD CONSTRAINT notifications_recipient_user_id_fkey FOREIGN KEY (recipient_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY notifications
+    ADD CONSTRAINT notifications_recipient_user_id_fkey FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: organizations organizations_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.organizations
-    ADD CONSTRAINT organizations_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY organizations
+    ADD CONSTRAINT organizations_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: refresh_tokens refresh_tokens_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.refresh_tokens
-    ADD CONSTRAINT refresh_tokens_session_id_fkey FOREIGN KEY (session_id) REFERENCES ${baseline_schema}.auth_sessions(id) ON DELETE CASCADE;
+ALTER TABLE ONLY refresh_tokens
+    ADD CONSTRAINT refresh_tokens_session_id_fkey FOREIGN KEY (session_id) REFERENCES auth_sessions(id) ON DELETE CASCADE;
 
 
 --
 -- Name: report_version_evidence report_version_evidence_evidence_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_evidence
-    ADD CONSTRAINT report_version_evidence_evidence_id_fkey FOREIGN KEY (evidence_id) REFERENCES ${baseline_schema}.evidence(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY report_version_evidence
+    ADD CONSTRAINT report_version_evidence_evidence_id_fkey FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: report_version_evidence report_version_evidence_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_evidence
-    ADD CONSTRAINT report_version_evidence_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES ${baseline_schema}.inspection_report_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY report_version_evidence
+    ADD CONSTRAINT report_version_evidence_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: report_version_findings report_version_findings_finding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_findings
-    ADD CONSTRAINT report_version_findings_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES ${baseline_schema}.findings(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY report_version_findings
+    ADD CONSTRAINT report_version_findings_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: report_version_findings report_version_findings_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.report_version_findings
-    ADD CONSTRAINT report_version_findings_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES ${baseline_schema}.inspection_report_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY report_version_findings
+    ADD CONSTRAINT report_version_findings_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: subscriptions subscriptions_confirmed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.subscriptions
-    ADD CONSTRAINT subscriptions_confirmed_by_user_id_fkey FOREIGN KEY (confirmed_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY subscriptions
+    ADD CONSTRAINT subscriptions_confirmed_by_user_id_fkey FOREIGN KEY (confirmed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: subscriptions subscriptions_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.subscriptions
-    ADD CONSTRAINT subscriptions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY subscriptions
+    ADD CONSTRAINT subscriptions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
-ALTER TABLE ONLY ${baseline_schema}.payment_transactions
-    ADD CONSTRAINT fk_payment_transactions_subscription FOREIGN KEY (subscription_id) REFERENCES ${baseline_schema}.subscriptions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY payment_transactions
+    ADD CONSTRAINT payment_transactions_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE RESTRICT;
 
-CREATE INDEX ix_payment_transactions_subscription ON ${baseline_schema}.payment_transactions USING btree (subscription_id);
-CREATE INDEX ix_payment_transactions_order ON ${baseline_schema}.payment_transactions USING btree (paypal_order_id);
+CREATE INDEX ix_payment_transactions_subscription ON payment_transactions USING btree (subscription_id);
+CREATE INDEX ix_payment_transactions_order ON payment_transactions USING btree (paypal_order_id);
 
 
 --
 -- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.user_roles
-    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY user_roles
+    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 
 --
 -- Name: users users_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.users
-    ADD CONSTRAINT users_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE SET NULL;
+ALTER TABLE ONLY users
+    ADD CONSTRAINT users_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL;
 
 
 --
 -- Name: findings verified_findings_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.findings
-    ADD CONSTRAINT verified_findings_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES ${baseline_schema}.inspections(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY findings
+    ADD CONSTRAINT verified_findings_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: workforce_credentials workforce_credentials_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.workforce_credentials
-    ADD CONSTRAINT workforce_credentials_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY workforce_credentials
+    ADD CONSTRAINT workforce_credentials_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: workforce_credentials workforce_credentials_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.workforce_credentials
-    ADD CONSTRAINT workforce_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY workforce_credentials
+    ADD CONSTRAINT workforce_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
 -- Name: workforce_credentials workforce_credentials_verified_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY ${baseline_schema}.workforce_credentials
-    ADD CONSTRAINT workforce_credentials_verified_by_user_id_fkey FOREIGN KEY (verified_by_user_id) REFERENCES ${baseline_schema}.users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY workforce_credentials
+    ADD CONSTRAINT workforce_credentials_verified_by_user_id_fkey FOREIGN KEY (verified_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
+
+-- V43: Storage and vector index for RAG repair standards and specifications
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE TABLE IF NOT EXISTS repair_knowledge_chunks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            standard_code VARCHAR(64) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(64) NOT NULL,
+            defect_patterns VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            reference_url VARCHAR(500),
+            embedding vector(1536),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_category
+            ON repair_knowledge_chunks(category);
+        CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_hnsw
+            ON repair_knowledge_chunks USING hnsw (embedding vector_cosine_ops)
+            WITH (m = 16, ef_construction = 64);
+    ELSE
+        CREATE TABLE IF NOT EXISTS repair_knowledge_chunks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            standard_code VARCHAR(64) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(64) NOT NULL,
+            defect_patterns VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            reference_url VARCHAR(500),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_repair_knowledge_chunks_category
+            ON repair_knowledge_chunks(category);
+    END IF;
+END
+$$;
+
+-- Seed standard engineering guidelines for infrastructure repair
+INSERT INTO repair_knowledge_chunks (standard_code, title, category, defect_patterns, content, reference_url)
+VALUES
+(
+    'TCVN 9343:2012',
+    'Bơm keo epoxy áp lực thấp xử lý nứt bê tông kết cấu',
+    'CONCRETE_CRACK',
+    'crack,nut,nut ket cau,nut doc,nut ngang,ve nut,crack_concrete',
+    'Quy trình bơm keo epoxy xử lý nứt bê tông kết cấu (vết nứt >= 0.2mm đến 5.0mm): 1. Khảo sát xác định chiều sâu và hướng phát triển vết nứt. 2. Làm sạch bề mặt dọc vết nứt bằng bàn chải thép và thổi khí nén sạch dầu. 3. Gắn bát bơm (port) cách nhau 150mm - 200mm dọc theo vết nứt. 4. Trám kín khe nứt và cố định bát bơm bằng keo trám epoxy cường độ cao (Sikadur-731) với chiều dày 2-3mm, chờ đóng rắn tối thiểu 12 giờ. 5. Bơm keo epoxy độ nhớt thấp (Sikadur-752) áp lực thấp (0.15 - 0.35 MPa) từ bát thấp nhất lên cao cho đến khi keo trào ra ở bát kế tiếp, sau đó bịt lại và chuyển đầu bơm. 6. Bảo dưỡng tối thiểu 48 giờ trước khi mài phẳng bát bơm. Tiêu chuẩn nghiệm thu: Kiểm tra độ đồng nhất và điền đầy vết nứt bằng phương pháp siêu âm xung (UPV) theo TCVN 9357:2012 đạt phục hồi vận tốc sóng âm >= 90%; Thử kéo đứt (pull-off test) theo TCVN 9349 đạt cường độ bám dính >= 1.5 MPa, điểm đứt gãy nằm hoàn toàn trong nền bê tông cũ.',
+    'https://vanbanphapluat.co/tcvn-9343-2012-ket-cau-be-tong-va-be-tong-cot-thep-huong-dan-cong-tac-bao-tri'
+),
+(
+    'TCVN 9343:2012 / EN 1504-9',
+    'Sửa chữa bong tróc bê tông và bảo vệ cốt thép bị ăn mòn',
+    'SPALLING',
+    'spalling,bong troc,vo be tong,lo cot thep,rebar_exposed,ro to ong',
+    'Quy trình sửa chữa mảng vỡ, bong tróc bê tông và rỉ cốt thép: 1. Cắt viền vuông góc khu vực sửa chữa sâu tối thiểu 15-20mm bằng máy cắt đĩa để tránh mép vát mỏng. 2. Đục tẩy toàn bộ bê tông phong hóa, nứt vỡ ra xung quanh thanh thép và sâu vào phía sau cốt thép tối thiểu 20mm. 3. Làm sạch gỉ cốt thép đạt cấp độ Sa 2 hoặc St 3 (ISO 8501-1) bằng chổi kim loại hoặc phun cát. 4. Thi công 2 lớp chất quét bảo vệ cốt thép và kết nối gốc xi măng polyme chống ăn mòn giàu kẽm (Sika Monotop-910) độ dày mỗi lớp 1mm. 5. Thi công vữa sửa chữa polyme cải tiến bù co ngót (Sika Monotop R hoặc 412 NFG) từng lớp không quá 30mm, đầm chặt để tránh bọng khí. 6. Bảo dưỡng ẩm liên tục tối thiểu 3 ngày và quét lớp phủ chống cacbonat hóa bảo vệ. Tiêu chuẩn nghiệm thu: Gõ búa kiểm tra độ đặc chắc âm vang (sound test), 100% diện tích không có tiếng bộp rỗng; Cường độ bám dính kéo đứt >= 1.5 MPa; Sai lệch độ phẳng bề mặt không quá 2mm dưới thước 2m.',
+    'https://vanbanphapluat.co/tcvn-9343-2012-ket-cau-be-tong-va-be-tong-cot-thep-huong-dan-cong-tac-bao-tri'
+),
+(
+    'ISO 12944-5 / AASHTO',
+    'Xử lý ăn mòn kim loại và sơn phủ bảo vệ kết cấu thép',
+    'STEEL_CORROSION',
+    'corrosion,gi set,an mon,rust,thep gi,ri set ket cau,mat tiet dien',
+    'Quy trình phục hồi bề mặt và sơn bảo vệ kết cấu thép cầu/dầm: 1. Siêu âm đo chiều dày kim loại (UTM) đánh giá mức độ giảm tiết diện; nếu tiết diện suy giảm > 15% phải thiết kế tấm ốp gia cường (doubler plate). 2. Tẩy dầu mỡ và tạp chất bằng dung môi sạch. 3. Làm sạch bề mặt bằng phun hạt mài đạt cấp độ Sa 2.5 theo ISO 8501-1, độ nhám biên dạng đạt 45-75 micromet. 4. Thi công hệ sơn 3 lớp bảo vệ chống ăn mòn môi trường C4/C5: Lớp lót sơn lót epoxy giàu kẽm (Zinc-rich epoxy primer) chiều dày màng sơn khô (DFT) 60-80 um; Lớp trung gian sơn epoxy oxit sắt micaceous (MIO) DFT 100-120 um; Lớp phủ ngoài Polyurethane aliphatic kháng tia UV DFT 50-60 um. Tiêu chuẩn nghiệm thu: Tổng chiều dày màng sơn khô đạt tối thiểu 225 um (quy tắc 80/20); Thử độ bám dính bằng phương pháp cắt ô vuông (cross-cut test theo ISO 2409) đạt cấp 0 hoặc cấp 1; Thử dò khuyết tật màng sơn bằng tia lửa điện (holiday detector) đạt 0 điểm rò rỉ.',
+    'https://www.iso.org/standard/64833.html'
+),
+(
+    'TCVN 9343:2012 / ASTM C1583',
+    'Bơm keo Polyurethane trương nở chặn rò rỉ và thấm nước',
+    'WATER_LEAKAGE',
+    'water,leak,tham nuoc,ro ri nuoc,chay nuoc,seepage,am uot',
+    'Quy trình bơm keo PU trương nở chặn rò rỉ nước qua vết nứt và mạch ngừng bê tông: 1. Làm sạch bùn đất, rong rêu khu vực thấm nước để định vị chính xác vị trí rò rỉ. 2. Khoan các lỗ nghiêng 45 độ so với bề mặt, cắt qua vết nứt tại chiều sâu bằng 1/2 chiều dày kết cấu, khoảng cách các lỗ khoan từ 150-250mm so le nhau. 3. Lắp đặt kim bơm áp lực chuyên dụng (mechanical packer) và siết chặt. 4. Thổi bụi lỗ khoan bằng máy bơm nước áp lực hoặc khí nén. 5. Bơm keo gốc Polyurethane 2 thành phần phản ứng trương nở nhanh khi gặp nước (áp lực bơm 15-30 bar) từ dưới lên trên đến khi keo trương nở bọt tràn ra khỏi vết nứt. 6. Sau khi keo đóng rắn hoàn toàn, tháo kim bơm và trám bịt miệng lỗ khoan bằng vữa đông kết nhanh. Tiêu chuẩn nghiệm thu: Quan sát liên tục trong 72 giờ dưới áp lực nước làm việc bình thường, bề mặt khô ráo hoàn toàn 100%, không còn hiện tượng ẩm ướt hoặc đọng sương rỉ nước.',
+    'https://vanbanphapluat.co/tcvn-9343-2012-ket-cau-be-tong-va-be-tong-cot-thep-huong-dan-cong-tac-bao-tri'
+),
+(
+    'TCVN 9361:2012 / AASHTO',
+    'Sửa chữa khe co giãn và khắc phục lún nứt chuyển vị',
+    'STRUCTURAL_DEFORMATION',
+    'joint,khe co gian,lun,chuyen vi,bien dang,settlement,lech nhip',
+    'Quy trình sửa chữa khe co giãn kết cấu và khắc phục lún chuyển vị: 1. Đục bỏ lớp chèn khe, trám vá bị lão hóa hoặc hư hỏng. 2. Làm sạch lòng khe co giãn bằng máy thổi hơi áp lực cao và chổi sắt, tẩy sạch rêu mốc và bụi bẩn. 3. Kiểm tra mép khe co giãn, sửa chữa phần mép vát hoặc sứt vỡ bằng vữa epoxy chịu lực không co ngót. 4. Lắp đặt vật liệu đệm đáy khe (backer rod) bằng bọt Polyethylene kín khí có đường kính lớn hơn khe 25% ở độ sâu bằng 1/2 bề rộng khe. 5. Quét lớp lót kết nối (primer) chuyên dụng lên 2 thành khe. 6. Bơm chất trám khe đàn hồi gốc Polyurethane lưu hóa nguội (Sikaflex PRO-3) đều tay, tránh bọt khí và miết phẳng bề mặt hơi lõm 2mm so với mặt bê tông. Tiêu chuẩn nghiệm thu: Chất trám khe dính kết tuyệt đối với thành bê tông, không bong tách hay nứt chân chim; Độ giãn dài đứt gãy >= 400%; Bề mặt nhẵn mịn, đàn hồi tốt khi nén ép kiểm tra.',
+    'https://vanbanphapluat.co/tcvn-9361-2012-khao-sat-danh-gia-tinh-trang-nha-va-cong-trinh-xay-dung'
+);
 
 --
 -- PostgreSQL database dump complete

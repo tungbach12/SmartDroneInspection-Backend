@@ -5,11 +5,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.VerifiedFinding;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
-import com.smartdroneinspection.inspections.repository.VerifiedFindingRepository;
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import java.time.Instant;
 import java.util.Optional;
@@ -21,13 +21,13 @@ import org.mockito.ArgumentCaptor;
 class InspectionReinspectionListenerTest {
 
   private InspectionRepository inspections;
-  private VerifiedFindingRepository findings;
+  private FindingRepository findings;
   private InspectionReinspectionListener listener;
 
   @BeforeEach
   void setUp() {
     inspections = mock(InspectionRepository.class);
-    findings = mock(VerifiedFindingRepository.class);
+    findings = mock(FindingRepository.class);
     listener = new InspectionReinspectionListener(inspections, findings);
   }
 
@@ -42,7 +42,7 @@ class InspectionReinspectionListenerTest {
     UUID inspectorId = UUID.randomUUID();
     UUID droneId = UUID.randomUUID();
 
-    VerifiedFinding finding = mock(VerifiedFinding.class);
+    Finding finding = mock(Finding.class);
     when(finding.getDefectLabel()).thenReturn("Concrete spalling");
     when(finding.getInspectionId()).thenReturn(UUID.randomUUID());
     when(findings.findById(sourceFindingId)).thenReturn(Optional.of(finding));

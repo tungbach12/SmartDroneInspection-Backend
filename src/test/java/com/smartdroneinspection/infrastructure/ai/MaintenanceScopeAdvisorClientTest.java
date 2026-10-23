@@ -60,7 +60,9 @@ class MaintenanceScopeAdvisorClientTest {
 
     MaintenanceScopeAdvisorClient client =
         new MaintenanceScopeAdvisorClient(
-            RestClient.builder().baseUrl("http://localhost:" + server.getAddress().getPort()).build(),
+            RestClient.builder()
+                .baseUrl("http://localhost:" + server.getAddress().getPort())
+                .build(),
             "test-key",
             "test-model");
 
@@ -93,15 +95,16 @@ class MaintenanceScopeAdvisorClientTest {
 
     MaintenanceScopeAdvisorClient client =
         new MaintenanceScopeAdvisorClient(
-            RestClient.builder().baseUrl("http://localhost:" + server.getAddress().getPort()).build(),
+            RestClient.builder()
+                .baseUrl("http://localhost:" + server.getAddress().getPort())
+                .build(),
             "test-key",
             "test-model");
 
     ScopeAdvisorContext context =
         new ScopeAdvisorContext("FND-01", "Defect", "LOW", null, null, null, null, null, List.of());
 
-    assertThatThrownBy(() -> client.suggestScope(context))
-        .isInstanceOf(IOException.class);
+    assertThatThrownBy(() -> client.suggestScope(context)).isInstanceOf(IOException.class);
   }
 
   private void startServer(HttpHandler handler) throws IOException {

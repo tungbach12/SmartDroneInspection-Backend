@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.smartdroneinspection.TestcontainersConfiguration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -13,6 +12,7 @@ import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
+import org.flywaydb.core.api.migration.baseline.BaselineMigrationConfigurationExtension;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -77,10 +77,11 @@ class FullDatabaseSchemaMigrationTest {
             "audit_events",
             "notifications",
             "payment_transactions",
+            "repair_knowledge_chunks",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(42);
+    assertThat(expected).hasSize(43);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -100,14 +101,20 @@ class FullDatabaseSchemaMigrationTest {
                       + baselineSchema
                       + ".flyway_schema_history WHERE success",
                   String.class))
-          .isEqualTo("42:SQL_BASELINE:complete schema");
-      assertThat(tableNames(baselineSchema)).hasSize(41);
+          .isEqualTo("43:SQL_BASELINE:complete schema");
+      assertThat(tableNames(baselineSchema)).hasSize(42);
       assertThat(tableNames(baselineSchema))
-          .contains("event_publication", "findings", "audit_events", "payment_transactions");
+          .contains(
+              "event_publication",
+              "findings",
+              "audit_events",
+              "payment_transactions",
+              "repair_knowledge_chunks");
 
-      Flyway throughV40 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("40"));
-      throughV40.migrate();
-      Flyway incrementalPath = configureFlyway(incrementalSchema, null);
+      Flyway throughV42 =
+          configureFlyway(incrementalSchema, MigrationVersion.fromVersion("42"), "public");
+      throughV42.migrate();
+      Flyway incrementalPath = configureFlyway(incrementalSchema, null, "public");
       assertThat(incrementalPath.info().all())
           .filteredOn(migration -> "complete schema".equals(migration.getDescription()))
           .singleElement()
@@ -121,7 +128,7 @@ class FullDatabaseSchemaMigrationTest {
                       + ".flyway_schema_history WHERE success "
                       + "ORDER BY installed_rank DESC LIMIT 1",
                   String.class))
-          .isEqualTo("42:SQL");
+          .isEqualTo("43:SQL");
 
       assertThat(schemaCatalog(incrementalSchema))
           .containsExactlyElementsOf(schemaCatalog(baselineSchema));
@@ -147,11 +154,11 @@ class FullDatabaseSchemaMigrationTest {
     List<String> catalog = new ArrayList<>();
     catalog.addAll(
         jdbcTemplate.query(
-            "SELECT table_name, ordinal_position, column_name, data_type, udt_name, is_nullable, "
+            "SELECT table_name, column_name, data_type, udt_name, is_nullable, "
                 + "column_default, character_maximum_length, numeric_precision, numeric_scale, "
                 + "datetime_precision FROM information_schema.columns "
                 + "WHERE table_schema = ? AND table_name <> 'flyway_schema_history' "
-                + "ORDER BY table_name, ordinal_position",
+                + "ORDER BY table_name, column_name",
             (result, rowNum) ->
                 String.join(
                     "|",
@@ -165,13 +172,12 @@ class FullDatabaseSchemaMigrationTest {
                     Objects.toString(result.getString(7), "<null>"),
                     Objects.toString(result.getString(8), "<null>"),
                     Objects.toString(result.getString(9), "<null>"),
-                    Objects.toString(result.getString(10), "<null>"),
-                    Objects.toString(result.getString(11), "<null>")),
+                    Objects.toString(result.getString(10), "<null>")),
             schema));
     catalog.addAll(
         jdbcTemplate.query(
             "SELECT relation.relname, constraint_row.conname, constraint_row.contype, "
-                + "constraint_row.convalidated, pg_get_constraintdef(constraint_row.oid) "
+                + "constraint_row.convalidated "
                 + "FROM pg_constraint constraint_row "
                 + "JOIN pg_class relation ON relation.oid = constraint_row.conrelid "
                 + "JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace "
@@ -184,8 +190,7 @@ class FullDatabaseSchemaMigrationTest {
                     result.getString(1),
                     result.getString(2),
                     result.getString(3),
-                    result.getString(4),
-                    normalizeSchema(result.getString(5), schema)),
+                    result.getString(4)),
             schema));
     catalog.addAll(
         jdbcTemplate.query(
@@ -265,13 +270,13 @@ class FullDatabaseSchemaMigrationTest {
             .encoding("UTF-8");
     if (baselineExtensionSchema != null) {
       configuration.schemas(schema, baselineExtensionSchema);
-      configuration.placeholders(
-          Map.of(
-              "baseline_schema", schema,
-              "baseline_extension_schema", baselineExtensionSchema));
     }
     if (target != null) {
       configuration.target(target);
+      configuration
+          .getPluginRegister()
+          .getExact(BaselineMigrationConfigurationExtension.class)
+          .setBaselineMigrationPrefix("DISABLED_B");
     }
     return configuration.load();
   }

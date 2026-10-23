@@ -46,8 +46,7 @@ public class MaintenanceController {
   private final MaintenanceScopeAdvisorService scopeAdvisorService;
 
   public MaintenanceController(
-      WorkOrderService workOrderService,
-      MaintenanceScopeAdvisorService scopeAdvisorService) {
+      WorkOrderService workOrderService, MaintenanceScopeAdvisorService scopeAdvisorService) {
     this.workOrderService = workOrderService;
     this.scopeAdvisorService = scopeAdvisorService;
   }

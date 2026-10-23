@@ -235,7 +235,9 @@ public class MaintenanceExecutionService {
     requireTeamMember(order, actorId);
     if (order.getStatus() == WorkOrderStatus.CLOSED) {
       throw new BusinessException(
-          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot propose changes on a closed work order");
+          HttpStatus.CONFLICT,
+          "WORK_ORDER_CLOSED",
+          "Cannot propose changes on a closed work order");
     }
 
     int nextNumber =

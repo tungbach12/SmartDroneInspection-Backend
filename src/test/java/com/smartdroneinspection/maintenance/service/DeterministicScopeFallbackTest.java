@@ -40,7 +40,8 @@ class DeterministicScopeFallbackTest {
   @Test
   void generatesSteelCorrosionFallback() {
     SuggestedScope result =
-        fallback.fallback("Corrosion", "Thanh giằng thép bị gỉ sét bề mặt", "Thanh giằng", "15% section loss");
+        fallback.fallback(
+            "Corrosion", "Thanh giằng thép bị gỉ sét bề mặt", "Thanh giằng", "15% section loss");
 
     assertThat(result.correctiveScope()).contains("sơn").contains("Sa 2.5");
     assertThat(result.acceptanceCriteria()).contains("225 um").contains("ISO 2409");
@@ -51,7 +52,8 @@ class DeterministicScopeFallbackTest {
   @Test
   void generatesWaterLeakageFallback() {
     SuggestedScope result =
-        fallback.fallback("Thấm rò rỉ nước", "Nước rỉ qua mạch ngừng", "Mố cầu", "dòng chảy liên tục");
+        fallback.fallback(
+            "Thấm rò rỉ nước", "Nước rỉ qua mạch ngừng", "Mố cầu", "dòng chảy liên tục");
 
     assertThat(result.correctiveScope()).contains("Polyurethane");
     assertThat(result.acceptanceCriteria()).contains("72 giờ").contains("khô ráo");

@@ -200,7 +200,10 @@ public class MaintenanceScopeAdvisorClient implements MaintenanceScopeAdvisorPor
       builder.append("- Inspector Description: ").append(context.description()).append("\n");
     }
     if (context.recommendedAction() != null) {
-      builder.append("- Inspector Recommended Action: ").append(context.recommendedAction()).append("\n");
+      builder
+          .append("- Inspector Recommended Action: ")
+          .append(context.recommendedAction())
+          .append("\n");
     }
 
     builder.append("\nReference Engineering Guidelines (RAG Knowledge Base):\n");
@@ -219,7 +222,8 @@ public class MaintenanceScopeAdvisorClient implements MaintenanceScopeAdvisorPor
             .append("\n---\n");
       }
     } else {
-      builder.append("No asset-specific manual retrieved; apply standard Vietnamese building codes (TCVN) and AASHTO.\n");
+      builder.append(
+          "No asset-specific manual retrieved; apply standard Vietnamese building codes (TCVN) and AASHTO.\n");
     }
 
     builder.append(

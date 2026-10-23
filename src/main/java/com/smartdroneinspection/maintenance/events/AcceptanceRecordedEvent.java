@@ -15,4 +15,3 @@ public record AcceptanceRecordedEvent(
     UUID teamLeadUserId,
     UUID reportAuthorUserId,
     Instant decidedAt) {}
-

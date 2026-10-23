@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.smartdroneinspection.inspections.spi.RepairCandidate;
 import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
 import com.smartdroneinspection.maintenance.api.dto.request.SuggestScopeRequest;
 import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse;
@@ -18,7 +17,6 @@ import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.Sugg
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.SuggestedTask;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -57,11 +55,7 @@ class MaintenanceScopeAdvisorServiceTest {
             userAccess);
 
     UserAccess.ActiveUser actor =
-        new UserAccess.ActiveUser(
-            actorId,
-            Set.of("ORG_ADMIN"),
-            organizationId,
-            "Org Admin");
+        new UserAccess.ActiveUser(actorId, Set.of("ORG_ADMIN"), organizationId, "Org Admin");
     when(userAccess.findActiveUser(actorId)).thenReturn(Optional.of(actor));
 
     RepairKnowledgeChunk chunk =

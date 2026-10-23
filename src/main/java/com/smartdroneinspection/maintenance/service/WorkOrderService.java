@@ -126,10 +126,7 @@ public class WorkOrderService {
         candidate.technicalNotes(),
         candidate.severity(),
         candidate.recommendedAction(),
-        candidate.reportPublishedAt(),
-        candidate.component(),
-        candidate.locationDescription(),
-        candidate.measurement());
+        candidate.reportPublishedAt());
   }
 
   @Transactional
@@ -383,7 +380,9 @@ public class WorkOrderService {
     requireTeamLead(order, actorId);
     if (order.getStatus() == WorkOrderStatus.CLOSED) {
       throw new BusinessException(
-          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot add estimate versions to a closed work order");
+          HttpStatus.CONFLICT,
+          "WORK_ORDER_CLOSED",
+          "Cannot add estimate versions to a closed work order");
     }
 
     int nextVersion =

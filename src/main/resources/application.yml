@@ -19,8 +19,6 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    placeholders:
-      baseline_schema: public
   threads:
     virtual:
       enabled: true
