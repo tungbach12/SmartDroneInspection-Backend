@@ -259,7 +259,6 @@ public class WorkOrderService {
     UUID budgetApproverId = order.getBudgetApproverUserId();
     if (budgetApproverId.equals(request.leadUserId())
         || budgetApproverId.equals(request.reportAuthorUserId())
-        || budgetApproverId.equals(request.acceptingReviewerUserId())
         || (request.memberUserIds() != null
             && request.memberUserIds().contains(budgetApproverId))) {
       throw new BusinessException(

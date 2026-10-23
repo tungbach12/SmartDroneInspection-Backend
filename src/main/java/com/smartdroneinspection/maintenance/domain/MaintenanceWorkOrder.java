@@ -186,8 +186,7 @@ public class MaintenanceWorkOrder {
           "Only the designated budget approver may approve this work order");
     }
     if (approver.equals(teamLeadUserId)
-        || approver.equals(reportAuthorUserId)
-        || approver.equals(acceptingReviewerUserId)) {
+        || approver.equals(reportAuthorUserId)) {
       throw new IllegalStateException("The budget approver must not be part of the executing team");
     }
     this.status = WorkOrderStatus.APPROVED;
