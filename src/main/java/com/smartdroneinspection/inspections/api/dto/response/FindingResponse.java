@@ -6,13 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * A finding as the API hands it back.
- *
- * <p>{@code status} says whether the Inspector has confirmed it, and {@code deletedAt} says whether
- * it was removed. The model provenance travels with it when there is one, so a caller can see which
- * suggestions came from the detector without the workflow depending on that distinction.
- */
+/** A finding as the API returns it, including its current MF4 forwarding state. */
 public record FindingResponse(
     UUID id,
     UUID inspectionId,
@@ -21,27 +15,13 @@ public record FindingResponse(
     String findingCode,
     String defectLabel,
     FindingSeverity severity,
-    String locationDescription,
     String technicalNotes,
     String recommendedAction,
-    String component,
-    String description,
-    String observedCondition,
-    String priority,
-    String measurement,
     String boundingBox,
     String modelName,
     String modelVersion,
     String modelProvider,
     BigDecimal confidence,
     Instant inspectorConfirmedAt,
-    boolean repairRequired,
-    boolean correctiveActionRequired,
-    String correctiveActionPriority,
-    Instant correctiveActionDueAt,
-    UUID correctiveActionReviewedByUserId,
-    Instant correctiveActionReviewedAt,
-    String correctiveActionRationale,
-    Instant deletedAt,
-    UUID deletedByUserId,
-    String deletionReason) {}
+    Instant forwardedToMaintenanceAt,
+    Instant deletedAt) {}

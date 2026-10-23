@@ -13,10 +13,8 @@ public record InspectionReportContextResponse(
     String assetCategory,
     DroneContext assignedDrone,
     PreparationContext preparation,
-    EvidenceQualityContext evidenceQuality,
     List<FieldSessionContext> fieldSessions,
     String reviewerQualificationDisclosure,
-    String findingsConfirmedBy,
     Instant findingsConfirmedAt,
     String findingsSnapshotHash) {
 
@@ -38,13 +36,6 @@ public record InspectionReportContextResponse(
       String readinessReason,
       String permitDocumentReferences,
       Instant submittedAt) {}
-
-  public record EvidenceQualityContext(
-      String decision,
-      String shotListComparison,
-      String limitationReason,
-      UUID decidedByUserId,
-      Instant decidedAt) {}
 
   public record FieldSessionContext(
       UUID id,

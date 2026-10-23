@@ -62,7 +62,7 @@ import tools.jackson.databind.ObjectMapper;
  * Foundation: Self-Registration & Platform Admin Subscription Activation
  *   -> MF1: Asset Inventory, Operational Default Pair, Inspection Creation & Dispatch (ASSIGNED)
  *   -> MF2: Preparation Shot-List, Readiness Approval (READY_FOR_FLIGHT), Field Session Execution (FIELD_COMPLETED)
- *   -> MF3: Evidence Upload, Quality Acceptance, Findings Confirmation, PDF Publication, Corrective Handoff (REPAIR_PENDING)
+ *   -> MF3: Evidence Upload, Findings Confirmation, PDF Publication, Per-Finding Handoff (REPAIR_PENDING)
  *   -> MF4: Repair Candidate Intake, Work Order, Team Designation, Itemized Estimate, Work Logs, Completion Report, Independent Acceptance & Closure (CLOSED)
  * </pre>
  */
@@ -467,7 +467,6 @@ class ConnectedMainFlowE2eIntegrationTest {
                 multipart("/api/v1/inspections/{id}/evidence", inspectionId)
                     .file(evidenceFile)
                     .param("fieldSessionId", fieldSessionId.toString())
-                    .param("component", "Girder G4")
                     .with(principal(inspectorId, "INSPECTOR")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.uploadStatus").value("AVAILABLE"))
@@ -478,21 +477,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID evidenceId =
         UUID.fromString(objectMapper.readTree(uploadResponse).at("/data/id").stringValue());
 
-    log.info("[MF3] Step 3.2: Inspector records Evidence Quality Decision (ACCEPTED)...");
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", inspectionId)
-                .with(principal(inspectorId, "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision",
-                            "ACCEPTED",
-                            "shotListComparison",
-                            "Full coverage of Girder G4 lower flange and Pier 2 base obtained"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.decision").value("ACCEPTED"));
+    log.info("[MF3] Step 3.2: Active evidence is available without a quality-decision gate.");
 
     log.info("[MF3] Step 3.3: Inspector records Verified Finding with Repair Required...");
     String findingResponse =
@@ -601,39 +586,16 @@ class ConnectedMainFlowE2eIntegrationTest {
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
         .isEqualTo(InspectionStatus.REPORT_PUBLISHED);
 
-    log.info(
-        "[MF3] Step 3.7: Recording Corrective Action Outcome & Performing Corrective Handoff...");
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/findings/{fId}/corrective-action",
-                    inspectionId,
-                    findingId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "correctiveActionRequired",
-                            true,
-                            "priority",
-                            "HIGH",
-                            "dueAt",
-                            Instant.now().plus(14, ChronoUnit.DAYS).toString(),
-                            "rationale",
-                            "Structural corrosion requires grit blasting and protective coating replacement"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.correctiveActionRequired").value(true));
-
+    log.info("[MF3] Step 3.7: Forwarding the confirmed finding to Maintenance...");
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", inspectionId)
                 .with(principal(reviewerId, "ORG_ADMIN"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{}"))
+                .content(objectMapper.writeValueAsString(Map.of("findingIds", List.of(findingId)))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
-        .andExpect(jsonPath("$.data.repairRequiredFindingIds[0]").value(findingId.toString()));
+        .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId.toString()));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
         .isEqualTo(InspectionStatus.REPAIR_PENDING);

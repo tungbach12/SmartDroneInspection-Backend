@@ -9,7 +9,7 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 
-/** Stable digest of the evidence and the findings the Inspector resolved at the MF3 gate. */
+/** Stable digest of the evidence and findings the Inspector resolved at the MF3 gate. */
 final class FindingsSnapshot {
 
   private FindingsSnapshot() {}
@@ -24,7 +24,9 @@ final class FindingsSnapshot {
                     .append("E|")
                     .append(item.getId())
                     .append('|')
-                    .append(item.getChecksumSha256())
+                    .append(item.getFileName())
+                    .append('|')
+                    .append(item.getSizeBytes())
                     .append('\n'));
     findings.stream()
         .sorted(Comparator.comparing(item -> item.getId().toString()))
@@ -42,21 +44,9 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getSeverity())
                     .append('|')
-                    .append(item.getLocationDescription())
-                    .append('|')
-                    .append(item.getComponent())
-                    .append('|')
                     .append(item.getTechnicalNotes())
                     .append('|')
                     .append(item.getRecommendedAction())
-                    .append('|')
-                    .append(item.getDescription())
-                    .append('|')
-                    .append(item.getObservedCondition())
-                    .append('|')
-                    .append(item.getPriority())
-                    .append('|')
-                    .append(item.getMeasurement())
                     .append('|')
                     .append(
                         item.getInspectorConfirmedAt() == null

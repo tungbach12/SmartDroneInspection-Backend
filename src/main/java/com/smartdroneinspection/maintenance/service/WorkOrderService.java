@@ -117,7 +117,7 @@ public class WorkOrderService {
         candidate.findingId(),
         candidate.findingCode(),
         candidate.defectLabel(),
-        candidate.description(),
+        candidate.technicalNotes(),
         candidate.severity(),
         candidate.recommendedAction(),
         candidate.reportPublishedAt());

@@ -5,8 +5,10 @@ import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionReque
 import com.smartdroneinspection.inspections.api.dto.request.PostponeFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparationResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.service.InspectionFieldSessionService;
+import com.smartdroneinspection.inspections.service.InspectionPreparationService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -38,9 +40,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class InspectionFieldSessionController {
 
   private final InspectionFieldSessionService fieldSessions;
+  private final InspectionPreparationService preparations;
 
-  public InspectionFieldSessionController(InspectionFieldSessionService fieldSessions) {
+  public InspectionFieldSessionController(
+      InspectionFieldSessionService fieldSessions, InspectionPreparationService preparations) {
     this.fieldSessions = fieldSessions;
+    this.preparations = preparations;
   }
 
   /** The caller's own sessions for this inspection, oldest first. */
@@ -93,6 +98,17 @@ public class InspectionFieldSessionController {
     return ApiResponse.success(
         response(
             fieldSessions.complete(subject(jwt), inspectionId, sessionId, request.outcomeNotes())));
+  }
+
+  /** Requests a new preparation after the just-completed field session (MF2-12). */
+  @PostMapping("/additional-session")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<InspectionPreparationResponse> requestAdditionalSession(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @Valid @RequestBody PostponeFieldSessionRequest request) {
+    return ApiResponse.success(
+        preparations.requestAdditionalSession(subject(jwt), inspectionId, request.reason()));
   }
 
   /** The session cannot continue and will not resume under this record (MF2-11). */

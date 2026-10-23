@@ -6,9 +6,8 @@ import java.util.UUID;
 
 /**
  * MF3-13: published inspection report handed to MF4. The payload carries identifiers and scope only
- * — never evidence bytes or secrets. {@code repairRequiredFindingIds} contains only human-confirmed
- * findings the reviewer approved for corrective work, so a no-repair outcome publishes an empty
- * list rather than an empty work order.
+ * — never evidence bytes or secrets. {@code forwardedFindingIds} contains the confirmed findings
+ * the Organization Admin explicitly selected for Maintenance forwarding.
  */
 public record ReportPublishedEvent(
     UUID reportId,
@@ -17,5 +16,5 @@ public record ReportPublishedEvent(
     UUID organizationId,
     UUID assetId,
     UUID publishedByUserId,
-    List<UUID> repairRequiredFindingIds,
+    List<UUID> forwardedFindingIds,
     Instant publishedAt) {}

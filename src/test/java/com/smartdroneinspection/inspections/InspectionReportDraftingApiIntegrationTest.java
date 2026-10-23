@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
@@ -18,7 +20,6 @@ import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.IOException;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -56,6 +57,7 @@ class InspectionReportDraftingApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
+  @Autowired EvidenceRepository evidence;
   @Autowired FieldSessionRepository fieldSessions;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
@@ -116,7 +118,7 @@ class InspectionReportDraftingApiIntegrationTest {
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
     jdbcTemplate.update(
         "UPDATE inspections SET status = 'FIELD_COMPLETED' WHERE id = ?", fixture.inspectionId());
-    acceptEvidence();
+    evidence.saveAndFlush(testEvidence());
   }
 
   @Test
@@ -215,58 +217,6 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void draftingReceivesValuesRecordedThroughEvidenceQualityApi() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ACCEPTED",
-                            "shotListComparison", "API-recorded north and south span coverage",
-                            "limitationReason", "North approach blocked by wind"))))
-        .andExpect(status().isOk());
-
-    draft();
-
-    var quality = DraftingStub.LAST_CONTEXT.get().evidenceQuality();
-    assertThat(quality.decision()).isEqualTo("ACCEPTED");
-    assertThat(quality.shotListComparison())
-        .isEqualTo("API-recorded north and south span coverage");
-    assertThat(quality.limitationReason()).isEqualTo("North approach blocked by wind");
-  }
-
-  @Test
-  void latestNonAcceptedDecisionSupersedesEarlierAcceptanceAndBlocksDrafting() throws Exception {
-    // setUp() writes an ACCEPTED decision; this later decision must replace it as current.
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "LIMITED",
-                            "shotListComparison", "Coverage has a disclosed limitation",
-                            "limitationReason", "Wind blocked the north approach"))))
-        .andExpect(status().isOk());
-
-    long versionsBefore = countVersions();
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
-
-    assertThat(countVersions()).isEqualTo(versionsBefore);
-    assertThat(DraftingStub.LAST_CONTEXT.get()).isNull();
-  }
-
-  @Test
   void draftingLoadsTheDetectorProvenanceAndSessionsByInspection() throws Exception {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
@@ -342,7 +292,7 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void draftingRecordsItsProvenanceOnTheVersion() throws Exception {
+  void reportVersionContractUsesSubmissionAndReturnFieldsOnly() throws Exception {
     UUID versionId = draft();
 
     mockMvc
@@ -353,9 +303,14 @@ class InspectionReportDraftingApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.llmModel").value("stub-drafting-model"))
-        .andExpect(jsonPath("$.data.promptVersion").value("mf3-report-v3-bilingual"))
-        .andExpect(jsonPath("$.data.generatedAt").isNotEmpty());
+        .andExpect(jsonPath("$.data.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.submittedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.returnReason").doesNotExist())
+        .andExpect(jsonPath("$.data.llmModel").doesNotExist())
+        .andExpect(jsonPath("$.data.promptVersion").doesNotExist())
+        .andExpect(jsonPath("$.data.generatedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.evidenceSnapshotHash").doesNotExist())
+        .andExpect(jsonPath("$.data.findingsSnapshotHash").doesNotExist());
   }
 
   @Test
@@ -398,7 +353,7 @@ class InspectionReportDraftingApiIntegrationTest {
             post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.llmModel").value("manual-authoring"))
+        .andExpect(jsonPath("$.data.status").value("DRAFT"))
         .andExpect(jsonPath("$.data.sections.executiveSummary").doesNotExist())
         .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
         .andExpect(jsonPath("$.data.narrative").doesNotExist())
@@ -408,6 +363,21 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   // ------------------------------------------------------------------ helpers
+
+  private Evidence testEvidence() {
+    return new Evidence(
+        fixture.organizationId(),
+        fixture.inspectionId(),
+        null,
+        com.smartdroneinspection.inspections.domain.enums.EvidenceKind.INSPECTION,
+        "span.png",
+        "image/png",
+        1,
+        "inspections/" + fixture.inspectionId() + "/evidence/" + UUID.randomUUID(),
+        null,
+        null,
+        null);
+  }
 
   private UUID draft() throws Exception {
     return draft(null);
@@ -436,20 +406,6 @@ class InspectionReportDraftingApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"noFindingsAcknowledged\":" + noFindingsAcknowledged + "}"))
-        .andExpect(status().isOk());
-  }
-
-  private void acceptEvidence() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ACCEPTED",
-                            "shotListComparison", "Main span covered from both walkways"))))
         .andExpect(status().isOk());
   }
 

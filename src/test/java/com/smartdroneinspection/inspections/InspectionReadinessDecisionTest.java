@@ -30,9 +30,6 @@ class InspectionReadinessDecisionTest {
             permitSnapshot,
             "[]",
             "[]",
-            permitIds,
-            "[]",
-            "[]",
             "sha256:7c4f2a8d");
 
     assertThat(decision.getInspectionId()).isEqualTo(inspectionId);
@@ -42,7 +39,6 @@ class InspectionReadinessDecisionTest {
     assertThat(decision.getReviewedByUserId()).isEqualTo(reviewerId);
     assertThat(decision.getDecidedAt()).isNotNull();
     assertThat(decision.getPermitSnapshot()).isEqualTo(permitSnapshot);
-    assertThat(decision.getPermitSnapshotIds()).isEqualTo(permitIds);
     assertThat(decision.getSourceHash()).isEqualTo("sha256:7c4f2a8d");
   }
 
@@ -64,9 +60,6 @@ class InspectionReadinessDecisionTest {
                     null,
                     null,
                     null,
-                    null,
-                    null,
-                    null,
                     hash))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("inspection");
@@ -83,9 +76,6 @@ class InspectionReadinessDecisionTest {
                     null,
                     null,
                     null,
-                    null,
-                    null,
-                    null,
                     hash))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("reviewer");
@@ -99,9 +89,6 @@ class InspectionReadinessDecisionTest {
                     ReadinessDecisionType.RETURNED,
                     reviewerId,
                     "Missing permit",
-                    null,
-                    null,
-                    null,
                     null,
                     null,
                     null,
@@ -124,9 +111,6 @@ class InspectionReadinessDecisionTest {
                     null,
                     null,
                     null,
-                    null,
-                    null,
-                    null,
                     "sha256:7c4f2a8d"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("reason");
@@ -142,9 +126,6 @@ class InspectionReadinessDecisionTest {
                     0,
                     ReadinessDecisionType.APPROVED,
                     UUID.randomUUID(),
-                    null,
-                    null,
-                    null,
                     null,
                     null,
                     null,

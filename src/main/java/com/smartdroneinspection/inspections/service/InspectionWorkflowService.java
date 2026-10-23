@@ -20,7 +20,6 @@ public class InspectionWorkflowService {
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
     return new InspectionWorkflowStateResponse(
         inspection.getStatus(),
-        inspection.getFindingsConfirmedByUserId(),
         inspection.getFindingsConfirmedAt(),
         inspection.getFindingsSnapshotHash());
   }

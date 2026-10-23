@@ -444,9 +444,6 @@ class InspectionFieldSessionApiIntegrationTest {
             "{\"source_envelope\":{}}",
             "[]",
             "[]",
-            "[]",
-            "[]",
-            "[]",
             "a".repeat(64)));
   }
 

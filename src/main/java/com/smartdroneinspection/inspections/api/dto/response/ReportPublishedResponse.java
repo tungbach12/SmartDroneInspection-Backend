@@ -6,12 +6,12 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * MF3-13 publication outcome. An empty {@code repairRequiredFindingIds} means no corrective work is
- * required within the observed scope — not a failed handoff.
+ * MF3-11/13 report outcome. Forwarded finding IDs are selected after publication; an empty list
+ * means that no findings were forwarded by this action.
  */
 public record ReportPublishedResponse(
     UUID reportVersionId,
     int versionNo,
     Instant publishedAt,
-    List<UUID> repairRequiredFindingIds,
+    List<UUID> forwardedFindingIds,
     InspectionStatus inspectionStatus) {}

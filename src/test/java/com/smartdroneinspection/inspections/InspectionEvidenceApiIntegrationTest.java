@@ -14,6 +14,7 @@ import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
+import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
@@ -40,8 +41,7 @@ import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * MF3-01 to MF3-04 through the real HTTP surface: intake, technical validation, retry-safe upload,
- * and the Inspector's own adequacy decision.
+ * MF3-01 to MF3-04 through the real HTTP surface: intake, technical validation, and scoped upload.
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -67,6 +67,7 @@ class InspectionEvidenceApiIntegrationTest {
   @Autowired InspectionRepository inspections;
   @Autowired InspectionPreparationRepository preparations;
   @Autowired InspectionReadinessDecisionRepository readinessDecisions;
+  @Autowired EvidenceRepository evidence;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -163,7 +164,8 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void sharedEvidenceLocationUpdatesEveryLinkedFindingAndIsInspectorOnly() throws Exception {
+  void sharedEvidenceLocationIsReturnedOnTheEvidenceWithoutDuplicatingItOnFindings()
+      throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
     UUID firstFinding = createManualFinding(evidenceId);
     UUID secondFinding = createManualFinding(evidenceId);
@@ -192,17 +194,13 @@ class InspectionEvidenceApiIntegrationTest {
         .andExpect(jsonPath("$.data.locationDescription").value("Girder G4 east face"));
 
     assertThat(
-            findings
-                .findByIdAndInspectionId(firstFinding, fixture.inspectionId())
+            evidence
+                .findByIdAndInspectionId(evidenceId, fixture.inspectionId())
                 .orElseThrow()
                 .getLocationDescription())
         .isEqualTo("Girder G4 east face");
-    assertThat(
-            findings
-                .findByIdAndInspectionId(secondFinding, fixture.inspectionId())
-                .orElseThrow()
-                .getLocationDescription())
-        .isEqualTo("Girder G4 east face");
+    assertThat(findings.findByIdAndInspectionId(firstFinding, fixture.inspectionId())).isPresent();
+    assertThat(findings.findByIdAndInspectionId(secondFinding, fixture.inspectionId())).isPresent();
   }
 
   @Test
@@ -310,31 +308,7 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void inspectorAcceptsTheEvidenceSetAfterReviewingIt() throws Exception {
-    upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
-
-    // The Inspector writes prose, not JSON. The decision must still be storable and readable,
-    // because shot_list_comparison is a jsonb column.
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ACCEPTED",
-                            "shotListComparison", "Main span covered from both walkways"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.decision").value("ACCEPTED"))
-        .andExpect(jsonPath("$.data.decidedByUserId").value(fixture.inspectorId().toString()))
-        .andExpect(
-            jsonPath("$.data.shotListComparison").value("Main span covered from both walkways"));
-  }
-
-  @Test
-  void anAdditionalSessionDecisionReturnsToPreparationAndPreservesEarlierVersions()
-      throws Exception {
+  void additionalSessionUsesMf2PreparationAndRetainsThePriorDecision() throws Exception {
     InspectionPreparation previous =
         new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
     previous.recordShotList("{\"shots\":[\"main span\"]}");
@@ -352,9 +326,6 @@ class InspectionEvidenceApiIntegrationTest {
             fixture.reviewerId(),
             null,
             "{}",
-            "{}",
-            "{}",
-            "[]",
             "[]",
             "[]",
             "a".repeat(64)));
@@ -363,18 +334,16 @@ class InspectionEvidenceApiIntegrationTest {
 
     mockMvc
         .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
+            post(
+                    "/api/v1/inspections/{id}/field-sessions/additional-session",
+                    fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ADDITIONAL_SESSION_REQUIRED",
-                            "fieldSessionId", completedSessionId,
-                            "shotListComparison", "Main span covered; east face not observed",
-                            "limitationReason", "The east face requires a new access window"))))
+                    objectMapper.writeValueAsString(Map.of("reason", "East face needs access"))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.decision").value("ADDITIONAL_SESSION_REQUIRED"));
+        .andExpect(jsonPath("$.data.preparationVersion").value(2))
+        .andExpect(jsonPath("$.data.status").value("DRAFT"));
 
     assertThat(
             jdbcTemplate.queryForObject(
@@ -382,39 +351,10 @@ class InspectionEvidenceApiIntegrationTest {
                 String.class,
                 fixture.inspectionId()))
         .isEqualTo("PREPARING");
-    var history =
-        preparations.findByInspectionIdOrderByPreparationVersionDesc(fixture.inspectionId());
-    assertThat(history).hasSize(2);
-    assertThat(history.getFirst().getPreparationVersion()).isEqualTo(2);
-    assertThat(history.getFirst().getStatus().name()).isEqualTo("DRAFT");
-    assertThat(history.get(1).getStatus().name()).isEqualTo("SUPERSEDED");
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT decision FROM inspection_readiness_decisions WHERE inspection_id = ? "
-                    + "ORDER BY decided_at DESC LIMIT 1",
-                String.class,
-                fixture.inspectionId()))
-        .isEqualTo("INVALIDATED");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT decision FROM inspection_readiness_decisions WHERE inspection_id = ? "
-                    + "ORDER BY decided_at DESC LIMIT 1 OFFSET 1",
-                String.class,
-                fixture.inspectionId()))
-        .isEqualTo("APPROVED");
-    assertThat(history.getFirst().getShotList()).contains("main span");
-    assertThat(history.get(1).getId()).isEqualTo(previous.getId());
-    // The handoff creates no session and no evidence row; the completed visit and its captures
-    // stay as they were.
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
-                Long.class,
-                fixture.inspectionId()))
-        .isEqualTo(1L);
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM evidence WHERE inspection_id = ?",
+                "SELECT count(*) FROM inspection_readiness_decisions WHERE inspection_id = ? "
+                    + "AND decision = 'INVALIDATED' AND reason = 'East face needs access'",
                 Long.class,
                 fixture.inspectionId()))
         .isEqualTo(1L);
@@ -443,9 +383,6 @@ class InspectionEvidenceApiIntegrationTest {
                     "{}",
                     "[]",
                     "[]",
-                    "[]",
-                    "[]",
-                    "[]",
                     "a".repeat(64)))
             .getId();
     UUID sessionId = UUID.randomUUID();
@@ -472,186 +409,8 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void additionalSessionDecisionMustMatchCompletedSessionAndItsEvidence() throws Exception {
-    UUID completedSessionId = insertCompletedFieldSession();
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ADDITIONAL_SESSION_REQUIRED",
-                            "fieldSessionId", UUID.randomUUID(),
-                            "shotListComparison", "East face was not observed",
-                            "limitationReason", "The access window was missed"))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("FIELD_SESSION_NOT_CURRENT"));
-
-    MvcResult upload =
-        uploadResponse(
-            fixture.inspectorId(), "INSPECTOR", "capture.png", PNG_BYTES, completedSessionId);
-    UUID evidenceId =
-        UUID.fromString(
-            objectMapper
-                .readTree(upload.getResponse().getContentAsString())
-                .at("/data/id")
-                .asString());
-    jdbcTemplate.update(
-        "UPDATE evidence SET retired_at = CURRENT_TIMESTAMP WHERE id = ?", evidenceId);
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ADDITIONAL_SESSION_REQUIRED",
-                            "fieldSessionId", completedSessionId,
-                            "shotListComparison", "East face was not observed",
-                            "limitationReason", "The access window was missed"))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("FIELD_SESSION_EVIDENCE_MISSING"));
-  }
-
-  @Test
-  void anAdditionalSessionDecisionNeedsACompletedSessionWithItsOwnEvidence() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ADDITIONAL_SESSION_REQUIRED",
-                            "shotListComparison", "The east face was not observed",
-                            "limitationReason", "Access was unavailable"))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("FIELD_SESSION_NOT_COMPLETED"));
-  }
-
-  @Test
-  void additionalSessionDecisionRequiresTheLatestApprovedPreparation() throws Exception {
-    UUID completedSessionId = insertCompletedFieldSession();
-    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES, completedSessionId);
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ADDITIONAL_SESSION_REQUIRED",
-                            "fieldSessionId", completedSessionId,
-                            "shotListComparison", "The east face was not observed",
-                            "limitationReason", "Access was unavailable"))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("PREPARATION_MISSING"));
-
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM inspections WHERE id = ?",
-                String.class,
-                fixture.inspectionId()))
-        .isEqualTo("FIELD_COMPLETED");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM evidence_quality_decisions WHERE inspection_id = ?",
-                Long.class,
-                fixture.inspectionId()))
-        .isZero();
-  }
-
-  @Test
-  void aShotListComparisonContainingQuotesSurvivesTheRoundTrip() throws Exception {
-    upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ACCEPTED",
-                            "shotListComparison", "Inspector noted the \"east abutment\" twice"))))
-        .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.shotListComparison")
-                .value("Inspector noted the \"east abutment\" twice"));
-  }
-
-  @Test
-  void aLimitedDecisionMustStateItsLimitation() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "LIMITED"))))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("EVIDENCE_QUALITY_INVALID"));
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "LIMITED",
-                            "shotListComparison", "Span covered except the east face",
-                            "limitationReason", "The east face was not observed"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.decision").value("LIMITED"));
-  }
-
-  @Test
-  void everyDecisionRequiresAShotListComparison() throws Exception {
-    // A blank comparison leaves the report disclosure unsupported, so no decision is recorded.
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("decision", "ACCEPTED", "shotListComparison", "  "))))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("EVIDENCE_QUALITY_INVALID"));
-
-    // Nothing was persisted by the refusal.
-    mockMvc
-        .perform(
-            get("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.length()").value(0));
-  }
-
-  @Test
   void evidenceUploadIsRejectedAfterReportPublication() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision",
-                            "ACCEPTED",
-                            "shotListComparison",
-                            "All required views captured"))))
-        .andExpect(status().isOk());
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/findings/confirm", fixture.inspectionId())
@@ -754,17 +513,6 @@ class InspectionEvidenceApiIntegrationTest {
             .path("data")
             .path("id")
             .stringValue());
-  }
-
-  @Test
-  void onlyTheAssignedInspectorMayDecideEvidenceQuality() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.otherInspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPTED"))))
-        .andExpect(status().isNotFound());
   }
 
   private UUID upload(UUID actorId, String role, String fileName, byte[] content) throws Exception {

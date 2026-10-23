@@ -9,33 +9,21 @@ import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-/**
- * A finding is one observation, whoever made it, and the only thing the workflow asks of it is
- * whether the Inspector has confirmed it.
- */
+/** Tests the finding's review, removal, and MF4 forwarding state. */
 class FindingTest {
 
   private final UUID evidenceId = UUID.randomUUID();
-  private final UUID inspector = UUID.randomUUID();
 
   private Finding detected() {
     return new Finding(
         UUID.randomUUID(),
         evidenceId,
-        inspector,
         "F-1",
         "corrosion",
         FindingSeverity.MEDIUM,
-        null,
-        "corrosion",
+        "corrosion visible",
         null,
         "{\"x\":10,\"y\":20,\"w\":30,\"h\":40}",
-        null,
-        null,
-        null,
-        null,
-        null,
-        false,
         "yolo-v8",
         "2026.02",
         "acme",
@@ -46,128 +34,106 @@ class FindingTest {
     return new Finding(
         UUID.randomUUID(),
         evidenceId,
-        inspector,
         "F-2",
         "Spalling",
         FindingSeverity.HIGH,
-        "Lower chord",
         "Surface loss of 5 mm",
         "Patch and seal",
-        "Lower chord",
-        "Spalling observed",
-        "5 mm of surface loss",
-        "HIGH",
-        "5 mm",
-        true);
+        null,
+        null,
+        null,
+        null,
+        null);
   }
 
   @Test
-  void aNewFindingIsPendingAndCarriesItsProvenanceWhenItHasOne() {
+  void aNewFindingIsPendingAndCarriesItsAiProvenance() {
     Finding finding = detected();
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
     assertThat(finding.getModelName()).isEqualTo("yolo-v8");
     assertThat(finding.getModelVersion()).isEqualTo("2026.02");
+    assertThat(finding.getModelProvider()).isEqualTo("acme");
     assertThat(finding.getConfidence()).isEqualByComparingTo("0.91230");
     assertThat(finding.getInspectorConfirmedAt()).isNull();
+    assertThat(finding.getForwardedToMaintenanceAt()).isNull();
   }
 
   @Test
-  void onlyPendingAiFindingsAreRejectedRatherThanRetainedAsDeletedFindings() {
+  void onlyPendingAiFindingsAreSuggestions() {
     Finding suggestion = detected();
     Finding inspectorFinding = manual();
 
     assertThat(suggestion.isPendingAiSuggestion()).isTrue();
-    suggestion.confirmByInspector(inspector);
+    suggestion.confirmByInspector();
     assertThat(suggestion.isPendingAiSuggestion()).isFalse();
     assertThat(inspectorFinding.isPendingAiSuggestion()).isFalse();
   }
 
   @Test
-  void aManualFindingHasNoModelBehindIt() {
-    Finding finding = manual();
-
-    assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
-    assertThat(finding.getModelName()).isNull();
-    assertThat(finding.getConfidence()).isNull();
-    assertThat(finding.isRepairRequired()).isTrue();
-  }
-
-  @Test
-  void confirmingMakesTheFindingOfficialAndNamesWhoConfirmedIt() {
+  void confirmingMakesTheFindingOfficial() {
     Finding finding = detected();
 
-    finding.confirmByInspector(inspector);
+    finding.confirmByInspector();
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.CONFIRMED);
     assertThat(finding.getInspectorConfirmedAt()).isNotNull();
-    assertThat(finding.getConfirmedByUserId()).isEqualTo(inspector);
     assertThat(finding.isOfficial()).isTrue();
   }
 
   @Test
-  void removingAFindingKeepsWhoRemovedItAndWhy() {
+  void deletingKeepsATimestampAndRestoreRetainsTheFindingDecision() {
     Finding finding = detected();
+    finding.confirmByInspector();
 
-    finding.delete(inspector, "Not a defect");
+    finding.delete();
 
     assertThat(finding.isDeleted()).isTrue();
-    assertThat(finding.getDeletedByUserId()).isEqualTo(inspector);
-    assertThat(finding.getDeletionReason()).isEqualTo("Not a defect");
-  }
-
-  @Test
-  void removingAFindingNeedsAnActorAndAReason() {
-    Finding finding = detected();
-
-    assertThatThrownBy(() -> finding.delete(null, "Not a defect"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> finding.delete(inspector, "  "))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void restoringBringsAFindingBackAsItWas() {
-    Finding finding = detected();
-    finding.confirmByInspector(inspector);
-    finding.delete(inspector, "Removed by mistake");
+    assertThat(finding.getDeletedAt()).isNotNull();
+    assertThatThrownBy(finding::delete)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("already removed");
 
     finding.restore();
 
     assertThat(finding.isDeleted()).isFalse();
-    assertThat(finding.getDeletionReason()).isNull();
-    // The confirmation still stands: removing a finding does not undo what the Inspector said.
+    assertThat(finding.getDeletedAt()).isNull();
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.CONFIRMED);
+    assertThat(finding.isOfficial()).isTrue();
   }
 
   @Test
   void restoringAFindingThatWasNotRemovedIsRefused() {
-    Finding finding = detected();
-
-    assertThatThrownBy(finding::restore).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(detected()::restore).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
-  void editingAFindingTakesBackTheConfirmationBecauseTheContentMoved() {
+  void editingAFindingTakesBackItsConfirmation() {
     Finding finding = detected();
-    finding.confirmByInspector(inspector);
+    finding.confirmByInspector();
 
     finding.revise(
-        evidenceId,
-        "corrosion",
-        FindingSeverity.HIGH,
-        "Lower chord",
-        "corrosion",
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        false);
+        evidenceId, "corrosion", FindingSeverity.HIGH, "More extensive corrosion", "Repair");
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
     assertThat(finding.getInspectorConfirmedAt()).isNull();
     assertThat(finding.isOfficial()).isFalse();
+  }
+
+  @Test
+  void forwardingIsRecordedForEachConfirmedFindingOnlyOnce() {
+    Finding finding = detected();
+    assertThatThrownBy(finding::forwardToMaintenance)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("confirmed finding");
+
+    finding.confirmByInspector();
+    finding.forwardToMaintenance();
+
+    assertThat(finding.getForwardedToMaintenanceAt()).isNotNull();
+    assertThat(finding.isForwardedToMaintenance()).isTrue();
+    assertThatThrownBy(finding::forwardToMaintenance)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("already forwarded");
   }
 }

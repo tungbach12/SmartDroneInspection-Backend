@@ -1,6 +1,5 @@
 package com.smartdroneinspection.inspections.domain;
 
-import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,14 +13,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/**
- * One version of an inspection report.
- *
- * <p>The lifecycle is DRAFT -> AUTHOR_VERIFIED -> SUBMITTED -> (RETURNED | APPROVED) -> PUBLISHED,
- * with SUPERSEDED when a later version replaces it. Every transition is an explicit human act: the
- * author verifies what the model drafted, and a reviewer who is not the author decides. Nothing
- * advances on a timer, and a published version is immutable.
- */
+/** One immutable-at-publication version of an inspection report. */
 @Entity
 @Table(name = "inspection_report_versions")
 public class InspectionReportVersion {
@@ -41,35 +33,14 @@ public class InspectionReportVersion {
   @Column(nullable = false, length = 32)
   private ReportStatus status;
 
-  @Column(name = "author_user_id", nullable = false)
-  private UUID authorUserId;
-
-  @Column(name = "author_verified_by_user_id")
-  private UUID authorVerifiedByUserId;
-
-  @Column(name = "author_verified_at")
-  private Instant authorVerifiedAt;
-
   @Column(name = "reviewer_user_id")
   private UUID reviewerUserId;
 
   @Column(name = "reviewed_at")
   private Instant reviewedAt;
 
-  @Column(name = "review_reason", length = 2000)
-  private String reviewReason;
-
-  @Column(name = "llm_provider", length = 96)
-  private String llmProvider;
-
-  @Column(name = "llm_model", length = 160)
-  private String llmModel;
-
-  @Column(name = "prompt_version", length = 96)
-  private String promptVersion;
-
-  @Column(name = "generated_at")
-  private Instant generatedAt;
+  @Column(name = "return_reason", length = 2000)
+  private String returnReason;
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "content_snapshot", nullable = false, columnDefinition = "jsonb")
@@ -82,24 +53,11 @@ public class InspectionReportVersion {
   @Column(name = "rendered_checksum_sha256", length = 64)
   private String renderedChecksumSha256;
 
-  @Column(name = "evidence_snapshot_hash", length = 128)
-  private String evidenceSnapshotHash;
-
-  @Column(name = "findings_snapshot_hash", length = 64)
-  private String findingsSnapshotHash;
-
-  @Column(name = "withdrawn_by_user_id")
-  private UUID withdrawnByUserId;
-
   @Column(name = "withdrawn_at")
   private Instant withdrawnAt;
 
   @Column(name = "withdrawal_reason", length = 2000)
   private String withdrawalReason;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "return_reason_type", length = 32)
-  private ReportReturnReasonType returnReasonType;
 
   @Column(name = "published_at")
   private Instant publishedAt;
@@ -107,79 +65,39 @@ public class InspectionReportVersion {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
+  @Column(name = "submitted_at")
+  private Instant submittedAt;
+
   protected InspectionReportVersion() {}
 
   public InspectionReportVersion(
-      UUID inspectionReportId,
-      int versionNo,
-      UUID sourceVersionId,
-      UUID authorUserId,
-      String contentSnapshot,
-      String llmProvider,
-      String llmModel,
-      String promptVersion,
-      String evidenceSnapshotHash) {
-    this(
-        inspectionReportId,
-        versionNo,
-        sourceVersionId,
-        authorUserId,
-        contentSnapshot,
-        llmProvider,
-        llmModel,
-        promptVersion,
-        evidenceSnapshotHash,
-        null);
-  }
-
-  public InspectionReportVersion(
-      UUID inspectionReportId,
-      int versionNo,
-      UUID sourceVersionId,
-      UUID authorUserId,
-      String contentSnapshot,
-      String llmProvider,
-      String llmModel,
-      String promptVersion,
-      String evidenceSnapshotHash,
-      String findingsSnapshotHash) {
+      UUID inspectionReportId, int versionNo, UUID sourceVersionId, String contentSnapshot) {
     this.inspectionReportId = inspectionReportId;
     this.versionNo = versionNo;
     this.sourceVersionId = sourceVersionId;
-    this.authorUserId = authorUserId;
     this.contentSnapshot = contentSnapshot;
-    this.llmProvider = llmProvider;
-    this.llmModel = llmModel;
-    this.promptVersion = promptVersion;
-    this.evidenceSnapshotHash = evidenceSnapshotHash;
-    this.findingsSnapshotHash = findingsSnapshotHash;
     this.status = ReportStatus.DRAFT;
-    this.generatedAt = contentSnapshot == null ? null : Instant.now();
     this.createdAt = Instant.now();
   }
 
-  /** Only the author may verify the draft against its sources. */
-  public void verifyAsAuthor(UUID verifyingUserId) {
+  /** Only the report author may verify the draft against its sources. */
+  public void verifyAsAuthor(UUID verifyingUserId, UUID reportAuthorUserId) {
     requireStatus(ReportStatus.DRAFT, ReportStatus.RETURNED);
-    if (!authorUserId.equals(verifyingUserId)) {
+    if (verifyingUserId == null || !verifyingUserId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Only the report author may verify this version");
     }
-    this.authorVerifiedByUserId = verifyingUserId;
-    this.authorVerifiedAt = Instant.now();
-    this.status = ReportStatus.AUTHOR_VERIFIED;
+    // A renewed verification starts a fresh review round; an earlier return is no longer current.
+    reviewerUserId = null;
+    reviewedAt = null;
+    returnReason = null;
+    status = ReportStatus.AUTHOR_VERIFIED;
   }
 
   public void editContent(String newContent) {
     requireStatus(ReportStatus.DRAFT, ReportStatus.RETURNED);
-    this.contentSnapshot = newContent;
+    contentSnapshot = newContent;
   }
 
-  /**
-   * MF3-11: records the published deliverable.
-   *
-   * <p>Only a published version can carry an artefact, so the column cannot be populated for a
-   * draft and a later version cannot overwrite the object key of an earlier published one.
-   */
   public void recordArtefact(String objectKey, String checksumSha256) {
     requireStatus(ReportStatus.PUBLISHED);
     if (objectKey == null
@@ -188,8 +106,8 @@ public class InspectionReportVersion {
         || checksumSha256.isBlank()) {
       throw new IllegalArgumentException("A published report requires its object key and checksum");
     }
-    this.renderedObjectKey = objectKey;
-    this.renderedChecksumSha256 = checksumSha256;
+    renderedObjectKey = objectKey;
+    renderedChecksumSha256 = checksumSha256;
   }
 
   public String getRenderedObjectKey() {
@@ -202,49 +120,27 @@ public class InspectionReportVersion {
 
   public void submit() {
     requireStatus(ReportStatus.AUTHOR_VERIFIED);
-    if (authorVerifiedByUserId == null || authorVerifiedAt == null) {
-      throw new IllegalStateException("A version must be author-verified before submission");
-    }
-    this.status = ReportStatus.SUBMITTED;
+    submittedAt = Instant.now();
+    status = ReportStatus.SUBMITTED;
   }
 
-  /**
-   * The qualified reviewer records a decision. Separation of duties is a domain invariant here, not
-   * only a service check: no report is self-reviewed.
-   */
-  public void reviewBy(
-      UUID reviewerId, boolean approve, String reason, ReportReturnReasonType reasonType) {
+  public void reviewBy(UUID reviewerId, boolean approve, String reason) {
     requireStatus(ReportStatus.SUBMITTED);
     if (reviewerId == null) {
       throw new IllegalArgumentException("A reviewer is required");
     }
-    if (authorUserId.equals(reviewerId)) {
-      throw new IllegalStateException("The report author cannot review their own report");
-    }
     if (!approve && (reason == null || reason.isBlank())) {
       throw new IllegalArgumentException("A return requires a reason");
     }
-    if (!approve && reasonType == null) {
-      throw new IllegalArgumentException("A return states whether the findings need revision");
-    }
-    this.reviewerUserId = reviewerId;
-    this.reviewedAt = Instant.now();
-    this.reviewReason = reason;
-    this.returnReasonType = approve ? null : reasonType;
-    this.status = approve ? ReportStatus.APPROVED : ReportStatus.RETURNED;
+    reviewerUserId = reviewerId;
+    reviewedAt = Instant.now();
+    returnReason = approve ? null : reason;
+    status = approve ? ReportStatus.APPROVED : ReportStatus.RETURNED;
   }
 
-  /**
-   * MF3-08: the author pulls a submission back before the reviewer acted on it. The version keeps
-   * its number and content - a submission is a state, not a new document - and returns to the
-   * author for revision, so a version the reviewer already acted on never changes underneath them.
-   */
-  public void withdraw(UUID authorId, String reason) {
+  public void withdraw(UUID authorId, String reason, UUID reportAuthorUserId) {
     requireStatus(ReportStatus.SUBMITTED);
-    if (authorId == null) {
-      throw new IllegalArgumentException("An author is required to withdraw a submission");
-    }
-    if (!authorUserId.equals(authorId)) {
+    if (authorId == null || !authorId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Only the report author can withdraw this submission");
     }
     if (reviewedAt != null || reviewerUserId != null) {
@@ -254,19 +150,13 @@ public class InspectionReportVersion {
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("A withdrawal reason is required");
     }
-    this.status = ReportStatus.RETURNED;
-    this.withdrawnByUserId = authorId;
-    this.withdrawnAt = Instant.now();
-    this.withdrawalReason = reason;
+    status = ReportStatus.RETURNED;
+    withdrawnAt = Instant.now();
+    withdrawalReason = reason;
   }
 
-  /** True when the author withdrew the submission rather than the reviewer returning it. */
   public boolean isAuthorWithdrawn() {
-    return withdrawnByUserId != null && withdrawnAt != null;
-  }
-
-  public UUID getWithdrawnByUserId() {
-    return withdrawnByUserId;
+    return withdrawnAt != null;
   }
 
   public Instant getWithdrawnAt() {
@@ -277,28 +167,24 @@ public class InspectionReportVersion {
     return withdrawalReason;
   }
 
-  public ReportReturnReasonType getReturnReasonType() {
-    return returnReasonType;
-  }
-
   /** Publication is a separate act after approval; the result is immutable. */
-  public void publish(UUID publishingUserId) {
+  public void publish(UUID publishingUserId, UUID reportAuthorUserId) {
     requireStatus(ReportStatus.APPROVED);
     if (publishingUserId == null) {
       throw new IllegalArgumentException("A publishing user is required");
     }
-    if (authorUserId.equals(publishingUserId) && reviewerUserId == null) {
+    if (reviewerUserId == null || reviewerUserId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Publication requires a qualified reviewer decision");
     }
-    this.status = ReportStatus.PUBLISHED;
-    this.publishedAt = Instant.now();
+    status = ReportStatus.PUBLISHED;
+    publishedAt = Instant.now();
   }
 
   public void supersede() {
     if (status != ReportStatus.PUBLISHED) {
       throw new IllegalStateException("Only a published version can be superseded");
     }
-    this.status = ReportStatus.SUPERSEDED;
+    status = ReportStatus.SUPERSEDED;
   }
 
   public boolean isImmutable() {
@@ -307,9 +193,7 @@ public class InspectionReportVersion {
 
   private void requireStatus(ReportStatus... allowed) {
     for (ReportStatus candidate : allowed) {
-      if (status == candidate) {
-        return;
-      }
+      if (status == candidate) return;
     }
     throw new IllegalStateException(
         "Report version " + versionNo + " is " + status + "; expected one of " + allowed);
@@ -335,18 +219,6 @@ public class InspectionReportVersion {
     return status;
   }
 
-  public UUID getAuthorUserId() {
-    return authorUserId;
-  }
-
-  public UUID getAuthorVerifiedByUserId() {
-    return authorVerifiedByUserId;
-  }
-
-  public Instant getAuthorVerifiedAt() {
-    return authorVerifiedAt;
-  }
-
   public UUID getReviewerUserId() {
     return reviewerUserId;
   }
@@ -355,36 +227,16 @@ public class InspectionReportVersion {
     return reviewedAt;
   }
 
-  public String getReviewReason() {
-    return reviewReason;
-  }
-
-  public String getLlmProvider() {
-    return llmProvider;
-  }
-
-  public String getLlmModel() {
-    return llmModel;
-  }
-
-  public String getPromptVersion() {
-    return promptVersion;
-  }
-
-  public Instant getGeneratedAt() {
-    return generatedAt;
+  public String getReturnReason() {
+    return returnReason;
   }
 
   public String getContentSnapshot() {
     return contentSnapshot;
   }
 
-  public String getEvidenceSnapshotHash() {
-    return evidenceSnapshotHash;
-  }
-
-  public String getFindingsSnapshotHash() {
-    return findingsSnapshotHash;
+  public Instant getSubmittedAt() {
+    return submittedAt;
   }
 
   public Instant getPublishedAt() {

@@ -45,8 +45,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
   @Transactional(readOnly = true)
   public List<RepairCandidate> findRepairCandidates(UUID organizationId) {
     List<RepairCandidate> candidates = new ArrayList<>();
-    List<Finding> repairRequired =
-        findings.findByRepairRequiredTrueAndInspectorConfirmedAtNotNull();
+    List<Finding> repairRequired = findings.findByForwardedToMaintenanceAtIsNotNull();
 
     for (Finding finding : repairRequired) {
       candidateFor(organizationId, finding).ifPresent(candidates::add);
@@ -60,7 +59,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
       UUID organizationId, UUID reportVersionId, UUID findingId) {
     return findings
         .findById(findingId)
-        .filter(finding -> finding.isRepairRequired() && finding.isOfficial())
+        .filter(finding -> finding.isForwardedToMaintenance() && finding.isOfficial())
         .flatMap(finding -> candidateFor(organizationId, finding))
         .filter(candidate -> candidate.reportVersionId().equals(reportVersionId));
   }
@@ -94,7 +93,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
             finding.getId(),
             finding.getFindingCode(),
             finding.getDefectLabel(),
-            finding.getDescription(),
+            finding.getTechnicalNotes(),
             finding.getSeverity().name(),
             finding.getRecommendedAction(),
             version.getPublishedAt()));

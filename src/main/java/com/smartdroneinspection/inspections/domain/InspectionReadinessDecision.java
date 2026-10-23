@@ -66,23 +66,8 @@ public class InspectionReadinessDecision {
   @Column(name = "drone_document_snapshot", columnDefinition = "jsonb")
   private String droneDocumentSnapshot;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "permit_snapshot_ids", columnDefinition = "jsonb")
-  private String permitSnapshotIds;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "credential_snapshot_ids", columnDefinition = "jsonb")
-  private String credentialSnapshotIds;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "drone_document_snapshot_ids", columnDefinition = "jsonb")
-  private String droneDocumentSnapshotIds;
-
   @Column(name = "source_hash", nullable = false, length = 128)
   private String sourceHash;
-
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
 
   protected InspectionReadinessDecision() {}
 
@@ -96,9 +81,6 @@ public class InspectionReadinessDecision {
       String permitSnapshot,
       String credentialSnapshot,
       String droneDocumentSnapshot,
-      String permitSnapshotIds,
-      String credentialSnapshotIds,
-      String droneDocumentSnapshotIds,
       String sourceHash) {
     this.inspectionId = Objects.requireNonNull(inspectionId, "Decision inspection is required");
     this.decision = Objects.requireNonNull(decision, "Readiness decision is required");
@@ -120,12 +102,8 @@ public class InspectionReadinessDecision {
     this.permitSnapshot = permitSnapshot;
     this.credentialSnapshot = credentialSnapshot;
     this.droneDocumentSnapshot = droneDocumentSnapshot;
-    this.permitSnapshotIds = permitSnapshotIds;
-    this.credentialSnapshotIds = credentialSnapshotIds;
-    this.droneDocumentSnapshotIds = droneDocumentSnapshotIds;
     this.sourceHash = sourceHash.trim();
     this.decidedAt = Instant.now();
-    this.createdAt = decidedAt;
   }
 
   public UUID getId() {
@@ -172,23 +150,7 @@ public class InspectionReadinessDecision {
     return droneDocumentSnapshot;
   }
 
-  public String getPermitSnapshotIds() {
-    return permitSnapshotIds;
-  }
-
-  public String getCredentialSnapshotIds() {
-    return credentialSnapshotIds;
-  }
-
-  public String getDroneDocumentSnapshotIds() {
-    return droneDocumentSnapshotIds;
-  }
-
   public String getSourceHash() {
     return sourceHash;
-  }
-
-  public Instant getCreatedAt() {
-    return createdAt;
   }
 }
