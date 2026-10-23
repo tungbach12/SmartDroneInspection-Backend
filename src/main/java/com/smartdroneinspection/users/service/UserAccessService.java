@@ -46,6 +46,12 @@ public class UserAccessService implements UserAccess {
 
   @Override
   @Transactional(readOnly = true)
+  public Optional<String> findOrganizationCode(UUID organizationId) {
+    return organizations.findById(organizationId).map(organization -> organization.getCode());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public boolean organizationExists(UUID organizationId) {
     return organizations.existsById(organizationId);
   }
@@ -62,7 +68,8 @@ public class UserAccessService implements UserAccess {
                     user.getId(),
                     Set.copyOf(user.roleValues()),
                     user.getOrganizationId(),
-                    user.getFullName()));
+                    user.getFullName(),
+                    user.getEmail()));
   }
 
   @Override

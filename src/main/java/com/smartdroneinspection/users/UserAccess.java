@@ -12,6 +12,8 @@ public interface UserAccess {
 
   Optional<String> findOrganizationName(UUID organizationId);
 
+  Optional<String> findOrganizationCode(UUID organizationId);
+
   boolean organizationExists(UUID organizationId);
 
   boolean isVisionFallbackEnabled(UUID userId);
@@ -46,7 +48,12 @@ public interface UserAccess {
       String userAgent,
       String correlationId);
 
-  record ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
+  record ActiveUser(
+      UUID id, Set<String> roles, UUID organizationId, String fullName, String email) {
+
+    public ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
+      this(id, roles, organizationId, fullName, null);
+    }
 
     public ActiveUser(UUID id, Set<String> roles) {
       this(id, roles, null, null);
