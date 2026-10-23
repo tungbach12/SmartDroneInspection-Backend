@@ -74,9 +74,6 @@ public class FieldSession {
   @Column(name = "checklist_template_id")
   private UUID checklistTemplateId;
 
-  @Column(name = "checklist_version")
-  private Integer checklistVersion;
-
   @Column(name = "readiness_version")
   private Integer readinessVersion;
 
@@ -104,7 +101,6 @@ public class FieldSession {
       UUID readinessDecisionId,
       String status,
       Instant startedAt,
-      Integer checklistVersion,
       Integer readinessVersion) {
     this.inspectionId = inspectionId;
     this.organizationId = organizationId;
@@ -113,7 +109,6 @@ public class FieldSession {
     this.readinessDecisionId = readinessDecisionId;
     this.status = status;
     this.startedAt = startedAt;
-    this.checklistVersion = checklistVersion;
     this.readinessVersion = readinessVersion;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
@@ -193,9 +188,6 @@ public class FieldSession {
    *
    * <p>The session is created {@code PLANNED} and becomes {@code IN_PROGRESS} only when the
    * Inspector actually starts, so a row never claims a start instant it did not have.
-   *
-   * <p>The checklist template and its version are recorded together, because a session that ran
-   * against one checklist version cannot be read as evidence against another.
    */
   public static FieldSession opening(
       UUID inspectionId,
@@ -213,7 +205,6 @@ public class FieldSession {
             droneId,
             readinessDecisionId,
             PLANNED,
-            null,
             null,
             readinessVersion);
     session.checklistTemplateId = checklistTemplateId;
@@ -292,10 +283,6 @@ public class FieldSession {
 
   public UUID getChecklistTemplateId() {
     return checklistTemplateId;
-  }
-
-  public Integer getChecklistVersion() {
-    return checklistVersion;
   }
 
   public Integer getReadinessVersion() {

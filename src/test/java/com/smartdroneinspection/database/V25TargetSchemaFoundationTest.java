@@ -176,9 +176,6 @@ class V25TargetSchemaFoundationTest {
                     "checksum_sha256",
                     "uploaded_by_user_id")),
             Map.entry(
-                "evidence_quality_decisions",
-                Set.of("inspection_id", "decision", "decided_by_user_id", "decided_at")),
-            Map.entry(
                 "findings",
                 Set.of(
                     "inspection_id",

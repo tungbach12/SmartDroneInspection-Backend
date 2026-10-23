@@ -3,11 +3,18 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.api.dto.request.PrepareShotListRequest;
 import com.smartdroneinspection.inspections.api.dto.request.SubmitPreparationRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparationResponse;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
+import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
+import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
+import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -38,6 +45,10 @@ public class InspectionPreparationService {
 
   private final InspectionPreparationRepository preparations;
   private final InspectionRepository inspections;
+  private final InspectionReadinessDecisionRepository readinessDecisions;
+  private final FieldSessionRepository sessions;
+  private final EvidenceRepository evidence;
+  private final EvidenceService evidenceService;
   private final UserAccess userAccess;
 
   @PersistenceContext private EntityManager entityManager;
@@ -45,9 +56,17 @@ public class InspectionPreparationService {
   public InspectionPreparationService(
       InspectionPreparationRepository preparations,
       InspectionRepository inspections,
+      InspectionReadinessDecisionRepository readinessDecisions,
+      FieldSessionRepository sessions,
+      EvidenceRepository evidence,
+      EvidenceService evidenceService,
       UserAccess userAccess) {
     this.preparations = preparations;
     this.inspections = inspections;
+    this.readinessDecisions = readinessDecisions;
+    this.sessions = sessions;
+    this.evidence = evidence;
+    this.evidenceService = evidenceService;
     this.userAccess = userAccess;
   }
 
@@ -137,6 +156,109 @@ public class InspectionPreparationService {
     // before the preparation is flushed.
     inspections.save(inspection);
     return toResponse(preparations.saveAndFlush(preparation));
+  }
+
+  /**
+   * Requests another field session after the latest completed visit did not cover the required
+   * scope. The prior readiness is invalidated and a new preparation draft is opened atomically
+   * (MF2/MF3).
+   */
+  @Transactional
+  public InspectionPreparationResponse requestAdditionalSession(
+      UUID inspectorId, UUID inspectionId, String reason) {
+    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
+    if (reason == null || reason.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "ADDITIONAL_SESSION_REASON_REQUIRED",
+          "Explain why another field session is needed.");
+    }
+    UUID organizationId = requireOrganization(inspector);
+    evidenceService.requireAssignedInspection(inspectorId, inspectionId);
+    Inspection inspection =
+        inspections
+            .findWithLockByIdAndOrganizationId(inspectionId, organizationId)
+            .orElseThrow(InspectionPreparationService::inspectionNotFound);
+    refreshInspection(inspection);
+    if (!inspection.isInspectedBy(inspectorId)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "PREPARATION_SCOPE_DENIED",
+          "This inspection is not assigned to you.");
+    }
+    if (inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Another field session can only be requested after field work is completed.");
+    }
+
+    FieldSession latestCompletedSession =
+        sessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(session -> "FIELD_COMPLETED".equals(session.getStatus()))
+            .filter(session -> session.getInspectorUserId().equals(inspectorId))
+            .reduce((first, second) -> second)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "FIELD_SESSION_NOT_COMPLETED",
+                        "Complete a field session before requesting another one."));
+    boolean hasCurrentEvidence =
+        evidence.existsByInspectionIdAndFieldSessionIdAndRetiredAtIsNullAndUploadStatus(
+            inspectionId, latestCompletedSession.getId(), UploadStatus.AVAILABLE);
+    if (!hasCurrentEvidence) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_EVIDENCE_MISSING",
+          "Upload active evidence from the latest completed field session first.");
+    }
+
+    InspectionPreparation preparation =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .flatMap(
+                latest ->
+                    preparations.findWithLockByIdAndInspectionId(latest.getId(), inspectionId))
+            .filter(item -> item.getStatus() == InspectionPreparationStatus.READY)
+            .filter(item -> item.getInspectorUserId().equals(inspectorId))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "PREPARATION_NOT_CURRENT",
+                        "An approved current preparation is required to request another session."));
+    InspectionReadinessDecision approval =
+        readinessDecisions
+            .findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId)
+            .filter(decision -> decision.getDecision() == ReadinessDecisionType.APPROVED)
+            .filter(decision -> preparation.getId().equals(decision.getPreparationId()))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "PREPARATION_NOT_CURRENT",
+                        "The latest preparation does not have a current readiness approval."));
+
+    preparation.markSuperseded();
+    preparations.saveAndFlush(preparation);
+    readinessDecisions.saveAndFlush(
+        new InspectionReadinessDecision(
+            inspectionId,
+            preparation.getId(),
+            preparation.getPreparationVersion(),
+            ReadinessDecisionType.INVALIDATED,
+            inspectorId,
+            reason.trim(),
+            approval.getPermitSnapshot(),
+            approval.getCredentialSnapshot(),
+            approval.getDroneDocumentSnapshot(),
+            approval.getSourceHash()));
+    inspection.requestAdditionalSession();
+    InspectionPreparation next =
+        preparation.nextDraftVersion(preparation.getPreparationVersion() + 1);
+    inspections.saveAndFlush(inspection);
+    return toResponse(preparations.saveAndFlush(next));
   }
 
   /**

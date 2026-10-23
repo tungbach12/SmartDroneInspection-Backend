@@ -9,7 +9,6 @@ import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
-import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
@@ -25,10 +24,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -95,11 +91,9 @@ public class EvidenceService {
       UUID inspectionId,
       UUID fieldSessionId,
       MultipartFile file,
-      EvidenceSource source,
       Instant captureTime,
       BigDecimal latitude,
-      BigDecimal longitude,
-      String externalReference) {
+      BigDecimal longitude) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
@@ -175,20 +169,18 @@ public class EvidenceService {
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "Longitude must be between -180 and 180");
     }
 
-    String checksum = sha256(content);
-    // A retry after a dropped connection must not create a second record.
-    Optional<Evidence> existing =
-        evidence.findByInspectionIdAndChecksumSha256(inspectionId, checksum);
-    if (existing.isPresent()) {
-      Evidence duplicate = existing.get();
-      if (duplicate.isRetired()) {
+    String fileName = sanitizeFileName(file.getOriginalFilename());
+    Optional<Evidence> sameName =
+        evidence.findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(inspectionId, fileName);
+    if (sameName.isPresent()) {
+      Evidence existing = sameName.get();
+      if (existing.isRetired()) {
         throw new BusinessException(
             HttpStatus.CONFLICT,
             "EVIDENCE_DUPLICATE_RETIRED",
-            "Identical evidence already exists as a retired audit copy: "
-                + duplicate.getFileName());
+            "Evidence with this filename already exists as a retired audit copy: " + fileName);
       }
-      return toResponse(duplicate, true);
+      return toResponse(existing, true);
     }
 
     String objectKey = "inspections/" + inspectionId + "/evidence/" + UUID.randomUUID();
@@ -207,19 +199,14 @@ public class EvidenceService {
             inspection.getOrganizationId(),
             inspectionId,
             fieldSessionId,
-            actorId,
             EvidenceKind.INSPECTION,
-            sanitizeFileName(file.getOriginalFilename()),
+            fileName,
             contentType,
             content.length,
-            checksum,
             objectKey,
             captureTime,
-            source,
             latitude,
-            longitude,
-            externalReference,
-            null);
+            longitude);
     return toResponse(evidence.saveAndFlush(record));
   }
 
@@ -239,10 +226,6 @@ public class EvidenceService {
     if (!java.util.Objects.equals(record.getLocationDescription(), normalized)) {
       record.setLocationDescription(normalized);
       evidence.saveAndFlush(record);
-      findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-          .filter(finding -> evidenceId.equals(finding.getEvidenceId()))
-          .forEach(finding -> finding.setLocationDescription(normalized));
-      findings.flush();
       if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
         inspection.reopenFindings();
         inspections.saveAndFlush(inspection);
@@ -256,7 +239,7 @@ public class EvidenceService {
    * first be removed or re-linked, so the next report cannot silently cite a retired capture.
    */
   @Transactional
-  public EvidenceResponse retire(UUID actorId, UUID inspectionId, UUID evidenceId, String reason) {
+  public EvidenceResponse retire(UUID actorId, UUID inspectionId, UUID evidenceId) {
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
     Evidence record =
@@ -276,8 +259,8 @@ public class EvidenceService {
           "Remove or re-link the findings that cite this capture before retiring it");
     }
     try {
-      record.retire(actorId, reason);
-    } catch (IllegalArgumentException | IllegalStateException ex) {
+      record.retire();
+    } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "EVIDENCE_RETIRE_INVALID", ex.getMessage());
     }
     if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
@@ -288,21 +271,16 @@ public class EvidenceService {
   }
 
   /**
-   * MF3-02: bulk retirement of captures. Applies a single shared retirement reason across the
-   * target captures without deleting their stored bytes, checksums, or audit rows.
+   * MF3-02: bulk retirement of captures without deleting their stored bytes.
    *
    * <p>If {@code evidenceIds} is empty or null, all unretired captures for the inspection are
    * retired.
    */
   @Transactional
   public List<EvidenceResponse> bulkRetire(
-      UUID actorId, UUID inspectionId, List<UUID> evidenceIds, String reason) {
+      UUID actorId, UUID inspectionId, List<UUID> evidenceIds) {
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
-    if (reason == null || reason.isBlank()) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "EVIDENCE_RETIRE_INVALID", "A retirement reason is required");
-    }
     List<Evidence> activeCaptures =
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
     List<Evidence> targets;
@@ -327,7 +305,7 @@ public class EvidenceService {
           "Remove or re-link the findings that cite these captures before retiring them");
     }
     for (Evidence target : targets) {
-      target.retire(actorId, reason);
+      target.retire();
     }
     List<Evidence> saved = evidence.saveAllAndFlush(targets);
     if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
@@ -592,14 +570,6 @@ public class EvidenceService {
     }
   }
 
-  private static String sha256(byte[] content) {
-    try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException(ex);
-    }
-  }
-
   private EvidenceResponse toResponse(Evidence record) {
     return new EvidenceResponse(
         record.getId(),
@@ -608,17 +578,12 @@ public class EvidenceService {
         record.getFileName(),
         record.getContentType(),
         record.getSizeBytes(),
-        record.getChecksumSha256(),
         record.getCaptureTime(),
-        record.getSource(),
         record.getLatitude(),
         record.getLongitude(),
-        record.getExternalReference(),
         record.getUploadStatus(),
         record.getCreatedAt(),
-        record.getRetiredByUserId(),
         record.getRetiredAt(),
-        record.getRetirementReason(),
         record.getLocationDescription(),
         false);
   }
@@ -632,17 +597,12 @@ public class EvidenceService {
         response.fileName(),
         response.contentType(),
         response.sizeBytes(),
-        response.checksumSha256(),
         response.captureTime(),
-        response.source(),
         response.latitude(),
         response.longitude(),
-        response.externalReference(),
         response.uploadStatus(),
         response.createdAt(),
-        response.retiredByUserId(),
         response.retiredAt(),
-        response.retirementReason(),
         response.locationDescription(),
         deduplicated);
   }

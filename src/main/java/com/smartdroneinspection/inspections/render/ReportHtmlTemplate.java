@@ -85,10 +85,9 @@ public final class ReportHtmlTemplate {
     row(body, context, "Report reference", context.documentRef());
     row(body, context, "Version / status", "v" + context.versionNo() + " · " + context.status());
     row(body, context, "Inspector author", context.authorName());
-    row(body, context, "Author verification", context.authorVerifiedAt());
+    row(body, context, "Submitted", context.submittedAt());
     row(body, context, "Qualified reviewer", context.reviewerName());
     row(body, context, "Review decision time", context.reviewedAt());
-    row(body, context, "Evidence snapshot hash", context.evidenceSnapshotHash());
     body.append("</table>");
   }
 
@@ -143,9 +142,6 @@ public final class ReportHtmlTemplate {
       row(body, context, "Readiness decision", report.readinessDecision());
       row(body, context, "Readiness decision date", report.readinessDecisionDate());
       row(body, context, "Readiness reason", report.readinessReason());
-      row(body, context, "Evidence quality decision", report.evidenceQualityDecision());
-      row(body, context, "Evidence quality comparison", report.evidenceQualityComparison());
-      row(body, context, "Evidence quality limitation", report.evidenceQualityLimitation());
       if (!report.fieldSessionSummaries().isEmpty()) {
         row(
             body,
@@ -189,15 +185,16 @@ public final class ReportHtmlTemplate {
           .append("</p>");
       return;
     }
-    body.append("<table class=\"grid\"><thead><tr><th>")
+    body.append("<table class=\"grid\">")
+        .append("<thead><tr><th>")
         .append(text(context, "Evidence ID"))
         .append("</th><th>")
         .append(text(context, "File"))
         .append("</th><th>")
         .append(text(context, "Capture time"))
         .append("</th><th>")
-        .append(text(context, "Component / location"))
-        .append("</th><th>SHA-256</th></tr></thead><tbody>");
+        .append(text(context, "Location"))
+        .append("</th></tr></thead><tbody>");
     for (ReportRenderPort.EvidenceView item : context.evidence()) {
       body.append("<tr><td>")
           .append(escape(item.id()))
@@ -207,8 +204,6 @@ public final class ReportHtmlTemplate {
           .append(escape(orNotSupplied(item.captureTime(), context)))
           .append("</td><td>")
           .append(escape(orNotSupplied(item.componentLocation(), context)))
-          .append("</td><td class=\"mono small\">")
-          .append(escape(item.checksumSha256()))
           .append("</td></tr>");
     }
     body.append("</tbody></table>");
@@ -239,24 +234,14 @@ public final class ReportHtmlTemplate {
           .append("</td>")
           .append("</tr></table>")
           .append("<table>");
-      row(body, context, "Component", finding.component());
       row(body, context, "Defect", finding.defectLabel());
-      row(body, context, "Location", finding.locationDescription());
-      row(body, context, "Observed condition", finding.observedCondition());
-      row(body, context, "Description", finding.description());
-      row(body, context, "Measurement (method and unit)", finding.measurement());
       row(body, context, "Technical notes", finding.technicalNotes());
       row(body, context, "Recommended action", finding.recommendedAction());
       row(
           body,
           context,
           "Decision",
-          finding.decision()
-              + " by "
-              + orNotSupplied(finding.decidedBy(), context)
-              + " at "
-              + orNotSupplied(finding.decidedAt(), context));
-      row(body, context, "Corrective work required", text(context, finding.repairRequired()));
+          finding.decision() + " at " + orNotSupplied(finding.decidedAt(), context));
 
       ReportRenderPort.EvidenceView attachedEvidence = null;
       if (finding.evidenceId() != null) {
@@ -308,8 +293,6 @@ public final class ReportHtmlTemplate {
             .append(escape(attachedEvidence.fileName()))
             .append(" · ")
             .append(escape(attachedEvidence.id()))
-            .append(" · SHA-256 ")
-            .append(escape(attachedEvidence.checksumSha256()))
             .append("</div></div>");
       }
       body.append("</div>");
@@ -371,8 +354,6 @@ public final class ReportHtmlTemplate {
             .append(escape(item.fileName()))
             .append(" · ")
             .append(escape(item.id()))
-            .append(" · SHA-256 ")
-            .append(escape(item.checksumSha256()))
             .append("</div></div>");
       }
     }
@@ -386,9 +367,9 @@ public final class ReportHtmlTemplate {
         .append("</th><td>")
         .append(escape(orNotSupplied(context.authorName(), context)))
         .append("</td><th>")
-        .append(text(context, "Author verification"))
+        .append(text(context, "Submitted"))
         .append("</th><td>")
-        .append(escape(orNotSupplied(context.authorVerifiedAt(), context)))
+        .append(escape(orNotSupplied(context.submittedAt(), context)))
         .append("</td></tr>")
         .append("<tr><th>")
         .append(text(context, "Reviewer"))
@@ -403,11 +384,7 @@ public final class ReportHtmlTemplate {
         .append(text(context, "Published"))
         .append("</th><td>")
         .append(escape(orNotSupplied(context.publishedAt(), context)))
-        .append("</td><th>")
-        .append(text(context, "Evidence snapshot hash"))
-        .append("</th><td class=\"mono small\">")
-        .append(escape(orNotSupplied(context.evidenceSnapshotHash(), context)))
-        .append("</td></tr>")
+        .append("</td><th></th><td></td></tr>")
         .append("</table>")
         .append("<p class=\"scope\">")
         .append(

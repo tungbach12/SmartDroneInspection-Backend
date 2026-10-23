@@ -14,12 +14,5 @@ public record ReviewFindingRequest(
     UUID evidenceId,
     @Size(max = 160) String defectLabel,
     FindingSeverity severity,
-    @Size(max = 1000) String locationDescription,
     @Size(max = 4000) String technicalNotes,
-    @Size(max = 4000) String recommendedAction,
-    @Size(max = 200) String component,
-    @Size(max = 4000) String description,
-    @Size(max = 4000) String observedCondition,
-    @Size(max = 24) String priority,
-    @Size(max = 4000) String measurement,
-    Boolean repairRequired) {}
+    @Size(max = 4000) String recommendedAction) {}
