@@ -941,7 +941,8 @@ CREATE TABLE ${baseline_schema}.subscriptions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     organization_id uuid NOT NULL,
     plan_code character varying(32) NOT NULL,
-    billing_period_months smallint NOT NULL,
+    billing_period_months integer NOT NULL,
+    agreed_amount_usd numeric(12,2),
     status character varying(24) NOT NULL,
     starts_at timestamp with time zone,
     ends_at timestamp with time zone,
@@ -952,10 +953,30 @@ CREATE TABLE ${baseline_schema}.subscriptions (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_subscriptions_billing_period CHECK ((billing_period_months = ANY (ARRAY[1, 6, 12]))),
+    CONSTRAINT ck_subscriptions_billing_period CHECK ((billing_period_months >= 1 AND billing_period_months <= 120)),
     CONSTRAINT ck_subscriptions_plan CHECK (((plan_code)::text = 'ENTERPRISE'::text)),
     CONSTRAINT ck_subscriptions_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'PAST_DUE'::character varying, 'SUSPENDED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying])::text[]))),
     CONSTRAINT ck_subscriptions_window CHECK (((ends_at IS NULL) OR (starts_at IS NULL) OR (ends_at > starts_at)))
+);
+
+--
+-- Name: payment_transactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE ${baseline_schema}.payment_transactions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    subscription_id uuid NOT NULL,
+    paypal_order_id character varying(64) NOT NULL,
+    paypal_capture_id character varying(64),
+    amount numeric(12,2) NOT NULL,
+    currency character varying(3) DEFAULT 'USD'::character varying NOT NULL,
+    status character varying(24) NOT NULL,
+    payer_email character varying(255),
+    captured_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    row_version bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_payment_transactions_status CHECK (((status)::text = ANY ((ARRAY['COMPLETED'::character varying, 'PENDING'::character varying, 'DECLINED'::character varying, 'REFUNDED'::character varying])::text[])))
 );
 
 
@@ -1320,6 +1341,12 @@ ALTER TABLE ONLY ${baseline_schema}.report_version_findings
 
 ALTER TABLE ONLY ${baseline_schema}.subscriptions
     ADD CONSTRAINT subscriptions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY ${baseline_schema}.payment_transactions
+    ADD CONSTRAINT payment_transactions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY ${baseline_schema}.payment_transactions
+    ADD CONSTRAINT uq_payment_transactions_capture UNIQUE (paypal_capture_id);
 
 
 --
@@ -2890,6 +2917,12 @@ ALTER TABLE ONLY ${baseline_schema}.subscriptions
 
 ALTER TABLE ONLY ${baseline_schema}.subscriptions
     ADD CONSTRAINT subscriptions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES ${baseline_schema}.organizations(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY ${baseline_schema}.payment_transactions
+    ADD CONSTRAINT fk_payment_transactions_subscription FOREIGN KEY (subscription_id) REFERENCES ${baseline_schema}.subscriptions(id) ON DELETE RESTRICT;
+
+CREATE INDEX ix_payment_transactions_subscription ON ${baseline_schema}.payment_transactions USING btree (subscription_id);
+CREATE INDEX ix_payment_transactions_order ON ${baseline_schema}.payment_transactions USING btree (paypal_order_id);
 
 
 --

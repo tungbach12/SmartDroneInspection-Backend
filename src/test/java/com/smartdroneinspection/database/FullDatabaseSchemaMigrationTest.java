@@ -76,10 +76,11 @@ class FullDatabaseSchemaMigrationTest {
             "maintenance_acceptance_decisions",
             "audit_events",
             "notifications",
+            "payment_transactions",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(41);
+    assertThat(expected).hasSize(42);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -99,24 +100,19 @@ class FullDatabaseSchemaMigrationTest {
                       + baselineSchema
                       + ".flyway_schema_history WHERE success",
                   String.class))
-          .isEqualTo("40:SQL_BASELINE:complete schema");
-      assertThat(tableNames(baselineSchema)).hasSize(40);
+          .isEqualTo("42:SQL_BASELINE:complete schema");
+      assertThat(tableNames(baselineSchema)).hasSize(41);
       assertThat(tableNames(baselineSchema))
-          .contains("event_publication", "findings", "audit_events");
+          .contains("event_publication", "findings", "audit_events", "payment_transactions");
 
-      Flyway throughV39 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("39"));
-      throughV39.migrate();
+      Flyway throughV40 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("40"));
+      throughV40.migrate();
       Flyway incrementalPath = configureFlyway(incrementalSchema, null);
       assertThat(incrementalPath.info().all())
           .filteredOn(migration -> "complete schema".equals(migration.getDescription()))
           .singleElement()
           .extracting(migration -> migration.getState().name())
           .isEqualTo("IGNORED");
-      assertThat(incrementalPath.info().all())
-          .filteredOn(migration -> "mf3 entity field audit".equals(migration.getDescription()))
-          .singleElement()
-          .extracting(migration -> migration.getState().name())
-          .isEqualTo("PENDING");
       incrementalPath.migrate();
       assertThat(
               jdbcTemplate.queryForObject(
@@ -125,7 +121,7 @@ class FullDatabaseSchemaMigrationTest {
                       + ".flyway_schema_history WHERE success "
                       + "ORDER BY installed_rank DESC LIMIT 1",
                   String.class))
-          .isEqualTo("40:SQL");
+          .isEqualTo("42:SQL");
 
       assertThat(schemaCatalog(incrementalSchema))
           .containsExactlyElementsOf(schemaCatalog(baselineSchema));
