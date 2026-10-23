@@ -5,14 +5,12 @@ import com.smartdroneinspection.assets.reportcontext.ReportContextAccess.Identit
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.EvidenceQualityContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.PreparationContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
-import com.smartdroneinspection.inspections.domain.EvidenceQualityDecision;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -22,10 +20,9 @@ import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
-import com.smartdroneinspection.inspections.repository.EvidenceQualityDecisionRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
@@ -35,7 +32,6 @@ import com.smartdroneinspection.inspections.repository.InspectionReportRepositor
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
-import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceQualitySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportRenderPort;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -90,7 +86,6 @@ public class ReportService {
   private final InspectionPreparationRepository preparations;
   private final InspectionReadinessDecisionRepository readinessDecisions;
   private final ReportContextAccess reportContextAccess;
-  private final EvidenceQualityDecisionRepository qualityDecisions;
   private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
@@ -98,7 +93,6 @@ public class ReportService {
   private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository versions;
   private final EvidenceService evidenceService;
-  private final EvidenceQualityService qualityService;
   private final Optional<ReportDraftPort> draftPort;
   private final ReportRenderPort renderPort;
   private final Optional<EvidenceObjectStore> objectStore;
@@ -115,11 +109,9 @@ public class ReportService {
       EvidenceRepository evidence,
       FindingRepository findings,
       FieldSessionRepository fieldSessions,
-      EvidenceQualityDecisionRepository qualityDecisions,
       InspectionReportRepository reports,
       InspectionReportVersionRepository versions,
       EvidenceService evidenceService,
-      EvidenceQualityService qualityService,
       Optional<ReportDraftPort> draftPort,
       ReportRenderPort renderPort,
       Optional<EvidenceObjectStore> objectStore,
@@ -137,9 +129,7 @@ public class ReportService {
     this.reports = reports;
     this.versions = versions;
     this.evidenceService = evidenceService;
-    this.qualityService = qualityService;
     this.draftPort = draftPort;
-    this.qualityDecisions = qualityDecisions;
     this.renderPort = renderPort;
     this.objectStore = objectStore;
     this.objectMapper = objectMapper;
@@ -167,17 +157,6 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
-    EvidenceQualitySummary evidenceQuality =
-        qualityDecisions
-            .findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId)
-            .filter(EvidenceQualityDecision::isAccepted)
-            .map(
-                decision ->
-                    new EvidenceQualitySummary(
-                        decision.getDecision().name(),
-                        decision.getShotListComparison(),
-                        decision.getLimitationReason()))
-            .orElse(null);
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
     List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
@@ -235,14 +214,8 @@ public class ReportService {
                               new ReportDraftPort.FindingSummary(
                                   finding.getDefectLabel(),
                                   finding.getSeverity().name(),
-                                  finding.getComponent(),
-                                  finding.getLocationDescription(),
                                   finding.getTechnicalNotes(),
-                                  finding.getRecommendedAction(),
-                                  finding.getDescription(),
-                                  finding.getObservedCondition(),
-                                  finding.getPriority(),
-                                  finding.getMeasurementSummary()))
+                                  finding.getRecommendedAction()))
                       .toList(),
                   confirmedEvidence.stream()
                       .map(
@@ -259,12 +232,10 @@ public class ReportService {
                                   item.getLongitude() == null
                                       ? null
                                       : item.getLongitude().toPlainString(),
-                                  item.getSource().name(),
                                   item.getFieldSessionId() == null
                                       ? null
                                       : item.getFieldSessionId().toString(),
-                                  item.getLocationDescription(),
-                                  item.getExternalReference()))
+                                  item.getLocationDescription()))
                       .toList(),
                   detectionFindings.stream()
                       .map(
@@ -301,8 +272,7 @@ public class ReportService {
                                   session.getDroneId() == null
                                       ? null
                                       : session.getDroneId().toString()))
-                      .toList(),
-                  evidenceQuality));
+                      .toList()));
     } catch (IOException ex) {
       // A failed generation permits a manual draft under the same review gates. No placeholder text
       // is written into a section: a section the author did not write and the model did not supply
@@ -313,7 +283,6 @@ public class ReportService {
           "Automated drafting is temporarily unavailable");
     }
 
-    String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
     int versionNo = report.nextVersionNumber();
     UUID sourceVersionId =
         versions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
@@ -325,13 +294,7 @@ public class ReportService {
             report.getId(),
             versionNo,
             sourceVersionId,
-            actorId,
-            buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port),
-            null,
-            port.modelName(),
-            PROMPT_VERSION,
-            evidenceSnapshotHash(confirmedEvidence),
-            findingsSnapshot);
+            buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port));
     report.recordNewVersion(versionNo);
     report.setStatus(ReportStatus.DRAFT);
     reports.saveAndFlush(report);
@@ -352,7 +315,6 @@ public class ReportService {
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
-    String findingsSnapshot = currentFindingsSnapshotHash(inspectionId);
 
     int versionNo = report.nextVersionNumber();
     UUID sourceVersionId =
@@ -365,13 +327,7 @@ public class ReportService {
             report.getId(),
             versionNo,
             sourceVersionId,
-            actorId,
-            buildManualContentSnapshot(inspection, confirmedEvidence, confirmedFindings),
-            null,
-            MANUAL_MODEL_NAME,
-            PROMPT_VERSION,
-            evidenceSnapshotHash(confirmedEvidence),
-            findingsSnapshot);
+            buildManualContentSnapshot(inspection, confirmedEvidence, confirmedFindings));
     report.recordNewVersion(versionNo);
     report.setStatus(ReportStatus.DRAFT);
     reports.saveAndFlush(report);
@@ -417,10 +373,11 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
     InspectionReport report = requireAuthoredReport(actorId, inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    version = requireVersionForAuthor(version.getId(), actorId);
 
     // Authoring is the author's work. A reviewer who is not the author may read a draft but cannot
     // rewrite it, and the author cannot write onto a version that has left an editable state.
-    if (!version.getAuthorUserId().equals(actorId)) {
+    if (!report.getAuthorUserId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
@@ -454,12 +411,13 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId) {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    version = requireVersionForAuthor(version.getId(), actorId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(
         evidenceService.requireAssignedInspection(actorId, inspectionId));
     try {
-      version.verifyAsAuthor(actorId);
+      version.verifyAsAuthor(actorId, report.getAuthorUserId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
@@ -474,6 +432,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId) {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
+    version = requireVersionForAuthor(version.getId(), actorId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(
@@ -488,17 +447,21 @@ public class ReportService {
     return toResponse(versions.saveAndFlush(version));
   }
 
-  /**
-   * MF3-04: evidence added after the Inspector's confirmation makes a dependent draft stale. The
-   * stored snapshot hash is compared against the current evidence set, so a version drafted over
-   * older captures cannot be verified or submitted — the author drafts a new version instead.
-   */
+  private String currentFindingsSnapshotHash(UUID inspectionId) {
+    List<Evidence> currentEvidence =
+        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+    return FindingsSnapshot.hash(
+        currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
+  }
+
+  /** A draft created before the latest findings confirmation is stale. */
   private void requireCurrentFindingsConfirmation(Inspection inspection) {
-    if (!qualityService.isEligibleForAnalysis(inspection.getId())) {
+    if (!evidence.existsByInspectionIdAndRetiredAtIsNullAndUploadStatus(
+        inspection.getId(), UploadStatus.AVAILABLE)) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
-          "REPORT_STATE_CONFLICT",
-          "A draft requires an accepted evidence quality decision");
+          "ACTIVE_EVIDENCE_REQUIRED",
+          "A report draft requires at least one active evidence item");
     }
     String current = currentFindingsSnapshotHash(inspection.getId());
     if (!inspection.hasCurrentFindingsConfirmation(current)) {
@@ -509,33 +472,20 @@ public class ReportService {
     }
   }
 
-  private String currentFindingsSnapshotHash(UUID inspectionId) {
-    List<Evidence> currentEvidence =
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
-    return FindingsSnapshot.hash(
-        currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
-  }
-
   private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReportVersion version) {
-    String current = currentFindingsSnapshotHash(inspectionId);
-    if (!current.equals(version.getFindingsSnapshotHash())) {
+    Inspection inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection == null
+        || inspection.getFindingsConfirmedAt() == null
+        || version.getCreatedAt().isBefore(inspection.getFindingsConfirmedAt())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "REPORT_SNAPSHOT_STALE",
-          "Findings changed after this draft was created; author a new draft version");
+          "Findings were confirmed after this draft was created; author a new draft version");
     }
   }
 
   private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReportVersion version) {
-    String current =
-        evidenceSnapshotHash(
-            evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId));
-    if (!current.equals(version.getEvidenceSnapshotHash())) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REPORT_SNAPSHOT_STALE",
-          "Evidence changed after this draft was created; author a new draft version");
-    }
+    requireFreshFindingsSnapshot(inspectionId, version);
   }
 
   /**
@@ -544,12 +494,7 @@ public class ReportService {
    */
   @Transactional
   public InspectionReportVersionResponse reviewVersion(
-      UUID actorId,
-      UUID inspectionId,
-      UUID versionId,
-      boolean approve,
-      String reason,
-      ReportReturnReasonType reasonType) {
+      UUID actorId, UUID inspectionId, UUID versionId, boolean approve, String reason) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
@@ -559,19 +504,10 @@ public class ReportService {
           "REPORT_RETURN_REASON_REQUIRED",
           "A reviewer return requires a reason");
     }
-    if (!approve && reasonType == null) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "REPORT_RETURN_REASON_REQUIRED",
-          "State whether the return asks for a text revision or a findings revision");
-    }
     try {
-      version.reviewBy(reviewer.id(), approve, reason, reasonType);
+      version.reviewBy(reviewer.id(), approve, reason);
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
-    }
-    if (!approve && reasonType == ReportReturnReasonType.FINDINGS_REVISION) {
-      reopenFindingsForRevision(inspectionId, version.getId());
     }
     report.setStatus(approve ? ReportStatus.APPROVED : ReportStatus.RETURNED);
     reports.saveAndFlush(report);
@@ -590,7 +526,7 @@ public class ReportService {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
     try {
-      version.withdraw(actorId, reason);
+      version.withdraw(actorId, reason, report.getAuthorUserId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "REPORT_WITHDRAWAL_INVALID", ex.getMessage());
@@ -605,19 +541,6 @@ public class ReportService {
     return toResponse(versions.saveAndFlush(version));
   }
 
-  private void reopenFindingsForRevision(UUID inspectionId, UUID versionId) {
-    Inspection inspection = inspections.findById(inspectionId).orElse(null);
-    if (inspection == null) return;
-    List<Finding> confirmed =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(Finding::isOfficial)
-            .toList();
-    confirmed.forEach(Finding::clearInspectorConfirmation);
-    if (!confirmed.isEmpty()) findings.saveAllAndFlush(confirmed);
-    inspection.reopenFindings();
-    inspections.saveAndFlush(inspection);
-  }
-
   /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
   @Transactional
   public ReportPublishedResponse publish(UUID actorId, UUID inspectionId, UUID versionId) {
@@ -628,7 +551,7 @@ public class ReportService {
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     try {
-      version.publish(publisher.id());
+      version.publish(publisher.id(), report.getAuthorUserId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
@@ -660,18 +583,13 @@ public class ReportService {
     inspection.markReportPublished();
     inspections.saveAndFlush(inspection);
 
-    // MF3-12: any corrective-action outcome recorded before this publication belongs to an earlier
-    // version or to the pre-cutover review decision. Clearing it keeps the new version from being
-    // presented with a disposition nobody recorded after it, and the reviewer records a fresh one.
-    List<Finding> staleOutcomes =
+    boolean hasConfirmedFindings =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(Finding::isOfficial)
-            .filter(Finding::isCorrectiveActionReviewed)
-            .toList();
-    staleOutcomes.forEach(Finding::clearCorrectiveActionOutcome);
-    if (!staleOutcomes.isEmpty()) {
-      findings.saveAll(staleOutcomes);
+            .anyMatch(Finding::isOfficial);
+    if (!hasConfirmedFindings) {
+      inspection.complete();
     }
+    inspections.saveAndFlush(inspection);
 
     return new ReportPublishedResponse(
         version.getId(),
@@ -681,13 +599,7 @@ public class ReportService {
         inspection.getStatus());
   }
 
-  /**
-   * MF3-13: hands the published report's corrective items to MF4 after every confirmed finding has
-   * an explicit MF3-12 corrective-action outcome.
-   *
-   * <p>MF4 work-order creation is not implemented; this records the handoff and inspection status,
-   * but does not create a work order.
-   */
+  /** MF3-13 forwards selected, confirmed findings individually to MF4. */
   @Transactional
   public ReportPublishedResponse completeCorrectiveActionHandoff(
       UUID actorId, UUID inspectionId, List<UUID> selectedFindingIds) {
@@ -702,87 +614,81 @@ public class ReportService {
                     new BusinessException(
                         HttpStatus.CONFLICT,
                         "REPORT_STATE_CONFLICT",
-                        "Publish the report before handing corrective items to maintenance"));
-
-    List<Finding> official =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(Finding::isOfficial)
-            .toList();
-
-    List<UUID> repairRequired;
-
-    if (selectedFindingIds != null) {
-      if (selectedFindingIds.isEmpty()) {
-        // Admin chose not to forward any findings at this time. The report remains published;
-        // findings can still be forwarded later.
-        return new ReportPublishedResponse(
-            version.getId(),
-            version.getVersionNo(),
-            version.getPublishedAt(),
-            List.of(),
-            inspection.getStatus());
-      }
-      java.util.Set<UUID> officialIds =
-          official.stream().map(Finding::getId).collect(java.util.stream.Collectors.toSet());
-      for (UUID fid : selectedFindingIds) {
-        if (!officialIds.contains(fid)) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST,
-              "FINDING_NOT_FOUND",
-              "Selected finding " + fid + " is not an official confirmed finding on this report");
-        }
-      }
-      for (Finding f : official) {
-        if (selectedFindingIds.contains(f.getId())) {
-          f.forwardToMaintenance(reviewer.id());
-        }
-      }
-      findings.saveAllAndFlush(official);
-      repairRequired = selectedFindingIds;
-
-      inspection.recordCorrectiveHandoff(reviewer.id(), null);
+                        "Publish the report before forwarding findings to maintenance"));
+    if (selectedFindingIds == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "FINDINGS_REQUIRED", "Provide the selected findings list");
+    }
+    if (inspection.getStatus() == InspectionStatus.COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_ALREADY_COMPLETED",
+          "A completed inspection cannot change its maintenance decision");
+    }
+    if (inspection.getStatus() != InspectionStatus.REPORT_PUBLISHED
+        && inspection.getStatus() != InspectionStatus.REPAIR_PENDING) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Only a published report can forward findings to maintenance");
+    }
+    InspectionStatus beforeStatus = inspection.getStatus();
+    if (selectedFindingIds.isEmpty()) {
       if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED) {
-        inspection.markRepairPending();
+        inspection.complete();
         inspections.saveAndFlush(inspection);
       }
-    } else {
-      if (inspection.getCorrectiveHandoffAt() != null) {
+      recordMaintenanceHandoff(inspection, reviewer.id(), version.getId(), beforeStatus, List.of());
+      events.publishEvent(
+          new ReportPublishedEvent(
+              report.getId(),
+              version.getId(),
+              inspectionId,
+              inspection.getOrganizationId(),
+              inspection.getAssetId(),
+              reviewer.id(),
+              List.of(),
+              version.getPublishedAt()));
+      return new ReportPublishedResponse(
+          version.getId(),
+          version.getVersionNo(),
+          version.getPublishedAt(),
+          List.of(),
+          inspection.getStatus());
+    }
+    if (selectedFindingIds.stream().distinct().count() != selectedFindingIds.size()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "FINDINGS_INVALID", "A finding may only be selected once");
+    }
+    List<Finding> selected = new ArrayList<>();
+    for (UUID findingId : selectedFindingIds) {
+      Finding finding =
+          findings
+              .findByIdAndInspectionId(findingId, inspectionId)
+              .filter(Finding::isOfficial)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_REQUEST,
+                          "FINDING_NOT_FOUND",
+                          "Selected finding is not an active confirmed finding in this inspection"));
+      if (finding.isForwardedToMaintenance()) {
         throw new BusinessException(
             HttpStatus.CONFLICT,
-            "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
-            "Corrective handoff has already been completed");
+            "FINDING_ALREADY_FORWARDED",
+            "Selected finding has already been forwarded to maintenance");
       }
-      if (official.stream().anyMatch(finding -> !finding.isCorrectiveActionReviewed())) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "CORRECTIVE_ACTION_REVIEW_INCOMPLETE",
-            "Record corrective action or an explicit no-action outcome for every confirmed finding");
-      }
-      repairRequired =
-          official.stream()
-              .filter(Finding::isCorrectiveActionRequired)
-              .map(Finding::getId)
-              .toList();
-      if (official.isEmpty()) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "NO_CORRECTIVE_WORK_PENDING",
-            "Record an explicit no-corrective-work rationale for a scope without confirmed findings");
-      }
-      try {
-        inspection.recordCorrectiveHandoff(reviewer.id(), null);
-        if (repairRequired.isEmpty()) {
-          inspection.complete();
-        } else {
-          inspection.markRepairPending();
-        }
-      } catch (IllegalStateException | IllegalArgumentException ex) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
-      }
+      finding.forwardToMaintenance();
+      selected.add(finding);
+    }
+    findings.saveAllAndFlush(selected);
+    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED) {
+      inspection.markRepairPending();
       inspections.saveAndFlush(inspection);
     }
-
+    List<UUID> forwardedFindingIds = selected.stream().map(Finding::getId).toList();
+    recordMaintenanceHandoff(
+        inspection, reviewer.id(), version.getId(), beforeStatus, forwardedFindingIds);
     events.publishEvent(
         new ReportPublishedEvent(
             report.getId(),
@@ -791,93 +697,41 @@ public class ReportService {
             inspection.getOrganizationId(),
             inspection.getAssetId(),
             reviewer.id(),
-            repairRequired,
+            forwardedFindingIds,
             version.getPublishedAt()));
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),
         version.getPublishedAt(),
-        repairRequired,
+        forwardedFindingIds,
         inspection.getStatus());
   }
 
-  @Transactional
-  public ReportPublishedResponse completeCorrectiveActionHandoff(UUID actorId, UUID inspectionId) {
-    return completeCorrectiveActionHandoff(actorId, inspectionId, null);
-  }
-
-  /**
-   * MF3-12: records the reviewer’s explicit no-repair outcome after report publication.
-   *
-   * <p>This route is for a scope that has no official finding requiring corrective work. If there
-   * are any official findings, the reviewer must record the outcome on each one instead.
-   */
-  @Transactional
-  public ReportPublishedResponse declareNoCorrectiveWork(
-      UUID actorId, UUID inspectionId, String rationale) {
-    UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
-    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    if (inspection.getCorrectiveHandoffAt() != null) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
-          "Corrective handoff has already been completed");
-    }
-    InspectionReport report = requireReportForInspection(inspectionId);
-    InspectionReportVersion version =
-        versions
-            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "REPORT_STATE_CONFLICT",
-                        "Publish the report before declaring no corrective work"));
-    boolean hasOfficialFindings =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .anyMatch(Finding::isOfficial);
-    if (!inspection.hasFindingsConfirmation()) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FINDINGS_NOT_CONFIRMED",
-          "The Inspector must explicitly confirm the observed findings set first");
-    }
-    if (hasOfficialFindings) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "CORRECTIVE_ACTION_REVIEW_REQUIRED",
-          "Record a corrective-action outcome for each confirmed finding");
-    }
-    if (rationale == null || rationale.isBlank()) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "NO_REPAIR_RATIONALE_REQUIRED",
-          "Record why no corrective work is required within the observed scope");
-    }
-    try {
-      inspection.recordCorrectiveHandoff(reviewer.id(), rationale);
-      inspection.complete();
-    } catch (IllegalStateException | IllegalArgumentException ex) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
-    }
-    inspections.saveAndFlush(inspection);
-    events.publishEvent(
-        new ReportPublishedEvent(
-            report.getId(),
-            version.getId(),
-            inspectionId,
-            inspection.getOrganizationId(),
-            inspection.getAssetId(),
-            reviewer.id(),
-            List.of(),
-            version.getPublishedAt()));
-    return new ReportPublishedResponse(
-        version.getId(),
-        version.getVersionNo(),
-        version.getPublishedAt(),
-        List.of(),
-        inspection.getStatus());
+  private void recordMaintenanceHandoff(
+      Inspection inspection,
+      UUID actorId,
+      UUID reportVersionId,
+      InspectionStatus beforeStatus,
+      List<UUID> forwardedFindingIds) {
+    String findingIdsJson =
+        forwardedFindingIds.stream()
+            .map(id -> "\"" + id + "\"")
+            .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+    jdbcTemplate.update(
+        """
+        INSERT INTO audit_events
+          (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+           before_status, after_status, safe_metadata, created_at)
+        VALUES (?, ?, 'MF3_MAINTENANCE_HANDOFF', 'INSPECTION', ?, ?, ?,
+                jsonb_build_object('reportVersionId', ?, 'forwardedFindingIds', ?::jsonb), CURRENT_TIMESTAMP)
+        """,
+        inspection.getOrganizationId(),
+        actorId,
+        inspection.getId(),
+        beforeStatus.name(),
+        inspection.getStatus().name(),
+        reportVersionId,
+        findingIdsJson);
   }
 
   /**
@@ -912,7 +766,7 @@ public class ReportService {
   public ResponseEntity<byte[]> preview(UUID actorId, UUID inspectionId, UUID versionId) {
     InspectionReport report = requireReportForInspection(inspectionId);
     InspectionReportVersion version = requireVersion(report.getId(), versionId);
-    if (!version.getAuthorUserId().equals(actorId)) {
+    if (!report.getAuthorUserId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
@@ -1015,8 +869,6 @@ public class ReportService {
             .orElse(null);
     var readiness =
         readinessDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
-    var latestQuality =
-        qualityDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
     DroneContext assignedDrone =
         reportIdentity == null || reportIdentity.droneSerialNumber() == null
             ? null
@@ -1028,13 +880,7 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     ReportRenderPort.ReportContext renderReportContext =
         buildRenderReportContext(
-            inspection,
-            reportIdentity,
-            assignedDrone,
-            preparation,
-            readiness,
-            latestQuality,
-            recordedSessions);
+            inspection, reportIdentity, assignedDrone, preparation, readiness, recordedSessions);
     ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
     JsonNode snapshot;
     try {
@@ -1060,16 +906,6 @@ public class ReportService {
         if (evItem != null) {
           evidenceRefs.add(evItem.getFileName());
         }
-        String componentLocation =
-            componentLocation(finding.getComponent(), finding.getLocationDescription());
-        if (componentLocation != null) {
-          List<String> values =
-              componentLocationByEvidence.computeIfAbsent(
-                  finding.getEvidenceId(), ignored -> new ArrayList<>());
-          if (!values.contains(componentLocation)) {
-            values.add(componentLocation);
-          }
-        }
       }
       findingViews.add(
           new ReportRenderPort.FindingView(
@@ -1078,26 +914,14 @@ public class ReportService {
               finding.getEvidenceId() == null || !evidenceById.containsKey(finding.getEvidenceId())
                   ? null
                   : evidenceById.get(finding.getEvidenceId()).getFileName(),
-              finding.getComponent(),
               finding.getDefectLabel(),
               finding.getSeverity().name(),
-              finding.getLocationDescription(),
-              finding.getObservedCondition(),
-              finding.getDescription(),
               finding.getTechnicalNotes(),
               finding.getRecommendedAction(),
               finding.getStatus().name(),
-              displayName(
-                  finding.getConfirmedByUserId() == null
-                      ? finding.getCreatedByUserId()
-                      : finding.getConfirmedByUserId()),
               finding.getInspectorConfirmedAt() == null
                   ? null
                   : finding.getInspectorConfirmedAt().toString(),
-              finding.getMeasurement() == null
-                  ? null
-                  : objectMapper.writeValueAsString(finding.getMeasurement()),
-              finding.isRepairRequired() ? "Yes" : "No",
               finding.isOfficial()));
     }
 
@@ -1110,22 +934,9 @@ public class ReportService {
               item.getId().toString(),
               item.getFileName(),
               item.getContentType(),
-              item.getChecksumSha256(),
               item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
-              item.getLocationDescription() != null
-                  ? item.getLocationDescription()
-                  : componentLocationByEvidence.containsKey(item.getId())
-                      ? String.join("; ", componentLocationByEvidence.get(item.getId()))
-                      : null,
-              item.getSource().name(),
+              item.getLocationDescription(),
               item.getFieldSessionId() == null ? null : item.getFieldSessionId().toString(),
-              item.getExternalReference(),
-              item.getAnalysisDetectionCount() == null
-                  ? null
-                  : item.getAnalysisDetectionCount() == 0
-                      ? "Completed; zero detections"
-                      : "Completed; findings detected",
-              item.getAnalysisDetectionCount(),
               content));
     }
 
@@ -1140,16 +951,15 @@ public class ReportService {
         reportIdentity == null || reportIdentity.organizationName() == null
             ? null
             : reportIdentity.organizationName(),
-        displayName(version.getAuthorUserId()),
+        displayName(reports.findByInspectionId(inspectionId).orElseThrow().getAuthorUserId()),
         displayName(version.getReviewerUserId()),
         inspection.getFindingsConfirmedAt() == null
             ? null
             : inspection.getFindingsConfirmedAt().toString(),
         renderReportContext,
-        version.getAuthorVerifiedAt() == null ? null : version.getAuthorVerifiedAt().toString(),
+        version.getSubmittedAt() == null ? null : version.getSubmittedAt().toString(),
         version.getReviewedAt() == null ? null : version.getReviewedAt().toString(),
         version.getPublishedAt() == null ? null : version.getPublishedAt().toString(),
-        version.getEvidenceSnapshotHash(),
         new ReportRenderPort.Sections(
             sections.executiveSummary(),
             purposeScopeCriteria,
@@ -1267,11 +1077,40 @@ public class ReportService {
   private InspectionReportVersion requireVersion(UUID reportId, UUID versionId) {
     return versions
         .findById(versionId)
-        .filter(version -> version.getInspectionReportId().equals(reportId))
+        .filter(candidate -> candidate.getInspectionReportId().equals(reportId))
         .orElseThrow(
             () ->
                 new BusinessException(
-                    HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Report version not found"));
+                    HttpStatus.NOT_FOUND, "REPORT_VERSION_NOT_FOUND", "Report version not found"));
+  }
+
+  private InspectionReport requireReportForInspectionFromId(UUID reportId) {
+    return reports
+        .findById(reportId)
+        .orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found"));
+  }
+
+  private InspectionReportVersion requireVersionForAuthor(UUID versionId, UUID authorUserId) {
+    InspectionReportVersion version =
+        versions
+            .findById(versionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "REPORT_VERSION_NOT_FOUND",
+                        "Report version not found"));
+    InspectionReport report = requireReportForInspectionFromId(version.getInspectionReportId());
+    if (!report.getAuthorUserId().equals(authorUserId)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the report author may access this version");
+    }
+    return version;
   }
 
   /**
@@ -1455,7 +1294,6 @@ public class ReportService {
       DroneContext drone,
       InspectionPreparation preparation,
       InspectionReadinessDecision readiness,
-      EvidenceQualityDecision quality,
       List<FieldSession> sessions) {
     PreparationContext preparationContext =
         preparation == null
@@ -1472,15 +1310,6 @@ public class ReportService {
                 readiness == null ? null : readiness.getReason(),
                 preparation.getPermitDocumentReferences(),
                 preparation.getSubmittedAt());
-    EvidenceQualityContext qualityContext =
-        quality == null
-            ? null
-            : new EvidenceQualityContext(
-                quality.getDecision().name(),
-                quality.getShotListComparison(),
-                quality.getLimitationReason(),
-                quality.getDecidedByUserId(),
-                quality.getDecidedAt());
     return new InspectionReportContextResponse(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1489,7 +1318,6 @@ public class ReportService {
         identity == null ? null : identity.assetCategory(),
         drone,
         preparationContext,
-        qualityContext,
         sessions.stream()
             .map(
                 session ->
@@ -1508,7 +1336,6 @@ public class ReportService {
                         drone == null ? null : drone.model()))
             .toList(),
         "Application role/organization/separation checks ran; professional qualification was not independently validated.",
-        displayName(inspection.getFindingsConfirmedByUserId()),
         inspection.getFindingsConfirmedAt(),
         inspection.getFindingsSnapshotHash());
   }
@@ -1519,7 +1346,6 @@ public class ReportService {
       DroneContext drone,
       InspectionPreparation preparation,
       InspectionReadinessDecision readiness,
-      EvidenceQualityDecision quality,
       List<FieldSession> sessions) {
     InspectionPreparation prep = preparation;
     return new ReportRenderPort.ReportContext(
@@ -1542,9 +1368,6 @@ public class ReportService {
             ? null
             : readiness.getDecidedAt().toString(),
         readiness == null ? null : readiness.getReason(),
-        quality == null ? null : quality.getDecision().name(),
-        quality == null ? null : quality.getShotListComparison(),
-        quality == null ? null : quality.getLimitationReason(),
         buildChecklistSummaries(inspection.getId()).stream()
             .map(
                 entry ->
@@ -1606,25 +1429,8 @@ public class ReportService {
         readinessDecisions
             .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
             .orElse(null);
-    var quality =
-        qualityDecisions
-            .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
-            .orElse(null);
     var sessions = fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
-    return buildReportContextResponse(
-        inspection, identity, drone, prep, readiness, quality, sessions);
-  }
-
-  private static String evidenceSnapshotHash(List<Evidence> confirmedEvidence) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      for (Evidence item : confirmedEvidence) {
-        digest.update(item.getChecksumSha256().getBytes());
-      }
-      return HexFormat.of().formatHex(digest.digest());
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException(ex);
-    }
+    return buildReportContextResponse(inspection, identity, drone, prep, readiness, sessions);
   }
 
   private static String quote(String value) {
@@ -1634,42 +1440,21 @@ public class ReportService {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"";
   }
 
-  private static String componentLocation(String component, String location) {
-    String cleanComponent = component == null || component.isBlank() ? null : component.trim();
-    String cleanLocation = location == null || location.isBlank() ? null : location.trim();
-    if (cleanComponent == null) {
-      return cleanLocation;
-    }
-    if (cleanLocation == null) {
-      return cleanComponent;
-    }
-    if (cleanComponent.equals(cleanLocation)) {
-      return cleanComponent;
-    }
-    return cleanComponent + " — " + cleanLocation;
-  }
-
   private InspectionReportVersionResponse toResponse(InspectionReportVersion version) {
     JsonNode content = readContentSnapshot(version.getContentSnapshot());
+    InspectionReport report = reports.findById(version.getInspectionReportId()).orElseThrow();
     return new InspectionReportVersionResponse(
         version.getId(),
         version.getInspectionReportId(),
         version.getVersionNo(),
         version.getStatus(),
-        version.getAuthorUserId(),
-        version.getAuthorVerifiedAt(),
+        report.getAuthorUserId(),
+        version.getSubmittedAt(),
         version.getReviewerUserId(),
         version.getReviewedAt(),
-        version.getReviewReason(),
-        version.getReturnReasonType(),
-        version.getWithdrawnByUserId(),
+        version.getReturnReason(),
         version.getWithdrawnAt(),
         version.getWithdrawalReason(),
-        version.getLlmModel(),
-        version.getPromptVersion(),
-        version.getGeneratedAt(),
-        version.getEvidenceSnapshotHash(),
-        version.getFindingsSnapshotHash(),
         version.getPublishedAt(),
         version.getCreatedAt(),
         textOrNull(content, "omissionDisclosure"),

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.ChecklistEntrySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
-import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceQualitySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.FindingSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
@@ -71,7 +70,7 @@ class ReportDraftClientTest {
     assertThat(draft.overallCondition()).isEqualTo("POOR");
     assertThat(draft.omissionDisclosure()).contains("Submerged components");
 
-    // The prompt must carry the finding's component and location, not just its label, so the model
+    // The prompt carries the retained finding text and linked evidence metadata.
     String request = requestBody.get();
     String prompt =
         new tools.jackson.databind.ObjectMapper()
@@ -82,16 +81,13 @@ class ReportDraftClientTest {
             .asString();
     assertThat(prompt)
         .contains(
-            "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):\n- Component: Lower chord")
-        .contains("Defect: Surface Crack")
+            "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):\n- Defect: Surface Crack | Severity: MEDIUM | Notes: Hairline crack observed | Recommended action: Monitor and re-inspect")
         .contains("AI Detection Candidates (advisory, not official findings)")
         .contains("Candidate status (not official finding status): PENDING")
         .contains("Bounding-box JSON: {\"x\":1}")
         .contains("Recorded start: 2026-10-12T10:00:00Z")
         .contains("Assigned drone reference (not proof used): drone-1")
         .contains("Surface Crack")
-        .contains("Lower chord")
-        .contains("Span 2")
         .contains("Inspect main-span coating")
         .contains("North span")
         .contains("Main girder G4")
@@ -101,14 +97,14 @@ class ReportDraftClientTest {
         .contains("Capture time: 2026-10-12T09:30:00Z")
         .contains("GPS: 10.7769, 106.7009")
         .contains("Field session: session-1")
+        .doesNotContain("WEB_UPLOAD")
+        .doesNotContain("External reference")
         .doesNotContain("latitude")
         .doesNotContain("longitude")
-        .contains("Inspector-recorded Evidence Quality Assessment (not independent proof)")
-        .contains("Inspector-recorded decision: ACCEPTED")
-        .contains(
-            "Shot-list comparison entered by Inspector: Both walkways and the central span were covered")
-        .contains("Inspector-recorded limitation reason: Wind limited north access")
-        .contains("not independent proof beyond the entered comparison")
+        .doesNotContain("Evidence Quality Assessment")
+        .doesNotContain("Inspector-recorded decision")
+        .doesNotContain("Shot-list comparison entered by Inspector")
+        .doesNotContain("not independent proof beyond the entered comparison")
         .doesNotContain("inspector-42")
         .doesNotContain("12:34:56Z")
         .doesNotContain("Inspector ID:")
@@ -209,16 +205,7 @@ class ReportDraftClientTest {
         List.of(new ChecklistEntrySummary("Expansion joint condition", "PASS", "Normal wear")),
         List.of(
             new FindingSummary(
-                "Surface Crack",
-                "MEDIUM",
-                "Lower chord",
-                "Span 2, girder G3",
-                "Hairline crack observed",
-                "Monitor and re-inspect",
-                null,
-                null,
-                null,
-                null)),
+                "Surface Crack", "MEDIUM", "Hairline crack observed", "Monitor and re-inspect")),
         List.of(
             new EvidenceSummary(
                 "girder-01.png",
@@ -226,9 +213,7 @@ class ReportDraftClientTest {
                 "2026-10-12T09:30:00Z",
                 "10.7769",
                 "106.7009",
-                "WEB_UPLOAD",
                 "session-1",
-                null,
                 null)),
         List.of(
             new com.smartdroneinspection.inspections.spi.ReportDraftPort.CandidateSummary(
@@ -251,11 +236,7 @@ class ReportDraftClientTest {
                 null,
                 null,
                 null,
-                "drone-1")),
-        new EvidenceQualitySummary(
-            "ACCEPTED",
-            "Both walkways and the central span were covered",
-            "Wind limited north access"));
+                "drone-1")));
   }
 
   private ReportDraftClient client(String apiKey, String model) {

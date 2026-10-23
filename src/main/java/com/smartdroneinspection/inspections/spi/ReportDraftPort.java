@@ -36,11 +36,7 @@ public interface ReportDraftPort {
       List<FindingSummary> findings,
       List<EvidenceSummary> evidence,
       List<CandidateSummary> candidates,
-      List<FieldSessionSummary> fieldSessions,
-      EvidenceQualitySummary evidenceQuality) {}
-
-  record EvidenceQualitySummary(
-      String decision, String shotListComparison, String limitationReason) {}
+      List<FieldSessionSummary> fieldSessions) {}
 
   record CandidateSummary(
       String candidateId,
@@ -76,16 +72,7 @@ public interface ReportDraftPort {
   record ChecklistEntrySummary(String prompt, String responseValue, String notes) {}
 
   record FindingSummary(
-      String defectLabel,
-      String severity,
-      String component,
-      String locationDescription,
-      String technicalNotes,
-      String recommendedAction,
-      String description,
-      String observedCondition,
-      String priority,
-      String measurement) {}
+      String defectLabel, String severity, String technicalNotes, String recommendedAction) {}
 
   record EvidenceSummary(
       String fileName,
@@ -93,8 +80,6 @@ public interface ReportDraftPort {
       String captureTime,
       String latitude,
       String longitude,
-      String source,
       String fieldSessionId,
-      String locationDescription,
-      String externalReference) {}
+      String locationDescription) {}
 }

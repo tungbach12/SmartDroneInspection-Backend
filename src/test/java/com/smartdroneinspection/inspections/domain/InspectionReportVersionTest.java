@@ -3,15 +3,11 @@ package com.smartdroneinspection.inspections.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-/**
- * The human gates are the behaviour under test: nothing advances without the right person acting,
- * and a published version cannot be revised.
- */
+/** The report version's human gates and published-artifact immutability. */
 class InspectionReportVersionTest {
 
   private final UUID reportId = UUID.randomUUID();
@@ -19,8 +15,12 @@ class InspectionReportVersionTest {
   private final UUID reviewer = UUID.randomUUID();
 
   private InspectionReportVersion draft() {
-    return new InspectionReportVersion(
-        reportId, 1, null, author, "{}", null, "gpt-test", "v1", "abc");
+    return new InspectionReportVersion(reportId, 1, null, "{}");
+  }
+
+  private void verifyAndSubmit(InspectionReportVersion version) {
+    version.verifyAsAuthor(author, author);
+    version.submit();
   }
 
   @Test
@@ -29,126 +29,126 @@ class InspectionReportVersionTest {
   }
 
   @Test
-  void authorVerifiesThenSubmits() {
+  void onlyTheParentReportAuthorMayVerifyThenSubmit() {
     InspectionReportVersion version = draft();
 
-    version.verifyAsAuthor(author);
-    assertThat(version.getStatus()).isEqualTo(ReportStatus.AUTHOR_VERIFIED);
-    assertThat(version.getAuthorVerifiedAt()).isNotNull();
-
-    version.submit();
-    assertThat(version.getStatus()).isEqualTo(ReportStatus.SUBMITTED);
-  }
-
-  @Test
-  void onlyTheAuthorMayVerify() {
-    InspectionReportVersion version = draft();
-
-    assertThatThrownBy(() -> version.verifyAsAuthor(reviewer))
+    assertThatThrownBy(() -> version.verifyAsAuthor(reviewer, author))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("Only the report author");
+
+    verifyAndSubmit(version);
+
+    assertThat(version.getStatus()).isEqualTo(ReportStatus.SUBMITTED);
+    assertThat(version.getSubmittedAt()).isNotNull();
   }
 
   @Test
   void cannotSubmitBeforeAuthorVerification() {
-    InspectionReportVersion version = draft();
-
-    assertThatThrownBy(version::submit).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(draft()::submit).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
-  void authorCannotReviewTheirOwnReport() {
+  void reviewRequiresAReviewer() {
     InspectionReportVersion version = draft();
-    version.verifyAsAuthor(author);
-    version.submit();
+    verifyAndSubmit(version);
 
-    assertThatThrownBy(() -> version.reviewBy(author, true, null, null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("cannot review their own report");
+    assertThatThrownBy(() -> version.reviewBy(null, true, null))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("reviewer is required");
   }
 
   @Test
   void reviewerApprovalMovesToApproved() {
     InspectionReportVersion version = draft();
-    version.verifyAsAuthor(author);
-    version.submit();
+    verifyAndSubmit(version);
 
-    version.reviewBy(reviewer, true, null, null);
+    version.reviewBy(reviewer, true, null);
 
     assertThat(version.getStatus()).isEqualTo(ReportStatus.APPROVED);
     assertThat(version.getReviewerUserId()).isEqualTo(reviewer);
     assertThat(version.getReviewedAt()).isNotNull();
+    assertThat(version.getReturnReason()).isNull();
   }
 
   @Test
-  void returningADraftRequiresAReason() {
+  void returningADraftRequiresAReasonAndRecordsReturnReason() {
     InspectionReportVersion version = draft();
-    version.verifyAsAuthor(author);
-    version.submit();
+    verifyAndSubmit(version);
 
-    assertThatThrownBy(
-            () -> version.reviewBy(reviewer, false, null, ReportReturnReasonType.TEXT_REVISION))
+    assertThatThrownBy(() -> version.reviewBy(reviewer, false, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("return requires a reason");
-    assertThatThrownBy(
-            () -> version.reviewBy(reviewer, false, "  ", ReportReturnReasonType.TEXT_REVISION))
+    assertThatThrownBy(() -> version.reviewBy(reviewer, false, "  "))
         .isInstanceOf(IllegalArgumentException.class);
 
-    version.reviewBy(
-        reviewer,
-        false,
-        "Coverage of the west face is missing",
-        ReportReturnReasonType.TEXT_REVISION);
+    version.reviewBy(reviewer, false, "Coverage of the west face is missing");
+
     assertThat(version.getStatus()).isEqualTo(ReportStatus.RETURNED);
-    assertThat(version.getReviewReason()).contains("west face");
+    assertThat(version.getReturnReason()).contains("west face");
   }
 
   @Test
-  void aReturnedVersionCanBeRevisedAndReSubmitted() {
+  void renewedAuthorVerificationResetsThePreviousReviewDecision() {
     InspectionReportVersion version = draft();
-    version.verifyAsAuthor(author);
-    version.submit();
-    version.reviewBy(reviewer, false, "Missing limitations", ReportReturnReasonType.TEXT_REVISION);
+    verifyAndSubmit(version);
+    version.reviewBy(reviewer, false, "Missing limitations");
 
     version.editContent("{\"narrative\":\"revised with disclosed limitations\"}");
-    version.verifyAsAuthor(author);
-    version.submit();
+    version.verifyAsAuthor(author, author);
 
+    assertThat(version.getReviewerUserId()).isNull();
+    assertThat(version.getReviewedAt()).isNull();
+    assertThat(version.getReturnReason()).isNull();
+    version.submit();
     assertThat(version.getStatus()).isEqualTo(ReportStatus.SUBMITTED);
+    assertThat(version.getSubmittedAt()).isNotNull();
+  }
+
+  @Test
+  void authorCanWithdrawOnlyBeforeReviewerActs() {
+    InspectionReportVersion version = draft();
+    verifyAndSubmit(version);
+
+    version.withdraw(author, "Please correct one value", author);
+
+    assertThat(version.getStatus()).isEqualTo(ReportStatus.RETURNED);
+    assertThat(version.getWithdrawnAt()).isNotNull();
+    assertThat(version.getWithdrawalReason()).contains("correct");
   }
 
   @Test
   void publicationRequiresAnApprovedVersion() {
-    InspectionReportVersion version = draft();
-
-    assertThatThrownBy(() -> version.publish(reviewer)).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> draft().publish(reviewer, author))
+        .isInstanceOf(IllegalStateException.class);
   }
 
   @Test
-  void publishedVersionIsImmutableAndSupersedable() {
+  void publishedVersionKeepsItsPdfKeyAndChecksumWhenSuperseded() {
     InspectionReportVersion version = draft();
-    version.verifyAsAuthor(author);
-    version.submit();
-    version.reviewBy(reviewer, true, null, null);
-    version.publish(reviewer);
+    verifyAndSubmit(version);
+    version.reviewBy(reviewer, true, null);
+    version.publish(reviewer, author);
+    version.recordArtefact("reports/report-v1.pdf", "a".repeat(64));
 
     assertThat(version.getStatus()).isEqualTo(ReportStatus.PUBLISHED);
     assertThat(version.getPublishedAt()).isNotNull();
     assertThat(version.isImmutable()).isTrue();
+    assertThat(version.getRenderedObjectKey()).isEqualTo("reports/report-v1.pdf");
+    assertThat(version.getRenderedChecksumSha256()).isEqualTo("a".repeat(64));
 
-    assertThatThrownBy(() -> version.verifyAsAuthor(author))
+    assertThatThrownBy(() -> version.verifyAsAuthor(author, author))
         .isInstanceOf(IllegalStateException.class);
     assertThatThrownBy(version::submit).isInstanceOf(IllegalStateException.class);
 
     version.supersede();
     assertThat(version.getStatus()).isEqualTo(ReportStatus.SUPERSEDED);
+    assertThat(version.getRenderedObjectKey()).isEqualTo("reports/report-v1.pdf");
+    assertThat(version.getRenderedChecksumSha256()).isEqualTo("a".repeat(64));
   }
 
   @Test
   void reviewIsRejectedWhenTheVersionIsNotSubmitted() {
-    InspectionReportVersion version = draft();
-
-    assertThatThrownBy(() -> version.reviewBy(reviewer, true, null, null))
+    assertThatThrownBy(() -> draft().reviewBy(reviewer, true, null))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("expected one of");
   }

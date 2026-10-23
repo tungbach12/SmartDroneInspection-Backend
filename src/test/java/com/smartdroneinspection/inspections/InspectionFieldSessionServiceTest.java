@@ -210,9 +210,6 @@ class InspectionFieldSessionServiceTest {
             "{\"source_envelope\":{}}",
             "[]",
             "[]",
-            "[]",
-            "[]",
-            "[]",
             "b".repeat(64)));
     jdbcTemplate.update(
         "UPDATE inspections SET status = 'READY_FOR_FLIGHT' WHERE id = ?", inspectionId);
@@ -628,9 +625,6 @@ class InspectionFieldSessionServiceTest {
             "{\"source_envelope\":{}}",
             "[]",
             "[]",
-            "[]",
-            "[]",
-            "[]",
             "a".repeat(64));
     return decisions.saveAndFlush(decision).getId();
   }
@@ -659,9 +653,6 @@ class InspectionFieldSessionServiceTest {
             approval.getPermitSnapshot(),
             approval.getCredentialSnapshot(),
             approval.getDroneDocumentSnapshot(),
-            approval.getPermitSnapshotIds(),
-            approval.getCredentialSnapshotIds(),
-            approval.getDroneDocumentSnapshotIds(),
             approval.getSourceHash()));
     preparations.saveAndFlush(
         preparation.nextDraftVersion(preparation.getPreparationVersion() + 1));

@@ -16,6 +16,7 @@ class FullDatabaseSchemaSqlContractTest {
     String wf4 = readMigration("V8__maintenance_and_billing.sql");
     String support = readMigration("V9__notifications.sql");
     String reportAudit = readMigration("V22__report_author_verification_and_completeness.sql");
+    String mf3FieldAudit = readMigration("V39__mf3_entity_field_audit.sql");
 
     assertThat(wf3)
         .contains("CREATE TABLE inspections")
@@ -50,6 +51,17 @@ class FullDatabaseSchemaSqlContractTest {
         .contains("status IN ('PENDING', 'SENT', 'FAILED', 'READ')")
         .contains("CREATE INDEX ix_notifications_recipient_status")
         .contains("CREATE INDEX ix_notifications_delivery");
+
+    assertThat(mf3FieldAudit)
+        .contains("V39 cannot merge finding notes")
+        .contains("UPDATE findings")
+        .contains("Description: ' || BTRIM(f.description)")
+        .contains("DROP TABLE evidence_quality_decisions")
+        .contains("ADD COLUMN forwarded_to_maintenance_at TIMESTAMPTZ")
+        .contains("RENAME COLUMN review_reason TO return_reason")
+        .contains("ADD COLUMN submitted_at TIMESTAMPTZ")
+        .contains("DROP COLUMN checklist_version")
+        .contains("DROP COLUMN permit_snapshot_ids");
 
     assertThat(reportAudit)
         .contains("ADD COLUMN IF NOT EXISTS author_verified_by_user_id UUID REFERENCES users(id)")

@@ -46,7 +46,6 @@ class RuntimePersistenceInventoryTest {
           // MF3 inspection slice: evidence, advisory detection, human findings and report versions.
           "field_sessions",
           "evidence",
-          "evidence_quality_decisions",
           "findings",
           "inspection_reports",
           "inspection_report_versions",
@@ -87,7 +86,6 @@ class RuntimePersistenceInventoryTest {
           "field_sessions",
           "checklist_responses",
           "evidence",
-          "evidence_quality_decisions",
           "findings",
           "inspection_reports",
           "inspection_report_versions",
@@ -135,7 +133,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(40);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

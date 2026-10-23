@@ -3,9 +3,16 @@ package com.smartdroneinspection.database;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
+import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class FullDatabaseSchemaMigrationTest {
 
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired DataSource dataSource;
 
   @Test
   void flywayCreatesExactlyTheTargetTablesAndFrameworkRegistry() {
@@ -52,7 +60,6 @@ class FullDatabaseSchemaMigrationTest {
             "field_sessions",
             "checklist_responses",
             "evidence",
-            "evidence_quality_decisions",
             "findings",
             "inspection_reports",
             "inspection_report_versions",
@@ -72,8 +79,205 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(42);
+    assertThat(expected).hasSize(41);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+  }
+
+  @Test
+  void baselineAndIncrementalMigrationPathsProduceEquivalentPostgresCatalogs() {
+    String baselineSchema = "baseline_new_" + UUID.randomUUID().toString().replace("-", "");
+    String incrementalSchema = "baseline_existing_" + UUID.randomUUID().toString().replace("-", "");
+    try {
+      jdbcTemplate.execute("CREATE SCHEMA " + baselineSchema);
+      jdbcTemplate.execute("CREATE SCHEMA " + incrementalSchema);
+      Flyway baselinePath = configureFlyway(baselineSchema, null, "public");
+      baselinePath.migrate();
+
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT version || ':' || type || ':' || description FROM "
+                      + baselineSchema
+                      + ".flyway_schema_history WHERE success",
+                  String.class))
+          .isEqualTo("39:SQL_BASELINE:complete schema");
+      assertThat(tableNames(baselineSchema)).hasSize(40);
+      assertThat(tableNames(baselineSchema))
+          .contains("event_publication", "findings", "audit_events");
+
+      Flyway throughV38 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("38"));
+      throughV38.migrate();
+      Flyway incrementalPath = configureFlyway(incrementalSchema, null);
+      assertThat(incrementalPath.info().all())
+          .filteredOn(migration -> "complete schema".equals(migration.getDescription()))
+          .singleElement()
+          .extracting(migration -> migration.getState().name())
+          .isEqualTo("IGNORED");
+      assertThat(incrementalPath.info().all())
+          .filteredOn(migration -> "mf3 entity field audit".equals(migration.getDescription()))
+          .singleElement()
+          .extracting(migration -> migration.getState().name())
+          .isEqualTo("PENDING");
+      incrementalPath.migrate();
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT version || ':' || type FROM "
+                      + incrementalSchema
+                      + ".flyway_schema_history WHERE success "
+                      + "ORDER BY installed_rank DESC LIMIT 1",
+                  String.class))
+          .isEqualTo("39:SQL");
+
+      assertThat(schemaCatalog(incrementalSchema))
+          .containsExactlyElementsOf(schemaCatalog(baselineSchema));
+    } finally {
+      jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + baselineSchema + " CASCADE");
+      jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + incrementalSchema + " CASCADE");
+    }
+  }
+
+  private Set<String> tableNames(String schema) {
+    return jdbcTemplate
+        .queryForList(
+            "SELECT table_name FROM information_schema.tables "
+                + "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
+                + "AND table_name <> 'flyway_schema_history'",
+            String.class,
+            schema)
+        .stream()
+        .collect(Collectors.toSet());
+  }
+
+  private List<String> schemaCatalog(String schema) {
+    List<String> catalog = new ArrayList<>();
+    catalog.addAll(
+        jdbcTemplate.query(
+            "SELECT table_name, ordinal_position, column_name, data_type, udt_name, is_nullable, "
+                + "column_default, character_maximum_length, numeric_precision, numeric_scale, "
+                + "datetime_precision FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name <> 'flyway_schema_history' "
+                + "ORDER BY table_name, ordinal_position",
+            (result, rowNum) ->
+                String.join(
+                    "|",
+                    "COLUMN",
+                    Objects.toString(result.getString(1), "<null>"),
+                    Objects.toString(result.getString(2), "<null>"),
+                    Objects.toString(result.getString(3), "<null>"),
+                    Objects.toString(result.getString(4), "<null>"),
+                    Objects.toString(result.getString(5), "<null>"),
+                    Objects.toString(result.getString(6), "<null>"),
+                    Objects.toString(result.getString(7), "<null>"),
+                    Objects.toString(result.getString(8), "<null>"),
+                    Objects.toString(result.getString(9), "<null>"),
+                    Objects.toString(result.getString(10), "<null>"),
+                    Objects.toString(result.getString(11), "<null>")),
+            schema));
+    catalog.addAll(
+        jdbcTemplate.query(
+            "SELECT relation.relname, constraint_row.conname, constraint_row.contype, "
+                + "constraint_row.convalidated, pg_get_constraintdef(constraint_row.oid) "
+                + "FROM pg_constraint constraint_row "
+                + "JOIN pg_class relation ON relation.oid = constraint_row.conrelid "
+                + "JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace "
+                + "WHERE namespace.nspname = ? AND relation.relname <> 'flyway_schema_history' "
+                + "ORDER BY relation.relname, constraint_row.conname",
+            (result, rowNum) ->
+                String.join(
+                    "|",
+                    "CONSTRAINT",
+                    result.getString(1),
+                    result.getString(2),
+                    result.getString(3),
+                    result.getString(4),
+                    normalizeSchema(result.getString(5), schema)),
+            schema));
+    catalog.addAll(
+        jdbcTemplate.query(
+            "SELECT tablename, indexname, indexdef FROM pg_indexes "
+                + "WHERE schemaname = ? AND tablename <> 'flyway_schema_history' "
+                + "ORDER BY tablename, indexname",
+            (result, rowNum) ->
+                String.join(
+                    "|",
+                    "INDEX",
+                    result.getString(1),
+                    result.getString(2),
+                    normalizeSchema(result.getString(3), schema)),
+            schema));
+    catalog.addAll(
+        jdbcTemplate.query(
+            "SELECT sequencename, data_type, start_value, min_value, max_value, increment, "
+                + "cycle, cache_size FROM information_schema.sequences WHERE sequence_schema = ? "
+                + "ORDER BY sequencename",
+            (result, rowNum) ->
+                String.join(
+                    "|",
+                    "SEQUENCE",
+                    result.getString(1),
+                    result.getString(2),
+                    result.getString(3),
+                    result.getString(4),
+                    result.getString(5),
+                    result.getString(6),
+                    result.getString(7),
+                    result.getString(8)),
+            schema));
+    catalog.addAll(
+        jdbcTemplate.query(
+            "SELECT trigger_rel.relname, trigger_row.tgname, pg_get_triggerdef(trigger_row.oid) "
+                + "FROM pg_trigger trigger_row "
+                + "JOIN pg_class trigger_rel ON trigger_rel.oid = trigger_row.tgrelid "
+                + "JOIN pg_namespace namespace ON namespace.oid = trigger_rel.relnamespace "
+                + "WHERE namespace.nspname = ? AND NOT trigger_row.tgisinternal "
+                + "ORDER BY trigger_rel.relname, trigger_row.tgname",
+            (result, rowNum) ->
+                String.join(
+                    "|",
+                    "TRIGGER",
+                    result.getString(1),
+                    result.getString(2),
+                    normalizeSchema(result.getString(3), schema)),
+            schema));
+    catalog.addAll(
+        jdbcTemplate.query(
+            "SELECT extname FROM pg_extension ORDER BY extname",
+            (result, rowNum) -> "EXTENSION|" + result.getString(1)));
+    return catalog.stream().sorted().toList();
+  }
+
+  private String normalizeSchema(String value, String schema) {
+    if (value == null) return "<null>";
+    return value.replace(quotedSchema(schema), "<schema>").replace(schema + ".", "<schema>.");
+  }
+
+  private String quotedSchema(String schema) {
+    return "\"" + schema.replace("\"", "\"\"") + "\"";
+  }
+
+  private Flyway configureFlyway(String schema, MigrationVersion target) {
+    return configureFlyway(schema, target, null);
+  }
+
+  private Flyway configureFlyway(
+      String schema, MigrationVersion target, String baselineExtensionSchema) {
+    var configuration =
+        Flyway.configure()
+            .dataSource(dataSource)
+            .schemas(schema)
+            .defaultSchema(schema)
+            .locations("classpath:db/migration")
+            .encoding("UTF-8");
+    if (baselineExtensionSchema != null) {
+      configuration.schemas(schema, baselineExtensionSchema);
+      configuration.placeholders(
+          Map.of(
+              "baseline_schema", schema,
+              "baseline_extension_schema", baselineExtensionSchema));
+    }
+    if (target != null) {
+      configuration.target(target);
+    }
+    return configuration.load();
   }
 
   @Test

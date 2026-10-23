@@ -4,28 +4,19 @@ import com.smartdroneinspection.inspections.api.dto.EvidenceMediaTypeFilter;
 import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
-import com.smartdroneinspection.inspections.api.dto.request.CorrectiveActionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.CorrectiveHandoffRequest;
-import com.smartdroneinspection.inspections.api.dto.request.DeleteFindingRequest;
-import com.smartdroneinspection.inspections.api.dto.request.EvidenceQualityDecisionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.FindingHandoffRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
-import com.smartdroneinspection.inspections.api.dto.request.RetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
-import com.smartdroneinspection.inspections.api.dto.response.EvidenceAnalysisStatusResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
-import com.smartdroneinspection.inspections.api.dto.response.EvidenceQualityDecisionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
-import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
-import com.smartdroneinspection.inspections.domain.enums.ReportReturnReasonType;
-import com.smartdroneinspection.inspections.service.EvidenceQualityService;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
@@ -68,19 +59,16 @@ import org.springframework.web.multipart.MultipartFile;
 public class InspectionController {
 
   private final EvidenceService evidenceService;
-  private final EvidenceQualityService qualityService;
   private final FindingService findingService;
   private final ReportService reportService;
   private final InspectionWorkflowService workflowService;
 
   public InspectionController(
       EvidenceService evidenceService,
-      EvidenceQualityService qualityService,
       FindingService findingService,
       ReportService reportService,
       InspectionWorkflowService workflowService) {
     this.evidenceService = evidenceService;
-    this.qualityService = qualityService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
@@ -93,23 +81,13 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @RequestParam("file") MultipartFile file,
       @RequestParam(required = false) UUID fieldSessionId,
-      @RequestParam(defaultValue = "WEB_UPLOAD") EvidenceSource source,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
           Instant captureTime,
       @RequestParam(required = false) BigDecimal latitude,
-      @RequestParam(required = false) BigDecimal longitude,
-      @RequestParam(required = false) String externalReference) {
+      @RequestParam(required = false) BigDecimal longitude) {
     return ApiResponse.success(
         evidenceService.upload(
-            actorId(jwt),
-            inspectionId,
-            fieldSessionId,
-            file,
-            source,
-            captureTime,
-            latitude,
-            longitude,
-            externalReference));
+            actorId(jwt), inspectionId, fieldSessionId, file, captureTime, latitude, longitude));
   }
 
   @GetMapping("/evidence")
@@ -151,10 +129,8 @@ public class InspectionController {
   public ApiResponse<EvidenceResponse> retireEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID evidenceId,
-      @Valid @RequestBody RetireEvidenceRequest request) {
-    return ApiResponse.success(
-        evidenceService.retire(actorId(jwt), inspectionId, evidenceId, request.reason()));
+      @PathVariable UUID evidenceId) {
+    return ApiResponse.success(evidenceService.retire(actorId(jwt), inspectionId, evidenceId));
   }
 
   @PostMapping("/evidence/bulk-retire")
@@ -162,10 +138,10 @@ public class InspectionController {
   public ApiResponse<List<EvidenceResponse>> bulkRetireEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @Valid @RequestBody BulkRetireEvidenceRequest request) {
+      @RequestBody(required = false) BulkRetireEvidenceRequest request) {
     return ApiResponse.success(
         evidenceService.bulkRetire(
-            actorId(jwt), inspectionId, request.evidenceIds(), request.reason()));
+            actorId(jwt), inspectionId, request == null ? null : request.evidenceIds()));
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
@@ -184,29 +160,6 @@ public class InspectionController {
         .body(new InputStreamResource(content.stream()));
   }
 
-  @PostMapping("/evidence-quality-decisions")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<EvidenceQualityDecisionResponse> decideEvidenceQuality(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @Valid @RequestBody EvidenceQualityDecisionRequest request) {
-    return ApiResponse.success(
-        qualityService.decide(
-            actorId(jwt),
-            inspectionId,
-            request.fieldSessionId(),
-            request.decision(),
-            request.shotListComparison(),
-            request.limitationReason()));
-  }
-
-  @GetMapping("/evidence-quality-decisions")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
-  public ApiResponse<List<EvidenceQualityDecisionResponse>> evidenceQualityHistory(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
-    return ApiResponse.success(qualityService.history(actorId(jwt), inspectionId));
-  }
-
   @PostMapping("/evidence/{evidenceId}/analyze")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<List<FindingResponse>> analyzeEvidence(
@@ -216,13 +169,6 @@ public class InspectionController {
       @RequestParam(name = "replace", defaultValue = "false") boolean replace) {
     return ApiResponse.success(
         findingService.analyze(actorId(jwt), inspectionId, evidenceId, replace));
-  }
-
-  @GetMapping("/evidence/analysis-status")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
-  public ApiResponse<List<EvidenceAnalysisStatusResponse>> listEvidenceAnalysisStatuses(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
-    return ApiResponse.success(findingService.listAnalysisStatuses(actorId(jwt), inspectionId));
   }
 
   @PostMapping("/findings/{findingId}/confirmation")
@@ -262,9 +208,8 @@ public class InspectionController {
   public ApiResponse<Void> deleteFinding(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID findingId,
-      @Valid @RequestBody DeleteFindingRequest request) {
-    findingService.deleteFinding(actorId(jwt), inspectionId, findingId, request.reason());
+      @PathVariable UUID findingId) {
+    findingService.deleteFinding(actorId(jwt), inspectionId, findingId);
     return ApiResponse.success(null);
   }
 
@@ -316,24 +261,6 @@ public class InspectionController {
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
-  }
-
-  @PutMapping("/findings/{findingId}/corrective-action")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
-  public ApiResponse<FindingResponse> recordCorrectiveAction(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID findingId,
-      @Valid @RequestBody CorrectiveActionRequest request) {
-    return ApiResponse.success(
-        findingService.recordCorrectiveAction(
-            actorId(jwt),
-            inspectionId,
-            findingId,
-            request.correctiveActionRequired(),
-            request.priority(),
-            request.dueAt(),
-            request.rationale()));
   }
 
   @PostMapping("/report/draft")
@@ -389,11 +316,9 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
       @RequestParam boolean approve,
-      @RequestParam(required = false) String reason,
-      @RequestParam(required = false) ReportReturnReasonType reasonType) {
+      @RequestParam(required = false) String reason) {
     return ApiResponse.success(
-        reportService.reviewVersion(
-            actorId(jwt), inspectionId, versionId, approve, reason, reasonType));
+        reportService.reviewVersion(actorId(jwt), inspectionId, versionId, approve, reason));
   }
 
   @PostMapping("/report/versions/{versionId}/publish")
@@ -405,25 +330,15 @@ public class InspectionController {
     return ApiResponse.success(reportService.publish(actorId(jwt), inspectionId, versionId));
   }
 
-  @PostMapping("/report/no-corrective-work")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
-  public ApiResponse<ReportPublishedResponse> declareNoCorrectiveWork(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @Valid @RequestBody CorrectiveHandoffRequest request) {
-    return ApiResponse.success(
-        reportService.declareNoCorrectiveWork(actorId(jwt), inspectionId, request.rationale()));
-  }
-
   @PostMapping("/report/corrective-handoff")
   @PreAuthorize("hasRole('ORG_ADMIN')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @RequestBody(required = false) CorrectiveHandoffRequest request) {
-    List<UUID> findingIds = request == null ? null : request.findingIds();
+      @Valid @RequestBody FindingHandoffRequest request) {
     return ApiResponse.success(
-        reportService.completeCorrectiveActionHandoff(actorId(jwt), inspectionId, findingIds));
+        reportService.completeCorrectiveActionHandoff(
+            actorId(jwt), inspectionId, request.findingIds()));
   }
 
   @PutMapping("/report/versions/{versionId}/sections")

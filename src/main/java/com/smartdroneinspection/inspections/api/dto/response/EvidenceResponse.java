@@ -1,6 +1,5 @@
 package com.smartdroneinspection.inspections.api.dto.response;
 
-import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,16 +12,11 @@ public record EvidenceResponse(
     String fileName,
     String contentType,
     long sizeBytes,
-    String checksumSha256,
     Instant captureTime,
-    EvidenceSource source,
     BigDecimal latitude,
     BigDecimal longitude,
-    String externalReference,
     UploadStatus uploadStatus,
     Instant createdAt,
-    UUID retiredByUserId,
     Instant retiredAt,
-    String retirementReason,
     String locationDescription,
     boolean deduplicated) {}

@@ -15,18 +15,24 @@ import org.springframework.data.repository.query.Param;
 public interface EvidenceRepository
     extends JpaRepository<Evidence, UUID>, JpaSpecificationExecutor<Evidence> {
 
-  /**
-   * Duplicate detection for a retry-safe upload. The unique index on inspection plus checksum is
-   * the storage contract; this lookup is how an identical upload becomes an idempotent response.
-   */
-  Optional<Evidence> findByInspectionIdAndChecksumSha256(UUID inspectionId, String checksumSha256);
+  Optional<Evidence> findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(
+      UUID inspectionId, String fileName);
 
   List<Evidence> findByInspectionIdOrderByCreatedAtAsc(UUID inspectionId);
 
   List<Evidence> findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(UUID inspectionId);
 
+  boolean existsByInspectionIdAndRetiredAtIsNullAndUploadStatus(
+      UUID inspectionId,
+      com.smartdroneinspection.inspections.domain.enums.UploadStatus uploadStatus);
+
   List<Evidence> findByInspectionIdAndFieldSessionIdAndRetiredAtIsNullOrderByCreatedAtAsc(
       UUID inspectionId, UUID fieldSessionId);
+
+  boolean existsByInspectionIdAndFieldSessionIdAndRetiredAtIsNullAndUploadStatus(
+      UUID inspectionId,
+      UUID fieldSessionId,
+      com.smartdroneinspection.inspections.domain.enums.UploadStatus uploadStatus);
 
   Optional<Evidence> findByIdAndInspectionId(UUID id, UUID inspectionId);
 

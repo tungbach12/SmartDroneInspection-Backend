@@ -400,9 +400,6 @@ public class InspectionReadinessService {
         snapshot.permitSnapshot(),
         snapshot.credentialSnapshot(),
         snapshot.droneDocumentSnapshot(),
-        snapshot.permitSnapshotIds(),
-        snapshot.credentialSnapshotIds(),
-        snapshot.droneDocumentSnapshotIds(),
         snapshot.sourceHash());
   }
 

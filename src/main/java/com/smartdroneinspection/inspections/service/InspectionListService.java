@@ -168,10 +168,9 @@ public class InspectionListService {
   }
 
   /**
-   * A published report still needs a corrective outcome for every official finding (MF3-12).
+   * A published report still needs every official finding forwarded to Maintenance (MF3-13).
    *
-   * <p>An inspection with no official findings is dispositioned through the reasoned no-repair
-   * route, which is recorded on the report, so it is not a per-finding task.
+   * <p>An inspection without official findings is completed when its report is published.
    */
   private boolean correctivePending(UUID inspectionId) {
     List<Finding> official =
@@ -181,8 +180,7 @@ public class InspectionListService {
     if (official.isEmpty()) {
       return false;
     }
-    return official.stream()
-        .anyMatch(finding -> finding.getCorrectiveActionReviewedByUserId() == null);
+    return official.stream().anyMatch(finding -> !finding.isForwardedToMaintenance());
   }
 
   /**

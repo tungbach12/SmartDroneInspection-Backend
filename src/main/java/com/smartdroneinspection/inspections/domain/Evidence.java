@@ -1,7 +1,6 @@
 package com.smartdroneinspection.inspections.domain;
 
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
-import com.smartdroneinspection.inspections.domain.enums.EvidenceSource;
 import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -13,13 +12,10 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * Evidence metadata only; the file bytes live in object storage behind the shared object-store
- * port. The checksum is computed server-side and a repeated inspection plus checksum pair is
- * idempotent.
+ * port.
  */
 @Entity
 @Table(name = "evidence")
@@ -42,8 +38,9 @@ public class Evidence {
   @Column(name = "maintenance_task_id")
   private UUID maintenanceTaskId;
 
-  @Column(name = "uploaded_by_user_id", nullable = false)
-  private UUID uploadedByUserId;
+  /** Legacy MF4 work-log link retained by the shared evidence schema. */
+  @Column(name = "maintenance_work_log_id", insertable = false, updatable = false)
+  private UUID maintenanceWorkLogId;
 
   @Enumerated(EnumType.STRING)
   @Column(name = "evidence_kind", nullable = false, length = 32)
@@ -58,19 +55,11 @@ public class Evidence {
   @Column(name = "size_bytes", nullable = false)
   private long sizeBytes;
 
-  @JdbcTypeCode(SqlTypes.CHAR)
-  @Column(name = "checksum_sha256", nullable = false, length = 64)
-  private String checksumSha256;
-
   @Column(name = "object_key", nullable = false, length = 1000)
   private String objectKey;
 
   @Column(name = "capture_time")
   private Instant captureTime;
-
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 32)
-  private EvidenceSource source;
 
   @Column(precision = 9, scale = 6)
   private BigDecimal latitude;
@@ -78,37 +67,15 @@ public class Evidence {
   @Column(precision = 9, scale = 6)
   private BigDecimal longitude;
 
-  @Column(name = "external_reference", length = 200)
-  private String externalReference;
-
   @Enumerated(EnumType.STRING)
   @Column(name = "upload_status", nullable = false, length = 24)
   private UploadStatus uploadStatus;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "capture_metadata", columnDefinition = "jsonb")
-  private String captureMetadata;
-
-  @Column(name = "immutable_original", nullable = false)
-  private boolean immutableOriginal;
-
-  @Column(name = "retired_by_user_id")
-  private UUID retiredByUserId;
-
   @Column(name = "retired_at")
   private Instant retiredAt;
 
-  @Column(name = "retirement_reason", length = 2000)
-  private String retirementReason;
-
   @Column(name = "location_description", length = 1000)
   private String locationDescription;
-
-  @Column(name = "analysis_completed_at")
-  private Instant analysisCompletedAt;
-
-  @Column(name = "analysis_detection_count")
-  private Integer analysisDetectionCount;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -119,36 +86,25 @@ public class Evidence {
       UUID organizationId,
       UUID inspectionId,
       UUID fieldSessionId,
-      UUID uploadedByUserId,
       EvidenceKind evidenceKind,
       String fileName,
       String contentType,
       long sizeBytes,
-      String checksumSha256,
       String objectKey,
       Instant captureTime,
-      EvidenceSource source,
       BigDecimal latitude,
-      BigDecimal longitude,
-      String externalReference,
-      String captureMetadata) {
+      BigDecimal longitude) {
     this.organizationId = organizationId;
     this.inspectionId = inspectionId;
     this.fieldSessionId = fieldSessionId;
-    this.uploadedByUserId = uploadedByUserId;
     this.evidenceKind = evidenceKind;
     this.fileName = fileName;
     this.contentType = contentType;
     this.sizeBytes = sizeBytes;
-    this.checksumSha256 = checksumSha256;
     this.objectKey = objectKey;
     this.captureTime = captureTime;
-    this.source = source;
     this.latitude = latitude;
     this.longitude = longitude;
-    this.externalReference = externalReference;
-    this.captureMetadata = captureMetadata;
-    this.immutableOriginal = true;
     this.uploadStatus = UploadStatus.AVAILABLE;
     this.createdAt = Instant.now();
   }
@@ -157,57 +113,24 @@ public class Evidence {
     return contentType != null && contentType.startsWith("image/");
   }
 
-  /**
-   * MF3-02: an original capture is never overwritten or removed. Retiring it holds the bytes,
-   * checksum and metadata for audit while taking it out of the evidence set that drafting and
-   * verification use, so a replacement capture can stand in for the review.
-   */
-  public void retire(UUID actorId, String reason) {
-    if (actorId == null) {
-      throw new IllegalArgumentException("An actor is required to retire evidence");
-    }
-    if (reason == null || reason.isBlank()) {
-      throw new IllegalArgumentException("A retirement reason is required");
-    }
+  /** Retiring keeps the original bytes while removing it from the active evidence set. */
+  public void retire() {
     if (retiredAt != null) {
       throw new IllegalStateException("This capture is already retired");
     }
-    this.retiredByUserId = actorId;
     this.retiredAt = Instant.now();
-    this.retirementReason = reason;
   }
 
   public boolean isRetired() {
     return retiredAt != null;
   }
 
-  public UUID getRetiredByUserId() {
-    return retiredByUserId;
-  }
-
   public Instant getRetiredAt() {
     return retiredAt;
   }
 
-  public String getRetirementReason() {
-    return retirementReason;
-  }
-
   public String getLocationDescription() {
     return locationDescription;
-  }
-
-  public Instant getAnalysisCompletedAt() {
-    return analysisCompletedAt;
-  }
-
-  public Integer getAnalysisDetectionCount() {
-    return analysisDetectionCount;
-  }
-
-  public void markAnalysisCompleted(int detectionCount) {
-    this.analysisCompletedAt = Instant.now();
-    this.analysisDetectionCount = detectionCount;
   }
 
   public void setLocationDescription(String locationDescription) {
@@ -233,10 +156,6 @@ public class Evidence {
     return fieldSessionId;
   }
 
-  public UUID getUploadedByUserId() {
-    return uploadedByUserId;
-  }
-
   public EvidenceKind getEvidenceKind() {
     return evidenceKind;
   }
@@ -253,10 +172,6 @@ public class Evidence {
     return sizeBytes;
   }
 
-  public String getChecksumSha256() {
-    return checksumSha256;
-  }
-
   public String getObjectKey() {
     return objectKey;
   }
@@ -265,24 +180,12 @@ public class Evidence {
     return captureTime;
   }
 
-  public EvidenceSource getSource() {
-    return source;
-  }
-
   public BigDecimal getLatitude() {
     return latitude;
   }
 
   public BigDecimal getLongitude() {
     return longitude;
-  }
-
-  public String getExternalReference() {
-    return externalReference;
-  }
-
-  public String getCaptureMetadata() {
-    return captureMetadata;
   }
 
   public UploadStatus getUploadStatus() {

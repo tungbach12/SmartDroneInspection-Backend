@@ -40,12 +40,7 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
       nativeQuery = true)
   long countIncludingRemovedByInspectionId(@Param("inspectionId") UUID inspectionId);
 
-  List<Finding> findByRepairRequiredTrueAndInspectorConfirmedAtNotNull();
+  List<Finding> findByForwardedToMaintenanceAtIsNotNull();
 
-  /** MF3-13 hands only confirmed, repair-required findings to MF4. */
-  @Query(
-      "select f from Finding f where f.inspectionId = :inspectionId "
-          + "and f.repairRequired = true and f.correctiveActionReviewedByUserId is not null "
-          + "and f.correctiveActionRequired = true and f.inspectorConfirmedAt is not null")
-  List<Finding> findRepairRequired(@Param("inspectionId") UUID inspectionId);
+  List<Finding> findByInspectionIdAndForwardedToMaintenanceAtIsNotNull(UUID inspectionId);
 }

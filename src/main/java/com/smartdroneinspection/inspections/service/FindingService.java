@@ -3,7 +3,6 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
-import com.smartdroneinspection.inspections.api.dto.response.EvidenceAnalysisStatusResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Finding;
@@ -11,6 +10,7 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
@@ -47,7 +47,6 @@ public class FindingService {
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
   private final EvidenceService evidenceService;
-  private final EvidenceQualityService qualityService;
   private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository reportVersions;
   private final InspectionRepository inspections;
@@ -58,7 +57,6 @@ public class FindingService {
       EvidenceRepository evidence,
       FindingRepository findings,
       EvidenceService evidenceService,
-      EvidenceQualityService qualityService,
       InspectionReportRepository reports,
       InspectionReportVersionRepository reportVersions,
       InspectionRepository inspections,
@@ -67,7 +65,6 @@ public class FindingService {
     this.evidence = evidence;
     this.findings = findings;
     this.evidenceService = evidenceService;
-    this.qualityService = qualityService;
     this.reports = reports;
     this.reportVersions = reportVersions;
     this.inspections = inspections;
@@ -88,11 +85,14 @@ public class FindingService {
           "INSPECTION_STATE_CONFLICT",
           "Findings can only be confirmed after field work is completed");
     }
-    if (!qualityService.isEligibleForAnalysis(inspectionId)) {
+    boolean hasActiveEvidence =
+        evidence.existsByInspectionIdAndRetiredAtIsNullAndUploadStatus(
+            inspectionId, UploadStatus.AVAILABLE);
+    if (!hasActiveEvidence) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
-          "EVIDENCE_NOT_ACCEPTED",
-          "Findings confirmation requires an accepted evidence set");
+          "ACTIVE_EVIDENCE_REQUIRED",
+          "Upload at least one active evidence item before confirming the findings set");
     }
     // A detector suggestion is a proposal the Inspector has to accept or remove, so it blocks
     // until it is decided. A finding the Inspector recorded themselves is not a proposal: the
@@ -119,7 +119,7 @@ public class FindingService {
     // The aggregate confirmation is what makes the set official, so a finding that has not been
     // confirmed yet is confirmed here.
     for (Finding finding : inspectorFindings) {
-      finding.confirmByInspector(actorId);
+      finding.confirmByInspector();
     }
     if (!inspectorFindings.isEmpty()) {
       findings.saveAllAndFlush(inspectorFindings);
@@ -133,7 +133,7 @@ public class FindingService {
       inspections.saveAndFlush(inspection);
     }
     try {
-      inspection.confirmFindings(actorId, snapshot);
+      inspection.confirmFindings(snapshot);
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
@@ -178,12 +178,6 @@ public class FindingService {
           "AI_INFERENCE_UNAVAILABLE",
           "Only image evidence can be analyzed automatically");
     }
-    if (!qualityService.isEligibleForAnalysis(inspectionId)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "AI_INFERENCE_UNAVAILABLE",
-          "Analysis requires an accepted evidence quality decision");
-    }
     AiInferencePort port =
         inference.orElseThrow(
             () ->
@@ -192,18 +186,13 @@ public class FindingService {
                     "AI_INFERENCE_UNAVAILABLE",
                     "Automated analysis is not configured"));
 
-    // MF3-05 runs automatically once the evidence set is accepted, so re-running it on the same
-    // capture must not create a second finding for the same detection. An explicit re-run replaces
+    // MF3-05 is invoked explicitly by the Inspector; re-running the same capture must not create a
+    // second finding for the same detection. An explicit re-run replaces
     // the image's unreviewed suggestions instead, which is what a changed detector or threshold
     // needs; a finding the Inspector already reviewed carries that decision and survives.
     List<Finding> prior = findings.findByEvidenceIdOrderByCreatedAtAsc(evidenceId);
-    if (!replace) {
-      if (record.getAnalysisCompletedAt() != null) {
-        return prior.stream().map(this::toFindingResponse).toList();
-      }
-      if (!prior.isEmpty()) {
-        return prior.stream().map(this::toFindingResponse).toList();
-      }
+    if (!replace && !prior.isEmpty()) {
+      return prior.stream().map(this::toFindingResponse).toList();
     }
     List<Finding> reviewed =
         replace
@@ -243,20 +232,12 @@ public class FindingService {
                     new Finding(
                         inspectionId,
                         evidenceId,
-                        actorId,
                         nextFindingCode(inspectionId),
                         detection.predictedLabel(),
                         FindingSeverity.MEDIUM,
-                        null,
                         detection.predictedLabel(),
                         null,
                         detection.boundingBox(),
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        false,
                         detection.modelName(),
                         detection.modelVersion(),
                         detection.provider(),
@@ -272,27 +253,7 @@ public class FindingService {
       }
     }
     List<Finding> stored = findings.saveAll(created);
-    record.markAnalysisCompleted(created.size());
-    evidence.saveAndFlush(record);
     return Stream.concat(stored.stream(), reviewed.stream()).map(this::toFindingResponse).toList();
-  }
-
-  @Transactional(readOnly = true)
-  public List<EvidenceAnalysisStatusResponse> listAnalysisStatuses(
-      UUID actorId, UUID inspectionId) {
-    evidenceService.requireInspectionInScope(actorId, inspectionId);
-    return evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId).stream()
-        .filter(Evidence::isImage)
-        .filter(item -> item.getAnalysisCompletedAt() != null)
-        .map(
-            item ->
-                new EvidenceAnalysisStatusResponse(
-                    item.getId(),
-                    item.getAnalysisCompletedAt(),
-                    item.getAnalysisDetectionCount() == null
-                        ? 0
-                        : item.getAnalysisDetectionCount()))
-        .toList();
   }
 
   /**
@@ -342,24 +303,11 @@ public class FindingService {
         request.evidenceId() == null ? finding.getEvidenceId() : request.evidenceId(),
         orDefault(request.defectLabel(), finding.getDefectLabel()),
         request.severity() == null ? finding.getSeverity() : request.severity(),
-        request.locationDescription() == null
-            ? finding.getLocationDescription()
-            : request.locationDescription(),
         orDefault(request.technicalNotes(), finding.getTechnicalNotes()),
         request.recommendedAction() == null
             ? finding.getRecommendedAction()
-            : request.recommendedAction(),
-        request.component() == null ? finding.getComponent() : request.component(),
-        request.description() == null ? finding.getDescription() : request.description(),
-        request.observedCondition() == null
-            ? finding.getObservedCondition()
-            : request.observedCondition(),
-        request.priority() == null ? finding.getPriority() : request.priority(),
-        request.measurement() == null
-            ? (finding.getMeasurement() == null ? null : finding.getMeasurement().get("summary"))
-            : request.measurement(),
-        request.repairRequired() == null ? finding.isRepairRequired() : request.repairRequired());
-    finding.confirmByInspector(actorId);
+            : request.recommendedAction());
+    finding.confirmByInspector();
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -377,26 +325,16 @@ public class FindingService {
         new Finding(
             inspectionId,
             record.getId(),
-            actorId,
             nextFindingCode(inspectionId),
             request.defectLabel(),
             request.severity(),
-            null,
             request.technicalNotes(),
             request.recommendedAction(),
-            request.component(),
-            request.description(),
-            request.observedCondition(),
-            request.priority(),
-            request.measurement(),
-            Boolean.TRUE.equals(request.repairRequired()));
-    if (record.getLocationDescription() != null) {
-      finding.setLocationDescription(record.getLocationDescription());
-    } else if (request.locationDescription() != null) {
-      record.setLocationDescription(request.locationDescription());
-      evidence.saveAndFlush(record);
-      finding.setLocationDescription(request.locationDescription());
-    }
+            null,
+            null,
+            null,
+            null,
+            null);
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -412,15 +350,8 @@ public class FindingService {
         record.getId(),
         request.defectLabel(),
         request.severity(),
-        request.locationDescription(),
         request.technicalNotes(),
-        request.recommendedAction(),
-        request.component(),
-        request.description(),
-        request.observedCondition(),
-        request.priority(),
-        request.measurement(),
-        Boolean.TRUE.equals(request.repairRequired()));
+        request.recommendedAction());
     reopenFindings(inspection);
     return toFindingResponse(findings.saveAndFlush(finding));
   }
@@ -432,23 +363,19 @@ public class FindingService {
    * authored findings and confirmed findings keep the attributable deletion tombstone.
    */
   @Transactional
-  public void deleteFinding(UUID actorId, UUID inspectionId, UUID findingId, String reason) {
+  public void deleteFinding(UUID actorId, UUID inspectionId, UUID findingId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
     Finding finding = requireFinding(inspectionId, findingId);
     if (finding.isPendingAiSuggestion()) {
-      if (reason == null || reason.isBlank()) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", "A rejection reason is required");
-      }
       findings.deleteByIdAndInspectionId(findingId, inspectionId);
       findings.flush();
       reopenFindings(inspection);
       return;
     }
     try {
-      finding.delete(actorId, reason);
-    } catch (IllegalArgumentException | IllegalStateException ex) {
+      finding.delete();
+    } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", ex.getMessage());
     }
     findings.saveAndFlush(finding);
@@ -474,63 +401,6 @@ public class FindingService {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_RESTORE_INVALID", ex.getMessage());
     }
     reopenFindings(inspection);
-    return toFindingResponse(findings.saveAndFlush(finding));
-  }
-
-  /** MF3-12: the reviewer records a corrective outcome after report publication. */
-  @Transactional
-  public FindingResponse recordCorrectiveAction(
-      UUID actorId,
-      UUID inspectionId,
-      UUID findingId,
-      boolean correctiveActionRequired,
-      String priority,
-      java.time.Instant dueAt,
-      String rationale) {
-    evidenceService.requireInspectionInScope(actorId, inspectionId);
-    var report = reports.findByInspectionId(inspectionId).orElse(null);
-    Finding finding = requireFinding(inspectionId, findingId);
-    if (!finding.isOfficial()) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FINDING_REVIEW_INCOMPLETE",
-          "Corrective action can only be recorded for a confirmed finding");
-    }
-    var inspection = inspections.findById(inspectionId).orElse(null);
-    if (inspection != null && inspection.getCorrectiveHandoffAt() != null) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "CORRECTIVE_HANDOFF_ALREADY_COMPLETED",
-          "Corrective handoff has already been completed");
-    }
-    if (!ReportStatus.PUBLISHED.name().equals(report == null ? null : report.getStatus())) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REPORT_STATE_CONFLICT",
-          "Corrective actions are recorded after the report is published");
-    }
-    boolean publishedVersionExists =
-        report != null
-            && reportVersions.findByInspectionReportIdOrderByVersionNoDesc(report.getId()).stream()
-                .anyMatch(version -> version.getStatus() == ReportStatus.PUBLISHED);
-    if (finding.isCorrectiveActionReviewed()) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "CORRECTIVE_ACTION_ALREADY_RECORDED",
-          "Corrective action has already been recorded for this published finding");
-    }
-    if (!publishedVersionExists) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REPORT_STATE_CONFLICT",
-          "Corrective actions are recorded after the report is published");
-    }
-    try {
-      finding.updateCorrectiveAction(actorId, correctiveActionRequired, priority, dueAt, rationale);
-    } catch (IllegalArgumentException | IllegalStateException ex) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "CORRECTIVE_ACTION_INVALID", ex.getMessage());
-    }
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -611,29 +481,15 @@ public class FindingService {
         finding.getFindingCode(),
         finding.getDefectLabel(),
         finding.getSeverity(),
-        finding.getLocationDescription(),
         finding.getTechnicalNotes(),
         finding.getRecommendedAction(),
-        finding.getComponent(),
-        finding.getDescription(),
-        finding.getObservedCondition(),
-        finding.getPriority(),
-        finding.getMeasurement() == null ? null : finding.getMeasurement().get("summary"),
         finding.getBoundingBox(),
         finding.getModelName(),
         finding.getModelVersion(),
         finding.getModelProvider(),
         finding.getConfidence(),
         finding.getInspectorConfirmedAt(),
-        finding.isRepairRequired(),
-        finding.isCorrectiveActionRequired(),
-        finding.getCorrectiveActionPriority(),
-        finding.getCorrectiveActionDueAt(),
-        finding.getCorrectiveActionReviewedByUserId(),
-        finding.getCorrectiveActionReviewedAt(),
-        finding.getCorrectiveActionRationale(),
-        finding.getDeletedAt(),
-        finding.getDeletedByUserId(),
-        finding.getDeletionReason());
+        finding.getForwardedToMaintenanceAt(),
+        finding.getDeletedAt());
   }
 }

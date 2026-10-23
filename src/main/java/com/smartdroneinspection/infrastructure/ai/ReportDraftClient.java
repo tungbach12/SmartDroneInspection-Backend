@@ -214,18 +214,9 @@ public class ReportDraftClient implements ReportDraftPort {
     builder.append(
         "\nInspector-confirmed Findings (official findings only; confirmation is not independent validation):\n");
     for (var finding : context.findings()) {
-      builder.append("- Component: ").append(finding.component());
-      builder.append(" | Location: ").append(finding.locationDescription());
-      builder.append(" | Defect: ").append(finding.defectLabel());
+      builder.append("- Defect: ").append(finding.defectLabel());
       builder.append(" | Severity: ").append(finding.severity());
       builder.append(" | Notes: ").append(finding.technicalNotes());
-      if (hasText(finding.description()))
-        builder.append(" | Description: ").append(finding.description());
-      if (hasText(finding.observedCondition()))
-        builder.append(" | Observed condition: ").append(finding.observedCondition());
-      if (hasText(finding.priority())) builder.append(" | Priority: ").append(finding.priority());
-      if (hasText(finding.measurement()))
-        builder.append(" | Measurement: ").append(finding.measurement());
       if (finding.recommendedAction() != null && !finding.recommendedAction().isBlank()) {
         builder.append(" | Recommended action: ").append(finding.recommendedAction());
       }
@@ -284,23 +275,6 @@ public class ReportDraftClient implements ReportDraftPort {
       builder.append("\n");
     }
     if (context.fieldSessions().isEmpty()) builder.append("None recorded.\n");
-    var quality = context.evidenceQuality();
-    if (quality != null) {
-      builder.append("\nInspector-recorded Evidence Quality Assessment (not independent proof):\n");
-    }
-    if (quality != null) {
-      builder.append("- Inspector-recorded decision: ").append(quality.decision());
-      builder
-          .append(" | Shot-list comparison entered by Inspector: ")
-          .append(quality.shotListComparison());
-      if (hasText(quality.limitationReason())) {
-        builder
-            .append(" | Inspector-recorded limitation reason: ")
-            .append(quality.limitationReason());
-      }
-      builder.append("\n");
-    }
-
     builder.append("\nEvidence Media and recorded capture metadata:\n");
     for (var item : context.evidence()) {
       builder
@@ -314,11 +288,8 @@ public class ReportDraftClient implements ReportDraftPort {
       if (hasText(item.latitude()) && hasText(item.longitude())) {
         builder.append(" | GPS: ").append(item.latitude()).append(", ").append(item.longitude());
       }
-      if (hasText(item.source())) builder.append(" | Source: ").append(item.source());
       if (hasText(item.locationDescription()))
         builder.append(" | Asset location: ").append(item.locationDescription());
-      if (hasText(item.externalReference()))
-        builder.append(" | External reference: ").append(item.externalReference());
       if (hasText(item.fieldSessionId())) {
         builder.append(" | Field session: ").append(item.fieldSessionId());
       }
@@ -330,8 +301,8 @@ public class ReportDraftClient implements ReportDraftPort {
             + " when recorded. Do not infer actual inspection dates, methods, equipment, conditions,"
             + " measurements or image findings from planned values or filenames. Propose a concise"
             + " executive summary, method/equipment/conditions, conclusions/recommendations, overall"
-            + " condition and any limitation or omission. Treat quality assessment as an Inspector-recorded"
-            + " adequacy assessment, not independent proof beyond the entered comparison.");
+            + " condition and any limitation or omission. Treat coverage and limitations as the author's"
+            + " report assessment, not as a system decision or evidence of facts not present in source records.");
     return builder.toString();
   }
 

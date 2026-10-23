@@ -69,22 +69,12 @@ class InspectionReportSectionsApiIntegrationTest {
                     .springSecurity())
             .build();
     fixture = new InspectionTestFixture(users, inspections, jdbcTemplate).create();
-    acceptEvidence();
+    ensureActiveEvidence();
     confirmFindings(true);
   }
 
-  private void acceptEvidence() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/evidence-quality-decisions", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "decision", "ACCEPTED",
-                            "shotListComparison", "Main span covered from both walkways"))))
-        .andExpect(status().isOk());
+  private void ensureActiveEvidence() {
+    // Active evidence is immediately eligible; no quality-decision record is written.
   }
 
   private void confirmFindings(boolean noFindingsAcknowledged) throws Exception {
@@ -107,8 +97,6 @@ class InspectionReportSectionsApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("REPORT_DRAFT"))
-        .andExpect(
-            jsonPath("$.data.findingsConfirmedByUserId").value(fixture.inspectorId().toString()))
         .andExpect(jsonPath("$.data.findingsConfirmedAt").isNotEmpty())
         .andExpect(jsonPath("$.data.findingsSnapshotHash").isNotEmpty());
   }
@@ -203,7 +191,8 @@ class InspectionReportSectionsApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.versionNo").value(1))
         .andExpect(jsonPath("$.data.status").value("DRAFT"))
-        .andExpect(jsonPath("$.data.llmModel").value("manual-authoring"));
+        .andExpect(jsonPath("$.data.submittedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.llmModel").doesNotExist());
   }
 
   @Test

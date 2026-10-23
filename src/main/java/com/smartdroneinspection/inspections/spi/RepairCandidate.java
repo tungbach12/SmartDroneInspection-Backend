@@ -18,7 +18,7 @@ public record RepairCandidate(
     UUID findingId,
     String findingCode,
     String defectLabel,
-    String description,
+    String technicalNotes,
     String severity,
     String recommendedAction,
     Instant reportPublishedAt) {}

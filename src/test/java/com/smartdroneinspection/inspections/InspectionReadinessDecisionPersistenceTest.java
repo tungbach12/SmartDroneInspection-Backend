@@ -98,9 +98,6 @@ class InspectionReadinessDecisionPersistenceTest {
             permitSnapshot,
             "[]",
             "[]",
-            permitIds,
-            "[]",
-            "[]",
             "sha256:9e107d9d372bb6826bd81d3542a419d6");
 
     entityManager.persist(decision);
@@ -117,7 +114,6 @@ class InspectionReadinessDecisionPersistenceTest {
     assertThat(reloaded.getReviewedByUserId()).isEqualTo(reviewerId);
     assertThat(reloaded.getDecidedAt()).isNotNull();
     assertThat(readJson(reloaded.getPermitSnapshot())).isEqualTo(readJson(permitSnapshot));
-    assertThat(readJson(reloaded.getPermitSnapshotIds())).isEqualTo(readJson(permitIds));
     assertThat(reloaded.getSourceHash()).isEqualTo("sha256:9e107d9d372bb6826bd81d3542a419d6");
   }
 
@@ -131,9 +127,6 @@ class InspectionReadinessDecisionPersistenceTest {
             ReadinessDecisionType.RETURNED,
             reviewerId,
             "Permit validity does not cover planned time",
-            null,
-            null,
-            null,
             null,
             null,
             null,
