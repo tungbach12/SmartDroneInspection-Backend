@@ -38,6 +38,18 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 app:
+  payment:
+    paypal:
+      enabled: ${PAYPAL_ENABLED:false}
+      mode: ${PAYPAL_MODE:sandbox}
+      client-id: ${PAYPAL_CLIENT_ID:}
+      client-secret: ${PAYPAL_CLIENT_SECRET:}
+      webhook-id: ${PAYPAL_WEBHOOK_ID:}
+      base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
+      return-url: ${PAYPAL_RETURN_URL:http://localhost:3000/subscription?payment=approved}
+      cancel-url: ${PAYPAL_CANCEL_URL:http://localhost:3000/subscription?payment=cancelled}
+      connect-timeout: ${PAYPAL_CONNECT_TIMEOUT:5s}
+      read-timeout: ${PAYPAL_READ_TIMEOUT:20s}
   evidence:
     max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
   assets:
@@ -53,11 +65,11 @@ app:
     narrative-max-chars: ${REPORT_NARRATIVE_MAX_CHARS:10000}
   storage:
     minio:
-      enabled: ${MINIO_ENABLED:false}
+      enabled: ${MINIO_ENABLED:true}
       endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
       bucket: ${MINIO_BUCKET:inspection-evidence}
-      access-key: ${MINIO_ACCESS_KEY:}
-      secret-key: ${MINIO_SECRET_KEY:}
+      access-key: ${MINIO_ACCESS_KEY:local_minio_admin}
+      secret-key: ${MINIO_SECRET_KEY:local_dev_only_change_me}
   ai:
     yolo:
       enabled: ${YOLO_INFERENCE_ENABLED:false}
