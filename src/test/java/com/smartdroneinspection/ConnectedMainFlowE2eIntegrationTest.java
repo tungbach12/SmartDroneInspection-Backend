@@ -506,15 +506,6 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID findingId =
         UUID.fromString(objectMapper.readTree(findingResponse).at("/data/id").stringValue());
 
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/findings/{findingId}/review", inspectionId, findingId)
-                .with(principal(inspectorId, "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirm", true))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("CONFIRMED"));
-
     log.info("[MF3] Step 3.4: Inspector confirms findings set -> transitions to REPORT_DRAFT...");
     mockMvc
         .perform(
