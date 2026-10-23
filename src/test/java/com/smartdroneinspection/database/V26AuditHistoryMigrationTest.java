@@ -7,6 +7,7 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
+import org.flywaydb.core.api.migration.baseline.BaselineMigrationConfigurationExtension;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,14 +28,18 @@ class V26AuditHistoryMigrationTest {
 
   @Test
   void carriesLegacySecurityAuditHistoryIntoAuditEventsBeforeDroppingTheTable() {
-    Flyway.configure()
-        .dataSource(dataSource)
-        .schemas("migration_v26_audit")
-        .defaultSchema("migration_v26_audit")
-        .locations("classpath:db/migration")
-        .target(MigrationVersion.fromVersion("25"))
-        .load()
-        .migrate();
+    var v25Config =
+        Flyway.configure()
+            .dataSource(dataSource)
+            .schemas("migration_v26_audit")
+            .defaultSchema("migration_v26_audit")
+            .locations("classpath:db/migration")
+            .target(MigrationVersion.fromVersion("25"));
+    v25Config
+        .getPluginRegister()
+        .getExact(BaselineMigrationConfigurationExtension.class)
+        .setBaselineMigrationPrefix("DISABLED_B");
+    v25Config.load().migrate();
 
     UUID actor = UUID.randomUUID();
     UUID subject = UUID.randomUUID();

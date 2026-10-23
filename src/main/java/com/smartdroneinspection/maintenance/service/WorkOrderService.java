@@ -20,6 +20,8 @@ import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
 import com.smartdroneinspection.maintenance.domain.enums.CostLineState;
 import com.smartdroneinspection.maintenance.domain.enums.TeamMemberRole;
 import com.smartdroneinspection.maintenance.domain.enums.WorkOrderStatus;
+import com.smartdroneinspection.maintenance.events.EstimateApprovedEvent;
+import com.smartdroneinspection.maintenance.events.WorkOrderAssignedEvent;
 import com.smartdroneinspection.maintenance.repository.MaintenanceCostLineRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceEstimateVersionRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository;
@@ -33,6 +35,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -76,6 +79,7 @@ public class WorkOrderService {
   private final WorkforceCredentialAccess workforceCredentials;
   private final RepairCandidateAccess repairCandidateAccess;
   private final UserAccess userAccess;
+  private final ApplicationEventPublisher eventPublisher;
 
   public WorkOrderService(
       MaintenanceWorkOrderRepository workOrders,
@@ -85,7 +89,8 @@ public class WorkOrderService {
       MaintenanceCostLineRepository costLines,
       WorkforceCredentialAccess workforceCredentials,
       RepairCandidateAccess repairCandidateAccess,
-      UserAccess userAccess) {
+      UserAccess userAccess,
+      ApplicationEventPublisher eventPublisher) {
     this.workOrders = workOrders;
     this.teamMembers = teamMembers;
     this.tasks = tasks;
@@ -94,6 +99,7 @@ public class WorkOrderService {
     this.workforceCredentials = workforceCredentials;
     this.repairCandidateAccess = repairCandidateAccess;
     this.userAccess = userAccess;
+    this.eventPublisher = eventPublisher;
   }
 
   @Transactional(readOnly = true)
@@ -150,6 +156,23 @@ public class WorkOrderService {
           HttpStatus.CONFLICT,
           "WORK_ORDER_DUPLICATE_SCOPE",
           "An active work order already covers this finding");
+    }
+
+    UserAccess.ActiveUser budgetApprover =
+        userAccess
+            .findActiveUser(request.budgetApproverUserId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "WORK_ORDER_APPROVER_INVALID",
+                        "The budget approver is not an active user"));
+    if (!budgetApprover.hasRole("ORG_ADMIN")
+        || !actor.organizationId().equals(budgetApprover.organizationId())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "WORK_ORDER_APPROVER_INVALID",
+          "The budget approver must be an active ORG_ADMIN in this organization");
     }
 
     MaintenanceWorkOrder order =
@@ -233,7 +256,6 @@ public class WorkOrderService {
     UUID budgetApproverId = order.getBudgetApproverUserId();
     if (budgetApproverId.equals(request.leadUserId())
         || budgetApproverId.equals(request.reportAuthorUserId())
-        || budgetApproverId.equals(request.acceptingReviewerUserId())
         || (request.memberUserIds() != null
             && request.memberUserIds().contains(budgetApproverId))) {
       throw new BusinessException(
@@ -267,6 +289,19 @@ public class WorkOrderService {
             order.getId(), memberId, TeamMemberRole.MEMBER, actor.id(), request.reason());
       }
     }
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new WorkOrderAssignedEvent(
+              order.getId(),
+              order.getOrganizationId(),
+              order.getAssetId(),
+              request.leadUserId(),
+              request.reportAuthorUserId(),
+              request.acceptingReviewerUserId(),
+              request.memberUserIds() == null ? List.of() : request.memberUserIds(),
+              actor.id(),
+              Instant.now()));
+    }
     return WorkOrderResponse.from(order);
   }
 
@@ -283,6 +318,10 @@ public class WorkOrderService {
   public TaskResponse createTask(UUID actorId, UUID workOrderId, CreateTaskRequest request) {
     MaintenanceWorkOrder order = requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot add tasks to a closed work order");
+    }
 
     int nextNumber =
         tasks
@@ -339,6 +378,12 @@ public class WorkOrderService {
       UUID actorId, UUID workOrderId, CreateEstimateVersionRequest request) {
     MaintenanceWorkOrder order = requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "WORK_ORDER_CLOSED",
+          "Cannot add estimate versions to a closed work order");
+    }
 
     int nextVersion =
         estimates
@@ -429,6 +474,18 @@ public class WorkOrderService {
     }
     estimates.saveAndFlush(version);
     workOrders.saveAndFlush(order);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new EstimateApprovedEvent(
+              order.getId(),
+              version.getVersionNo(),
+              order.getOrganizationId(),
+              actor.id(),
+              order.getTeamLeadUserId(),
+              version.getBaselineTotal(),
+              version.getCurrency(),
+              Instant.now()));
+    }
     return EstimateVersionResponse.from(version);
   }
 

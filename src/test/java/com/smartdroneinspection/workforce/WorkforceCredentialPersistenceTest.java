@@ -321,15 +321,13 @@ class WorkforceCredentialPersistenceTest {
     jdbcTemplate.update(
         """
         INSERT INTO evidence
-            (id, inspection_id, uploaded_by_user_id, evidence_kind, file_name, content_type,
-             size_bytes, checksum_sha256, object_key, source, upload_status)
-        VALUES (?, ?, ?, 'INSPECTION', 'qualification.pdf', 'application/pdf', 128,
-                '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-                ?, 'WEB_UPLOAD', 'AVAILABLE')
+            (id, inspection_id, evidence_kind, file_name, content_type,
+             size_bytes, object_key, upload_status)
+        VALUES (?, ?, 'INSPECTION', 'qualification.pdf', 'application/pdf', 128,
+                ?, 'AVAILABLE')
         """,
         evidenceId,
         inspectionId,
-        subjectUserId,
         "credential-evidence/" + evidenceId);
   }
 

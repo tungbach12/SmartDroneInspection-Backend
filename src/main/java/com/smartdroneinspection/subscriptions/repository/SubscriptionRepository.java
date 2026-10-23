@@ -10,7 +10,6 @@ import org.springframework.data.jpa.repository.Lock;
 
 public interface SubscriptionRepository extends JpaRepository<Subscription, UUID> {
 
-  @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<Subscription> findFirstByOrganizationIdAndStatus(
       UUID organizationId, Subscription.Status status);
 

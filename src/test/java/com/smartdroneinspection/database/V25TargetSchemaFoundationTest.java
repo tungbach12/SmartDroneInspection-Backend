@@ -140,9 +140,6 @@ class V25TargetSchemaFoundationTest {
                     "reviewed_by_user_id",
                     "decided_at",
                     "preparation_version",
-                    "permit_snapshot_ids",
-                    "credential_snapshot_ids",
-                    "drone_document_snapshot_ids",
                     "source_hash")),
             Map.entry(
                 "field_sessions",
@@ -170,11 +167,11 @@ class V25TargetSchemaFoundationTest {
                     "field_session_id",
                     "maintenance_work_order_id",
                     "maintenance_task_id",
-                    "kind",
-                    "capture_metadata",
-                    "object_key",
-                    "checksum_sha256",
-                    "uploaded_by_user_id")),
+                    "evidence_kind",
+                    "file_name",
+                    "content_type",
+                    "size_bytes",
+                    "object_key")),
             Map.entry(
                 "findings",
                 Set.of(
@@ -183,10 +180,9 @@ class V25TargetSchemaFoundationTest {
                     "model_provider",
                     "model_version",
                     "status",
-                    "component",
-                    "description",
+                    "technical_notes",
                     "severity",
-                    "repair_required")),
+                    "forwarded_to_maintenance_at")),
             Map.entry(
                 "inspection_reports",
                 Set.of("inspection_id", "status", "current_version_number", "author_user_id")),
@@ -196,7 +192,8 @@ class V25TargetSchemaFoundationTest {
                     "inspection_report_id",
                     "version_no",
                     "status",
-                    "author_user_id",
+                    "submitted_at",
+                    "return_reason",
                     "content_snapshot")),
             Map.entry("report_version_evidence", Set.of("report_version_id", "evidence_id")),
             Map.entry("report_version_findings", Set.of("report_version_id", "finding_id")),
@@ -276,7 +273,7 @@ class V25TargetSchemaFoundationTest {
                     "aggregate_id",
                     "created_at")));
 
-    assertThat(targetColumns).hasSize(40);
+    assertThat(targetColumns).hasSize(39);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate
@@ -438,13 +435,11 @@ class V25TargetSchemaFoundationTest {
                 jdbcTemplate.update(
                     """
                     INSERT INTO evidence
-                      (id, uploaded_by_user_id, evidence_kind, file_name, content_type, size_bytes,
-                       checksum_sha256, object_key, source, upload_status)
-                    VALUES (?, ?, 'OTHER', 'file', 'text/plain', 1, ?, ?, 'IMPORTED', 'AVAILABLE')
+                      (id, evidence_kind, file_name, content_type, size_bytes,
+                       object_key, upload_status)
+                    VALUES (?, 'OTHER', 'file', 'text/plain', 1, ?, 'AVAILABLE')
                     """,
                     UUID.randomUUID(),
-                    uploaderId,
-                    "a".repeat(64),
                     "no-parent-" + UUID.randomUUID()))
         .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
@@ -453,13 +448,11 @@ class V25TargetSchemaFoundationTest {
                 jdbcTemplate.update(
                     """
                     INSERT INTO evidence
-                      (id, uploaded_by_user_id, evidence_kind, file_name, content_type, size_bytes,
-                       checksum_sha256, object_key, source, upload_status, maintenance_work_order_id)
-                    VALUES (?, ?, 'OTHER', 'file', 'text/plain', 1, ?, ?, 'IMPORTED', 'AVAILABLE', ?)
+                      (id, evidence_kind, file_name, content_type, size_bytes,
+                       object_key, upload_status, maintenance_work_order_id)
+                    VALUES (?, 'OTHER', 'file', 'text/plain', 1, ?, 'AVAILABLE', ?)
                     """,
                     UUID.randomUUID(),
-                    uploaderId,
-                    "b".repeat(64),
                     "orphan-work-order-" + UUID.randomUUID(),
                     UUID.randomUUID()))
         .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
@@ -469,13 +462,11 @@ class V25TargetSchemaFoundationTest {
                 jdbcTemplate.update(
                     """
                     INSERT INTO evidence
-                      (id, uploaded_by_user_id, evidence_kind, file_name, content_type, size_bytes,
-                       checksum_sha256, object_key, source, upload_status, maintenance_task_id)
-                    VALUES (?, ?, 'OTHER', 'file', 'text/plain', 1, ?, ?, 'IMPORTED', 'AVAILABLE', ?)
+                      (id, evidence_kind, file_name, content_type, size_bytes,
+                       object_key, upload_status, maintenance_task_id)
+                    VALUES (?, 'OTHER', 'file', 'text/plain', 1, ?, 'AVAILABLE', ?)
                     """,
                     UUID.randomUUID(),
-                    uploaderId,
-                    "c".repeat(64),
                     "orphan-task-" + UUID.randomUUID(),
                     UUID.randomUUID()))
         .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);

@@ -4,6 +4,7 @@
       "inspections::spi",
       "shared::api",
       "shared::exception",
+      "shared::storage",
       "users",
       "workforce::credential",
       "maintenance::repository"

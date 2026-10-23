@@ -479,7 +479,7 @@ class ConnectedMainFlowE2eIntegrationTest {
 
     log.info("[MF3] Step 3.2: Active evidence is available without a quality-decision gate.");
 
-    log.info("[MF3] Step 3.3: Inspector records Verified Finding with Repair Required...");
+    log.info("[MF3] Step 3.3: Inspector records and confirms Finding...");
     String findingResponse =
         mockMvc
             .perform(
@@ -495,16 +495,10 @@ class ConnectedMainFlowE2eIntegrationTest {
                                 "Severe Flange Corrosion and Section Loss",
                                 "severity",
                                 "HIGH",
-                                "locationDescription",
-                                "Girder G4, bottom flange, 4.2m from Pier 2",
                                 "technicalNotes",
-                                "Localized pitting and laminar rust with estimated 12% flange thickness reduction",
-                                "component",
-                                "Girder G4",
-                                "repairRequired",
-                                true))))
+                                "Localized pitting and laminar rust with estimated 12% flange thickness reduction"))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.repairRequired").value(true))
+            .andExpect(jsonPath("$.data.status").value("PENDING"))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -937,21 +931,18 @@ class ConnectedMainFlowE2eIntegrationTest {
       UUID organizationId, UUID userId, UUID inspectionId, String credentialType, UUID verifierId) {
     UUID credentialId = UUID.randomUUID();
     UUID evidenceId = UUID.randomUUID();
-    String checksum = evidenceId.toString().replace("-", "").repeat(2);
     jdbcTemplate.update(
         """
         INSERT INTO evidence (
-            id, inspection_id, uploaded_by_user_id, evidence_kind, file_name,
-            content_type, size_bytes, checksum_sha256, object_key, source, upload_status
+            id, inspection_id, evidence_kind, file_name,
+            content_type, size_bytes, object_key, upload_status
         ) VALUES (
-            ?, ?, ?, 'INSPECTION', 'credential.pdf', 'application/pdf', 1024,
-            ?, ?, 'WEB_UPLOAD', 'AVAILABLE'
+            ?, ?, 'INSPECTION', 'credential.pdf', 'application/pdf', 1024,
+            ?, 'AVAILABLE'
         )
         """,
         evidenceId,
         inspectionId,
-        userId,
-        checksum,
         "credential-evidence/" + evidenceId);
 
     jdbcTemplate.update(

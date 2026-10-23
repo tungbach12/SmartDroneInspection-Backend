@@ -186,8 +186,8 @@ class InspectionReportDraftingApiIntegrationTest {
         templateId);
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, status, checklist_template_id, checklist_version, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, 'POSTPONED', ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, status, checklist_template_id, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, ?, ?, 'POSTPONED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
         fixture.inspectionId(),
         fixture.organizationId(),
@@ -221,44 +221,40 @@ class InspectionReportDraftingApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, inspection_id, organization_id, uploaded_by_user_id, evidence_kind,
-                              file_name, content_type, size_bytes, checksum_sha256, object_key, source,
+        INSERT INTO evidence (id, inspection_id, organization_id, evidence_kind,
+                              file_name, content_type, size_bytes, object_key,
                               upload_status, created_at)
-        VALUES (?, ?, ?, ?, 'INSPECTION', 'candidate-image.jpg', 'image/jpeg', 100, ?, ?,
-                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, 'INSPECTION', 'candidate-image.jpg', 'image/jpeg', 100, ?,
+                'AVAILABLE', CURRENT_TIMESTAMP)
         """,
         evidenceId,
         fixture.inspectionId(),
         fixture.organizationId(),
-        fixture.inspectorId(),
-        "0".repeat(64),
         "test/" + UUID.randomUUID());
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
         INSERT INTO findings
-          (id, inspection_id, evidence_id, created_by_user_id, finding_code, defect_label,
-           severity, bounding_box, status, inspector_confirmed_at, confirmed_by_user_id,
+          (id, inspection_id, evidence_id, finding_code, defect_label,
+           severity, bounding_box, status, inspector_confirmed_at,
            model_provider, model_name, model_version, confidence,
-           technical_notes, repair_required, corrective_action_required, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, 'F-1', 'Possible crack', 'MEDIUM', '{"x":12}', 'CONFIRMED',
-                CURRENT_TIMESTAMP, ?, 'provider-test', 'detector-test', 'v7', 0.87, 'Possible crack',
-                FALSE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+           technical_notes, created_at, updated_at)
+        VALUES (?, ?, ?, 'F-1', 'Possible crack', 'MEDIUM', '{"x":12}', 'CONFIRMED',
+                CURRENT_TIMESTAMP, 'provider-test', 'detector-test', 'v7', 0.87, 'Possible crack',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         candidateId,
         fixture.inspectionId(),
-        evidenceId,
-        fixture.inspectorId(),
-        fixture.inspectorId());
+        evidenceId);
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
         """
         INSERT INTO field_sessions
           (id, inspection_id, organization_id, inspector_user_id, drone_id, readiness_decision_id,
-           status, started_at, ended_at, checklist_template_id, checklist_version, readiness_version,
+           status, started_at, ended_at, checklist_template_id, readiness_version,
            limitations, created_at, updated_at, row_version)
         VALUES (?, ?, ?, ?, NULL, NULL, 'POSTPONED', '2026-10-12T10:00:00Z',
-                '2026-10-12T10:30:00Z', NULL, NULL, NULL, '{"wind":"high"}',
+                '2026-10-12T10:30:00Z', NULL, NULL, '{"wind":"high"}',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         sessionId,
@@ -446,20 +442,18 @@ class InspectionReportDraftingApiIntegrationTest {
   private UUID insertConfirmedFinding(String defect, String severity) {
     jdbcTemplate.update(
         """
-        INSERT INTO findings (id, inspection_id, created_by_user_id, finding_code,
-                              defect_label, severity, location_description, technical_notes,
-                              status, inspector_confirmed_at, confirmed_by_user_id, repair_required,
-                              created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, ?, ?, 'Lower chord', 'Visible corrosion',
-                'CONFIRMED', CURRENT_TIMESTAMP, ?, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        INSERT INTO findings (id, inspection_id, finding_code,
+                              defect_label, severity, technical_notes,
+                              status, inspector_confirmed_at,
+                              created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'Visible corrosion',
+                'CONFIRMED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         UUID.randomUUID(),
         fixture.inspectionId(),
-        fixture.inspectorId(),
         "F-" + UUID.randomUUID().toString().substring(0, 6),
         defect,
-        severity,
-        fixture.inspectorId());
+        severity);
     return jdbcTemplate.queryForObject(
         "SELECT id FROM findings WHERE inspection_id = ? ORDER BY created_at DESC LIMIT 1",
         UUID.class,

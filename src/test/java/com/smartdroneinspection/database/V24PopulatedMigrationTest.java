@@ -8,6 +8,7 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
+import org.flywaydb.core.api.migration.baseline.BaselineMigrationConfigurationExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -164,6 +165,10 @@ class V24PopulatedMigrationTest {
             .locations("classpath:db/migration");
     if (target != null) {
       configuration.target(target);
+      configuration
+          .getPluginRegister()
+          .getExact(BaselineMigrationConfigurationExtension.class)
+          .setBaselineMigrationPrefix("DISABLED_B");
     }
     return configuration.load();
   }

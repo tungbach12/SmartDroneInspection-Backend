@@ -236,4 +236,25 @@ public class MaintenanceReportVersion {
   public String getContentSnapshot() {
     return contentSnapshot;
   }
+
+  /** Records the stored PDF artifact key and SHA-256 checksum for an approved completion report. */
+  public void recordArtefact(String objectKey, String checksumSha256) {
+    requireStatus(ReportVersionStatus.APPROVED);
+    if (objectKey == null
+        || objectKey.isBlank()
+        || checksumSha256 == null
+        || checksumSha256.isBlank()) {
+      throw new IllegalArgumentException("An approved report requires its object key and checksum");
+    }
+    this.renderedObjectKey = objectKey;
+    this.renderedChecksumSha256 = checksumSha256;
+  }
+
+  public String getRenderedObjectKey() {
+    return renderedObjectKey;
+  }
+
+  public String getRenderedChecksumSha256() {
+    return renderedChecksumSha256;
+  }
 }

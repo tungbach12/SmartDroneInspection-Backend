@@ -74,7 +74,20 @@ class InspectionReportSectionsApiIntegrationTest {
   }
 
   private void ensureActiveEvidence() {
-    // Active evidence is immediately eligible; no quality-decision record is written.
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'FIELD_COMPLETED' WHERE id = ?", fixture.inspectionId());
+    jdbcTemplate.update(
+        """
+        INSERT INTO evidence (id, organization_id, inspection_id, evidence_kind,
+                              file_name, content_type, size_bytes, object_key,
+                              upload_status, created_at)
+        VALUES (?, ?, ?, 'INSPECTION', 'seed.png', 'image/png', 1, ?,
+                'AVAILABLE', CURRENT_TIMESTAMP)
+        """,
+        UUID.randomUUID(),
+        fixture.organizationId(),
+        fixture.inspectionId(),
+        "seed/" + UUID.randomUUID());
   }
 
   private void confirmFindings(boolean noFindingsAcknowledged) throws Exception {
@@ -298,13 +311,12 @@ class InspectionReportSectionsApiIntegrationTest {
     jdbcTemplate.update(
         """
         INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status,
-                                                author_user_id, content_snapshot, created_at)
-        VALUES (?, ?, 1, 'DRAFT', ?, '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
+                                                content_snapshot, created_at)
+        VALUES (?, ?, 1, 'DRAFT', '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
                 CURRENT_TIMESTAMP)
         """,
         versionId,
-        reportId,
-        fixture.inspectorId());
+        reportId);
 
     mockMvc
         .perform(
@@ -452,35 +464,30 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id,
+        INSERT INTO evidence (id, organization_id, inspection_id,
                               evidence_kind, file_name, content_type, size_bytes,
-                              checksum_sha256, object_key, source, upload_status, created_at)
-        VALUES (?, ?, ?, ?, 'INSPECTION', 'flange-crack.png', 'image/png', 67,
-                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'test-key',
-                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+                              object_key, location_description, upload_status, created_at)
+        VALUES (?, ?, ?, 'INSPECTION', 'flange-crack.png', 'image/png', 67,
+                'test-key', 'North girder flange', 'AVAILABLE', CURRENT_TIMESTAMP)
         """,
         evidenceId,
         fixture.organizationId(),
-        fixture.inspectionId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
 
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO findings (id, inspection_id, evidence_id, created_by_user_id, finding_code,
-                              defect_label, severity, location_description, technical_notes,
-                              status, inspector_confirmed_at, confirmed_by_user_id, repair_required,
-                              corrective_action_required, component, description, observed_condition,
-                              created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, 'F-001', 'Fatigue Crack', 'HIGH', 'North girder flange',
-                '50mm surface crack', 'CONFIRMED', CURRENT_TIMESTAMP, ?, TRUE, TRUE, 'Flange', 'Fatigue crack',
-                'Cracking observed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        INSERT INTO findings (id, inspection_id, evidence_id, finding_code,
+                              defect_label, severity, technical_notes,
+                              status, inspector_confirmed_at,
+                              created_at, updated_at)
+        VALUES (?, ?, ?, 'F-001', 'Fatigue Crack', 'HIGH',
+                '50mm surface crack', 'CONFIRMED', CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         findingId,
         fixture.inspectionId(),
-        evidenceId,
-        fixture.inspectorId(),
-        fixture.inspectorId());
+        evidenceId);
 
     confirmFindings(false);
 
@@ -516,34 +523,30 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id,
+        INSERT INTO evidence (id, organization_id, inspection_id,
                               evidence_kind, file_name, content_type, size_bytes,
-                              checksum_sha256, object_key, source, upload_status, created_at)
-        VALUES (?, ?, ?, ?, 'INSPECTION', 'gusset-plate.jpg', 'image/jpeg', 67,
-                'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90', 'gusset-test-key',
-                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+                              object_key, upload_status, created_at)
+        VALUES (?, ?, ?, 'INSPECTION', 'gusset-plate.jpg', 'image/jpeg', 67,
+                'gusset-test-key', 'AVAILABLE', CURRENT_TIMESTAMP)
         """,
         evidenceId,
         fixture.organizationId(),
-        fixture.inspectionId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
 
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO findings (id, inspection_id, evidence_id, created_by_user_id, finding_code,
+        INSERT INTO findings (id, inspection_id, evidence_id, finding_code,
                               defect_label, severity, bounding_box, status, model_name, model_version,
-                              confidence, technical_notes, repair_required, corrective_action_required,
-                              inspector_confirmed_at, confirmed_by_user_id, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, 'F-001', 'GussetPlateSectionLoss', 'MEDIUM', '{}', 'CONFIRMED',
-                'gemini-test', 'v1', 0.98, 'Confirmed by the assigned Inspector', FALSE, TRUE,
-                CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+                              confidence, technical_notes,
+                              inspector_confirmed_at, created_at, updated_at)
+        VALUES (?, ?, ?, 'F-001', 'GussetPlateSectionLoss', 'MEDIUM', '{}', 'CONFIRMED',
+                'gemini-test', 'v1', 0.98, 'Confirmed by the assigned Inspector',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         candidateId,
         fixture.inspectionId(),
-        evidenceId,
-        fixture.inspectorId(),
-        fixture.inspectorId());
+        evidenceId);
 
     confirmFindings(false);
     UUID versionId = insertDraftVersion();
@@ -571,34 +574,30 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id,
+        INSERT INTO evidence (id, organization_id, inspection_id,
                               evidence_kind, file_name, content_type, size_bytes,
-                              checksum_sha256, object_key, source, upload_status, created_at)
-        VALUES (?, ?, ?, ?, 'INSPECTION', 'rejected-candidate.png', 'image/png', 64,
-                'b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90', 'rejected-test-key',
-                'WEB_UPLOAD', 'AVAILABLE', CURRENT_TIMESTAMP)
+                              object_key, upload_status, created_at)
+        VALUES (?, ?, ?, 'INSPECTION', 'rejected-candidate.png', 'image/png', 64,
+                'rejected-test-key', 'AVAILABLE', CURRENT_TIMESTAMP)
         """,
         evidenceId,
         fixture.organizationId(),
-        fixture.inspectionId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO findings (id, inspection_id, evidence_id, created_by_user_id, finding_code,
+        INSERT INTO findings (id, inspection_id, evidence_id, finding_code,
                               defect_label, severity, bounding_box, status, model_name, model_version,
-                              confidence, technical_notes, repair_required, corrective_action_required,
-                              deleted_by_user_id, deleted_at,
-                              deletion_reason, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, 'F-1', 'spurious-corroded-seam', 'MEDIUM', '{}', 'PENDING',
-                'test-model', 'v1', 0.9, 'False positive', FALSE, TRUE, ?, CURRENT_TIMESTAMP, 'False positive',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+                              confidence, technical_notes,
+                              deleted_at,
+                              created_at, updated_at)
+        VALUES (?, ?, ?, 'F-1', 'spurious-corroded-seam', 'MEDIUM', '{}', 'PENDING',
+                'test-model', 'v1', 0.9, 'False positive', CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         candidateId,
         fixture.inspectionId(),
-        evidenceId,
-        fixture.inspectorId(),
-        fixture.inspectorId());
+        evidenceId);
     confirmFindings(true);
     UUID versionId = insertDraftVersion();
     MvcResult result =
@@ -649,8 +648,8 @@ class InspectionReportSectionsApiIntegrationTest {
         fixture.inspectionId(),
         fixture.inspectorId());
     jdbcTemplate.update(
-        "INSERT INTO inspection_readiness_decisions (id, inspection_id, preparation_id, preparation_version, decision, reviewed_by_user_id, decided_at, reason, source_hash, created_at) "
-            + "VALUES (?, ?, ?, 1, 'APPROVED', ?, CURRENT_TIMESTAMP, 'Ready for field session', ?, CURRENT_TIMESTAMP)",
+        "INSERT INTO inspection_readiness_decisions (id, inspection_id, preparation_id, preparation_version, decision, reviewed_by_user_id, decided_at, reason, source_hash) "
+            + "VALUES (?, ?, ?, 1, 'APPROVED', ?, CURRENT_TIMESTAMP, 'Ready for field session', ?)",
         UUID.randomUUID(),
         fixture.inspectionId(),
         prepId,

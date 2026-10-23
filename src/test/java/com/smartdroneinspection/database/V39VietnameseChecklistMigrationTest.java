@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
+import org.flywaydb.core.api.migration.baseline.BaselineMigrationConfigurationExtension;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -90,6 +91,10 @@ class V39VietnameseChecklistMigrationTest {
             .locations("classpath:db/migration");
     if (target != null) {
       configuration.target(target);
+      configuration
+          .getPluginRegister()
+          .getExact(BaselineMigrationConfigurationExtension.class)
+          .setBaselineMigrationPrefix("DISABLED_B");
     }
     return configuration.load();
   }

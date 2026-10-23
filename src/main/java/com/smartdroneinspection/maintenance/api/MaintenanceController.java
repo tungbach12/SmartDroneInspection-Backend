@@ -5,12 +5,15 @@ import com.smartdroneinspection.maintenance.api.dto.request.CreateEstimateVersio
 import com.smartdroneinspection.maintenance.api.dto.request.CreateTaskRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateWorkOrderRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.EstimateDecisionRequest;
+import com.smartdroneinspection.maintenance.api.dto.request.SuggestScopeRequest;
 import com.smartdroneinspection.maintenance.api.dto.response.EstimateVersionResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.RepairCandidateResponse;
+import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.TaskResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.TeamMemberResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.WorkOrderPageResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.WorkOrderResponse;
+import com.smartdroneinspection.maintenance.service.MaintenanceScopeAdvisorService;
 import com.smartdroneinspection.maintenance.service.WorkOrderService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -40,9 +43,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class MaintenanceController {
 
   private final WorkOrderService workOrderService;
+  private final MaintenanceScopeAdvisorService scopeAdvisorService;
 
-  public MaintenanceController(WorkOrderService workOrderService) {
+  public MaintenanceController(
+      WorkOrderService workOrderService, MaintenanceScopeAdvisorService scopeAdvisorService) {
     this.workOrderService = workOrderService;
+    this.scopeAdvisorService = scopeAdvisorService;
+  }
+
+  @PostMapping("/suggest-scope")
+  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  public ApiResponse<SuggestScopeResponse> suggestScope(
+      @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody SuggestScopeRequest request) {
+    return ApiResponse.success(scopeAdvisorService.suggestScope(actorId(jwt), request));
   }
 
   @GetMapping("/repair-candidates")

@@ -118,13 +118,12 @@ public final class MaintenanceTestFixture {
     UUID versionId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status, author_user_id,
+        INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status,
                                                 content_snapshot, created_at, published_at)
-        VALUES (?, ?, 1, 'PUBLISHED', ?, '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, 1, 'PUBLISHED', '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         versionId,
-        reportId,
-        authorUserId);
+        reportId);
     return new SourceData(inspectionId, versionId);
   }
 
@@ -133,20 +132,17 @@ public final class MaintenanceTestFixture {
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO findings (id, inspection_id, created_by_user_id, finding_code,
-                              defect_label, severity, location_description, technical_notes,
-                              status, created_at, updated_at, row_version, description,
-                              component, observed_condition, inspector_confirmed_at,
-                              confirmed_by_user_id, repair_required, corrective_action_required)
-        VALUES (?, ?, ?, ?, 'Corrosion', 'HIGH', 'Main span', 'Corrosion observed',
-                'CONFIRMED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'Corrosion on main span',
-                'Support', 'Corrosion observed', CURRENT_TIMESTAMP, ?, TRUE, TRUE)
+        INSERT INTO findings (id, inspection_id, finding_code,
+                              defect_label, severity, technical_notes,
+                              status, created_at, updated_at, inspector_confirmed_at,
+                              forwarded_to_maintenance_at)
+        VALUES (?, ?, ?, 'Corrosion', 'HIGH', 'Corrosion observed',
+                'CONFIRMED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP)
         """,
         findingId,
         inspectionId,
-        authorUserId,
-        "F-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT),
-        authorUserId);
+        "F-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT));
     return findingId;
   }
 
@@ -208,22 +204,18 @@ public final class MaintenanceTestFixture {
     jdbcTemplate.update(
         """
         INSERT INTO findings (
-            id, inspection_id, evidence_id, created_by_user_id, finding_code,
-            defect_label, severity, location_description, bounding_box, technical_notes,
-            recommended_action, status, created_at, updated_at, row_version,
-            component, description, observed_condition, inspector_confirmed_at,
-            confirmed_by_user_id, repair_required, corrective_action_required)
-        SELECT ?, inspection_id, NULL, ?, ?, 'Additional corrosion', 'MEDIUM',
-               'North support', NULL, 'Additional corrosion observed', NULL, 'CONFIRMED',
-               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'North support',
-               'Additional corrosion on north support', 'Corrosion observed', CURRENT_TIMESTAMP, ?,
-               TRUE, TRUE
+            id, inspection_id, evidence_id, finding_code,
+            defect_label, severity, bounding_box, technical_notes,
+            recommended_action, status, created_at, updated_at,
+            inspector_confirmed_at, forwarded_to_maintenance_at)
+        SELECT ?, inspection_id, NULL, ?, 'Additional corrosion', 'MEDIUM',
+               NULL, 'Additional corrosion observed', NULL, 'CONFIRMED',
+               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+               CURRENT_TIMESTAMP
           FROM findings WHERE id = ?
         """,
         findingId,
-        userId,
         ("F-" + UUID.randomUUID().toString().substring(0, 8)).toUpperCase(Locale.ROOT),
-        userId,
         referenceFindingId);
     return findingId;
   }

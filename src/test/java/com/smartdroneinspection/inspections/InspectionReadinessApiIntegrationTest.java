@@ -390,15 +390,13 @@ class InspectionReadinessApiIntegrationTest {
     if (evidenceId != null) {
       jdbcTemplate.update(
           """
-          INSERT INTO evidence (id, inspection_id, uploaded_by_user_id, evidence_kind, file_name,
-            content_type, size_bytes, checksum_sha256, object_key, source, upload_status)
-          VALUES (?, ?, ?, 'INSPECTION', 'credential.pdf', 'application/pdf', 100,
-            ?, ?, 'WEB_UPLOAD', 'AVAILABLE')
+          INSERT INTO evidence (id, inspection_id, evidence_kind, file_name,
+            content_type, size_bytes, object_key, upload_status)
+          VALUES (?, ?, 'INSPECTION', 'credential.pdf', 'application/pdf', 100,
+            ?, 'AVAILABLE')
           """,
           evidenceId,
           inspectionId,
-          userId,
-          evidenceId.toString().replace("-", "").repeat(2),
           "credential-evidence/" + evidenceId);
     }
     jdbcTemplate.update(

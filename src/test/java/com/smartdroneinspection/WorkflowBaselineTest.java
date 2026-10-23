@@ -90,21 +90,25 @@ class WorkflowBaselineTest {
     // versions = exactly 1..N with no gap. A new V-file moves the expectation with it, while a
     // missing version can never hide behind that move - both the head check and the 1..N list fail.
     int migrationCount;
+    List<String> vFileVersions;
     try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
-      migrationCount =
-          (int)
-              migrations
-                  .map(path -> path.getFileName().toString())
-                  .filter(name -> name.matches("V\\d+__.*\\.sql"))
-                  .count();
+      vFileVersions =
+          migrations
+              .map(path -> path.getFileName().toString())
+              .filter(name -> name.matches("V\\d+__.*\\.sql"))
+              .map(name -> name.substring(1, name.indexOf("__")))
+              .sorted((a, b) -> Integer.compare(Integer.parseInt(a), Integer.parseInt(b)))
+              .toList();
+      migrationCount = vFileVersions.size();
     }
     List<String> expectedVersions =
         IntStream.rangeClosed(1, migrationCount).mapToObj(String::valueOf).toList();
 
     assertThat(migrationCount).isGreaterThanOrEqualTo(11);
+    assertThat(vFileVersions).containsExactlyElementsOf(expectedVersions);
     assertThat(flyway.info().current().getVersion().getVersion())
         .isEqualTo(String.valueOf(migrationCount));
-    assertThat(versions).containsExactlyElementsOf(expectedVersions);
+    assertThat(versions).containsExactly(String.valueOf(migrationCount));
   }
 
   @Test

@@ -17,6 +17,7 @@ import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -211,6 +213,16 @@ public class MaintenanceExecutionController {
       @Valid @RequestBody RecordAcceptanceRequest request) {
     return ApiResponse.success(
         executionService.recordAcceptance(actorId(jwt), workOrderId, request));
+  }
+
+  @GetMapping({"/report-versions/{versionNo}/pdf", "/reports/{versionNo}/pdf"})
+  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  public ResponseEntity<byte[]> getReportPdf(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID workOrderId,
+      @PathVariable int versionNo,
+      @RequestParam(name = "preview", defaultValue = "false") boolean preview) {
+    return executionService.getReportPdf(actorId(jwt), workOrderId, versionNo, preview);
   }
 
   @GetMapping("/cost-reconciliation")

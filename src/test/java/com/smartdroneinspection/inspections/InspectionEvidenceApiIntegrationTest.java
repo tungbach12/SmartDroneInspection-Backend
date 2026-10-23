@@ -87,7 +87,7 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void assignedInspectorUploadsEvidenceAndItIsListedWithServerChecksum() throws Exception {
+  void assignedInspectorUploadsEvidenceAndItIsListed() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
 
     mockMvc
@@ -97,22 +97,13 @@ class InspectionEvidenceApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].id").value(evidenceId.toString()))
         .andExpect(jsonPath("$.data[0].fileName").value("span.png"))
-        .andExpect(jsonPath("$.data[0].checksumSha256").value(sha256(PNG_BYTES)))
         .andExpect(jsonPath("$.data[0].uploadStatus").value("AVAILABLE"));
   }
 
   @Test
-  void repeatedUploadOfIdenticalBytesIsMarkedAsDeduplicated() throws Exception {
+  void repeatedUploadOfIdenticalBytesCreatesIndependentEvidenceRows() throws Exception {
     UUID first = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
-    MvcResult sameNameDifferentBytes =
-        uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES_2);
-    assertThat(
-            objectMapper
-                .readTree(sameNameDifferentBytes.getResponse().getContentAsString())
-                .path("data")
-                .path("deduplicated")
-                .booleanValue())
-        .isFalse();
+    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES_2);
 
     MvcResult duplicate =
         uploadResponse(fixture.inspectorId(), "INSPECTOR", "renamed.png", PNG_BYTES);
@@ -124,14 +115,7 @@ class InspectionEvidenceApiIntegrationTest {
                 .path("id")
                 .stringValue());
 
-    assertThat(second).isEqualTo(first);
-    assertThat(
-            objectMapper
-                .readTree(duplicate.getResponse().getContentAsString())
-                .path("data")
-                .path("deduplicated")
-                .booleanValue())
-        .isTrue();
+    assertThat(second).isNotEqualTo(first);
     Long storedRows =
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM evidence WHERE inspection_id = ?",
@@ -141,7 +125,7 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void identicalRetiredUploadReturnsAnActionableConflictInsteadOfAFalseSuccess() throws Exception {
+  void reuploadingAfterRetiringCaptureSucceedsAsNewEvidence() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
     mockMvc
         .perform(
@@ -159,8 +143,8 @@ class InspectionEvidenceApiIntegrationTest {
             multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
                 .file(new MockMultipartFile("file", "renamed.png", "image/png", PNG_BYTES))
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("EVIDENCE_DUPLICATE_RETIRED"));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.fileName").value("renamed.png"));
   }
 
   @Test
