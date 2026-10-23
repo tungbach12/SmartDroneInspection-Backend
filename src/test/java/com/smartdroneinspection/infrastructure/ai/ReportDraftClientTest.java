@@ -153,7 +153,6 @@ class ReportDraftClientTest {
             english.evidence(),
             english.candidates(),
             english.fieldSessions(),
-            english.evidenceQuality(),
             Locale.forLanguageTag("vi"));
     client("key", "model").draftSections(vietnamese);
 

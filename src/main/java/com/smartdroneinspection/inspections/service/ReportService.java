@@ -902,8 +902,6 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     ReportRenderPort.ReportContext renderReportContext =
         buildRenderReportContext(
-    ReportRenderPort.ReportContext renderReportContext =
-        buildRenderReportContext(
             inspection,
             reportIdentity,
             assignedDrone,
@@ -1402,12 +1400,6 @@ public class ReportService {
   private ReportRenderPort.ReportContext buildRenderReportContext(
       Inspection inspection,
       Identity identity,
-      DroneContext drone,
-      InspectionPreparation preparation,
-      InspectionReadinessDecision readiness,
-  private ReportRenderPort.ReportContext buildRenderReportContext(
-      Inspection inspection,
-      ReportIdentity identity,
       DroneContext drone,
       InspectionPreparation preparation,
       InspectionReadinessDecision readiness,

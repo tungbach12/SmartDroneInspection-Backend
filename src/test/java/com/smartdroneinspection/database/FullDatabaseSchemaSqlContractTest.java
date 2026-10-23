@@ -16,7 +16,7 @@ class FullDatabaseSchemaSqlContractTest {
     String wf4 = readMigration("V8__maintenance_and_billing.sql");
     String support = readMigration("V9__notifications.sql");
     String reportAudit = readMigration("V22__report_author_verification_and_completeness.sql");
-    String mf3FieldAudit = readMigration("V39__mf3_entity_field_audit.sql");
+    String mf3FieldAudit = readMigration("V40__mf3_entity_field_audit.sql");
 
     assertThat(wf3)
         .contains("CREATE TABLE inspections")
@@ -53,7 +53,7 @@ class FullDatabaseSchemaSqlContractTest {
         .contains("CREATE INDEX ix_notifications_delivery");
 
     assertThat(mf3FieldAudit)
-        .contains("V39 cannot merge finding notes")
+        .contains("V40 cannot merge finding notes")
         .contains("UPDATE findings")
         .contains("Description: ' || BTRIM(f.description)")
         .contains("DROP TABLE evidence_quality_decisions")

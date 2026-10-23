@@ -241,9 +241,7 @@ public final class ReportHtmlTemplate {
           body,
           context,
           "Decision",
-          finding.decision()
-              + " at "
-              + orNotSupplied(finding.decidedAt(), context));
+          finding.decision() + " at " + orNotSupplied(finding.decidedAt(), context));
 
       ReportRenderPort.EvidenceView attachedEvidence = null;
       if (finding.evidenceId() != null) {
