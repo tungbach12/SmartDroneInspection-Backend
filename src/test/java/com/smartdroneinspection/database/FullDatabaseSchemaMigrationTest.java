@@ -99,13 +99,13 @@ class FullDatabaseSchemaMigrationTest {
                       + baselineSchema
                       + ".flyway_schema_history WHERE success",
                   String.class))
-          .isEqualTo("39:SQL_BASELINE:complete schema");
+          .isEqualTo("40:SQL_BASELINE:complete schema");
       assertThat(tableNames(baselineSchema)).hasSize(40);
       assertThat(tableNames(baselineSchema))
           .contains("event_publication", "findings", "audit_events");
 
-      Flyway throughV38 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("38"));
-      throughV38.migrate();
+      Flyway throughV39 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("39"));
+      throughV39.migrate();
       Flyway incrementalPath = configureFlyway(incrementalSchema, null);
       assertThat(incrementalPath.info().all())
           .filteredOn(migration -> "complete schema".equals(migration.getDescription()))
@@ -125,7 +125,7 @@ class FullDatabaseSchemaMigrationTest {
                       + ".flyway_schema_history WHERE success "
                       + "ORDER BY installed_rank DESC LIMIT 1",
                   String.class))
-          .isEqualTo("39:SQL");
+          .isEqualTo("40:SQL");
 
       assertThat(schemaCatalog(incrementalSchema))
           .containsExactlyElementsOf(schemaCatalog(baselineSchema));

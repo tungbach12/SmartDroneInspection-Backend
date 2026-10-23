@@ -22,7 +22,7 @@ BEGIN
             END
         )) > 4000
     ) THEN
-        RAISE EXCEPTION 'V39 cannot merge finding notes: combined technical_notes exceeds 4000 characters';
+        RAISE EXCEPTION 'V40 cannot merge finding notes: combined technical_notes exceeds 4000 characters';
     END IF;
 
     IF EXISTS (
@@ -32,7 +32,7 @@ BEGIN
         WHERE NULLIF(BTRIM(COALESCE(f.location_description, '')), '') IS NOT NULL
           AND (f.evidence_id IS NULL OR e.id IS NULL)
     ) THEN
-        RAISE EXCEPTION 'V39 cannot move finding location: a finding with a location has no linked evidence';
+        RAISE EXCEPTION 'V40 cannot move finding location: a finding with a location has no linked evidence';
     END IF;
 
     IF EXISTS (
@@ -43,7 +43,7 @@ BEGIN
           AND NULLIF(BTRIM(COALESCE(e.location_description, '')), '') IS NOT NULL
           AND BTRIM(e.location_description) IS DISTINCT FROM BTRIM(f.location_description)
     ) THEN
-        RAISE EXCEPTION 'V39 cannot move finding location: finding and evidence locations conflict';
+        RAISE EXCEPTION 'V40 cannot move finding location: finding and evidence locations conflict';
     END IF;
 
     IF EXISTS (
@@ -54,7 +54,7 @@ BEGIN
         GROUP BY f.evidence_id
         HAVING COUNT(DISTINCT BTRIM(f.location_description)) > 1
     ) THEN
-        RAISE EXCEPTION 'V39 cannot move finding location: multiple finding locations exist for one evidence item';
+        RAISE EXCEPTION 'V40 cannot move finding location: multiple finding locations exist for one evidence item';
     END IF;
 
     IF EXISTS (
@@ -63,7 +63,7 @@ BEGIN
         WHERE corrective_handoff_at IS NOT NULL
           AND (corrective_handoff_by_user_id IS NULL OR status NOT IN ('REPAIR_PENDING', 'COMPLETED'))
     ) THEN
-        RAISE EXCEPTION 'V39 cannot preserve a legacy handoff: actor or terminal handoff status is missing';
+        RAISE EXCEPTION 'V40 cannot preserve a legacy handoff: actor or terminal handoff status is missing';
     END IF;
 END
 $$;

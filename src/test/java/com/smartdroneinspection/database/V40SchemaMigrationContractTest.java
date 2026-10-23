@@ -8,20 +8,20 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 /**
- * Validates the V39 forward migration contract as well as the complete SQL schema definition across
+ * Validates the V40 forward migration contract as well as the complete SQL schema definition across
  * Flyway scripts.
  */
-class V39SchemaMigrationContractTest {
+class V40SchemaMigrationContractTest {
 
   @Test
-  void v39ContainsGuardedBackfillAndRequiredStructuralDrops() throws IOException {
-    String v39 =
-        Files.readString(Path.of("src/main/resources/db/migration/V39__mf3_entity_field_audit.sql"))
+  void v40ContainsGuardedBackfillAndRequiredStructuralDrops() throws IOException {
+    String v40 =
+        Files.readString(Path.of("src/main/resources/db/migration/V40__mf3_entity_field_audit.sql"))
             .replace("\r\n", "\n");
 
-    assertThat(v39)
-        .contains("V39 cannot merge finding notes")
-        .contains("V39 cannot move finding location")
+    assertThat(v40)
+        .contains("V40 cannot merge finding notes")
+        .contains("V40 cannot move finding location")
         .contains("SET forwarded_to_maintenance_at = i.corrective_handoff_at")
         .contains("UPDATE findings")
         .contains("DROP TABLE evidence_quality_decisions")
@@ -32,7 +32,7 @@ class V39SchemaMigrationContractTest {
         .contains("DROP COLUMN permit_snapshot_ids")
         .contains("DROP COLUMN created_at");
 
-    assertThat(v39)
+    assertThat(v40)
         .contains("DROP COLUMN uploaded_by_user_id")
         .contains("DROP COLUMN checksum_sha256")
         .contains("DROP COLUMN source")
@@ -45,7 +45,7 @@ class V39SchemaMigrationContractTest {
         .contains("DROP COLUMN analysis_detection_count")
         .contains("DROP COLUMN kind");
 
-    assertThat(v39)
+    assertThat(v40)
         .contains("DROP COLUMN created_by_user_id")
         .contains("DROP COLUMN location_description")
         .contains("DROP COLUMN confirmed_by_user_id")
@@ -65,7 +65,7 @@ class V39SchemaMigrationContractTest {
         .contains("DROP COLUMN deletion_reason")
         .contains("DROP COLUMN row_version");
 
-    assertThat(v39)
+    assertThat(v40)
         .contains("DROP COLUMN author_user_id")
         .contains("DROP COLUMN author_verified_by_user_id")
         .contains("DROP COLUMN author_verified_at")
@@ -78,7 +78,7 @@ class V39SchemaMigrationContractTest {
         .contains("DROP COLUMN withdrawn_by_user_id")
         .contains("DROP COLUMN return_reason_type");
 
-    assertThat(v39)
+    assertThat(v40)
         .contains("DROP COLUMN findings_confirmed_by_user_id")
         .contains("DROP COLUMN corrective_handoff_by_user_id")
         .contains("DROP COLUMN corrective_handoff_at")
