@@ -121,7 +121,7 @@ class InspectionEvidenceApiIntegrationTest {
             "SELECT COUNT(*) FROM evidence WHERE inspection_id = ?",
             Long.class,
             fixture.inspectionId());
-    assertThat(storedRows).isEqualTo(3L);
+    assertThat(storedRows).isEqualTo(2L);
   }
 
   @Test

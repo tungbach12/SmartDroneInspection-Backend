@@ -206,8 +206,9 @@ class FullDatabaseSchemaMigrationTest {
             schema));
     catalog.addAll(
         jdbcTemplate.query(
-            "SELECT sequencename, data_type, start_value, min_value, max_value, increment, "
-                + "cycle, cache_size FROM information_schema.sequences WHERE sequence_schema = ? "
+            "SELECT sequencename, data_type::text, start_value::text, min_value::text, "
+                + "max_value::text, increment_by::text, cycle::text, cache_size::text "
+                + "FROM pg_sequences WHERE schemaname = ? "
                 + "ORDER BY sequencename",
             (result, rowNum) ->
                 String.join(
