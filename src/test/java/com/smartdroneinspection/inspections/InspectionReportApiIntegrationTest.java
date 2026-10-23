@@ -112,7 +112,9 @@ class InspectionReportApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PENDING"))
         .andExpect(jsonPath("$.data.modelName").doesNotExist())
-        .andExpect(jsonPath("$.data.repairRequired").value(true));
+        .andExpect(
+            jsonPath("$.data.technicalNotes")
+                .value("Surface corrosion visible over roughly 0.4 m"));
 
     mockMvc
         .perform(
@@ -143,10 +145,9 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void aFindingMeasurementIsStorableAsProse() throws Exception {
+  void aFindingStoresTechnicalNotesAndRecommendedAction() throws Exception {
     UUID evidenceId = uploadEvidence();
 
-    // measurement is a jsonb column, so an Inspector's prose must be wrapped rather than rejected.
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/findings", fixture.inspectionId())
@@ -158,12 +159,13 @@ class InspectionReportApiIntegrationTest {
                             "evidenceId", evidenceId.toString(),
                             "defectLabel", "Section loss on the web",
                             "severity", "HIGH",
-                            "locationDescription", "Girder G4 web",
                             "technicalNotes", "Measured loss exceeds the acceptance threshold",
-                            "measurement", "Plate thickness 9.8mm against 12mm nominal"))))
+                            "recommendedAction", "Install doubler plate"))))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.measurement").value("Plate thickness 9.8mm against 12mm nominal"));
+            jsonPath("$.data.technicalNotes")
+                .value("Measured loss exceeds the acceptance threshold"))
+        .andExpect(jsonPath("$.data.recommendedAction").value("Install doubler plate"));
   }
 
   @Test
@@ -530,13 +532,13 @@ class InspectionReportApiIntegrationTest {
 
   @Test
   void reportWorkflowRequiresHumanGatesAndEnforcesSeparationOfDuties() throws Exception {
-    // Without an accepted evidence decision there is no draft to author.
+    // Without active evidence there is no draft to author.
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
+        .andExpect(jsonPath("$.code").value("ACTIVE_EVIDENCE_REQUIRED"));
   }
 
   @Test
@@ -756,7 +758,7 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void aManualDraftStillRefusesAnAuthorWithoutAnAcceptedEvidenceDecision() throws Exception {
+  void aManualDraftStillRefusesAnAuthorWithoutActiveEvidence() throws Exception {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
@@ -764,9 +766,9 @@ class InspectionReportApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("narrative", "A narrative written before evidence was accepted."))))
+                        Map.of("narrative", "A narrative written before evidence was uploaded."))))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
+        .andExpect(jsonPath("$.code").value("ACTIVE_EVIDENCE_REQUIRED"));
   }
 
   @Test

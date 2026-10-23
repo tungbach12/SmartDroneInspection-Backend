@@ -138,9 +138,31 @@ public class Subscription {
       String externalReference,
       String termsSnapshot,
       UUID confirmedByUserId) {
-    Subscription subscription =
-        requestEnterprise(organizationId, billingPeriodMonths, (BigDecimal) null, termsSnapshot);
-    subscription.confirmPayment(externalReference, startsAt, endsAt, null, confirmedByUserId);
+    Objects.requireNonNull(organizationId, "organizationId is required");
+    Objects.requireNonNull(confirmedByUserId, "confirmedByUserId is required");
+    if (billingPeriodMonths == null
+        || (billingPeriodMonths != 1 && billingPeriodMonths != 6 && billingPeriodMonths != 12)) {
+      throw new IllegalArgumentException("billingPeriodMonths must be 1, 6, or 12");
+    }
+    if (startsAt != null && endsAt != null && !endsAt.isAfter(startsAt)) {
+      throw new IllegalArgumentException("endsAt must be after startsAt");
+    }
+    if (externalReference == null || externalReference.isBlank()) {
+      throw new IllegalArgumentException("externalReference is required");
+    }
+    Subscription subscription = new Subscription();
+    subscription.organizationId = organizationId;
+    subscription.planCode = ContractTerms.PLAN_CODE;
+    subscription.billingPeriodMonths = billingPeriodMonths;
+    subscription.status = Status.ACTIVE;
+    subscription.startsAt = startsAt;
+    subscription.endsAt = endsAt;
+    subscription.externalReference = externalReference.trim();
+    subscription.termsSnapshot = termsSnapshot;
+    subscription.confirmedByUserId = confirmedByUserId;
+    subscription.confirmedAt = Instant.now();
+    subscription.createdAt = subscription.confirmedAt;
+    subscription.updatedAt = subscription.confirmedAt;
     return subscription;
   }
 

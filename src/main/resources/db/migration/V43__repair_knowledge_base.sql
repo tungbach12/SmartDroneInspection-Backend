@@ -4,6 +4,7 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
         CREATE EXTENSION IF NOT EXISTS vector;
+        PERFORM set_config('search_path', current_schema() || ', public', true);
         CREATE TABLE IF NOT EXISTS repair_knowledge_chunks (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             standard_code VARCHAR(64) NOT NULL,

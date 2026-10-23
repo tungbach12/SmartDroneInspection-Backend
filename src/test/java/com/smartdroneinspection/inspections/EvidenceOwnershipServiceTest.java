@@ -115,18 +115,16 @@ class EvidenceOwnershipServiceTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id, evidence_kind,
-                              file_name, content_type, size_bytes, checksum_sha256, object_key,
-                              source, upload_status, immutable_original, created_at)
-        VALUES (?, ?, ?, ?, 'INSPECTION', ?, 'image/png', 1, ?, ?, 'WEB_UPLOAD', 'AVAILABLE', TRUE,
+        INSERT INTO evidence (id, organization_id, inspection_id, evidence_kind,
+                              file_name, content_type, size_bytes, object_key,
+                              upload_status, created_at)
+        VALUES (?, ?, ?, 'INSPECTION', ?, 'image/png', 1, ?, 'AVAILABLE',
                 CURRENT_TIMESTAMP)
         """,
         evidenceId,
         organizationId,
         inspectionId,
-        fixture.inspectorId(),
         fileName,
-        "0".repeat(64),
         "credentials-test/" + evidenceId);
     return evidenceId;
   }

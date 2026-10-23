@@ -263,17 +263,15 @@ class CompliancePersistenceTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, uploaded_by_user_id, evidence_kind,
-                              file_name, content_type, size_bytes, checksum_sha256, object_key,
-                              source, upload_status, immutable_original, created_at)
-        VALUES (?, ?, ?, ?, 'INSPECTION', 'permit.png', 'image/png', 1, ?, ?, 'WEB_UPLOAD',
-                'AVAILABLE', TRUE, CURRENT_TIMESTAMP)
+        INSERT INTO evidence (id, organization_id, inspection_id, evidence_kind,
+                              file_name, content_type, size_bytes, object_key,
+                              upload_status, created_at)
+        VALUES (?, ?, ?, 'INSPECTION', 'permit.png', 'image/png', 1, ?,
+                'AVAILABLE', CURRENT_TIMESTAMP)
         """,
         evidenceId,
         organizationId,
         inspectionId,
-        uploaderId,
-        "a".repeat(64),
         "compliance-persistence/" + evidenceId);
     return evidenceId;
   }

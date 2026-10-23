@@ -92,7 +92,7 @@ class FullDatabaseSchemaMigrationTest {
     try {
       jdbcTemplate.execute("CREATE SCHEMA " + baselineSchema);
       jdbcTemplate.execute("CREATE SCHEMA " + incrementalSchema);
-      Flyway baselinePath = configureFlyway(baselineSchema, null, "public");
+      Flyway baselinePath = configureFlyway(baselineSchema, null);
       baselinePath.migrate();
 
       assertThat(
@@ -111,10 +111,9 @@ class FullDatabaseSchemaMigrationTest {
               "payment_transactions",
               "repair_knowledge_chunks");
 
-      Flyway throughV42 =
-          configureFlyway(incrementalSchema, MigrationVersion.fromVersion("42"), "public");
+      Flyway throughV42 = configureFlyway(incrementalSchema, MigrationVersion.fromVersion("42"));
       throughV42.migrate();
-      Flyway incrementalPath = configureFlyway(incrementalSchema, null, "public");
+      Flyway incrementalPath = configureFlyway(incrementalSchema, null);
       assertThat(incrementalPath.info().all())
           .filteredOn(migration -> "complete schema".equals(migration.getDescription()))
           .singleElement()
@@ -256,11 +255,6 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   private Flyway configureFlyway(String schema, MigrationVersion target) {
-    return configureFlyway(schema, target, null);
-  }
-
-  private Flyway configureFlyway(
-      String schema, MigrationVersion target, String baselineExtensionSchema) {
     var configuration =
         Flyway.configure()
             .dataSource(dataSource)
@@ -268,9 +262,6 @@ class FullDatabaseSchemaMigrationTest {
             .defaultSchema(schema)
             .locations("classpath:db/migration")
             .encoding("UTF-8");
-    if (baselineExtensionSchema != null) {
-      configuration.schemas(schema, baselineExtensionSchema);
-    }
     if (target != null) {
       configuration.target(target);
       configuration
@@ -305,7 +296,6 @@ class FullDatabaseSchemaMigrationTest {
             "uq_assets_organization_asset_code",
             "uq_asset_pair_assignments_active_asset",
             "uq_inspections_schedule_due_cycle",
-            "uq_evidence_inspection_checksum",
             "ix_notifications_recipient_status",
             "ix_notifications_delivery",
             "uq_users_id_organization",

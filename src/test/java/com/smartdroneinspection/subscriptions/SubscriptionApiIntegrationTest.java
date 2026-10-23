@@ -264,22 +264,26 @@ class SubscriptionApiIntegrationTest {
 
   @Test
   void paymentEndpointsAreUnavailableWhenPayPalIsNotConfigured() throws Exception {
-    Subscription pending =
-        Subscription.requestEnterprise(
-            orgId, 6, BigDecimal.valueOf(5500), "{\"termsVersion\":\"2026.1\"}");
-    Subscription savedPending = subscriptionRepository.saveAndFlush(pending);
+    UUID pendingId = UUID.randomUUID();
+    jdbcTemplate.update(
+        """
+        INSERT INTO subscriptions (id, organization_id, plan_code, billing_period_months,
+                                   agreed_amount_usd, status, terms_snapshot, created_at, updated_at, row_version)
+        VALUES (?, ?, 'ENTERPRISE', 6, 5500.00, 'PENDING', '{"termsVersion":"2026.1"}'::jsonb,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        """,
+        pendingId,
+        orgId);
 
     mockMvc
         .perform(
             post("/api/v1/subscriptions/paypal/create-order")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        new CreatePayPalOrderRequest(savedPending.getId())))
+                .content(objectMapper.writeValueAsString(new CreatePayPalOrderRequest(pendingId)))
                 .with(jwtUser(orgAdminUserId, Roles.ORG_ADMIN)))
         .andExpect(status().isServiceUnavailable());
 
-    assertThat(subscriptionRepository.findById(savedPending.getId()).orElseThrow().getStatus())
+    assertThat(subscriptionRepository.findById(pendingId).orElseThrow().getStatus())
         .isEqualTo(Subscription.Status.PENDING);
   }
 
