@@ -4,6 +4,7 @@
       "shared",
       "shared::storage",
       "inspections::spi",
-      "subscriptions::gateway"
+      "subscriptions::gateway",
+      "maintenance::spi"
     })
 package com.smartdroneinspection.infrastructure;

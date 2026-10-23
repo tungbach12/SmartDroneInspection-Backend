@@ -1,6 +1,5 @@
 package com.smartdroneinspection.maintenance.events;
 
-import com.smartdroneinspection.maintenance.domain.enums.AcceptanceDecisionKind;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,8 +10,9 @@ public record AcceptanceRecordedEvent(
     UUID organizationId,
     UUID assetId,
     UUID reviewerUserId,
-    AcceptanceDecisionKind decision,
+    String decision,
     String technicalComments,
     UUID teamLeadUserId,
     UUID reportAuthorUserId,
     Instant decidedAt) {}
+

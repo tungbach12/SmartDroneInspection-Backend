@@ -26,6 +26,7 @@ import com.smartdroneinspection.maintenance.domain.enums.CostLineState;
 import com.smartdroneinspection.maintenance.domain.enums.EstimateStatus;
 import com.smartdroneinspection.maintenance.domain.enums.ReportVersionStatus;
 import com.smartdroneinspection.maintenance.domain.enums.WorkLogStatus;
+import com.smartdroneinspection.maintenance.domain.enums.WorkOrderStatus;
 import com.smartdroneinspection.maintenance.events.AcceptanceRecordedEvent;
 import com.smartdroneinspection.maintenance.events.ChangeOrderApprovedEvent;
 import com.smartdroneinspection.maintenance.events.WorkOrderClosedEvent;
@@ -170,6 +171,10 @@ public class MaintenanceExecutionService {
   public WorkLogResponse recordWork(UUID actorId, UUID workOrderId, RecordWorkLogRequest request) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     requireTeamMember(order, actorId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot record work on a closed work order");
+    }
     tasks
         .findByIdAndWorkOrderId(request.taskId(), order.getId())
         .orElseThrow(
@@ -228,6 +233,10 @@ public class MaintenanceExecutionService {
       UUID actorId, UUID workOrderId, CreateChangeOrderRequest request) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     requireTeamMember(order, actorId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot propose changes on a closed work order");
+    }
 
     int nextNumber =
         changeOrders
@@ -268,6 +277,10 @@ public class MaintenanceExecutionService {
       boolean approve,
       boolean returnForClarification) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot decide changes on a closed work order");
+    }
     if (!order.getBudgetApproverUserId().equals(actorId)) {
       throw denied("Only the designated budget approver may decide a change");
     }
@@ -456,7 +469,7 @@ public class MaintenanceExecutionService {
               order.getOrganizationId(),
               order.getAssetId(),
               actorId,
-              decision.getDecision(),
+              decision.getDecision().name(),
               decision.getTechnicalComments(),
               order.getTeamLeadUserId(),
               order.getReportAuthorUserId(),

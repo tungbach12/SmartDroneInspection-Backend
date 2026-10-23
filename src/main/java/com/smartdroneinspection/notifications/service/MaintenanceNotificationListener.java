@@ -111,11 +111,11 @@ public class MaintenanceNotificationListener {
           new Notification(
               recipientId,
               event.organizationId(),
-              "ACCEPTANCE_DECISION_" + event.decision().name(),
+              "ACCEPTANCE_DECISION_" + event.decision(),
               NotificationChannel.IN_APP,
-              "Acceptance Decision: " + event.decision().name(),
+              "Acceptance Decision: " + event.decision(),
               "Reviewer recorded decision: "
-                  + event.decision().name()
+                  + event.decision()
                   + (event.technicalComments() != null
                       ? " (" + event.technicalComments() + ")"
                       : ""),

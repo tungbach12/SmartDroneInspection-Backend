@@ -5,7 +5,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import com.smartdroneinspection.maintenance.domain.enums.AcceptanceDecisionKind;
 import com.smartdroneinspection.maintenance.events.AcceptanceRecordedEvent;
 import com.smartdroneinspection.maintenance.events.ChangeOrderApprovedEvent;
 import com.smartdroneinspection.maintenance.events.EstimateApprovedEvent;
@@ -141,7 +140,7 @@ class MaintenanceNotificationListenerTest {
             orgId,
             assetId,
             reviewerId,
-            AcceptanceDecisionKind.ACCEPTED,
+            "ACCEPTED",
             "Good work",
             leadId,
             authorId,

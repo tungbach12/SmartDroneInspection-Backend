@@ -96,6 +96,9 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
             finding.getTechnicalNotes(),
             finding.getSeverity().name(),
             finding.getRecommendedAction(),
-            version.getPublishedAt()));
+            version.getPublishedAt(),
+            finding.getComponent(),
+            finding.getLocationDescription(),
+            finding.getMeasurement()));
   }
 }

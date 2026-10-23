@@ -15,4 +15,7 @@ public record RepairCandidateResponse(
     String technicalNotes,
     String severity,
     String recommendedAction,
-    Instant reportPublishedAt) {}
+    Instant reportPublishedAt,
+    String component,
+    String locationDescription,
+    String measurement) {}

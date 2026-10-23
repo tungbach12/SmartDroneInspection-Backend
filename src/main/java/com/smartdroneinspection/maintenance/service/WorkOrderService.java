@@ -126,7 +126,10 @@ public class WorkOrderService {
         candidate.technicalNotes(),
         candidate.severity(),
         candidate.recommendedAction(),
-        candidate.reportPublishedAt());
+        candidate.reportPublishedAt(),
+        candidate.component(),
+        candidate.locationDescription(),
+        candidate.measurement());
   }
 
   @Transactional
@@ -156,6 +159,23 @@ public class WorkOrderService {
           HttpStatus.CONFLICT,
           "WORK_ORDER_DUPLICATE_SCOPE",
           "An active work order already covers this finding");
+    }
+
+    UserAccess.ActiveUser budgetApprover =
+        userAccess
+            .findActiveUser(request.budgetApproverUserId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "WORK_ORDER_APPROVER_INVALID",
+                        "The budget approver is not an active user"));
+    if (!budgetApprover.hasRole("ORG_ADMIN")
+        || !actor.organizationId().equals(budgetApprover.organizationId())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "WORK_ORDER_APPROVER_INVALID",
+          "The budget approver must be an active ORG_ADMIN in this organization");
     }
 
     MaintenanceWorkOrder order =
@@ -302,6 +322,10 @@ public class WorkOrderService {
   public TaskResponse createTask(UUID actorId, UUID workOrderId, CreateTaskRequest request) {
     MaintenanceWorkOrder order = requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot add tasks to a closed work order");
+    }
 
     int nextNumber =
         tasks
@@ -358,6 +382,10 @@ public class WorkOrderService {
       UUID actorId, UUID workOrderId, CreateEstimateVersionRequest request) {
     MaintenanceWorkOrder order = requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot add estimate versions to a closed work order");
+    }
 
     int nextVersion =
         estimates
