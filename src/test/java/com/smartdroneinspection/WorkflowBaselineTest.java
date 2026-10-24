@@ -12,10 +12,16 @@ import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +49,7 @@ class WorkflowBaselineTest {
   @Autowired UserRepository users;
   @Autowired PasswordEncoder passwords;
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired Flyway flyway;
 
   private final Map<UserRole, FixtureCredentials> credentials = new EnumMap<>(UserRole.class);
 
@@ -73,16 +80,32 @@ class WorkflowBaselineTest {
   }
 
   @Test
-  void codeFirstSchemaInitializesWithoutFlywayRegistry() {
-    List<String> tables =
-        jdbcTemplate.queryForList(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()",
-            String.class);
+  void cleanBaselineAppliesMigrations() throws IOException {
+    List<String> versions =
+        jdbcTemplate.query(
+            "SELECT version FROM flyway_schema_history ORDER BY installed_rank",
+            (resultSet, rowNumber) -> resultSet.getString(1));
 
-    assertThat(tables)
-        .contains("organizations", "users", "inspections", "findings", "maintenance_work_orders")
-        .doesNotContain(
-            "flyway_schema_history", "report_version_evidence", "report_version_findings");
+    int migrationCount;
+    List<String> vFileVersions;
+    try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+      vFileVersions =
+          migrations
+              .map(path -> path.getFileName().toString())
+              .filter(name -> name.matches("V\\d+__.*\\.sql"))
+              .map(name -> name.substring(1, name.indexOf("__")))
+              .sorted((a, b) -> Integer.compare(Integer.parseInt(a), Integer.parseInt(b)))
+              .toList();
+      migrationCount = vFileVersions.size();
+    }
+    List<String> expectedVersions =
+        IntStream.rangeClosed(1, migrationCount).mapToObj(String::valueOf).toList();
+
+    assertThat(migrationCount).isGreaterThanOrEqualTo(1);
+    assertThat(vFileVersions).containsExactlyElementsOf(expectedVersions);
+    assertThat(flyway.info().current().getVersion().getVersion())
+        .isEqualTo(String.valueOf(migrationCount));
+    assertThat(versions).containsExactlyElementsOf(expectedVersions);
   }
 
   @Test

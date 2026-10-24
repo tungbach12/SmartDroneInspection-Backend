@@ -19,7 +19,7 @@ class FullDatabaseSchemaMigrationTest {
   @Autowired JdbcTemplate jdbcTemplate;
 
   @Test
-  void createsExactlyTheTargetTablesWithoutFlywayOrRetiredReportVersionJoinTables() {
+  void flywayCreatesExactlyTheTargetTablesAndFrameworkRegistry() {
     Set<String> actual =
         jdbcTemplate
             .queryForList(
@@ -68,9 +68,10 @@ class FullDatabaseSchemaMigrationTest {
             "notifications",
             "payment_transactions",
             "repair_knowledge_chunks",
-            "event_publication");
+            "event_publication",
+            "flyway_schema_history");
 
-    assertThat(expected).hasSize(40);
+    assertThat(expected).hasSize(41);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
