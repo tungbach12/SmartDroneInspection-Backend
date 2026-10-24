@@ -3,20 +3,19 @@ package com.smartdroneinspection.users.domain;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "users")
@@ -80,12 +79,8 @@ public class User {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  @OneToMany(
-      mappedBy = "user",
-      cascade = CascadeType.ALL,
-      orphanRemoval = true,
-      fetch = FetchType.LAZY)
-  private List<UserRoleAssignment> roleAssignments = new ArrayList<>();
+  @Column(name = "roles", nullable = false, length = 255)
+  private String roles = "";
 
   protected User() {}
 
@@ -188,21 +183,40 @@ public class User {
     this.updatedAt = Instant.now();
   }
 
-  public List<UserRoleAssignment> getRoleAssignments() {
-    return roleAssignments;
-  }
-
   public void addRole(UserRole role) {
-    roleAssignments.add(new UserRoleAssignment(this, role));
+    if (role == null) {
+      return;
+    }
+    List<UserRole> next = new ArrayList<>(parsedRoles());
+    if (!next.contains(role)) {
+      next.add(role);
+    }
+    this.roles = serializeRoles(next);
   }
 
-  public void replaceRoles(List<UserRole> roles) {
-    roleAssignments.clear();
-    roles.forEach(this::addRole);
+  public void replaceRoles(List<UserRole> nextRoles) {
+    this.roles =
+        serializeRoles(nextRoles == null ? List.of() : nextRoles.stream().distinct().toList());
   }
 
   public List<String> roleValues() {
-    return roleAssignments.stream().map(a -> a.getRole().value()).distinct().toList();
+    return parsedRoles().stream().map(UserRole::value).distinct().toList();
+  }
+
+  private List<UserRole> parsedRoles() {
+    if (roles == null || roles.isBlank()) {
+      return List.of();
+    }
+    return Arrays.stream(roles.split(","))
+        .map(String::trim)
+        .filter(value -> !value.isEmpty())
+        .map(UserRole::valueOf)
+        .distinct()
+        .toList();
+  }
+
+  private static String serializeRoles(List<UserRole> values) {
+    return values.stream().map(UserRole::name).collect(Collectors.joining(","));
   }
 
   public void recordSuccessfulLogin(String ip) {

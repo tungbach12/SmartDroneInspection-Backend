@@ -18,7 +18,6 @@ import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.Organization;
-import com.smartdroneinspection.users.domain.RefreshToken;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.ClientType;
@@ -26,7 +25,6 @@ import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
 import com.smartdroneinspection.users.repository.OrganizationRepository;
-import com.smartdroneinspection.users.repository.RefreshTokenRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import java.util.UUID;
@@ -55,7 +53,6 @@ class WorkforceApiIntegrationTest {
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired EntityManager entityManager;
   @Autowired AuthSessionRepository sessions;
-  @Autowired RefreshTokenRepository refreshTokens;
   @Autowired UserAccess userAccess;
 
   private MockMvc mockMvc;
@@ -618,13 +615,12 @@ class WorkforceApiIntegrationTest {
     User user = users.findDetailedById(userId).orElseThrow();
     AuthSession session =
         sessions.saveAndFlush(
-            new AuthSession(user, ClientType.WEB, java.time.Instant.now().plusSeconds(3600)));
-    refreshTokens.saveAndFlush(
-        new RefreshToken(
-            session,
-            UUID.randomUUID().toString().replace("-", "").repeat(2),
-            java.time.Instant.now(),
-            java.time.Instant.now().plusSeconds(3600)));
+            new AuthSession(
+                user,
+                ClientType.WEB,
+                UUID.randomUUID().toString().replace("-", "").repeat(2),
+                java.time.Instant.now(),
+                java.time.Instant.now().plusSeconds(3600)));
     return session.getId();
   }
 
@@ -639,15 +635,11 @@ class WorkforceApiIntegrationTest {
   }
 
   private java.sql.Timestamp refreshRevokedAt(UUID sessionId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT revoked_at FROM refresh_tokens WHERE session_id = ?",
-        java.sql.Timestamp.class,
-        sessionId);
+    return revokedAt(sessionId);
   }
 
   private String refreshRevokeReason(UUID sessionId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT revoke_reason FROM refresh_tokens WHERE session_id = ?", String.class, sessionId);
+    return revokedReason(sessionId);
   }
 
   private org.springframework.test.web.servlet.ResultActions postProvision(
@@ -677,19 +669,14 @@ class WorkforceApiIntegrationTest {
   }
 
   private long[] userAndRoleCounts() {
-    return new long[] {
-      jdbcTemplate.queryForObject("SELECT count(*) FROM users", Long.class),
-      jdbcTemplate.queryForObject("SELECT count(*) FROM user_roles", Long.class)
-    };
+    return new long[] {jdbcTemplate.queryForObject("SELECT count(*) FROM users", Long.class)};
   }
 
   private long[] lifecycleCounts() {
     return new long[] {
       jdbcTemplate.queryForObject("SELECT count(*) FROM users", Long.class),
-      jdbcTemplate.queryForObject("SELECT count(*) FROM user_roles", Long.class),
       jdbcTemplate.queryForObject("SELECT count(*) FROM audit_events", Long.class),
-      jdbcTemplate.queryForObject("SELECT count(*) FROM auth_sessions", Long.class),
-      jdbcTemplate.queryForObject("SELECT count(*) FROM refresh_tokens", Long.class)
+      jdbcTemplate.queryForObject("SELECT count(*) FROM auth_sessions", Long.class)
     };
   }
 

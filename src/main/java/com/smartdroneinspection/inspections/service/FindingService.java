@@ -13,7 +13,6 @@ import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
@@ -47,7 +46,6 @@ public class FindingService {
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
   private final EvidenceService evidenceService;
-  private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository reportVersions;
   private final InspectionRepository inspections;
   private final Optional<AiInferencePort> inference;
@@ -57,7 +55,6 @@ public class FindingService {
       EvidenceRepository evidence,
       FindingRepository findings,
       EvidenceService evidenceService,
-      InspectionReportRepository reports,
       InspectionReportVersionRepository reportVersions,
       InspectionRepository inspections,
       Optional<AiInferencePort> inference,
@@ -65,7 +62,6 @@ public class FindingService {
     this.evidence = evidence;
     this.findings = findings;
     this.evidenceService = evidenceService;
-    this.reports = reports;
     this.reportVersions = reportVersions;
     this.inspections = inspections;
     this.inference = inference;
@@ -412,12 +408,8 @@ public class FindingService {
   }
 
   private void rejectLockedFindingEdits(UUID inspectionId) {
-    var report = reports.findByInspectionId(inspectionId).orElse(null);
-    if (report == null) return;
     var current =
-        reportVersions
-            .findByInspectionReportIdAndVersionNo(report.getId(), report.getCurrentVersionNumber())
-            .orElse(null);
+        reportVersions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (current != null
         && (current.getStatus() == ReportStatus.SUBMITTED
             || current.getStatus() == ReportStatus.APPROVED

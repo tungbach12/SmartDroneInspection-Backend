@@ -212,7 +212,7 @@ class InspectionReportSectionsApiIntegrationTest {
   void sectionsAreRefusedOnceTheVersionHasLeftAnEditableState() throws Exception {
     UUID versionId = insertDraftVersion();
     jdbcTemplate.update(
-        "UPDATE inspection_report_versions SET status = 'APPROVED' WHERE id = ?", versionId);
+        "UPDATE inspection_reports SET status = 'APPROVED' WHERE id = ?", versionId);
 
     mockMvc
         .perform(
@@ -302,7 +302,6 @@ class InspectionReportSectionsApiIntegrationTest {
 
   @Test
   void aSnapshotWithoutTheNewSectionKeysStillReads() throws Exception {
-    UUID reportId = insertReport();
     UUID versionId = UUID.randomUUID();
     // A snapshot written before the section keys existed: valid JSON, none of the new fields. It
     // must
@@ -310,13 +309,14 @@ class InspectionReportSectionsApiIntegrationTest {
     // version.
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status,
-                                                content_snapshot, created_at)
-        VALUES (?, ?, 1, 'DRAFT', '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
+        INSERT INTO inspection_reports (id, inspection_id, author_user_id, version_no, status,
+                                        content_snapshot, created_at)
+        VALUES (?, ?, ?, 1, 'DRAFT', '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
                 CURRENT_TIMESTAMP)
         """,
         versionId,
-        reportId);
+        fixture.inspectionId(),
+        fixture.inspectorId());
 
     mockMvc
         .perform(
@@ -453,9 +453,7 @@ class InspectionReportSectionsApiIntegrationTest {
     // The prior published version is now superseded
     String firstStatus =
         jdbcTemplate.queryForObject(
-            "SELECT status FROM inspection_report_versions WHERE id = ?",
-            String.class,
-            firstVersion);
+            "SELECT status FROM inspection_reports WHERE id = ?", String.class, firstVersion);
     assertThat(firstStatus).isEqualTo("SUPERSEDED");
   }
 
@@ -748,17 +746,10 @@ class InspectionReportSectionsApiIntegrationTest {
   private long countVersions() {
     Long count =
         jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM inspection_report_versions WHERE inspection_report_id = ?",
+            "SELECT count(*) FROM inspection_reports WHERE inspection_id = ?",
             Long.class,
-            reportId());
+            fixture.inspectionId());
     return count == null ? 0 : count;
-  }
-
-  private UUID reportId() {
-    return jdbcTemplate.queryForObject(
-        "SELECT id FROM inspection_reports WHERE inspection_id = ?",
-        UUID.class,
-        fixture.inspectionId());
   }
 
   /** The same object key the service derives, so the assertion checks the real storage layout. */
@@ -784,14 +775,12 @@ class InspectionReportSectionsApiIntegrationTest {
 
   private String renderedKey(UUID versionId) {
     return jdbcTemplate.queryForObject(
-        "SELECT rendered_object_key FROM inspection_report_versions WHERE id = ?",
-        String.class,
-        versionId);
+        "SELECT rendered_object_key FROM inspection_reports WHERE id = ?", String.class, versionId);
   }
 
   private String renderedChecksum(UUID versionId) {
     return jdbcTemplate.queryForObject(
-        "SELECT rendered_checksum_sha256 FROM inspection_report_versions WHERE id = ?",
+        "SELECT rendered_checksum_sha256 FROM inspection_reports WHERE id = ?",
         String.class,
         versionId);
   }
@@ -802,21 +791,6 @@ class InspectionReportSectionsApiIntegrationTest {
     } catch (Exception exception) {
       throw new IllegalStateException(exception);
     }
-  }
-
-  private UUID insertReport() {
-    UUID reportId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO inspection_reports (id, inspection_id, author_user_id, status,
-                                        current_version_number, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, 'DRAFT', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-        ON CONFLICT (inspection_id) DO NOTHING
-        """,
-        reportId,
-        fixture.inspectionId(),
-        fixture.inspectorId());
-    return reportId();
   }
 
   private UUID insertDraftVersion() throws Exception {

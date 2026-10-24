@@ -2,11 +2,9 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.RepairCandidate;
@@ -26,17 +24,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
 
   private final InspectionRepository inspections;
-  private final InspectionReportRepository reports;
   private final InspectionReportVersionRepository reportVersions;
   private final FindingRepository findings;
 
   public RepairCandidateAccessAdapter(
       InspectionRepository inspections,
-      InspectionReportRepository reports,
       InspectionReportVersionRepository reportVersions,
       FindingRepository findings) {
     this.inspections = inspections;
-    this.reports = reports;
     this.reportVersions = reportVersions;
     this.findings = findings;
   }
@@ -72,13 +67,9 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
     if (inspection == null) {
       return java.util.Optional.empty();
     }
-    InspectionReport report = reports.findByInspectionId(inspection.getId()).orElse(null);
-    if (report == null) {
-      return java.util.Optional.empty();
-    }
     InspectionReportVersion version =
         reportVersions
-            .findFirstByInspectionReportIdAndStatus(report.getId(), ReportStatus.PUBLISHED)
+            .findFirstByInspectionIdAndStatus(inspection.getId(), ReportStatus.PUBLISHED)
             .orElse(null);
     if (version == null) {
       return java.util.Optional.empty();
@@ -88,7 +79,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
             organizationId,
             inspection.getAssetId(),
             inspection.getId(),
-            report.getId(),
+            version.getId(),
             version.getId(),
             finding.getId(),
             finding.getFindingCode(),

@@ -46,13 +46,17 @@ class V25TargetSchemaFoundationTest {
                     "terms_snapshot")),
             Map.entry(
                 "users",
-                Set.of("organization_id", "normalized_email", "full_name", "auth_version")),
-            Map.entry("user_roles", Set.of("user_id", "role")),
+                Set.of(
+                    "organization_id", "normalized_email", "full_name", "auth_version", "roles")),
             Map.entry(
-                "auth_sessions", Set.of("user_id", "client_type", "expires_at", "revoked_at")),
-            Map.entry(
-                "refresh_tokens",
-                Set.of("session_id", "token_hash", "issued_at", "expires_at", "revoked_at")),
+                "auth_sessions",
+                Set.of(
+                    "user_id",
+                    "client_type",
+                    "token_hash",
+                    "issued_at",
+                    "expires_at",
+                    "revoked_at")),
             Map.entry(
                 "workforce_credentials",
                 Set.of("organization_id", "user_id", "credential_type", "status", "expires_at")),
@@ -102,15 +106,6 @@ class V25TargetSchemaFoundationTest {
                     "inspector_user_id",
                     "drone_id",
                     "valid_from",
-                    "status")),
-            Map.entry(
-                "inspection_schedules",
-                Set.of(
-                    "asset_id",
-                    "cadence_unit",
-                    "cadence_interval",
-                    "next_due_at",
-                    "scope_defaults",
                     "status")),
             Map.entry(
                 "inspections",
@@ -185,11 +180,9 @@ class V25TargetSchemaFoundationTest {
                     "forwarded_to_maintenance_at")),
             Map.entry(
                 "inspection_reports",
-                Set.of("inspection_id", "status", "current_version_number", "author_user_id")),
-            Map.entry(
-                "inspection_report_versions",
                 Set.of(
-                    "inspection_report_id",
+                    "inspection_id",
+                    "author_user_id",
                     "version_no",
                     "status",
                     "submitted_at",
@@ -241,7 +234,7 @@ class V25TargetSchemaFoundationTest {
                     "hours",
                     "status")),
             Map.entry(
-                "maintenance_report_versions",
+                "maintenance_reports",
                 Set.of(
                     "work_order_id", "version_no", "status", "author_user_id", "content_snapshot")),
             Map.entry(
@@ -271,7 +264,7 @@ class V25TargetSchemaFoundationTest {
                     "aggregate_id",
                     "created_at")));
 
-    assertThat(targetColumns).hasSize(37);
+    assertThat(targetColumns).hasSize(33);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate
@@ -489,7 +482,7 @@ class V25TargetSchemaFoundationTest {
   void keepsV24RoleConstraintAndProviderColumnsRetired() {
     String roleCheck =
         jdbcTemplate.queryForObject(
-            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_user_roles_role'",
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_users_roles'",
             String.class);
     Set<String> userColumns =
         jdbcTemplate

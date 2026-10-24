@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
+import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
@@ -40,7 +40,7 @@ class InspectionListApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionReportRepository reports;
+  @Autowired InspectionReportVersionRepository reports;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -190,7 +190,7 @@ class InspectionListApiIntegrationTest {
         .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.items[0].reportStatus").value("DRAFT"))
-        .andExpect(jsonPath("$.data.items[0].reportVersionNo").value(0))
+        .andExpect(jsonPath("$.data.items[0].reportVersionNo").value(1))
         .andExpect(jsonPath("$.data.items[0].reportId").isNotEmpty());
   }
 
@@ -294,8 +294,8 @@ class InspectionListApiIntegrationTest {
     return assetId;
   }
 
-  private InspectionReport createReport(UUID inspectionId, UUID authorId) {
-    return reports.saveAndFlush(new InspectionReport(inspectionId, authorId));
+  private InspectionReportVersion createReport(UUID inspectionId, UUID authorId) {
+    return reports.saveAndFlush(new InspectionReportVersion(inspectionId, authorId, 1, null, "{}"));
   }
 
   private UUID createPlatformAdmin() {

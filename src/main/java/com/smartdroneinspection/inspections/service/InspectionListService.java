@@ -5,7 +5,7 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionPageRespo
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
@@ -13,7 +13,7 @@ import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -52,7 +52,7 @@ public class InspectionListService {
       Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
   private final InspectionRepository inspections;
-  private final InspectionReportRepository reports;
+  private final InspectionReportVersionRepository reports;
   private final InspectionPreparationRepository preparations;
   private final InspectionReadinessDecisionRepository readinessDecisions;
   private final FindingRepository findings;
@@ -60,7 +60,7 @@ public class InspectionListService {
 
   public InspectionListService(
       InspectionRepository inspections,
-      InspectionReportRepository reports,
+      InspectionReportVersionRepository reports,
       InspectionPreparationRepository preparations,
       InspectionReadinessDecisionRepository readinessDecisions,
       FindingRepository findings,
@@ -96,7 +96,7 @@ public class InspectionListService {
   private InspectionPageResponse toPage(Page<Inspection> result, int page, int pageSize) {
     int safePage = Math.max(page, 1);
     int safePageSize = clampPageSize(pageSize);
-    Map<UUID, InspectionReport> reportByInspection = reportsFor(result.getContent());
+    Map<UUID, InspectionReportVersion> reportByInspection = reportsFor(result.getContent());
     return new InspectionPageResponse(
         result.getContent().stream()
             .map(
@@ -124,17 +124,16 @@ public class InspectionListService {
    * alone: {@code PREPARING} covers an open draft and a submitted preparation, and only the second
    * one is waiting for a reviewer.
    */
-  private String pendingAction(Inspection inspection, InspectionReport report) {
+  private String pendingAction(Inspection inspection, InspectionReportVersion report) {
     if (readinessReviewPending(inspection)) {
       return "READINESS_REVIEW";
     }
     if (report != null) {
-      String reportStatus = report.getStatus();
-      if (ReportStatus.SUBMITTED.name().equals(reportStatus)) {
+      ReportStatus reportStatus = report.getStatus();
+      if (reportStatus == ReportStatus.SUBMITTED) {
         return "REPORT_REVIEW";
       }
-      if (ReportStatus.PUBLISHED.name().equals(reportStatus)
-          && correctivePending(inspection.getId())) {
+      if (reportStatus == ReportStatus.PUBLISHED && correctivePending(inspection.getId())) {
         return "CORRECTIVE_DISPOSITION";
       }
     }
@@ -187,14 +186,14 @@ public class InspectionListService {
    * Report rows for one page of inspections only. Reading every report to decorate one page would
    * grow with the whole table instead of the page.
    */
-  private Map<UUID, InspectionReport> reportsFor(List<Inspection> rows) {
+  private Map<UUID, InspectionReportVersion> reportsFor(List<Inspection> rows) {
     if (rows.isEmpty()) {
       return Map.of();
     }
-    Map<UUID, InspectionReport> byInspection = new HashMap<>();
+    Map<UUID, InspectionReportVersion> byInspection = new HashMap<>();
     reports
-        .findByInspectionIdIn(rows.stream().map(Inspection::getId).toList())
-        .forEach(report -> byInspection.put(report.getInspectionId(), report));
+        .findByInspectionIdInOrderByVersionNoDesc(rows.stream().map(Inspection::getId).toList())
+        .forEach(report -> byInspection.putIfAbsent(report.getInspectionId(), report));
     return byInspection;
   }
 
@@ -214,7 +213,7 @@ public class InspectionListService {
   }
 
   private static InspectionListItemResponse toItem(
-      Inspection inspection, InspectionReport report, String pendingAction) {
+      Inspection inspection, InspectionReportVersion report, String pendingAction) {
     return new InspectionListItemResponse(
         inspection.getId(),
         inspection.getOrganizationId(),
@@ -227,8 +226,8 @@ public class InspectionListService {
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         report == null ? null : report.getId(),
-        report == null ? null : report.getStatus(),
-        report == null ? null : report.getCurrentVersionNumber(),
+        report == null ? null : report.getStatus().name(),
+        report == null ? null : report.getVersionNo(),
         pendingAction);
   }
 

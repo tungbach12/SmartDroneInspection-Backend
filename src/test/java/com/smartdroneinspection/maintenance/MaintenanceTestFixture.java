@@ -104,26 +104,16 @@ public final class MaintenanceTestFixture {
         authorUserId,
         droneId);
 
-    UUID reportId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO inspection_reports (id, inspection_id, author_user_id, status, current_version_number,
-                                        created_at, updated_at, row_version)
-        VALUES (?, ?, ?, 'PUBLISHED', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-        """,
-        reportId,
-        inspectionId,
-        authorUserId);
-
     UUID versionId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_report_versions (id, inspection_report_id, version_no, status,
-                                                content_snapshot, created_at, published_at)
-        VALUES (?, ?, 1, 'PUBLISHED', '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO inspection_reports (id, inspection_id, author_user_id, version_no, status,
+                                        content_snapshot, created_at, published_at)
+        VALUES (?, ?, ?, 1, 'PUBLISHED', '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         versionId,
-        reportId);
+        inspectionId,
+        authorUserId);
     return new SourceData(inspectionId, versionId);
   }
 

@@ -28,6 +28,15 @@ public class AuthSession {
   @Column(name = "client_type", nullable = false, length = 16)
   private ClientType clientType;
 
+  @Column(name = "token_hash", unique = true, length = 64)
+  private String tokenHash;
+
+  @Column(name = "previous_token_hash", length = 64)
+  private String previousTokenHash;
+
+  @Column(name = "issued_at", nullable = false)
+  private Instant issuedAt;
+
   @Column(name = "expires_at", nullable = false)
   private Instant expiresAt;
 
@@ -40,8 +49,15 @@ public class AuthSession {
   protected AuthSession() {}
 
   public AuthSession(User user, ClientType clientType, Instant expiresAt) {
+    this(user, clientType, null, Instant.now(), expiresAt);
+  }
+
+  public AuthSession(
+      User user, ClientType clientType, String tokenHash, Instant issuedAt, Instant expiresAt) {
     this.user = user;
     this.clientType = clientType;
+    this.tokenHash = tokenHash;
+    this.issuedAt = issuedAt == null ? Instant.now() : issuedAt;
     this.expiresAt = expiresAt;
   }
 
@@ -57,12 +73,35 @@ public class AuthSession {
     return clientType;
   }
 
+  public String getTokenHash() {
+    return tokenHash;
+  }
+
+  public String getPreviousTokenHash() {
+    return previousTokenHash;
+  }
+
+  public Instant getIssuedAt() {
+    return issuedAt;
+  }
+
   public Instant getExpiresAt() {
     return expiresAt;
   }
 
   public boolean active(Instant now) {
     return revokedAt == null && expiresAt.isAfter(now);
+  }
+
+  public boolean isConsumedHash(String candidateHash) {
+    return revokedAt != null
+        || (previousTokenHash != null && previousTokenHash.equals(candidateHash));
+  }
+
+  public void rotateToken(String nextTokenHash, Instant now) {
+    this.previousTokenHash = this.tokenHash;
+    this.tokenHash = nextTokenHash;
+    this.issuedAt = now;
   }
 
   public void revoke(String reason) {

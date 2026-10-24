@@ -10,15 +10,17 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface InspectionReportVersionRepository
     extends JpaRepository<InspectionReportVersion, UUID> {
 
-  Optional<InspectionReportVersion> findByInspectionReportIdAndVersionNo(
-      UUID inspectionReportId, int versionNo);
+  Optional<InspectionReportVersion> findByInspectionIdAndVersionNo(
+      UUID inspectionId, int versionNo);
 
-  List<InspectionReportVersion> findByInspectionReportIdOrderByVersionNoDesc(
-      UUID inspectionReportId);
+  Optional<InspectionReportVersion> findFirstByInspectionIdOrderByVersionNoDesc(UUID inspectionId);
 
-  Optional<InspectionReportVersion> findFirstByInspectionReportIdAndStatus(
-      UUID inspectionReportId, ReportStatus status);
+  List<InspectionReportVersion> findByInspectionIdOrderByVersionNoDesc(UUID inspectionId);
 
-  List<InspectionReportVersion> findByInspectionReportIdAndStatus(
-      UUID inspectionReportId, ReportStatus status);
+  List<InspectionReportVersion> findByInspectionIdInOrderByVersionNoDesc(List<UUID> inspectionIds);
+
+  Optional<InspectionReportVersion> findFirstByInspectionIdAndStatus(
+      UUID inspectionId, ReportStatus status);
+
+  List<InspectionReportVersion> findByInspectionIdAndStatus(UUID inspectionId, ReportStatus status);
 }

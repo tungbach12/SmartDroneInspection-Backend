@@ -6,11 +6,9 @@ import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.AuthStep;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.AuthSession;
-import com.smartdroneinspection.users.domain.RefreshToken;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
-import com.smartdroneinspection.users.repository.RefreshTokenRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AccessTokenService;
 import com.smartdroneinspection.users.security.AuthCrypto;
@@ -27,7 +25,6 @@ public class AuthService {
 
   private final UserRepository users;
   private final AuthSessionRepository sessions;
-  private final RefreshTokenRepository refreshTokens;
   private final PasswordEncoder passwords;
   private final PasswordPolicy passwordPolicy;
   private final AccessTokenService accessTokens;
@@ -40,7 +37,6 @@ public class AuthService {
   public AuthService(
       UserRepository users,
       AuthSessionRepository sessions,
-      RefreshTokenRepository refreshTokens,
       PasswordEncoder passwords,
       PasswordPolicy passwordPolicy,
       AccessTokenService accessTokens,
@@ -50,7 +46,6 @@ public class AuthService {
       SecurityAuditService audit) {
     this.users = users;
     this.sessions = sessions;
-    this.refreshTokens = refreshTokens;
     this.passwords = passwords;
     this.passwordPolicy = passwordPolicy;
     this.accessTokens = accessTokens;
@@ -155,12 +150,11 @@ public class AuthService {
       String userAgent,
       String correlationId) {
     String hash = tokenHash(rawToken);
-    RefreshToken stored =
-        refreshTokens.findForUpdate(hash).orElseThrow(AuthException::invalidCredentials);
-    AuthSession session = stored.getSession();
+    AuthSession session =
+        sessions.findForUpdateByTokenHash(hash).orElseThrow(AuthException::invalidCredentials);
     Instant now = Instant.now();
 
-    if (stored.consumed()) {
+    if (session.isConsumedHash(hash)) {
       revokeSession(session, "refresh-token-reuse");
       audit.record(
           null,
@@ -172,7 +166,7 @@ public class AuthService {
           correlationId);
       throw AuthException.invalidCredentials();
     }
-    if (!stored.getExpiresAt().isAfter(now)
+    if (!session.getExpiresAt().isAfter(now)
         || !session.active(now)
         || session.getClientType() != expectedClient
         || !session.getUser().active()) {
@@ -181,11 +175,8 @@ public class AuthService {
     }
 
     String nextRawToken = AuthCrypto.randomToken();
-    Instant expiresAt = session.getExpiresAt();
-    RefreshToken replacement =
-        refreshTokens.saveAndFlush(
-            new RefreshToken(session, tokenHash(nextRawToken), now, expiresAt));
-    stored.rotate();
+    session.rotateToken(tokenHash(nextRawToken), now);
+    sessions.saveAndFlush(session);
     var access = accessTokens.issue(session.getUser(), session);
     audit.record(
         session.getUser().getId(),
@@ -203,14 +194,14 @@ public class AuthService {
     if (rawToken == null || rawToken.isBlank()) {
       return;
     }
-    refreshTokens
-        .findForUpdate(tokenHash(rawToken))
+    sessions
+        .findForUpdateByTokenHash(tokenHash(rawToken))
         .ifPresent(
-            token -> {
-              revokeSession(token.getSession(), "logout");
+            session -> {
+              revokeSession(session, "logout");
               audit.record(
-                  token.getSession().getUser().getId(),
-                  token.getSession().getUser().getId(),
+                  session.getUser().getId(),
+                  session.getUser().getId(),
                   "AUTH_LOGOUT",
                   "SUCCESS",
                   ipAddress,
@@ -288,9 +279,10 @@ public class AuthService {
   private AuthResult createSession(User user, ClientType clientType) {
     Instant now = Instant.now();
     Instant expiresAt = now.plus(properties.getRefreshTokenTtl());
-    AuthSession session = sessions.save(new AuthSession(user, clientType, expiresAt));
     String rawRefreshToken = AuthCrypto.randomToken();
-    refreshTokens.save(new RefreshToken(session, tokenHash(rawRefreshToken), now, expiresAt));
+    AuthSession session =
+        sessions.save(
+            new AuthSession(user, clientType, tokenHash(rawRefreshToken), now, expiresAt));
     var access = accessTokens.issue(user, session);
     return authenticated(user, access.value(), access.expiresAt(), rawRefreshToken);
   }
@@ -325,7 +317,6 @@ public class AuthService {
 
   private void revokeSession(AuthSession session, String reason) {
     session.revoke(reason);
-    refreshTokens.findBySession_Id(session.getId()).forEach(token -> token.revoke(reason));
   }
 
   private String tokenHash(String rawToken) {
