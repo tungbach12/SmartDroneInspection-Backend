@@ -94,9 +94,9 @@ public class MaintenanceChangeOrder {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.changeNumber = requirePositive(changeNumber, "changeNumber");
     this.reason = requireText(reason, "reason");
-    this.affectedTasks = affectedTasks;
+    this.affectedTasks = JsonbText.toNullableJson(affectedTasks);
     this.proposedDelta = proposedDelta;
-    this.supportingEvidence = supportingEvidence;
+    this.supportingEvidence = JsonbText.toNullableJson(supportingEvidence);
     this.proposedStartAt = proposedStartAt;
     this.proposedEndAt = proposedEndAt;
     this.requestedByUserId = require(requestedByUserId, "requestedByUserId");
@@ -207,7 +207,7 @@ public class MaintenanceChangeOrder {
   }
 
   public String getAffectedTasks() {
-    return affectedTasks;
+    return JsonbText.fromJson(affectedTasks);
   }
 
   public BigDecimal getProposedDelta() {
@@ -215,7 +215,7 @@ public class MaintenanceChangeOrder {
   }
 
   public String getSupportingEvidence() {
-    return supportingEvidence;
+    return JsonbText.fromJson(supportingEvidence);
   }
 
   public Instant getProposedStartAt() {

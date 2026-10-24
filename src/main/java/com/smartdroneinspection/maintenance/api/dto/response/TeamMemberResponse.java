@@ -9,6 +9,8 @@ import java.util.UUID;
 public record TeamMemberResponse(
     UUID id,
     UUID engineerUserId,
+    String engineerName,
+    String engineerEmail,
     TeamMemberRole memberRole,
     Instant effectiveFrom,
     Instant effectiveUntil,
@@ -17,9 +19,16 @@ public record TeamMemberResponse(
     boolean active) {
 
   public static TeamMemberResponse from(MaintenanceTeamMember member) {
+    return from(member, null, null);
+  }
+
+  public static TeamMemberResponse from(
+      MaintenanceTeamMember member, String engineerName, String engineerEmail) {
     return new TeamMemberResponse(
         member.getId(),
         member.getEngineerUserId(),
+        engineerName,
+        engineerEmail,
         member.getMemberRole(),
         member.getEffectiveFrom(),
         member.getEffectiveUntil(),

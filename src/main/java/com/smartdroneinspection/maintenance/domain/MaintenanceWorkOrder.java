@@ -119,8 +119,8 @@ public class MaintenanceWorkOrder {
     }
     this.priority = priority;
     this.dueAt = dueAt;
-    this.correctiveScope = correctiveScope;
-    this.acceptanceCriteria = acceptanceCriteria;
+    this.correctiveScope = JsonbText.toNullableJson(correctiveScope);
+    this.acceptanceCriteria = JsonbText.toNullableJson(acceptanceCriteria);
     this.updatedAt = Instant.now();
   }
 
@@ -386,11 +386,11 @@ public class MaintenanceWorkOrder {
   }
 
   public String getCorrectiveScope() {
-    return correctiveScope;
+    return JsonbText.fromJson(correctiveScope);
   }
 
   public String getAcceptanceCriteria() {
-    return acceptanceCriteria;
+    return JsonbText.fromJson(acceptanceCriteria);
   }
 
   public UUID getOwnerUserId() {

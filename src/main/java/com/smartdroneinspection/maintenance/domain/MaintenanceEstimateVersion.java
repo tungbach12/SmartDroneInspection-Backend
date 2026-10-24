@@ -91,9 +91,9 @@ public class MaintenanceEstimateVersion {
     this.versionNo = requirePositive(versionNo, "versionNo");
     this.preparedByUserId = require(preparedByUserId, "preparedByUserId");
     this.currency = requireText(currency, "currency");
-    this.taxBasis = taxBasis;
-    this.assumptions = assumptions;
-    this.snapshot = snapshot == null ? "{}" : snapshot;
+    this.taxBasis = JsonbText.toNullableJson(taxBasis);
+    this.assumptions = JsonbText.toNullableJson(assumptions);
+    this.snapshot = JsonbText.toRequiredJson(snapshot);
     this.baselineTotal = requireTotal(baselineTotal);
     this.status = EstimateStatus.DRAFT;
     this.createdAt = Instant.now();
@@ -230,7 +230,7 @@ public class MaintenanceEstimateVersion {
   }
 
   public String getTaxBasis() {
-    return taxBasis;
+    return JsonbText.fromJson(taxBasis);
   }
 
   public BigDecimal getBaselineTotal() {
@@ -238,11 +238,11 @@ public class MaintenanceEstimateVersion {
   }
 
   public String getAssumptions() {
-    return assumptions;
+    return JsonbText.fromJson(assumptions);
   }
 
   public String getSnapshot() {
-    return snapshot;
+    return JsonbText.fromJson(snapshot);
   }
 
   public Instant getCreatedAt() {

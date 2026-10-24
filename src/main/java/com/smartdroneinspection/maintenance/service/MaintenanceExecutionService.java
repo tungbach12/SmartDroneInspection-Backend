@@ -131,15 +131,38 @@ public class MaintenanceExecutionService {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
     transition(() -> order.markReady());
+    for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+      task.markReady();
+      tasks.save(task);
+    }
+    tasks.flush();
     return save(order);
   }
 
-  /** MF4-18: after reviewer-returned rework is complete, the team lead resumes execution. */
+  /**
+   * MF4-18: after reviewer-returned rework or re-inspection is complete, the team lead resumes
+   * execution.
+   */
   @Transactional
   public WorkOrderResponse resumeAfterRework(UUID actorId, UUID workOrderId) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
-    transition(order::resumeExecutionAfterRework);
+    if (estimates.findByWorkOrderIdAndStatus(order.getId(), EstimateStatus.APPROVED).isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "ESTIMATE_NOT_APPROVED",
+          "Cannot resume field execution before an estimate baseline has been approved");
+    }
+    if (order.getStatus() == WorkOrderStatus.REINSPECTION_REQUIRED) {
+      transition(order::resumeAfterReinspection);
+    } else {
+      transition(order::resumeExecutionAfterRework);
+    }
+    for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+      task.markInProgress();
+      tasks.save(task);
+    }
+    tasks.flush();
     return save(order);
   }
 
@@ -149,6 +172,11 @@ public class MaintenanceExecutionService {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
     transition(() -> order.markInProgress());
+    for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+      task.markInProgress();
+      tasks.save(task);
+    }
+    tasks.flush();
     return save(order);
   }
 
@@ -163,6 +191,11 @@ public class MaintenanceExecutionService {
     long submitted = workLogs.countByWorkOrderId(order.getId());
     long verified = workLogs.countByWorkOrderIdAndStatus(order.getId(), WorkLogStatus.VERIFIED);
     transition(() -> order.markWorkCompleted(submitted, verified));
+    for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+      task.markWorkCompleted();
+      tasks.save(task);
+    }
+    tasks.flush();
     return save(order);
   }
 
@@ -175,19 +208,35 @@ public class MaintenanceExecutionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot record work on a closed work order");
     }
-    tasks
-        .findByIdAndWorkOrderId(request.taskId(), order.getId())
-        .orElseThrow(
-            () ->
-                new BusinessException(
-                    HttpStatus.NOT_FOUND, "TASK_NOT_FOUND", "Task not found on this work order"));
+    MaintenanceTask task =
+        tasks
+            .findByIdAndWorkOrderId(request.taskId(), order.getId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "TASK_NOT_FOUND",
+                        "Task not found on this work order"));
+    task.markInProgress();
+    tasks.saveAndFlush(task);
+
+    Instant endedAt = request.endedAt();
+    Instant startedAt = request.startedAt();
+    if (endedAt == null && request.hours() != null && request.hours().signum() > 0) {
+      endedAt = Instant.now();
+      if (startedAt == null || startedAt.isAfter(endedAt)) {
+        long durationSeconds =
+            Math.max(1L, request.hours().multiply(BigDecimal.valueOf(3600)).longValue());
+        startedAt = endedAt.minusSeconds(durationSeconds);
+      }
+    }
 
     MaintenanceWorkLog log =
         new MaintenanceWorkLog(
-            order.getId(), request.taskId(), actorId, request.startedAt(), request.hours());
+            order.getId(), request.taskId(), actorId, startedAt, request.hours());
     log.recordProgress(
-        request.startedAt(),
-        request.endedAt(),
+        startedAt,
+        endedAt,
         request.hours(),
         request.actualCostReferences(),
         request.asLeftCondition(),
@@ -202,6 +251,20 @@ public class MaintenanceExecutionService {
     MaintenanceWorkLog log = requireWorkLog(order, workLogId);
     if (!actorId.equals(log.getEngineerUserId())) {
       throw denied("Only the engineer who recorded this work may submit it");
+    }
+    if (log.getEndedAt() == null && log.getStatus() == WorkLogStatus.IN_PROGRESS) {
+      Instant now = Instant.now();
+      Instant start =
+          log.getStartedAt() != null && !log.getStartedAt().isAfter(now)
+              ? log.getStartedAt()
+              : now.minusSeconds(60);
+      log.recordProgress(
+          start,
+          now,
+          log.getHours(),
+          log.getActualCostReferences(),
+          log.getAsLeftCondition(),
+          log.getTestReadings());
     }
     transition(log::submit);
     workLogs.saveAndFlush(log);
@@ -325,6 +388,12 @@ public class MaintenanceExecutionService {
   public ReportVersionResponse createReportVersion(
       UUID actorId, UUID workOrderId, CreateReportVersionRequest request) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    if (order.getStatus() == WorkOrderStatus.CLOSED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "WORK_ORDER_CLOSED",
+          "Cannot open a completion report on a closed work order");
+    }
     if (!actorId.equals(order.getReportAuthorUserId())) {
       throw denied("Only the designated report author may open a completion report");
     }
@@ -416,17 +485,42 @@ public class MaintenanceExecutionService {
     try {
       switch (request.decision()) {
         case ACCEPTED -> {
+          reportVersions
+              .findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
+                  order.getId(), ReportVersionStatus.APPROVED)
+              .ifPresent(
+                  previous -> {
+                    if (!previous.getId().equals(report.getId())) {
+                      previous.supersede();
+                      reportVersions.saveAndFlush(previous);
+                    }
+                  });
           order.accept(actorId);
           report.approveReport();
+          for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+            task.markAccepted();
+            tasks.save(task);
+          }
+          tasks.flush();
           storePublishedArtefact(order, report);
         }
         case REWORK_REQUIRED -> {
           order.requireReworkAfterAcceptance(actorId, request.technicalComments());
           report.returnToAuthor(request.technicalComments());
+          for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+            task.markReworkRequired();
+            tasks.save(task);
+          }
+          tasks.flush();
         }
         case REINSPECTION_REQUIRED -> {
           order.requireReinspection(actorId, request.technicalComments());
           report.returnToAuthor(request.technicalComments());
+          for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
+            task.markReworkRequired();
+            tasks.save(task);
+          }
+          tasks.flush();
           if (eventPublisher != null) {
             eventPublisher.publishEvent(
                 new ReinspectionRequestedEvent(
@@ -597,7 +691,7 @@ public class MaintenanceExecutionService {
               actorId,
               Instant.now()));
     }
-    return WorkOrderResponse.from(order);
+    return workOrderService.toWorkOrderResponse(order);
   }
 
   @Transactional
@@ -630,11 +724,15 @@ public class MaintenanceExecutionService {
         if (objectStore != null && objectStore.isPresent()) {
           try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
             objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
+            if (report.getStatus() == ReportVersionStatus.APPROVED) {
+              report.recordArtefact(objectKey, sha256Hex(pdf));
+              reportVersions.saveAndFlush(report);
+            }
+          } catch (IOException | RuntimeException storeEx) {
+            log.warn(
+                "Could not persist PDF to object store; serving rendered bytes directly: {}",
+                storeEx.getMessage());
           }
-        }
-        if (report.getStatus() == ReportVersionStatus.APPROVED) {
-          report.recordArtefact(objectKey, sha256Hex(pdf));
-          reportVersions.saveAndFlush(report);
         }
         return pdfResponse(pdf, "attachment", documentReference(order, report) + ".pdf");
       } catch (IOException ex) {
@@ -643,21 +741,21 @@ public class MaintenanceExecutionService {
       }
     }
 
+    if (objectStore != null && objectStore.isPresent()) {
+      try {
+        byte[] content = objectStore.get().open(objectKey).readAllBytes();
+        return pdfResponse(content, "attachment", documentReference(order, report) + ".pdf");
+      } catch (IOException | RuntimeException ex) {
+        log.warn(
+            "Could not read PDF from object store ({}); re-rendering on the fly", ex.getMessage());
+      }
+    }
     try {
-      byte[] content =
-          objectStore
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.SERVICE_UNAVAILABLE,
-                          "STORAGE_UNAVAILABLE",
-                          "Object store is unavailable"))
-              .open(objectKey)
-              .readAllBytes();
-      return pdfResponse(content, "attachment", documentReference(order, report) + ".pdf");
+      byte[] pdf = reportRenderer.render(buildRenderContext(order, report), false);
+      return pdfResponse(pdf, "attachment", documentReference(order, report) + ".pdf");
     } catch (IOException ex) {
       throw new BusinessException(
-          HttpStatus.SERVICE_UNAVAILABLE, "REPORT_STORAGE_READ_FAILED", ex.getMessage());
+          HttpStatus.SERVICE_UNAVAILABLE, "REPORT_RENDER_UNAVAILABLE", ex.getMessage());
     }
   }
 
@@ -697,10 +795,12 @@ public class MaintenanceExecutionService {
       if (objectStore != null && objectStore.isPresent()) {
         try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
           objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
+          report.recordArtefact(objectKey, sha256Hex(pdf));
         }
+      } else {
+        report.recordArtefact(objectKey, sha256Hex(pdf));
       }
-      report.recordArtefact(objectKey, sha256Hex(pdf));
-    } catch (IOException ex) {
+    } catch (IOException | RuntimeException ex) {
       log.warn("Failed to render or store completion report PDF artifact: {}", ex.getMessage());
     }
   }
@@ -854,6 +954,15 @@ public class MaintenanceExecutionService {
               dec.getSignatureReference());
     }
 
+    String scopeText =
+        order.getCorrectiveScope() != null && !order.getCorrectiveScope().isBlank()
+            ? order.getCorrectiveScope()
+            : "Approved corrective defect repair";
+    String criteriaText =
+        order.getAcceptanceCriteria() != null && !order.getAcceptanceCriteria().isBlank()
+            ? order.getAcceptanceCriteria()
+            : "Technical acceptance by independent reviewer";
+
     return new MaintenanceReportRenderContext(
         docRef,
         report.getVersionNo(),
@@ -862,8 +971,8 @@ public class MaintenanceExecutionService {
         order.getAssetId().toString(),
         order.getSourceFindingId().toString(),
         "Corrective maintenance for finding " + order.getSourceFindingId(),
-        "Approved corrective defect repair",
-        "Technical acceptance by independent reviewer",
+        scopeText,
+        criteriaText,
         authorName,
         report.getAuthorVerifiedAt() != null
             ? report.getAuthorVerifiedAt().toString()
@@ -924,7 +1033,7 @@ public class MaintenanceExecutionService {
 
   private WorkOrderResponse save(MaintenanceWorkOrder order) {
     workOrders.saveAndFlush(order);
-    return WorkOrderResponse.from(order);
+    return workOrderService.toWorkOrderResponse(order);
   }
 
   private MaintenanceWorkLog requireWorkLog(MaintenanceWorkOrder order, UUID workLogId) {

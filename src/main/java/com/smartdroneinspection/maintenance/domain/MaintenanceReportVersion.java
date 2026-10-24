@@ -98,7 +98,7 @@ public class MaintenanceReportVersion {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.versionNo = requirePositive(versionNo, "versionNo");
     this.authorUserId = require(authorUserId, "authorUserId");
-    this.contentSnapshot = contentSnapshot == null ? "{}" : contentSnapshot;
+    this.contentSnapshot = JsonbText.toRequiredJson(contentSnapshot);
     this.approvedScopeHash = approvedScopeHash;
     this.changeSnapshotHash = changeSnapshotHash;
     this.workLogSnapshotHash = workLogSnapshotHash;
@@ -126,7 +126,7 @@ public class MaintenanceReportVersion {
     if (newContent == null || newContent.isBlank()) {
       throw new IllegalArgumentException("Report content is required");
     }
-    this.contentSnapshot = newContent;
+    this.contentSnapshot = JsonbText.toRequiredJson(newContent);
   }
 
   /** MF4-17: submission hands the version to the independent reviewer. */
@@ -234,7 +234,7 @@ public class MaintenanceReportVersion {
   }
 
   public String getContentSnapshot() {
-    return contentSnapshot;
+    return JsonbText.fromJson(contentSnapshot);
   }
 
   /** Records the stored PDF artifact key and SHA-256 checksum for an approved completion report. */

@@ -79,8 +79,8 @@ public class MaintenanceAcceptanceDecision {
           "Only an acceptance may be recorded without technical comments");
     }
     this.technicalComments = technicalComments;
-    this.acceptanceChecklist = acceptanceChecklist;
-    this.testResult = testResult;
+    this.acceptanceChecklist = JsonbText.toNullableJson(acceptanceChecklist);
+    this.testResult = JsonbText.toNullableJson(testResult);
     this.signatureReference = signatureReference;
     this.decidedAt = Instant.now();
     this.createdAt = this.decidedAt;
@@ -129,11 +129,11 @@ public class MaintenanceAcceptanceDecision {
   }
 
   public String getAcceptanceChecklist() {
-    return acceptanceChecklist;
+    return JsonbText.fromJson(acceptanceChecklist);
   }
 
   public String getTestResult() {
-    return testResult;
+    return JsonbText.fromJson(testResult);
   }
 
   public Instant getDecidedAt() {
