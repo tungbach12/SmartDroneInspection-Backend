@@ -91,7 +91,7 @@ public class MaintenanceTask {
     this.assignedEngineerUserId = assignedEngineerUserId;
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    this.acceptanceCriteria = acceptanceCriteria;
+    this.acceptanceCriteria = JsonbText.toNullableJson(acceptanceCriteria);
     this.status = TaskStatus.PLANNED;
     this.createdAt = Instant.now();
     this.updatedAt = this.createdAt;
@@ -113,8 +113,45 @@ public class MaintenanceTask {
     this.assignedEngineerUserId = assignedEngineerUserId;
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    this.acceptanceCriteria = acceptanceCriteria;
+    this.acceptanceCriteria = JsonbText.toNullableJson(acceptanceCriteria);
     this.updatedAt = Instant.now();
+  }
+
+  public void markReady() {
+    if (status == TaskStatus.PLANNED) {
+      this.status = TaskStatus.READY;
+      this.updatedAt = Instant.now();
+    }
+  }
+
+  public void markInProgress() {
+    if (status == TaskStatus.PLANNED
+        || status == TaskStatus.READY
+        || status == TaskStatus.REWORK_REQUIRED) {
+      this.status = TaskStatus.IN_PROGRESS;
+      this.updatedAt = Instant.now();
+    }
+  }
+
+  public void markWorkCompleted() {
+    if (status != TaskStatus.CANCELLED && status != TaskStatus.ACCEPTED) {
+      this.status = TaskStatus.WORK_COMPLETED;
+      this.updatedAt = Instant.now();
+    }
+  }
+
+  public void markAccepted() {
+    if (status != TaskStatus.CANCELLED) {
+      this.status = TaskStatus.ACCEPTED;
+      this.updatedAt = Instant.now();
+    }
+  }
+
+  public void markReworkRequired() {
+    if (status != TaskStatus.CANCELLED) {
+      this.status = TaskStatus.REWORK_REQUIRED;
+      this.updatedAt = Instant.now();
+    }
   }
 
   private static void requireWindow(Instant start, Instant end) {
@@ -184,7 +221,7 @@ public class MaintenanceTask {
   }
 
   public String getAcceptanceCriteria() {
-    return acceptanceCriteria;
+    return JsonbText.fromJson(acceptanceCriteria);
   }
 
   public TaskStatus getStatus() {

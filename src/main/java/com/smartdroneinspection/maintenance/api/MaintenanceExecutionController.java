@@ -46,7 +46,7 @@ public class MaintenanceExecutionController {
     this.executionService = executionService;
   }
 
-  @PostMapping("/resume-after-rework")
+  @PostMapping({"/resume-after-rework", "/resume-after-reinspection"})
   @PreAuthorize("hasRole('MAINTENANCE_ENGINEER')")
   public ApiResponse<WorkOrderResponse> resumeAfterRework(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {

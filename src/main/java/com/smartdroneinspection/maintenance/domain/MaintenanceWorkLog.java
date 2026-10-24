@@ -110,9 +110,9 @@ public class MaintenanceWorkLog {
     this.startedAt = from;
     this.endedAt = endedAt;
     this.hours = requireHours(hours);
-    this.actualCostReferences = actualCostReferences;
+    this.actualCostReferences = JsonbText.toNullableJson(actualCostReferences);
     this.asLeftCondition = asLeftCondition;
-    this.testReadings = testReadings;
+    this.testReadings = JsonbText.toNullableJson(testReadings);
     this.updatedAt = Instant.now();
   }
 
@@ -202,11 +202,11 @@ public class MaintenanceWorkLog {
   }
 
   public String getActualCostReferences() {
-    return actualCostReferences;
+    return JsonbText.fromJson(actualCostReferences);
   }
 
   public String getTestReadings() {
-    return testReadings;
+    return JsonbText.fromJson(testReadings);
   }
 
   public WorkLogStatus getStatus() {

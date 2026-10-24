@@ -946,6 +946,224 @@ class MaintenanceApiIntegrationTest {
         .andExpect(header().string("Content-Type", "application/pdf"));
   }
 
+  @Test
+  void acceptsPlainTextInputsFromUiAndResumesAfterReinspection() throws Exception {
+    String woResponse =
+        mockMvc
+            .perform(
+                post("/api/v1/maintenance/work-orders")
+                    .with(principal(fixture.ownerId(), "ORG_ADMIN"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "assetId",
+                                fixture.assetId(),
+                                "sourceReportVersionId",
+                                fixture.reportVersionId(),
+                                "sourceFindingId",
+                                fixture.findingId(),
+                                "budgetApproverUserId",
+                                fixture.approverId(),
+                                "priority",
+                                "HIGH",
+                                "correctiveScope",
+                                "Vệ sinh bề mặt vết nứt và bơm keo epoxy áp lực thấp",
+                                "acceptanceCriteria",
+                                "Kiểm tra siêu âm UPV >= 90% và thử kéo đứt >= 1.5 MPa"))))
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.data.correctiveScope")
+                    .value("Vệ sinh bề mặt vết nứt và bơm keo epoxy áp lực thấp"))
+            .andExpect(
+                jsonPath("$.data.acceptanceCriteria")
+                    .value("Kiểm tra siêu âm UPV >= 90% và thử kéo đứt >= 1.5 MPa"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID workOrderId =
+        UUID.fromString(objectMapper.readTree(woResponse).path("data").path("id").asString());
+
+    assignDefaultTeam(workOrderId);
+
+    String taskRes =
+        mockMvc
+            .perform(
+                post("/api/v1/maintenance/work-orders/{id}/tasks", workOrderId)
+                    .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "name",
+                                "Bơm keo epoxy",
+                                "method",
+                                "Bơm áp lực thấp 0.2 MPa",
+                                "acceptanceCriteria",
+                                "Keo điền đầy hoàn toàn khe nứt"))))
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.data.acceptanceCriteria").value("Keo điền đầy hoàn toàn khe nứt"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID taskId =
+        UUID.fromString(objectMapper.readTree(taskRes).path("data").path("id").asString());
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/estimate-versions", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "currency",
+                            "VND",
+                            "assumptions",
+                            "Đơn giá chưa bao gồm VAT",
+                            "snapshot",
+                            "Estimate prepared from the approved task scope",
+                            "lines",
+                            List.of(
+                                Map.of(
+                                    "taskId",
+                                    taskId,
+                                    "lineKind",
+                                    "LABOR",
+                                    "description",
+                                    "Nhân công bơm keo",
+                                    "quantity",
+                                    2,
+                                    "unitRate",
+                                    150000))))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.assumptions").value("Đơn giá chưa bao gồm VAT"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/submit", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
+                .with(principal(fixture.approverId(), "ORG_ADMIN")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/release", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/start", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk());
+
+    String logRes =
+        mockMvc
+            .perform(
+                post("/api/v1/maintenance/work-orders/{id}/work-logs", workOrderId)
+                    .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "taskId",
+                                taskId,
+                                "hours",
+                                2.5,
+                                "asLeftCondition",
+                                "Bề mặt phẳng mịn",
+                                "testReadings",
+                                "UPV đạt 94%, pull-off 1.8 MPa"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.testReadings").value("UPV đạt 94%, pull-off 1.8 MPa"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID workLogId =
+        UUID.fromString(objectMapper.readTree(logRes).path("data").path("id").asString());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/maintenance/work-orders/{id}/work-logs/{logId}/submit",
+                    workOrderId,
+                    workLogId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/maintenance/work-orders/{id}/work-logs/{logId}/verify",
+                    workOrderId,
+                    workLogId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("VERIFIED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/declare-complete", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("WORK_COMPLETED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "contentSnapshot",
+                            "Đã hoàn thành bơm keo epoxy và nghiệm thu đạt yêu cầu."))))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.contentSnapshot")
+                .value("Đã hoàn thành bơm keo epoxy và nghiệm thu đạt yêu cầu."));
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports/1/verify", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports/1/submit", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
+                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision",
+                            "REINSPECTION_REQUIRED",
+                            "technicalComments",
+                            "Cần bay kiểm tra lại bề mặt sau 48h",
+                            "acceptanceChecklist",
+                            "Kiểm tra ngoại quan đạt",
+                            "testResult",
+                            "1.8 MPa"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.decision").value("REINSPECTION_REQUIRED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/resume-after-rework", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+  }
+
   private UUID createTask(UUID workOrderId) throws Exception {
     String response =
         mockMvc

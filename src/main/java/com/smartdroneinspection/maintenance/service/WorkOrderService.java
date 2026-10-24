@@ -193,12 +193,12 @@ public class WorkOrderService {
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw conflict(ex);
     }
-    return WorkOrderResponse.from(workOrders.saveAndFlush(order));
+    return toWorkOrderResponse(workOrders.saveAndFlush(order));
   }
 
   @Transactional(readOnly = true)
   public WorkOrderResponse get(UUID actorId, UUID workOrderId) {
-    return WorkOrderResponse.from(requireWorkOrderInScope(actorId, workOrderId));
+    return toWorkOrderResponse(requireWorkOrderInScope(actorId, workOrderId));
   }
 
   @Transactional(readOnly = true)
@@ -219,7 +219,7 @@ public class WorkOrderService {
       throw forbidden("Only an ORG_ADMIN or assigned MAINTENANCE_ENGINEER may list work orders");
     }
     return new WorkOrderPageResponse(
-        result.getContent().stream().map(WorkOrderResponse::from).toList(),
+        result.getContent().stream().map(this::toWorkOrderResponse).toList(),
         result.getNumber(),
         result.getSize(),
         result.getTotalElements());
@@ -302,15 +302,29 @@ public class WorkOrderService {
               actor.id(),
               Instant.now()));
     }
-    return WorkOrderResponse.from(order);
+    return toWorkOrderResponse(order);
   }
 
   @Transactional(readOnly = true)
   public List<TeamMemberResponse> team(UUID actorId, UUID workOrderId) {
     MaintenanceWorkOrder order = requireWorkOrderInScope(actorId, workOrderId);
     return teamMembers.findByWorkOrderIdAndActiveTrueOrderByCreatedAtAsc(order.getId()).stream()
-        .map(TeamMemberResponse::from)
+        .map(
+            member -> {
+              var activeUser = userAccess.findActiveUser(member.getEngineerUserId()).orElse(null);
+              return TeamMemberResponse.from(
+                  member,
+                  activeUser == null ? null : activeUser.fullName(),
+                  activeUser == null ? null : activeUser.email());
+            })
         .toList();
+  }
+
+  WorkOrderResponse toWorkOrderResponse(MaintenanceWorkOrder order) {
+    return WorkOrderResponse.from(
+        order,
+        userId ->
+            userAccess.findActiveUser(userId).map(UserAccess.ActiveUser::fullName).orElse(null));
   }
 
   /** MF4-05: the lead divides approved scope into tasks, numbered by the server. */
@@ -467,6 +481,17 @@ public class WorkOrderService {
       throw forbidden("Only the designated budget approver may approve this estimate");
     }
     try {
+      estimates
+          .findByWorkOrderIdAndStatus(
+              order.getId(),
+              com.smartdroneinspection.maintenance.domain.enums.EstimateStatus.APPROVED)
+          .ifPresent(
+              previous -> {
+                if (!previous.getId().equals(version.getId())) {
+                  previous.supersede();
+                  estimates.saveAndFlush(previous);
+                }
+              });
       version.approve(actor.id());
       order.approveEstimate(actor.id());
     } catch (IllegalStateException ex) {

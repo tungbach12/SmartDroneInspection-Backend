@@ -110,7 +110,7 @@ public class MaintenanceCostLine {
     this.estimateVersionId = estimateVersionId;
     this.taskId = taskId;
     this.unit = unit;
-    this.taxTreatment = taxTreatment;
+    this.taxTreatment = JsonbText.toNullableJson(taxTreatment);
     this.evidenceReference = evidenceReference;
     this.enteredByUserId = require(enteredByUserId, "enteredByUserId");
     this.amount = computeAmount();
@@ -233,7 +233,7 @@ public class MaintenanceCostLine {
   }
 
   public String getTaxTreatment() {
-    return taxTreatment;
+    return JsonbText.fromJson(taxTreatment);
   }
 
   public String getEvidenceReference() {

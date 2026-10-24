@@ -5,6 +5,7 @@ import com.smartdroneinspection.maintenance.domain.enums.MaintenancePriority;
 import com.smartdroneinspection.maintenance.domain.enums.WorkOrderStatus;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * MF4-01/02: work order header. Financial totals are not part of the header; they come from the
@@ -25,10 +26,21 @@ public record WorkOrderResponse(
     UUID teamLeadUserId,
     UUID reportAuthorUserId,
     UUID acceptingReviewerUserId,
+    String budgetApproverName,
+    String teamLeadName,
+    String reportAuthorName,
+    String acceptingReviewerName,
     Instant createdAt,
     Instant updatedAt) {
 
   public static WorkOrderResponse from(MaintenanceWorkOrder order) {
+    return from(order, id -> null);
+  }
+
+  public static WorkOrderResponse from(
+      MaintenanceWorkOrder order, Function<UUID, String> nameResolver) {
+    Function<UUID, String> resolve =
+        id -> (id == null || nameResolver == null) ? null : nameResolver.apply(id);
     return new WorkOrderResponse(
         order.getId(),
         order.getAssetId(),
@@ -44,6 +56,10 @@ public record WorkOrderResponse(
         order.getTeamLeadUserId(),
         order.getReportAuthorUserId(),
         order.getAcceptingReviewerUserId(),
+        resolve.apply(order.getBudgetApproverUserId()),
+        resolve.apply(order.getTeamLeadUserId()),
+        resolve.apply(order.getReportAuthorUserId()),
+        resolve.apply(order.getAcceptingReviewerUserId()),
         order.getCreatedAt(),
         order.getUpdatedAt());
   }
