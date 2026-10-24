@@ -354,7 +354,6 @@ public class ReportService {
   @Transactional
   public InspectionReportVersionResponse saveSections(
       UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
-    evidenceService.requireAssignedInspection(actorId, inspectionId);
     InspectionReportVersion version = requireVersion(inspectionId, versionId);
     version = requireVersionForAuthor(version.getId(), actorId);
 

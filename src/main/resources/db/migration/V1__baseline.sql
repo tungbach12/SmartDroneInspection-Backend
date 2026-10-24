@@ -928,10 +928,10 @@ CREATE TABLE users (
     vision_fallback_enabled boolean DEFAULT true NOT NULL,
     phone_number character varying(32),
     avatar_url character varying(500),
-    roles character varying(255) DEFAULT 'INSPECTOR'::character varying NOT NULL,
+    roles character varying(255) DEFAULT ''::character varying NOT NULL,
     CONSTRAINT ck_users_actor_zone CHECK (((actor_zone)::text = ANY ((ARRAY['PLATFORM'::character varying, 'CUSTOMER_ORGANIZATION'::character varying])::text[]))),
     CONSTRAINT ck_users_failed_login_count CHECK ((failed_login_count >= 0)),
-    CONSTRAINT ck_users_roles CHECK (((roles)::text ~ '^(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER)(,(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER))*$'::text)),
+    CONSTRAINT ck_users_roles CHECK ((((roles)::text = ''::text) OR ((roles)::text ~ '^(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER)(,(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER))*$'::text))),
     CONSTRAINT ck_users_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'SUSPENDED'::character varying, 'DISABLED'::character varying])::text[]))),
     CONSTRAINT ck_users_zone_organization CHECK (((((actor_zone)::text = 'CUSTOMER_ORGANIZATION'::text) AND (organization_id IS NOT NULL)) OR (((actor_zone)::text <> 'CUSTOMER_ORGANIZATION'::text) AND (organization_id IS NULL))))
 );
