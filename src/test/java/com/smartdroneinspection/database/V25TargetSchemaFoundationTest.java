@@ -157,37 +157,50 @@ class V25TargetSchemaFoundationTest {
             Map.entry(
                 "evidence",
                 Set.of(
-                    "organization_id",
                     "inspection_id",
                     "field_session_id",
-                    "maintenance_work_order_id",
-                    "maintenance_task_id",
-                    "evidence_kind",
                     "file_name",
                     "content_type",
                     "size_bytes",
-                    "object_key")),
+                    "object_key",
+                    "capture_time",
+                    "latitude",
+                    "longitude",
+                    "location_description",
+                    "is_deleted",
+                    "created_at")),
             Map.entry(
                 "findings",
                 Set.of(
                     "inspection_id",
                     "evidence_id",
-                    "model_provider",
-                    "model_version",
-                    "status",
-                    "technical_notes",
+                    "finding_code",
+                    "defect_label",
                     "severity",
-                    "forwarded_to_maintenance_at")),
+                    "bounding_box",
+                    "technical_notes",
+                    "recommended_action",
+                    "status",
+                    "model_name",
+                    "confidence",
+                    "forwarded_to_maintenance_at",
+                    "is_deleted",
+                    "created_at")),
             Map.entry(
                 "inspection_reports",
                 Set.of(
                     "inspection_id",
-                    "author_user_id",
                     "version_no",
                     "status",
+                    "content_snapshot",
                     "submitted_at",
+                    "reviewer_user_id",
+                    "reviewed_at",
                     "return_reason",
-                    "content_snapshot")),
+                    "rendered_object_key",
+                    "rendered_checksum_sha256",
+                    "published_at",
+                    "created_at")),
             Map.entry(
                 "maintenance_work_orders",
                 Set.of(
@@ -380,55 +393,28 @@ class V25TargetSchemaFoundationTest {
   }
 
   @Test
-  void enforcesTargetEvidenceWorkOrderAndTaskForeignKeys() {
-    String workOrderForeignKey =
+  void enforcesTargetEvidenceInspectionForeignKey() {
+    String inspectionForeignKey =
         jdbcTemplate.queryForObject(
-            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'fk_evidence_target_work_order'",
-            String.class);
-    String taskForeignKey =
-        jdbcTemplate.queryForObject(
-            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'fk_evidence_target_task'",
-            String.class);
-    String parentCheck =
-        jdbcTemplate.queryForObject(
-            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_evidence_target_parent'",
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'fk_evidence_inspection'",
             String.class);
 
-    assertThat(workOrderForeignKey)
-        .contains("FOREIGN KEY (maintenance_work_order_id)")
-        .contains("maintenance_work_orders")
+    assertThat(inspectionForeignKey)
+        .contains("FOREIGN KEY (inspection_id)")
+        .contains("inspections")
         .contains("ON DELETE RESTRICT");
-    assertThat(taskForeignKey)
-        .contains("FOREIGN KEY (maintenance_task_id)")
-        .contains("maintenance_tasks")
-        .contains("ON DELETE RESTRICT");
-    assertThat(parentCheck)
-        .contains("inspection_id")
-        .contains("field_session_id")
-        .contains("maintenance_work_order_id")
-        .contains("maintenance_task_id")
-        .doesNotContain("maintenance_work_log_id");
   }
 
   @Test
-  void rejectsEvidenceWithMissingOrOrphanedTargetParents() {
-    UUID uploaderId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO users (id, email, normalized_email, full_name, status, actor_zone, organization_id) "
-            + "VALUES (?, ?, ?, ?, 'ACTIVE', 'PLATFORM', NULL)",
-        uploaderId,
-        uploaderId + "@example.test",
-        uploaderId + "@example.test",
-        "Evidence fixture");
-
+  void rejectsEvidenceWithMissingOrOrphanedInspectionParent() {
     assertThatThrownBy(
             () ->
                 jdbcTemplate.update(
                     """
                     INSERT INTO evidence
-                      (id, evidence_kind, file_name, content_type, size_bytes,
-                       object_key, upload_status)
-                    VALUES (?, 'OTHER', 'file', 'text/plain', 1, ?, 'AVAILABLE')
+                      (id, file_name, content_type, size_bytes,
+                       object_key)
+                    VALUES (?, 'file', 'text/plain', 1, ?)
                     """,
                     UUID.randomUUID(),
                     "no-parent-" + UUID.randomUUID()))
@@ -439,27 +425,13 @@ class V25TargetSchemaFoundationTest {
                 jdbcTemplate.update(
                     """
                     INSERT INTO evidence
-                      (id, evidence_kind, file_name, content_type, size_bytes,
-                       object_key, upload_status, maintenance_work_order_id)
-                    VALUES (?, 'OTHER', 'file', 'text/plain', 1, ?, 'AVAILABLE', ?)
+                      (id, inspection_id, file_name, content_type, size_bytes,
+                       object_key)
+                    VALUES (?, ?, 'file', 'text/plain', 1, ?)
                     """,
                     UUID.randomUUID(),
-                    "orphan-work-order-" + UUID.randomUUID(),
-                    UUID.randomUUID()))
-        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-
-    assertThatThrownBy(
-            () ->
-                jdbcTemplate.update(
-                    """
-                    INSERT INTO evidence
-                      (id, evidence_kind, file_name, content_type, size_bytes,
-                       object_key, upload_status, maintenance_task_id)
-                    VALUES (?, 'OTHER', 'file', 'text/plain', 1, ?, 'AVAILABLE', ?)
-                    """,
                     UUID.randomUUID(),
-                    "orphan-task-" + UUID.randomUUID(),
-                    UUID.randomUUID()))
+                    "orphan-inspection-" + UUID.randomUUID()))
         .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
   }
 

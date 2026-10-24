@@ -221,27 +221,26 @@ class InspectionReportDraftingApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, inspection_id, organization_id, evidence_kind,
+        INSERT INTO evidence (id, inspection_id,
                               file_name, content_type, size_bytes, object_key,
-                              upload_status, created_at)
-        VALUES (?, ?, ?, 'INSPECTION', 'candidate-image.jpg', 'image/jpeg', 100, ?,
-                'AVAILABLE', CURRENT_TIMESTAMP)
+                              created_at)
+        VALUES (?, ?, 'candidate-image.jpg', 'image/jpeg', 100, ?,
+                CURRENT_TIMESTAMP)
         """,
         evidenceId,
         fixture.inspectionId(),
-        fixture.organizationId(),
         "test/" + UUID.randomUUID());
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
         INSERT INTO findings
           (id, inspection_id, evidence_id, finding_code, defect_label,
-           severity, bounding_box, status, inspector_confirmed_at,
-           model_provider, model_name, model_version, confidence,
-           technical_notes, created_at, updated_at)
+           severity, bounding_box, status,
+           model_name, confidence,
+           technical_notes, created_at)
         VALUES (?, ?, ?, 'F-1', 'Possible crack', 'MEDIUM', '{"x":12}', 'CONFIRMED',
-                CURRENT_TIMESTAMP, 'provider-test', 'detector-test', 'v7', 0.87, 'Possible crack',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                'detector-test', 0.87, 'Possible crack',
+                CURRENT_TIMESTAMP)
         """,
         candidateId,
         fixture.inspectionId(),
@@ -270,7 +269,7 @@ class InspectionReportDraftingApiIntegrationTest {
     assertThat(context.candidates()).hasSize(1);
     assertThat(context.candidates().get(0).candidateId()).isEqualTo(candidateId.toString());
     assertThat(context.candidates().get(0).status()).isEqualTo("CONFIRMED");
-    assertThat(context.candidates().get(0).provider()).isEqualTo("provider-test");
+    assertThat(context.candidates().get(0).modelName()).isEqualTo("detector-test");
     assertThat(objectMapper.readTree(context.candidates().get(0).boundingBoxJson()))
         .isEqualTo(objectMapper.readTree("{\"x\":12}"));
     assertThat(context.findings()).hasSize(1);
@@ -314,14 +313,14 @@ class InspectionReportDraftingApiIntegrationTest {
     UUID findingId = insertConfirmedFinding("Corrosion", "HIGH");
 
     String severityBefore = findingSeverity();
-    String confirmedAtBefore = findingInspectorConfirmedAt();
+    String statusBefore = findingStatus();
     long findingsBefore = countFindings();
 
     draft();
 
     assertThat(countFindings()).isEqualTo(findingsBefore);
     assertThat(findingSeverity()).isEqualTo(severityBefore);
-    assertThat(findingInspectorConfirmedAt()).isEqualTo(confirmedAtBefore);
+    assertThat(findingStatus()).isEqualTo(statusBefore);
     assertThat(findingId).isNotNull();
   }
 
@@ -362,17 +361,17 @@ class InspectionReportDraftingApiIntegrationTest {
 
   private Evidence testEvidence() {
     return new Evidence(
-        fixture.organizationId(),
         fixture.inspectionId(),
         null,
-        com.smartdroneinspection.inspections.domain.enums.EvidenceKind.INSPECTION,
         "span.png",
         "image/png",
         1,
         "inspections/" + fixture.inspectionId() + "/evidence/" + UUID.randomUUID(),
         null,
         null,
-        null);
+        null,
+        null,
+        java.time.Instant.now());
   }
 
   private UUID draft() throws Exception {
@@ -430,9 +429,9 @@ class InspectionReportDraftingApiIntegrationTest {
         fixture.inspectionId());
   }
 
-  private String findingInspectorConfirmedAt() {
+  private String findingStatus() {
     return jdbcTemplate.queryForObject(
-        "SELECT inspector_confirmed_at::text FROM findings WHERE inspection_id = ? LIMIT 1",
+        "SELECT status FROM findings WHERE inspection_id = ? LIMIT 1",
         String.class,
         fixture.inspectionId());
   }
@@ -442,10 +441,10 @@ class InspectionReportDraftingApiIntegrationTest {
         """
         INSERT INTO findings (id, inspection_id, finding_code,
                               defect_label, severity, technical_notes,
-                              status, inspector_confirmed_at,
-                              created_at, updated_at)
+                              status,
+                              created_at)
         VALUES (?, ?, ?, ?, ?, 'Visible corrosion',
-                'CONFIRMED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                'CONFIRMED', CURRENT_TIMESTAMP)
         """,
         UUID.randomUUID(),
         fixture.inspectionId(),

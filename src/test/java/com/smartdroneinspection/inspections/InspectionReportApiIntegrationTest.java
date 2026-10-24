@@ -488,7 +488,7 @@ class InspectionReportApiIntegrationTest {
         .isZero();
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM findings WHERE id = ? AND deleted_at IS NOT NULL",
+                "SELECT count(*) FROM findings WHERE id = ? AND is_deleted = TRUE",
                 Long.class,
                 findingId))
         .isZero();
@@ -855,8 +855,8 @@ class InspectionReportApiIntegrationTest {
             findings
                 .findByIdAndInspectionId(findingId, fixture.inspectionId())
                 .orElseThrow()
-                .getInspectorConfirmedAt())
-        .isNotNull();
+                .getStatus())
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.FindingStatus.CONFIRMED);
     assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
         .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT);
   }
@@ -1035,15 +1035,10 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/withdraw",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("reason", "Correct the finding details"))))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("RETURNED"))
-        .andExpect(jsonPath("$.data.withdrawnAt").isNotEmpty())
-        .andExpect(jsonPath("$.data.withdrawalReason").value("Correct the finding details"));
+        .andExpect(jsonPath("$.data.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.submittedAt").doesNotExist());
 
     assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
         .isEqualTo(
@@ -1060,7 +1055,7 @@ class InspectionReportApiIntegrationTest {
                 .findByInspectionIdAndVersionNo(fixture.inspectionId(), 1)
                 .orElseThrow()
                 .getStatus())
-        .isEqualTo(ReportStatus.RETURNED);
+        .isEqualTo(ReportStatus.DRAFT);
   }
 
   private void reviewAndApproveVersion(UUID versionId) throws Exception {
@@ -1228,7 +1223,7 @@ class InspectionReportApiIntegrationTest {
     assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId())).isEmpty();
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM findings WHERE id = ? AND deleted_at IS NOT NULL",
+                "SELECT count(*) FROM findings WHERE id = ? AND is_deleted = TRUE",
                 Integer.class,
                 findingId))
         .isEqualTo(1);
@@ -1251,7 +1246,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("reason", "Replaced with a sharper close-up"))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.retiredAt").isNotEmpty());
+        .andExpect(jsonPath("$.data.isDeleted").value(true));
 
     assertThat(
             jdbcTemplate.queryForObject(
@@ -1301,12 +1296,12 @@ class InspectionReportApiIntegrationTest {
                         Map.of("reason", "Imported wrong SD card from another site"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(2))
-        .andExpect(jsonPath("$.data[0].retiredAt").isNotEmpty())
-        .andExpect(jsonPath("$.data[1].retiredAt").isNotEmpty());
+        .andExpect(jsonPath("$.data[0].isDeleted").value(true))
+        .andExpect(jsonPath("$.data[1].isDeleted").value(true));
 
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM evidence WHERE inspection_id = ? AND retired_at IS NOT NULL",
+                "SELECT count(*) FROM evidence WHERE inspection_id = ? AND is_deleted = TRUE",
                 Integer.class,
                 fixture.inspectionId()))
         .isEqualTo(2);
@@ -1315,7 +1310,7 @@ class InspectionReportApiIntegrationTest {
         ((com.smartdroneinspection.inspections.repository.EvidenceRepository)
                 webApplicationContext.getBean(
                     com.smartdroneinspection.inspections.repository.EvidenceRepository.class))
-            .findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(fixture.inspectionId());
+            .findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(fixture.inspectionId());
     assertThat(active).isEmpty();
   }
 
@@ -1478,10 +1473,10 @@ class InspectionReportApiIntegrationTest {
     jdbcTemplate.update(
         """
         INSERT INTO findings (id, inspection_id, finding_code, defect_label, severity,
-                              technical_notes, status, inspector_confirmed_at,
-                              created_at, updated_at)
+                              technical_notes, status,
+                              created_at)
         VALUES (?, ?, ?, 'Corrosion', 'HIGH', 'Visible corrosion', 'CONFIRMED',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                CURRENT_TIMESTAMP)
         """,
         findingId,
         fixture.inspectionId(),

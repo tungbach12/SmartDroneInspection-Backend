@@ -321,10 +321,10 @@ class WorkforceCredentialPersistenceTest {
     jdbcTemplate.update(
         """
         INSERT INTO evidence
-            (id, inspection_id, evidence_kind, file_name, content_type,
-             size_bytes, object_key, upload_status)
-        VALUES (?, ?, 'INSPECTION', 'qualification.pdf', 'application/pdf', 128,
-                ?, 'AVAILABLE')
+            (id, inspection_id, file_name, content_type,
+             size_bytes, object_key)
+        VALUES (?, ?, 'qualification.pdf', 'application/pdf', 128,
+                ?)
         """,
         evidenceId,
         inspectionId,

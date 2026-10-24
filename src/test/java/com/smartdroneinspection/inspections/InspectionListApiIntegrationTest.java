@@ -295,7 +295,7 @@ class InspectionListApiIntegrationTest {
   }
 
   private InspectionReportVersion createReport(UUID inspectionId, UUID authorId) {
-    return reports.saveAndFlush(new InspectionReportVersion(inspectionId, authorId, 1, null, "{}"));
+    return reports.saveAndFlush(new InspectionReportVersion(inspectionId, 1, "{}"));
   }
 
   private UUID createPlatformAdmin() {

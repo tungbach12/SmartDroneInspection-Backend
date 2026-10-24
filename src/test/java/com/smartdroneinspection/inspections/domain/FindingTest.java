@@ -25,8 +25,6 @@ class FindingTest {
         null,
         "{\"x\":10,\"y\":20,\"w\":30,\"h\":40}",
         "yolo-v8",
-        "2026.02",
-        "acme",
         new BigDecimal("0.91230"));
   }
 
@@ -41,8 +39,6 @@ class FindingTest {
         "Patch and seal",
         null,
         null,
-        null,
-        null,
         null);
   }
 
@@ -52,10 +48,7 @@ class FindingTest {
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
     assertThat(finding.getModelName()).isEqualTo("yolo-v8");
-    assertThat(finding.getModelVersion()).isEqualTo("2026.02");
-    assertThat(finding.getModelProvider()).isEqualTo("acme");
     assertThat(finding.getConfidence()).isEqualByComparingTo("0.91230");
-    assertThat(finding.getInspectorConfirmedAt()).isNull();
     assertThat(finding.getForwardedToMaintenanceAt()).isNull();
   }
 
@@ -77,19 +70,17 @@ class FindingTest {
     finding.confirmByInspector();
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.CONFIRMED);
-    assertThat(finding.getInspectorConfirmedAt()).isNotNull();
     assertThat(finding.isOfficial()).isTrue();
   }
 
   @Test
-  void deletingKeepsATimestampAndRestoreRetainsTheFindingDecision() {
+  void deletingAndRestoreRetainsTheFindingDecision() {
     Finding finding = detected();
     finding.confirmByInspector();
 
     finding.delete();
 
     assertThat(finding.isDeleted()).isTrue();
-    assertThat(finding.getDeletedAt()).isNotNull();
     assertThatThrownBy(finding::delete)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("already removed");
@@ -97,7 +88,6 @@ class FindingTest {
     finding.restore();
 
     assertThat(finding.isDeleted()).isFalse();
-    assertThat(finding.getDeletedAt()).isNull();
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.CONFIRMED);
     assertThat(finding.isOfficial()).isTrue();
   }
@@ -116,7 +106,6 @@ class FindingTest {
         evidenceId, "corrosion", FindingSeverity.HIGH, "More extensive corrosion", "Repair");
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
-    assertThat(finding.getInspectorConfirmedAt()).isNull();
     assertThat(finding.isOfficial()).isFalse();
   }
 

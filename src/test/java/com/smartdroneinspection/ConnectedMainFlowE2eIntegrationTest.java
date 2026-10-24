@@ -469,7 +469,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     .param("fieldSessionId", fieldSessionId.toString())
                     .with(principal(inspectorId, "INSPECTOR")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.uploadStatus").value("AVAILABLE"))
+            .andExpect(jsonPath("$.data.isDeleted").value(false))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -934,11 +934,11 @@ class ConnectedMainFlowE2eIntegrationTest {
     jdbcTemplate.update(
         """
         INSERT INTO evidence (
-            id, inspection_id, evidence_kind, file_name,
-            content_type, size_bytes, object_key, upload_status
+            id, inspection_id, file_name,
+            content_type, size_bytes, object_key
         ) VALUES (
-            ?, ?, 'INSPECTION', 'credential.pdf', 'application/pdf', 1024,
-            ?, 'AVAILABLE'
+            ?, ?, 'credential.pdf', 'application/pdf', 1024,
+            ?
         )
         """,
         evidenceId,

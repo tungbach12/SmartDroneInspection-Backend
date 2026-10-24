@@ -23,14 +23,8 @@ public class InspectionReportVersion {
   @Column(name = "inspection_id", nullable = false)
   private UUID inspectionId;
 
-  @Column(name = "author_user_id", nullable = false)
-  private UUID authorUserId;
-
   @Column(name = "version_no", nullable = false)
   private int versionNo;
-
-  @Column(name = "source_version_id")
-  private UUID sourceVersionId;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 32)
@@ -56,12 +50,6 @@ public class InspectionReportVersion {
   @Column(name = "rendered_checksum_sha256", length = 64)
   private String renderedChecksumSha256;
 
-  @Column(name = "withdrawn_at")
-  private Instant withdrawnAt;
-
-  @Column(name = "withdrawal_reason", length = 2000)
-  private String withdrawalReason;
-
   @Column(name = "published_at")
   private Instant publishedAt;
 
@@ -73,21 +61,9 @@ public class InspectionReportVersion {
 
   protected InspectionReportVersion() {}
 
-  public InspectionReportVersion(
-      UUID inspectionId, int versionNo, UUID sourceVersionId, String contentSnapshot) {
-    this(inspectionId, null, versionNo, sourceVersionId, contentSnapshot);
-  }
-
-  public InspectionReportVersion(
-      UUID inspectionId,
-      UUID authorUserId,
-      int versionNo,
-      UUID sourceVersionId,
-      String contentSnapshot) {
+  public InspectionReportVersion(UUID inspectionId, int versionNo, String contentSnapshot) {
     this.inspectionId = inspectionId;
-    this.authorUserId = authorUserId;
     this.versionNo = versionNo;
-    this.sourceVersionId = sourceVersionId;
     this.contentSnapshot = contentSnapshot;
     this.status = ReportStatus.DRAFT;
     this.createdAt = Instant.now();
@@ -151,33 +127,17 @@ public class InspectionReportVersion {
     status = approve ? ReportStatus.APPROVED : ReportStatus.RETURNED;
   }
 
-  public void withdraw(UUID authorId, String reason, UUID reportAuthorUserId) {
+  public void withdraw(UUID actorId, UUID reportAuthorUserId) {
     requireStatus(ReportStatus.SUBMITTED);
-    if (authorId == null || !authorId.equals(reportAuthorUserId)) {
+    if (actorId == null || !actorId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Only the report author can withdraw this submission");
     }
     if (reviewedAt != null || reviewerUserId != null) {
       throw new IllegalStateException(
           "A version the reviewer already acted on cannot be withdrawn");
     }
-    if (reason == null || reason.isBlank()) {
-      throw new IllegalArgumentException("A withdrawal reason is required");
-    }
-    status = ReportStatus.RETURNED;
-    withdrawnAt = Instant.now();
-    withdrawalReason = reason;
-  }
-
-  public boolean isAuthorWithdrawn() {
-    return withdrawnAt != null;
-  }
-
-  public Instant getWithdrawnAt() {
-    return withdrawnAt;
-  }
-
-  public String getWithdrawalReason() {
-    return withdrawalReason;
+    status = ReportStatus.DRAFT;
+    submittedAt = null;
   }
 
   /** Publication is a separate act after approval; the result is immutable. */
@@ -224,16 +184,8 @@ public class InspectionReportVersion {
     return inspectionId;
   }
 
-  public UUID getAuthorUserId() {
-    return authorUserId;
-  }
-
   public int getVersionNo() {
     return versionNo;
-  }
-
-  public UUID getSourceVersionId() {
-    return sourceVersionId;
   }
 
   public ReportStatus getStatus() {

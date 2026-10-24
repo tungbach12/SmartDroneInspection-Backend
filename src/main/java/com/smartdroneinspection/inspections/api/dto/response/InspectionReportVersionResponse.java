@@ -15,8 +15,6 @@ public record InspectionReportVersionResponse(
     UUID reviewerUserId,
     Instant reviewedAt,
     String returnReason,
-    Instant withdrawnAt,
-    String withdrawalReason,
     Instant publishedAt,
     Instant createdAt,
     String omissionDisclosure,

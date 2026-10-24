@@ -341,9 +341,8 @@ CREATE TABLE event_publication (
 
 CREATE TABLE evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    inspection_id uuid,
-    maintenance_work_log_id uuid,
-    evidence_kind character varying(32) NOT NULL,
+    inspection_id uuid NOT NULL,
+    field_session_id uuid,
     file_name character varying(500) NOT NULL,
     content_type character varying(160) NOT NULL,
     size_bytes bigint NOT NULL,
@@ -351,24 +350,15 @@ CREATE TABLE evidence (
     capture_time timestamp with time zone,
     latitude numeric(9,6),
     longitude numeric(9,6),
-    upload_status character varying(24) NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    organization_id uuid,
-    field_session_id uuid,
-    maintenance_work_order_id uuid,
-    maintenance_task_id uuid,
-    retired_at timestamp with time zone,
     location_description character varying(1000),
+    is_deleted boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_evidence_content_type CHECK ((btrim((content_type)::text) <> ''::text)),
     CONSTRAINT ck_evidence_file_name CHECK ((btrim((file_name)::text) <> ''::text)),
-    CONSTRAINT ck_evidence_kind CHECK (((evidence_kind)::text = ANY ((ARRAY['INSPECTION'::character varying, 'BEFORE_MAINTENANCE'::character varying, 'AFTER_MAINTENANCE'::character varying, 'OTHER'::character varying])::text[]))),
     CONSTRAINT ck_evidence_latitude CHECK (((latitude IS NULL) OR ((latitude >= ('-90'::integer)::numeric) AND (latitude <= (90)::numeric)))),
     CONSTRAINT ck_evidence_longitude CHECK (((longitude IS NULL) OR ((longitude >= ('-180'::integer)::numeric) AND (longitude <= (180)::numeric)))),
-    CONSTRAINT ck_evidence_maintenance_pair CHECK ((((evidence_kind)::text <> ALL ((ARRAY['BEFORE_MAINTENANCE'::character varying, 'AFTER_MAINTENANCE'::character varying])::text[])) OR (maintenance_work_log_id IS NOT NULL))),
     CONSTRAINT ck_evidence_object_key CHECK ((btrim((object_key)::text) <> ''::text)),
-    CONSTRAINT ck_evidence_size CHECK ((size_bytes > 0)),
-    CONSTRAINT ck_evidence_target_parent CHECK (((inspection_id IS NOT NULL) OR (field_session_id IS NOT NULL) OR (maintenance_work_order_id IS NOT NULL) OR (maintenance_task_id IS NOT NULL))),
-    CONSTRAINT ck_evidence_upload_status CHECK (((upload_status)::text = ANY ((ARRAY['UPLOADING'::character varying, 'AVAILABLE'::character varying, 'FAILED'::character varying, 'QUARANTINED'::character varying])::text[])))
+    CONSTRAINT ck_evidence_size CHECK ((size_bytes > 0))
 );
 
 
@@ -416,17 +406,12 @@ CREATE TABLE findings (
     technical_notes character varying(4000) NOT NULL,
     recommended_action character varying(4000),
     status character varying(24) NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    deleted_at timestamp with time zone,
-    inspector_confirmed_at timestamp with time zone,
     model_name character varying(160),
-    model_version character varying(80),
-    model_provider character varying(96),
     confidence numeric(6,5),
     forwarded_to_maintenance_at timestamp with time zone,
+    is_deleted boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_findings_confidence CHECK (((confidence IS NULL) OR ((confidence >= (0)::numeric) AND (confidence <= (1)::numeric)))),
-    CONSTRAINT ck_findings_confirmation CHECK (((((status)::text = 'CONFIRMED'::text) AND (inspector_confirmed_at IS NOT NULL)) OR (((status)::text = 'PENDING'::text) AND (inspector_confirmed_at IS NULL)))),
     CONSTRAINT ck_findings_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'CONFIRMED'::character varying])::text[]))),
     CONSTRAINT ck_verified_finding_severity CHECK (((severity)::text = ANY ((ARRAY['LOW'::character varying, 'MEDIUM'::character varying, 'HIGH'::character varying, 'CRITICAL'::character varying])::text[])))
 );
@@ -520,21 +505,17 @@ CREATE TABLE inspection_readiness_decisions (
 CREATE TABLE inspection_reports (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
-    author_user_id uuid NOT NULL,
     version_no integer NOT NULL,
-    source_version_id uuid,
     status character varying(32) NOT NULL,
+    content_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    submitted_at timestamp with time zone,
     reviewer_user_id uuid,
     reviewed_at timestamp with time zone,
     return_reason character varying(2000),
-    content_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
     rendered_object_key character varying(1000),
     rendered_checksum_sha256 character(64),
     published_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    withdrawn_at timestamp with time zone,
-    withdrawal_reason character varying(2000),
-    submitted_at timestamp with time zone,
     CONSTRAINT ck_inspection_reports_number CHECK ((version_no > 0)),
     CONSTRAINT ck_inspection_reports_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUTHOR_VERIFIED'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'APPROVED'::character varying, 'PUBLISHED'::character varying, 'SUPERSEDED'::character varying])::text[])))
 );
@@ -1501,14 +1482,7 @@ CREATE INDEX ix_drones_organization_status ON drones USING btree (organization_i
 -- Name: ix_evidence_inspection_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_evidence_inspection_time ON evidence USING btree (inspection_id, created_at DESC) WHERE (inspection_id IS NOT NULL);
-
-
---
--- Name: ix_evidence_work_log_time; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_evidence_work_log_time ON evidence USING btree (maintenance_work_log_id, created_at DESC) WHERE (maintenance_work_log_id IS NOT NULL);
+CREATE INDEX ix_evidence_inspection_time ON evidence USING btree (inspection_id, created_at DESC);
 
 
 --
@@ -1553,11 +1527,7 @@ CREATE INDEX ix_inspection_preparations_inspection_status ON inspection_preparat
 CREATE INDEX ix_inspection_reports_inspection_status ON inspection_reports USING btree (inspection_id, status, version_no DESC);
 
 
---
--- Name: ix_inspection_reports_author_status; Type: INDEX; Schema: public; Owner: -
---
 
-CREATE INDEX ix_inspection_reports_author_status ON inspection_reports USING btree (author_user_id, status, created_at DESC);
 
 
 --
@@ -1978,12 +1948,7 @@ ALTER TABLE ONLY evidence
     ADD CONSTRAINT evidence_field_session_id_fkey FOREIGN KEY (field_session_id) REFERENCES field_sessions(id) ON DELETE RESTRICT;
 
 
---
--- Name: evidence evidence_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
-ALTER TABLE ONLY evidence
-    ADD CONSTRAINT evidence_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --
@@ -2074,28 +2039,7 @@ ALTER TABLE ONLY evidence
     ADD CONSTRAINT fk_evidence_inspection FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
 
 
---
--- Name: evidence fk_evidence_target_task; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
-ALTER TABLE ONLY evidence
-    ADD CONSTRAINT fk_evidence_target_task FOREIGN KEY (maintenance_task_id) REFERENCES maintenance_tasks(id) ON DELETE RESTRICT;
-
-
---
--- Name: evidence fk_evidence_target_work_order; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY evidence
-    ADD CONSTRAINT fk_evidence_target_work_order FOREIGN KEY (maintenance_work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
-
-
---
--- Name: evidence fk_evidence_work_log; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY evidence
-    ADD CONSTRAINT fk_evidence_work_log FOREIGN KEY (maintenance_work_log_id) REFERENCES maintenance_work_logs(id) ON DELETE RESTRICT;
 
 
 --
@@ -2258,20 +2202,7 @@ ALTER TABLE ONLY inspection_reports
     ADD CONSTRAINT inspection_reports_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
---
--- Name: inspection_reports inspection_reports_source_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
-ALTER TABLE ONLY inspection_reports
-    ADD CONSTRAINT inspection_reports_source_version_id_fkey FOREIGN KEY (source_version_id) REFERENCES inspection_reports(id) ON DELETE RESTRICT;
-
-
---
--- Name: inspection_reports inspection_reports_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_reports
-    ADD CONSTRAINT inspection_reports_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --

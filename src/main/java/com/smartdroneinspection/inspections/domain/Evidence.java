@@ -1,11 +1,7 @@
 package com.smartdroneinspection.inspections.domain;
 
-import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
-import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -23,28 +19,11 @@ public class Evidence {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
-
-  @Column(name = "inspection_id")
+  @Column(name = "inspection_id", nullable = false)
   private UUID inspectionId;
 
   @Column(name = "field_session_id")
   private UUID fieldSessionId;
-
-  @Column(name = "maintenance_work_order_id")
-  private UUID maintenanceWorkOrderId;
-
-  @Column(name = "maintenance_task_id")
-  private UUID maintenanceTaskId;
-
-  /** Legacy MF4 work-log link retained by the shared evidence schema. */
-  @Column(name = "maintenance_work_log_id", insertable = false, updatable = false)
-  private UUID maintenanceWorkLogId;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "evidence_kind", nullable = false, length = 32)
-  private EvidenceKind evidenceKind;
 
   @Column(name = "file_name", nullable = false, length = 500)
   private String fileName;
@@ -67,15 +46,11 @@ public class Evidence {
   @Column(precision = 9, scale = 6)
   private BigDecimal longitude;
 
-  @Enumerated(EnumType.STRING)
-  @Column(name = "upload_status", nullable = false, length = 24)
-  private UploadStatus uploadStatus;
-
-  @Column(name = "retired_at")
-  private Instant retiredAt;
-
   @Column(name = "location_description", length = 1000)
   private String locationDescription;
+
+  @Column(name = "is_deleted", nullable = false)
+  private boolean isDeleted;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -83,21 +58,19 @@ public class Evidence {
   protected Evidence() {}
 
   public Evidence(
-      UUID organizationId,
       UUID inspectionId,
       UUID fieldSessionId,
-      EvidenceKind evidenceKind,
       String fileName,
       String contentType,
       long sizeBytes,
       String objectKey,
       Instant captureTime,
       BigDecimal latitude,
-      BigDecimal longitude) {
-    this.organizationId = organizationId;
+      BigDecimal longitude,
+      String locationDescription,
+      Instant createdAt) {
     this.inspectionId = inspectionId;
     this.fieldSessionId = fieldSessionId;
-    this.evidenceKind = evidenceKind;
     this.fileName = fileName;
     this.contentType = contentType;
     this.sizeBytes = sizeBytes;
@@ -105,28 +78,29 @@ public class Evidence {
     this.captureTime = captureTime;
     this.latitude = latitude;
     this.longitude = longitude;
-    this.uploadStatus = UploadStatus.AVAILABLE;
-    this.createdAt = Instant.now();
+    this.locationDescription = locationDescription;
+    this.isDeleted = false;
+    this.createdAt = createdAt != null ? createdAt : Instant.now();
   }
 
   public boolean isImage() {
     return contentType != null && contentType.startsWith("image/");
   }
 
-  /** Retiring keeps the original bytes while removing it from the active evidence set. */
+  /** Retiring keeps the original bytes while marking it deleted from the active set. */
   public void retire() {
-    if (retiredAt != null) {
+    if (this.isDeleted) {
       throw new IllegalStateException("This capture is already retired");
     }
-    this.retiredAt = Instant.now();
+    this.isDeleted = true;
+  }
+
+  public boolean isDeleted() {
+    return isDeleted;
   }
 
   public boolean isRetired() {
-    return retiredAt != null;
-  }
-
-  public Instant getRetiredAt() {
-    return retiredAt;
+    return isDeleted;
   }
 
   public String getLocationDescription() {
@@ -144,20 +118,12 @@ public class Evidence {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
-  }
-
   public UUID getInspectionId() {
     return inspectionId;
   }
 
   public UUID getFieldSessionId() {
     return fieldSessionId;
-  }
-
-  public EvidenceKind getEvidenceKind() {
-    return evidenceKind;
   }
 
   public String getFileName() {
@@ -186,10 +152,6 @@ public class Evidence {
 
   public BigDecimal getLongitude() {
     return longitude;
-  }
-
-  public UploadStatus getUploadStatus() {
-    return uploadStatus;
   }
 
   public Instant getCreatedAt() {
