@@ -93,8 +93,6 @@ class RuntimePersistenceInventoryTest {
           "findings",
           "inspection_reports",
           "inspection_report_versions",
-          "report_version_evidence",
-          "report_version_findings",
           "maintenance_work_orders",
           "maintenance_tasks",
           "maintenance_team_members",
@@ -139,7 +137,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(41);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

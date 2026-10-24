@@ -195,8 +195,6 @@ class V25TargetSchemaFoundationTest {
                     "submitted_at",
                     "return_reason",
                     "content_snapshot")),
-            Map.entry("report_version_evidence", Set.of("report_version_id", "evidence_id")),
-            Map.entry("report_version_findings", Set.of("report_version_id", "finding_id")),
             Map.entry(
                 "maintenance_work_orders",
                 Set.of(
@@ -273,7 +271,7 @@ class V25TargetSchemaFoundationTest {
                     "aggregate_id",
                     "created_at")));
 
-    assertThat(targetColumns).hasSize(39);
+    assertThat(targetColumns).hasSize(37);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate

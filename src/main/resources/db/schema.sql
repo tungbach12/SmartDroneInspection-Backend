@@ -909,30 +909,6 @@ CREATE TABLE refresh_tokens (
 
 
 --
--- Name: report_version_evidence; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE report_version_evidence (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    report_version_id uuid NOT NULL,
-    evidence_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-
-
---
--- Name: report_version_findings; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE report_version_findings (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    report_version_id uuid NOT NULL,
-    finding_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-
-
---
 -- Name: subscriptions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1319,22 +1295,6 @@ ALTER TABLE ONLY refresh_tokens
 
 
 --
--- Name: report_version_evidence report_version_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_evidence
-    ADD CONSTRAINT report_version_evidence_pkey PRIMARY KEY (id);
-
-
---
--- Name: report_version_findings report_version_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_findings
-    ADD CONSTRAINT report_version_findings_pkey PRIMARY KEY (id);
-
-
---
 -- Name: subscriptions subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1498,22 +1458,6 @@ ALTER TABLE ONLY maintenance_tasks
 
 ALTER TABLE ONLY refresh_tokens
     ADD CONSTRAINT uq_refresh_tokens_hash UNIQUE (token_hash);
-
-
---
--- Name: report_version_evidence uq_report_version_evidence; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_evidence
-    ADD CONSTRAINT uq_report_version_evidence UNIQUE (report_version_id, evidence_id);
-
-
---
--- Name: report_version_findings uq_report_version_findings; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_findings
-    ADD CONSTRAINT uq_report_version_findings UNIQUE (report_version_id, finding_id);
 
 
 --
@@ -1849,20 +1793,6 @@ CREATE INDEX ix_readiness_decisions_inspection_time ON inspection_readiness_deci
 --
 
 CREATE INDEX ix_refresh_tokens_session ON refresh_tokens USING btree (session_id);
-
-
---
--- Name: ix_report_version_evidence_evidence; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_report_version_evidence_evidence ON report_version_evidence USING btree (evidence_id);
-
-
---
--- Name: ix_report_version_findings_finding; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_report_version_findings_finding ON report_version_findings USING btree (finding_id);
 
 
 --
@@ -2868,38 +2798,6 @@ ALTER TABLE ONLY organizations
 
 ALTER TABLE ONLY refresh_tokens
     ADD CONSTRAINT refresh_tokens_session_id_fkey FOREIGN KEY (session_id) REFERENCES auth_sessions(id) ON DELETE CASCADE;
-
-
---
--- Name: report_version_evidence report_version_evidence_evidence_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_evidence
-    ADD CONSTRAINT report_version_evidence_evidence_id_fkey FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
-
-
---
--- Name: report_version_evidence report_version_evidence_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_evidence
-    ADD CONSTRAINT report_version_evidence_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
-
-
---
--- Name: report_version_findings report_version_findings_finding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_findings
-    ADD CONSTRAINT report_version_findings_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE RESTRICT;
-
-
---
--- Name: report_version_findings report_version_findings_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY report_version_findings
-    ADD CONSTRAINT report_version_findings_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
 
 
 --
