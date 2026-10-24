@@ -320,22 +320,15 @@ class SubscriptionApiIntegrationTest {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO users (id, email, normalized_email, full_name, password_hash, status, actor_zone, organization_id, auth_version, failed_login_count, must_change_password)
-        VALUES (?, ?, ?, ?, '$argon2id$v=19$m=65536,t=3,p=1$fakeHashForTests$hash', 'ACTIVE', ?, ?, 1, 0, false)
+        INSERT INTO users (id, email, normalized_email, full_name, password_hash, status, actor_zone, organization_id, auth_version, failed_login_count, must_change_password, roles)
+        VALUES (?, ?, ?, ?, '$argon2id$v=19$m=65536,t=3,p=1$fakeHashForTests$hash', 'ACTIVE', ?, ?, 1, 0, false, ?)
         """,
         id,
         email,
         email.toLowerCase().trim(),
         fullName,
         organizationId == null ? "PLATFORM" : "CUSTOMER_ORGANIZATION",
-        organizationId);
-
-    jdbcTemplate.update(
-        """
-        INSERT INTO user_roles (user_id, role)
-        VALUES (?, ?)
-        """,
-        id,
+        organizationId,
         role);
 
     return id;

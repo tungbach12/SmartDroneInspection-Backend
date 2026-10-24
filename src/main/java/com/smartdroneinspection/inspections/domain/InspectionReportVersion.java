@@ -15,13 +15,16 @@ import org.hibernate.type.SqlTypes;
 
 /** One immutable-at-publication version of an inspection report. */
 @Entity
-@Table(name = "inspection_report_versions")
+@Table(name = "inspection_reports")
 public class InspectionReportVersion {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "inspection_report_id", nullable = false)
-  private UUID inspectionReportId;
+  @Column(name = "inspection_id", nullable = false)
+  private UUID inspectionId;
+
+  @Column(name = "author_user_id", nullable = false)
+  private UUID authorUserId;
 
   @Column(name = "version_no", nullable = false)
   private int versionNo;
@@ -71,8 +74,18 @@ public class InspectionReportVersion {
   protected InspectionReportVersion() {}
 
   public InspectionReportVersion(
-      UUID inspectionReportId, int versionNo, UUID sourceVersionId, String contentSnapshot) {
-    this.inspectionReportId = inspectionReportId;
+      UUID inspectionId, int versionNo, UUID sourceVersionId, String contentSnapshot) {
+    this(inspectionId, null, versionNo, sourceVersionId, contentSnapshot);
+  }
+
+  public InspectionReportVersion(
+      UUID inspectionId,
+      UUID authorUserId,
+      int versionNo,
+      UUID sourceVersionId,
+      String contentSnapshot) {
+    this.inspectionId = inspectionId;
+    this.authorUserId = authorUserId;
     this.versionNo = versionNo;
     this.sourceVersionId = sourceVersionId;
     this.contentSnapshot = contentSnapshot;
@@ -203,8 +216,16 @@ public class InspectionReportVersion {
     return id;
   }
 
+  public UUID getInspectionId() {
+    return inspectionId;
+  }
+
   public UUID getInspectionReportId() {
-    return inspectionReportId;
+    return inspectionId;
+  }
+
+  public UUID getAuthorUserId() {
+    return authorUserId;
   }
 
   public int getVersionNo() {

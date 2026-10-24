@@ -19,7 +19,6 @@ import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
@@ -69,7 +68,6 @@ class InspectionReportApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionReportRepository reports;
   @Autowired InspectionReportVersionRepository reportVersions;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
@@ -1059,8 +1057,7 @@ class InspectionReportApiIntegrationTest {
     assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId())).isPresent();
     assertThat(
             reportVersions
-                .findByInspectionReportIdAndVersionNo(
-                    reports.findByInspectionId(fixture.inspectionId()).orElseThrow().getId(), 1)
+                .findByInspectionIdAndVersionNo(fixture.inspectionId(), 1)
                 .orElseThrow()
                 .getStatus())
         .isEqualTo(ReportStatus.RETURNED);

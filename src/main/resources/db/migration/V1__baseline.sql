@@ -183,6 +183,9 @@ CREATE TABLE auth_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     user_id uuid NOT NULL,
     client_type character varying(16) NOT NULL,
+    token_hash character varying(64),
+    previous_token_hash character varying(64),
+    issued_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
     revoked_reason character varying(128),
@@ -511,12 +514,13 @@ CREATE TABLE inspection_readiness_decisions (
 
 
 --
--- Name: inspection_report_versions; Type: TABLE; Schema: public; Owner: -
+-- Name: inspection_reports; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE inspection_report_versions (
+CREATE TABLE inspection_reports (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    inspection_report_id uuid NOT NULL,
+    inspection_id uuid NOT NULL,
+    author_user_id uuid NOT NULL,
     version_no integer NOT NULL,
     source_version_id uuid,
     status character varying(32) NOT NULL,
@@ -531,26 +535,8 @@ CREATE TABLE inspection_report_versions (
     withdrawn_at timestamp with time zone,
     withdrawal_reason character varying(2000),
     submitted_at timestamp with time zone,
-    CONSTRAINT ck_inspection_report_versions_number CHECK ((version_no > 0)),
-    CONSTRAINT ck_inspection_report_versions_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUTHOR_VERIFIED'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'APPROVED'::character varying, 'PUBLISHED'::character varying, 'SUPERSEDED'::character varying])::text[])))
-);
-
-
---
--- Name: inspection_reports; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE inspection_reports (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    inspection_id uuid NOT NULL,
-    author_user_id uuid NOT NULL,
-    status character varying(32) NOT NULL,
-    current_version_number integer DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_inspection_reports_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUTHOR_VERIFIED'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'APPROVED'::character varying, 'PUBLISHED'::character varying, 'SUPERSEDED'::character varying])::text[]))),
-    CONSTRAINT ck_inspection_reports_version CHECK ((current_version_number >= 0))
+    CONSTRAINT ck_inspection_reports_number CHECK ((version_no > 0)),
+    CONSTRAINT ck_inspection_reports_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUTHOR_VERIFIED'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'APPROVED'::character varying, 'PUBLISHED'::character varying, 'SUPERSEDED'::character varying])::text[])))
 );
 
 
@@ -558,28 +544,7 @@ CREATE TABLE inspection_reports (
 -- Name: TABLE inspection_reports; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE inspection_reports IS 'MF3 report aggregate. The human gates live on inspection_report_versions; see Report 3 sections 3.7.1 and 3.7.3.';
-
-
---
--- Name: inspection_schedules; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE inspection_schedules (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    asset_id uuid NOT NULL,
-    next_due_at timestamp with time zone NOT NULL,
-    status character varying(24) NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    cadence_unit character varying(16) NOT NULL,
-    cadence_interval integer NOT NULL,
-    scope_defaults jsonb,
-    CONSTRAINT ck_inspection_schedules_cadence_interval CHECK ((cadence_interval > 0)),
-    CONSTRAINT ck_inspection_schedules_cadence_unit CHECK (((cadence_unit)::text = ANY ((ARRAY['DAY'::character varying, 'WEEK'::character varying, 'MONTH'::character varying, 'YEAR'::character varying])::text[]))),
-    CONSTRAINT ck_inspection_schedules_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'PAUSED'::character varying, 'DISABLED'::character varying])::text[])))
-);
+COMMENT ON TABLE inspection_reports IS 'MF3 versioned inspection reports and human review gates; see Report 3 sections 3.7.1 and 3.7.3.';
 
 
 --
@@ -712,10 +677,10 @@ CREATE TABLE maintenance_estimate_versions (
 
 
 --
--- Name: maintenance_report_versions; Type: TABLE; Schema: public; Owner: -
+-- Name: maintenance_reports; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE maintenance_report_versions (
+CREATE TABLE maintenance_reports (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     version_no integer NOT NULL,
@@ -734,8 +699,8 @@ CREATE TABLE maintenance_report_versions (
     rendered_object_key character varying(1000),
     rendered_checksum_sha256 character(64),
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT ck_maintenance_report_versions_number CHECK ((version_no > 0)),
-    CONSTRAINT ck_maintenance_report_versions_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUTHOR_VERIFIED'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'APPROVED'::character varying, 'SUPERSEDED'::character varying])::text[])))
+    CONSTRAINT ck_maintenance_reports_number CHECK ((version_no > 0)),
+    CONSTRAINT ck_maintenance_reports_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUTHOR_VERIFIED'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'APPROVED'::character varying, 'SUPERSEDED'::character varying])::text[])))
 );
 
 
@@ -893,22 +858,6 @@ CREATE TABLE organizations (
 
 
 --
--- Name: refresh_tokens; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE refresh_tokens (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    session_id uuid NOT NULL,
-    token_hash character varying(64) NOT NULL,
-    issued_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    revoked_at timestamp with time zone,
-    revoke_reason character varying(128),
-    CONSTRAINT ck_refresh_tokens_expiry CHECK ((expires_at > issued_at))
-);
-
-
---
 -- Name: subscriptions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -956,25 +905,6 @@ CREATE TABLE payment_transactions (
 
 
 --
--- Name: user_roles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE user_roles (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
-    role character varying(64) NOT NULL,
-    CONSTRAINT ck_user_roles_role CHECK (((role)::text = ANY ((ARRAY['ADMIN'::character varying, 'ORG_ADMIN'::character varying, 'INSPECTOR'::character varying, 'MAINTENANCE_ENGINEER'::character varying])::text[])))
-);
-
-
---
--- Name: CONSTRAINT ck_user_roles_role ON user_roles; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_user_roles_role ON user_roles IS 'Target role vocabulary: ADMIN, ORG_ADMIN, INSPECTOR, MAINTENANCE_ENGINEER.';
-
-
---
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -998,8 +928,10 @@ CREATE TABLE users (
     vision_fallback_enabled boolean DEFAULT true NOT NULL,
     phone_number character varying(32),
     avatar_url character varying(500),
+    roles character varying(255) DEFAULT ''::character varying NOT NULL,
     CONSTRAINT ck_users_actor_zone CHECK (((actor_zone)::text = ANY ((ARRAY['PLATFORM'::character varying, 'CUSTOMER_ORGANIZATION'::character varying])::text[]))),
     CONSTRAINT ck_users_failed_login_count CHECK ((failed_login_count >= 0)),
+    CONSTRAINT ck_users_roles CHECK ((((roles)::text = ''::text) OR ((roles)::text ~ '^(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER)(,(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER))*$'::text))),
     CONSTRAINT ck_users_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'SUSPENDED'::character varying, 'DISABLED'::character varying])::text[]))),
     CONSTRAINT ck_users_zone_organization CHECK (((((actor_zone)::text = 'CUSTOMER_ORGANIZATION'::text) AND (organization_id IS NOT NULL)) OR (((actor_zone)::text <> 'CUSTOMER_ORGANIZATION'::text) AND (organization_id IS NULL))))
 );
@@ -1167,27 +1099,11 @@ ALTER TABLE ONLY inspection_readiness_decisions
 
 
 --
--- Name: inspection_report_versions inspection_report_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_pkey PRIMARY KEY (id);
-
-
---
 -- Name: inspection_reports inspection_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY inspection_reports
     ADD CONSTRAINT inspection_reports_pkey PRIMARY KEY (id);
-
-
---
--- Name: inspection_schedules inspection_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_schedules
-    ADD CONSTRAINT inspection_schedules_pkey PRIMARY KEY (id);
 
 
 --
@@ -1231,11 +1147,11 @@ ALTER TABLE ONLY maintenance_estimate_versions
 
 
 --
--- Name: maintenance_report_versions maintenance_report_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: maintenance_reports maintenance_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY maintenance_report_versions
-    ADD CONSTRAINT maintenance_report_versions_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY maintenance_reports
+    ADD CONSTRAINT maintenance_reports_pkey PRIMARY KEY (id);
 
 
 --
@@ -1284,14 +1200,6 @@ ALTER TABLE ONLY notifications
 
 ALTER TABLE ONLY organizations
     ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
-
-
---
--- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY refresh_tokens
-    ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
 
 
 --
@@ -1405,19 +1313,11 @@ ALTER TABLE ONLY inspection_preparations
 
 
 --
--- Name: inspection_report_versions uq_inspection_report_versions_number; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_report_versions
-    ADD CONSTRAINT uq_inspection_report_versions_number UNIQUE (inspection_report_id, version_no);
-
-
---
--- Name: inspection_reports uq_inspection_reports_inspection; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: inspection_reports uq_inspection_reports_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY inspection_reports
-    ADD CONSTRAINT uq_inspection_reports_inspection UNIQUE (inspection_id);
+    ADD CONSTRAINT uq_inspection_reports_number UNIQUE (inspection_id, version_no);
 
 
 --
@@ -1437,11 +1337,11 @@ ALTER TABLE ONLY maintenance_estimate_versions
 
 
 --
--- Name: maintenance_report_versions uq_maintenance_report_versions_number; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: maintenance_reports uq_maintenance_reports_number; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY maintenance_report_versions
-    ADD CONSTRAINT uq_maintenance_report_versions_number UNIQUE (work_order_id, version_no);
+ALTER TABLE ONLY maintenance_reports
+    ADD CONSTRAINT uq_maintenance_reports_number UNIQUE (work_order_id, version_no);
 
 
 --
@@ -1453,19 +1353,11 @@ ALTER TABLE ONLY maintenance_tasks
 
 
 --
--- Name: refresh_tokens uq_refresh_tokens_hash; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: auth_sessions uq_auth_sessions_token_hash; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY refresh_tokens
-    ADD CONSTRAINT uq_refresh_tokens_hash UNIQUE (token_hash);
-
-
---
--- Name: user_roles uq_user_roles; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY user_roles
-    ADD CONSTRAINT uq_user_roles UNIQUE (user_id, role);
+ALTER TABLE ONLY auth_sessions
+    ADD CONSTRAINT uq_auth_sessions_token_hash UNIQUE (token_hash);
 
 
 --
@@ -1474,14 +1366,6 @@ ALTER TABLE ONLY user_roles
 
 ALTER TABLE ONLY users
     ADD CONSTRAINT uq_users_normalized_email UNIQUE (normalized_email);
-
-
---
--- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY user_roles
-    ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
 
 
 --
@@ -1663,31 +1547,17 @@ CREATE INDEX ix_inspection_preparations_inspection_status ON inspection_preparat
 
 
 --
--- Name: ix_inspection_report_versions_report_status; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_inspection_reports_inspection_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_report_versions_report_status ON inspection_report_versions USING btree (inspection_report_id, status, version_no DESC);
+CREATE INDEX ix_inspection_reports_inspection_status ON inspection_reports USING btree (inspection_id, status, version_no DESC);
 
 
 --
 -- Name: ix_inspection_reports_author_status; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_inspection_reports_author_status ON inspection_reports USING btree (author_user_id, status, updated_at DESC);
-
-
---
--- Name: ix_inspection_schedules_asset; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_inspection_schedules_asset ON inspection_schedules USING btree (asset_id);
-
-
---
--- Name: ix_inspection_schedules_due; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_inspection_schedules_due ON inspection_schedules USING btree (status, next_due_at);
+CREATE INDEX ix_inspection_reports_author_status ON inspection_reports USING btree (author_user_id, status, created_at DESC);
 
 
 --
@@ -1726,10 +1596,10 @@ CREATE INDEX ix_maintenance_estimate_versions_status ON maintenance_estimate_ver
 
 
 --
--- Name: ix_maintenance_report_versions_work_order; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_maintenance_reports_work_order; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_maintenance_report_versions_work_order ON maintenance_report_versions USING btree (work_order_id, version_no DESC);
+CREATE INDEX ix_maintenance_reports_work_order ON maintenance_reports USING btree (work_order_id, version_no DESC);
 
 
 --
@@ -1789,31 +1659,10 @@ CREATE INDEX ix_readiness_decisions_inspection_time ON inspection_readiness_deci
 
 
 --
--- Name: ix_refresh_tokens_session; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_refresh_tokens_session ON refresh_tokens USING btree (session_id);
-
-
---
 -- Name: ix_subscriptions_organization_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_subscriptions_organization_status ON subscriptions USING btree (organization_id, status);
-
-
---
--- Name: ix_user_roles_role; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_user_roles_role ON user_roles USING btree (role);
-
-
---
--- Name: ix_user_roles_user; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_user_roles_user ON user_roles USING btree (user_id);
 
 
 --
@@ -1870,13 +1719,6 @@ CREATE UNIQUE INDEX uq_assets_organization_asset_code ON assets USING btree (org
 --
 
 CREATE UNIQUE INDEX uq_drones_id_organization ON drones USING btree (id, organization_id);
-
-
---
--- Name: uq_inspection_schedules_id_asset; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_inspection_schedules_id_asset ON inspection_schedules USING btree (id, asset_id);
 
 
 --
@@ -2305,14 +2147,6 @@ ALTER TABLE ONLY inspections
 
 
 --
--- Name: inspections fk_inspections_schedule_asset; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspections
-    ADD CONSTRAINT fk_inspections_schedule_asset FOREIGN KEY (schedule_id, asset_id) REFERENCES inspection_schedules(id, asset_id) ON DELETE RESTRICT;
-
-
---
 -- Name: maintenance_work_logs fk_maintenance_work_logs_target_task; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2417,27 +2251,19 @@ ALTER TABLE ONLY inspection_readiness_decisions
 
 
 --
--- Name: inspection_report_versions inspection_report_versions_inspection_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: inspection_reports inspection_reports_reviewer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_inspection_report_id_fkey FOREIGN KEY (inspection_report_id) REFERENCES inspection_reports(id) ON DELETE RESTRICT;
-
-
---
--- Name: inspection_report_versions inspection_report_versions_reviewer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_reports
+    ADD CONSTRAINT inspection_reports_reviewer_user_id_fkey FOREIGN KEY (reviewer_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
--- Name: inspection_report_versions inspection_report_versions_source_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: inspection_reports inspection_reports_source_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY inspection_report_versions
-    ADD CONSTRAINT inspection_report_versions_source_version_id_fkey FOREIGN KEY (source_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY inspection_reports
+    ADD CONSTRAINT inspection_reports_source_version_id_fkey FOREIGN KEY (source_version_id) REFERENCES inspection_reports(id) ON DELETE RESTRICT;
 
 
 --
@@ -2454,14 +2280,6 @@ ALTER TABLE ONLY inspection_reports
 
 ALTER TABLE ONLY inspection_reports
     ADD CONSTRAINT inspection_reports_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
-
-
---
--- Name: inspection_schedules inspection_schedules_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_schedules
-    ADD CONSTRAINT inspection_schedules_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
 
 
 --
@@ -2505,19 +2323,11 @@ ALTER TABLE ONLY inspections
 
 
 --
--- Name: inspections inspections_schedule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspections
-    ADD CONSTRAINT inspections_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES inspection_schedules(id) ON DELETE RESTRICT;
-
-
---
 -- Name: maintenance_acceptance_decisions maintenance_acceptance_decisions_report_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY maintenance_acceptance_decisions
-    ADD CONSTRAINT maintenance_acceptance_decisions_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES maintenance_report_versions(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT maintenance_acceptance_decisions_report_version_id_fkey FOREIGN KEY (report_version_id) REFERENCES maintenance_reports(id) ON DELETE RESTRICT;
 
 
 --
@@ -2625,19 +2435,19 @@ ALTER TABLE ONLY maintenance_estimate_versions
 
 
 --
--- Name: maintenance_report_versions maintenance_report_versions_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: maintenance_reports maintenance_reports_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY maintenance_report_versions
-    ADD CONSTRAINT maintenance_report_versions_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_reports
+    ADD CONSTRAINT maintenance_reports_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
--- Name: maintenance_report_versions maintenance_report_versions_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: maintenance_reports maintenance_reports_work_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY maintenance_report_versions
-    ADD CONSTRAINT maintenance_report_versions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY maintenance_reports
+    ADD CONSTRAINT maintenance_reports_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
 
 
 --
@@ -2757,7 +2567,7 @@ ALTER TABLE ONLY maintenance_work_orders
 --
 
 ALTER TABLE ONLY maintenance_work_orders
-    ADD CONSTRAINT maintenance_work_orders_source_report_version_id_fkey FOREIGN KEY (source_report_version_id) REFERENCES inspection_report_versions(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT maintenance_work_orders_source_report_version_id_fkey FOREIGN KEY (source_report_version_id) REFERENCES inspection_reports(id) ON DELETE RESTRICT;
 
 
 --
@@ -2793,14 +2603,6 @@ ALTER TABLE ONLY organizations
 
 
 --
--- Name: refresh_tokens refresh_tokens_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY refresh_tokens
-    ADD CONSTRAINT refresh_tokens_session_id_fkey FOREIGN KEY (session_id) REFERENCES auth_sessions(id) ON DELETE CASCADE;
-
-
---
 -- Name: subscriptions subscriptions_confirmed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2820,14 +2622,6 @@ ALTER TABLE ONLY payment_transactions
 
 CREATE INDEX ix_payment_transactions_subscription ON payment_transactions USING btree (subscription_id);
 CREATE INDEX ix_payment_transactions_order ON payment_transactions USING btree (paypal_order_id);
-
-
---
--- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY user_roles
-    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 
 --

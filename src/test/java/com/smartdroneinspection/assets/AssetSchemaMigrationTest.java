@@ -21,8 +21,7 @@ class AssetSchemaMigrationTest {
           "checklist_templates",
           "checklist_items",
           "assets",
-          "asset_documents",
-          "inspection_schedules");
+          "asset_documents");
 
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -36,7 +35,7 @@ class AssetSchemaMigrationTest {
             WHERE table_schema = 'public'
               AND table_name IN (
                 'asset_categories', 'checklist_templates', 'checklist_items',
-                'assets', 'asset_documents', 'inspection_schedules'
+                'assets', 'asset_documents'
               )
             """,
             String.class);

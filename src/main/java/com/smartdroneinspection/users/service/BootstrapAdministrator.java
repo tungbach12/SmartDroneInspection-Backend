@@ -36,7 +36,7 @@ public class BootstrapAdministrator implements ApplicationRunner {
   @Override
   @Transactional
   public void run(ApplicationArguments args) {
-    if (users.existsByRoleAssignments_Role(UserRole.ADMIN)) {
+    if (users.existsByRoleName(UserRole.ADMIN.name())) {
       return;
     }
     var bootstrap = properties.getBootstrap();

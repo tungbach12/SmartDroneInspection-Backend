@@ -32,9 +32,7 @@ class FullDatabaseSchemaMigrationTest {
             "organizations",
             "subscriptions",
             "users",
-            "user_roles",
             "auth_sessions",
-            "refresh_tokens",
             "workforce_credentials",
             "drones",
             "drone_documents",
@@ -45,7 +43,6 @@ class FullDatabaseSchemaMigrationTest {
             "assets",
             "asset_documents",
             "asset_pair_assignments",
-            "inspection_schedules",
             "inspections",
             "inspection_preparations",
             "inspection_readiness_decisions",
@@ -54,7 +51,6 @@ class FullDatabaseSchemaMigrationTest {
             "evidence",
             "findings",
             "inspection_reports",
-            "inspection_report_versions",
             "maintenance_work_orders",
             "maintenance_tasks",
             "maintenance_team_members",
@@ -62,7 +58,7 @@ class FullDatabaseSchemaMigrationTest {
             "maintenance_cost_lines",
             "maintenance_change_orders",
             "maintenance_work_logs",
-            "maintenance_report_versions",
+            "maintenance_reports",
             "maintenance_acceptance_decisions",
             "audit_events",
             "notifications",
@@ -71,7 +67,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(41);
+    assertThat(expected).hasSize(37);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 

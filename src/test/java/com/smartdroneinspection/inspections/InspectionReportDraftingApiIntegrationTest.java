@@ -408,9 +408,7 @@ class InspectionReportDraftingApiIntegrationTest {
   private long countVersions() {
     Long count =
         jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM inspection_report_versions version "
-                + "JOIN inspection_reports report ON report.id = version.inspection_report_id "
-                + "WHERE report.inspection_id = ?",
+            "SELECT count(*) FROM inspection_reports WHERE inspection_id = ?",
             Long.class,
             fixture.inspectionId());
     return count == null ? 0 : count;

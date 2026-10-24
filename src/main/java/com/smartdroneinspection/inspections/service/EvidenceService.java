@@ -7,14 +7,14 @@ import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -62,7 +62,7 @@ public class EvidenceService {
 
   private final InspectionRepository inspections;
   private final EvidenceRepository evidence;
-  private final InspectionReportRepository reports;
+  private final InspectionReportVersionRepository reports;
   private final FindingRepository findings;
   private final FieldSessionRepository sessions;
   private final Optional<EvidenceObjectStore> objectStore;
@@ -71,7 +71,7 @@ public class EvidenceService {
   public EvidenceService(
       InspectionRepository inspections,
       EvidenceRepository evidence,
-      InspectionReportRepository reports,
+      InspectionReportVersionRepository reports,
       FindingRepository findings,
       FieldSessionRepository sessions,
       Optional<EvidenceObjectStore> objectStore,
@@ -346,11 +346,12 @@ public class EvidenceService {
           "INSPECTION_STATE_CONFLICT",
           "Evidence is immutable after publication");
     }
-    InspectionReport report = reports.findByInspectionId(inspectionId).orElse(null);
+    InspectionReportVersion report =
+        reports.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (report == null) return;
-    if (ReportStatus.SUBMITTED.name().equals(report.getStatus())
-        || ReportStatus.APPROVED.name().equals(report.getStatus())
-        || ReportStatus.PUBLISHED.name().equals(report.getStatus())) {
+    if (report.getStatus() == ReportStatus.SUBMITTED
+        || report.getStatus() == ReportStatus.APPROVED
+        || report.getStatus() == ReportStatus.PUBLISHED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "EVIDENCE_LOCKED",

@@ -22,7 +22,7 @@ import org.hibernate.type.SqlTypes;
  * financial total is ever taken from generated text.
  */
 @Entity
-@Table(name = "maintenance_report_versions")
+@Table(name = "maintenance_reports")
 public class MaintenanceReportVersion {
 
   @Id @GeneratedValue private UUID id;

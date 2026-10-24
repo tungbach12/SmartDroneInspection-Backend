@@ -43,11 +43,7 @@ class PersistenceEntityOwnershipTest {
         Arguments.of("users", "auth_sessions", "com.smartdroneinspection.users.domain.AuthSession"),
         Arguments.of(
             "users", "organizations", "com.smartdroneinspection.users.domain.Organization"),
-        Arguments.of(
-            "users", "refresh_tokens", "com.smartdroneinspection.users.domain.RefreshToken"),
         Arguments.of("users", "users", "com.smartdroneinspection.users.domain.User"),
-        Arguments.of(
-            "users", "user_roles", "com.smartdroneinspection.users.domain.UserRoleAssignment"),
         Arguments.of(
             "subscriptions",
             "subscriptions",
@@ -69,10 +65,6 @@ class PersistenceEntityOwnershipTest {
         Arguments.of(
             "inspections",
             "inspection_reports",
-            "com.smartdroneinspection.inspections.domain.InspectionReport"),
-        Arguments.of(
-            "inspections",
-            "inspection_report_versions",
             "com.smartdroneinspection.inspections.domain.InspectionReportVersion"),
         Arguments.of(
             "inspections",

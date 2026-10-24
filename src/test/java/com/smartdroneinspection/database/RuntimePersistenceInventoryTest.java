@@ -38,10 +38,8 @@ class RuntimePersistenceInventoryTest {
           "inspections",
           "notifications",
           "organizations",
-          "refresh_tokens",
           // MF1 entitlement, workforce credential, Drone/document and permit runtime entities.
           "subscriptions",
-          "user_roles",
           "users",
           // Workforce credential records serve MF1 management and MF2/MF4 readiness.
           "workforce_credentials",
@@ -50,7 +48,6 @@ class RuntimePersistenceInventoryTest {
           "evidence",
           "findings",
           "inspection_reports",
-          "inspection_report_versions",
           // MF4 slice: work order aggregate with its team, task, estimate and cost line,
           // then execution, change control, completion report and acceptance.
           "maintenance_work_orders",
@@ -60,7 +57,7 @@ class RuntimePersistenceInventoryTest {
           "maintenance_cost_lines",
           "maintenance_change_orders",
           "maintenance_work_logs",
-          "maintenance_report_versions",
+          "maintenance_reports",
           "maintenance_acceptance_decisions",
           "payment_transactions",
           "repair_knowledge_chunks");
@@ -70,9 +67,7 @@ class RuntimePersistenceInventoryTest {
           "organizations",
           "subscriptions",
           "users",
-          "user_roles",
           "auth_sessions",
-          "refresh_tokens",
           "workforce_credentials",
           "drones",
           "drone_documents",
@@ -83,7 +78,6 @@ class RuntimePersistenceInventoryTest {
           "assets",
           "asset_documents",
           "asset_pair_assignments",
-          "inspection_schedules",
           "inspections",
           "inspection_preparations",
           "inspection_readiness_decisions",
@@ -92,7 +86,6 @@ class RuntimePersistenceInventoryTest {
           "evidence",
           "findings",
           "inspection_reports",
-          "inspection_report_versions",
           "maintenance_work_orders",
           "maintenance_tasks",
           "maintenance_team_members",
@@ -100,7 +93,7 @@ class RuntimePersistenceInventoryTest {
           "maintenance_cost_lines",
           "maintenance_change_orders",
           "maintenance_work_logs",
-          "maintenance_report_versions",
+          "maintenance_reports",
           "maintenance_acceptance_decisions",
           "audit_events",
           "notifications",
@@ -137,7 +130,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(35);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))
