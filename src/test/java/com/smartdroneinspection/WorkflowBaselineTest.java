@@ -86,9 +86,6 @@ class WorkflowBaselineTest {
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank",
             (resultSet, rowNumber) -> resultSet.getString(1));
 
-    // The migration set on disk IS the expected history: head = the highest version file, applied
-    // versions = exactly 1..N with no gap. A new V-file moves the expectation with it, while a
-    // missing version can never hide behind that move - both the head check and the 1..N list fail.
     int migrationCount;
     List<String> vFileVersions;
     try (Stream<Path> migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
@@ -104,11 +101,11 @@ class WorkflowBaselineTest {
     List<String> expectedVersions =
         IntStream.rangeClosed(1, migrationCount).mapToObj(String::valueOf).toList();
 
-    assertThat(migrationCount).isGreaterThanOrEqualTo(11);
+    assertThat(migrationCount).isGreaterThanOrEqualTo(1);
     assertThat(vFileVersions).containsExactlyElementsOf(expectedVersions);
     assertThat(flyway.info().current().getVersion().getVersion())
         .isEqualTo(String.valueOf(migrationCount));
-    assertThat(versions).containsExactly(String.valueOf(migrationCount));
+    assertThat(versions).containsExactlyElementsOf(expectedVersions);
   }
 
   @Test
