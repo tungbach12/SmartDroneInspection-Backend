@@ -30,8 +30,8 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
    * explicitly rather than relying on a finder that would filter them out.
    */
   @Query(
-      "select f from Finding f where f.inspectionId = :inspectionId and f.deletedAt is not null "
-          + "order by f.deletedAt desc")
+      "select f from Finding f where f.inspectionId = :inspectionId and f.isDeleted = true "
+          + "order by f.createdAt desc")
   List<Finding> findRemovedByInspectionId(@Param("inspectionId") UUID inspectionId);
 
   /** The next free code for this inspection, counting removed rows so a code is never reused. */

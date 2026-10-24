@@ -107,13 +107,12 @@ public final class MaintenanceTestFixture {
     UUID versionId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_reports (id, inspection_id, author_user_id, version_no, status,
+        INSERT INTO inspection_reports (id, inspection_id, version_no, status,
                                         content_snapshot, created_at, published_at)
-        VALUES (?, ?, ?, 1, 'PUBLISHED', '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, 1, 'PUBLISHED', '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         versionId,
-        inspectionId,
-        authorUserId);
+        inspectionId);
     return new SourceData(inspectionId, versionId);
   }
 
@@ -124,10 +123,10 @@ public final class MaintenanceTestFixture {
         """
         INSERT INTO findings (id, inspection_id, finding_code,
                               defect_label, severity, technical_notes,
-                              status, created_at, updated_at, inspector_confirmed_at,
+                              status, created_at,
                               forwarded_to_maintenance_at)
         VALUES (?, ?, ?, 'Corrosion', 'HIGH', 'Corrosion observed',
-                'CONFIRMED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                'CONFIRMED', CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP)
         """,
         findingId,
@@ -196,11 +195,11 @@ public final class MaintenanceTestFixture {
         INSERT INTO findings (
             id, inspection_id, evidence_id, finding_code,
             defect_label, severity, bounding_box, technical_notes,
-            recommended_action, status, created_at, updated_at,
-            inspector_confirmed_at, forwarded_to_maintenance_at)
+            recommended_action, status, created_at,
+            forwarded_to_maintenance_at)
         SELECT ?, inspection_id, NULL, ?, 'Additional corrosion', 'MEDIUM',
                NULL, 'Additional corrosion observed', NULL, 'CONFIRMED',
-               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+               CURRENT_TIMESTAMP,
                CURRENT_TIMESTAMP
           FROM findings WHERE id = ?
         """,

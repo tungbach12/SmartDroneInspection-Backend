@@ -97,7 +97,7 @@ class InspectionEvidenceApiIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].id").value(evidenceId.toString()))
         .andExpect(jsonPath("$.data[0].fileName").value("span.png"))
-        .andExpect(jsonPath("$.data[0].uploadStatus").value("AVAILABLE"));
+        .andExpect(jsonPath("$.data[0].isDeleted").value(false));
   }
 
   @Test

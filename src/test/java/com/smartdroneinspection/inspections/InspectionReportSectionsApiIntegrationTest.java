@@ -78,14 +78,13 @@ class InspectionReportSectionsApiIntegrationTest {
         "UPDATE inspections SET status = 'FIELD_COMPLETED' WHERE id = ?", fixture.inspectionId());
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, evidence_kind,
+        INSERT INTO evidence (id, inspection_id,
                               file_name, content_type, size_bytes, object_key,
-                              upload_status, created_at)
-        VALUES (?, ?, ?, 'INSPECTION', 'seed.png', 'image/png', 1, ?,
-                'AVAILABLE', CURRENT_TIMESTAMP)
+                              created_at)
+        VALUES (?, ?, 'seed.png', 'image/png', 1, ?,
+                CURRENT_TIMESTAMP)
         """,
         UUID.randomUUID(),
-        fixture.organizationId(),
         fixture.inspectionId(),
         "seed/" + UUID.randomUUID());
   }
@@ -309,14 +308,13 @@ class InspectionReportSectionsApiIntegrationTest {
     // version.
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_reports (id, inspection_id, author_user_id, version_no, status,
+        INSERT INTO inspection_reports (id, inspection_id, version_no, status,
                                         content_snapshot, created_at)
-        VALUES (?, ?, ?, 1, 'DRAFT', '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
+        VALUES (?, ?, 1, 'DRAFT', '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
                 CURRENT_TIMESTAMP)
         """,
         versionId,
-        fixture.inspectionId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
 
     mockMvc
         .perform(
@@ -462,14 +460,13 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id,
-                              evidence_kind, file_name, content_type, size_bytes,
-                              object_key, location_description, upload_status, created_at)
-        VALUES (?, ?, ?, 'INSPECTION', 'flange-crack.png', 'image/png', 67,
-                'test-key', 'North girder flange', 'AVAILABLE', CURRENT_TIMESTAMP)
+        INSERT INTO evidence (id, inspection_id,
+                              file_name, content_type, size_bytes,
+                              object_key, location_description, created_at)
+        VALUES (?, ?, 'flange-crack.png', 'image/png', 67,
+                'test-key', 'North girder flange', CURRENT_TIMESTAMP)
         """,
         evidenceId,
-        fixture.organizationId(),
         fixture.inspectionId());
 
     UUID findingId = UUID.randomUUID();
@@ -477,11 +474,11 @@ class InspectionReportSectionsApiIntegrationTest {
         """
         INSERT INTO findings (id, inspection_id, evidence_id, finding_code,
                               defect_label, severity, technical_notes,
-                              status, inspector_confirmed_at,
-                              created_at, updated_at)
+                              status,
+                              created_at)
         VALUES (?, ?, ?, 'F-001', 'Fatigue Crack', 'HIGH',
-                '50mm surface crack', 'CONFIRMED', CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                '50mm surface crack', 'CONFIRMED',
+                CURRENT_TIMESTAMP)
         """,
         findingId,
         fixture.inspectionId(),
@@ -521,26 +518,25 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id,
-                              evidence_kind, file_name, content_type, size_bytes,
-                              object_key, upload_status, created_at)
-        VALUES (?, ?, ?, 'INSPECTION', 'gusset-plate.jpg', 'image/jpeg', 67,
-                'gusset-test-key', 'AVAILABLE', CURRENT_TIMESTAMP)
+        INSERT INTO evidence (id, inspection_id,
+                              file_name, content_type, size_bytes,
+                              object_key, created_at)
+        VALUES (?, ?, 'gusset-plate.jpg', 'image/jpeg', 67,
+                'gusset-test-key', CURRENT_TIMESTAMP)
         """,
         evidenceId,
-        fixture.organizationId(),
         fixture.inspectionId());
 
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
         INSERT INTO findings (id, inspection_id, evidence_id, finding_code,
-                              defect_label, severity, bounding_box, status, model_name, model_version,
+                              defect_label, severity, bounding_box, status, model_name,
                               confidence, technical_notes,
-                              inspector_confirmed_at, created_at, updated_at)
+                              created_at)
         VALUES (?, ?, ?, 'F-001', 'GussetPlateSectionLoss', 'MEDIUM', '{}', 'CONFIRMED',
-                'gemini-test', 'v1', 0.98, 'Confirmed by the assigned Inspector',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                'gemini-test', 0.98, 'Confirmed by the assigned Inspector',
+                CURRENT_TIMESTAMP)
         """,
         candidateId,
         fixture.inspectionId(),
@@ -572,26 +568,25 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id,
-                              evidence_kind, file_name, content_type, size_bytes,
-                              object_key, upload_status, created_at)
-        VALUES (?, ?, ?, 'INSPECTION', 'rejected-candidate.png', 'image/png', 64,
-                'rejected-test-key', 'AVAILABLE', CURRENT_TIMESTAMP)
+        INSERT INTO evidence (id, inspection_id,
+                              file_name, content_type, size_bytes,
+                              object_key, created_at)
+        VALUES (?, ?, 'rejected-candidate.png', 'image/png', 64,
+                'rejected-test-key', CURRENT_TIMESTAMP)
         """,
         evidenceId,
-        fixture.organizationId(),
         fixture.inspectionId());
     UUID candidateId = UUID.randomUUID();
     jdbcTemplate.update(
         """
         INSERT INTO findings (id, inspection_id, evidence_id, finding_code,
-                              defect_label, severity, bounding_box, status, model_name, model_version,
+                              defect_label, severity, bounding_box, status, model_name,
                               confidence, technical_notes,
-                              deleted_at,
-                              created_at, updated_at)
+                              is_deleted,
+                              created_at)
         VALUES (?, ?, ?, 'F-1', 'spurious-corroded-seam', 'MEDIUM', '{}', 'PENDING',
-                'test-model', 'v1', 0.9, 'False positive', CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                'test-model', 0.9, 'False positive', TRUE,
+                CURRENT_TIMESTAMP)
         """,
         candidateId,
         fixture.inspectionId(),

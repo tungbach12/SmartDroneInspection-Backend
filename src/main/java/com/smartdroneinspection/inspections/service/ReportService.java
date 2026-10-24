@@ -20,7 +20,6 @@ import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
-import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
@@ -151,7 +150,7 @@ public class ReportService {
 
     InspectionReportVersion latestExisting =
         versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
-    if (latestExisting != null && !latestExisting.getAuthorUserId().equals(actorId)) {
+    if (latestExisting != null && !inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
@@ -159,7 +158,7 @@ public class ReportService {
     }
 
     List<Evidence> confirmedEvidence =
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
     List<FieldSession> recordedSessions =
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
@@ -244,9 +243,9 @@ public class ReportService {
                               new ReportDraftPort.CandidateSummary(
                                   detection.getId().toString(),
                                   detection.getEvidenceId().toString(),
-                                  detection.getModelProvider(),
+                                  null,
                                   detection.getModelName(),
-                                  detection.getModelVersion(),
+                                  null,
                                   detection.getDefectLabel(),
                                   detection.getConfidence() == null
                                       ? null
@@ -286,15 +285,12 @@ public class ReportService {
     }
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    UUID sourceVersionId = latestExisting == null ? null : latestExisting.getId();
     InspectionReportVersion version =
         new InspectionReportVersion(
             inspectionId,
-            actorId,
             versionNo,
-            sourceVersionId,
             buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port));
-    return toResponse(versions.saveAndFlush(version));
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   /**
@@ -308,7 +304,7 @@ public class ReportService {
     requireCurrentFindingsConfirmation(inspection);
     InspectionReportVersion latestExisting =
         versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
-    if (latestExisting != null && !latestExisting.getAuthorUserId().equals(actorId)) {
+    if (latestExisting != null && !inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
@@ -316,19 +312,16 @@ public class ReportService {
     }
 
     List<Evidence> confirmedEvidence =
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    UUID sourceVersionId = latestExisting == null ? null : latestExisting.getId();
     InspectionReportVersion version =
         new InspectionReportVersion(
             inspectionId,
-            actorId,
             versionNo,
-            sourceVersionId,
             buildManualContentSnapshot(inspection, confirmedEvidence, confirmedFindings));
-    return toResponse(versions.saveAndFlush(version));
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   private List<Finding> inspectorFindings(UUID inspectionId) {
@@ -355,19 +348,16 @@ public class ReportService {
   public InspectionReportVersionResponse saveSections(
       UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
     InspectionReportVersion version = requireVersion(inspectionId, versionId);
-    version = requireVersionForAuthor(version.getId(), actorId);
-
-    // Authoring is the author's work. A reviewer who is not the author may read a draft but cannot
-    // rewrite it, and the author cannot write onto a version that has left an editable state.
-    if (!version.getAuthorUserId().equals(actorId)) {
+    Inspection inspection =
+        inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    if (!inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
           "Only the report author may edit this draft");
     }
 
-    requireCurrentFindingsConfirmation(
-        evidenceService.requireAssignedInspection(actorId, inspectionId));
+    requireCurrentFindingsConfirmation(inspection);
     requireFreshFindingsSnapshot(inspectionId, version);
     ReportSections sections =
         new ReportSections(
@@ -384,56 +374,53 @@ public class ReportService {
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
-    return toResponse(versions.saveAndFlush(version));
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   /** MF3-08: the author verifies the draft against its sources. */
   @Transactional
   public InspectionReportVersionResponse verifyVersion(
       UUID actorId, UUID inspectionId, UUID versionId) {
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     InspectionReportVersion version = requireVersion(inspectionId, versionId);
-    version = requireVersionForAuthor(version.getId(), actorId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
-    requireCurrentFindingsConfirmation(
-        evidenceService.requireAssignedInspection(actorId, inspectionId));
+    requireCurrentFindingsConfirmation(inspection);
     try {
-      version.verifyAsAuthor(actorId, version.getAuthorUserId());
+      version.verifyAsAuthor(actorId, inspection.getInspectorId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
-    return toResponse(versions.saveAndFlush(version));
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   /** MF3-08: submit the verified version for review. */
   @Transactional
   public InspectionReportVersionResponse submitVersion(
       UUID actorId, UUID inspectionId, UUID versionId) {
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     InspectionReportVersion version = requireVersion(inspectionId, versionId);
-    version = requireVersionForAuthor(version.getId(), actorId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
-    requireCurrentFindingsConfirmation(
-        evidenceService.requireAssignedInspection(actorId, inspectionId));
+    requireCurrentFindingsConfirmation(inspection);
     try {
       version.submit();
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
-    return toResponse(versions.saveAndFlush(version));
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   private String currentFindingsSnapshotHash(UUID inspectionId) {
     List<Evidence> currentEvidence =
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     return FindingsSnapshot.hash(
         currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
 
   /** A draft created before the latest findings confirmation is stale. */
   private void requireCurrentFindingsConfirmation(Inspection inspection) {
-    if (!evidence.existsByInspectionIdAndRetiredAtIsNullAndUploadStatus(
-        inspection.getId(), UploadStatus.AVAILABLE)) {
+    if (!evidence.existsByInspectionIdAndIsDeletedFalse(inspection.getId())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "ACTIVE_EVIDENCE_REQUIRED",
@@ -484,7 +471,14 @@ public class ReportService {
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
     }
-    return toResponse(versions.saveAndFlush(version));
+    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+  }
+
+  @Transactional
+  public InspectionReportVersionResponse withdrawVersion(
+      UUID actorId, UUID inspectionId, UUID versionId) {
+    return withdrawVersion(actorId, inspectionId, versionId, null);
   }
 
   /**
@@ -495,20 +489,17 @@ public class ReportService {
   @Transactional
   public InspectionReportVersionResponse withdrawVersion(
       UUID actorId, UUID inspectionId, UUID versionId, String reason) {
-    evidenceService.requireAssignedInspection(actorId, inspectionId);
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     InspectionReportVersion version = requireVersion(inspectionId, versionId);
     try {
-      version.withdraw(actorId, reason, version.getAuthorUserId());
+      version.withdraw(actorId, inspection.getInspectorId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "REPORT_WITHDRAWAL_INVALID", ex.getMessage());
     }
-    Inspection inspection = inspections.findById(inspectionId).orElse(null);
-    if (inspection != null) {
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
-    }
-    return toResponse(versions.saveAndFlush(version));
+    inspection.reopenFindings();
+    inspections.saveAndFlush(inspection);
+    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
@@ -526,7 +517,7 @@ public class ReportService {
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     try {
-      version.publish(publisher.id(), version.getAuthorUserId());
+      version.publish(publisher.id(), inspection.getInspectorId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
@@ -742,13 +733,15 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> preview(
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
-    if (!version.getAuthorUserId().equals(actorId)) {
+    Inspection inspection =
+        inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    if (!inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
           "Only the report author may preview this draft");
     }
+    InspectionReportVersion version = requireVersion(inspectionId, versionId);
     return pdfResponse(
         renderArtefact(inspectionId, version, true, locale),
         "inline",
@@ -876,7 +869,7 @@ public class ReportService {
     Map<UUID, List<String>> componentLocationByEvidence = new LinkedHashMap<>();
     Map<UUID, Evidence> evidenceById = new LinkedHashMap<>();
     for (Evidence item :
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId)) {
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId)) {
       evidenceById.put(item.getId(), item);
     }
     List<Finding> confirmed = reportableFindings(inspectionId);
@@ -901,15 +894,13 @@ public class ReportService {
               finding.getTechnicalNotes(),
               finding.getRecommendedAction(),
               finding.getStatus().name(),
-              finding.getInspectorConfirmedAt() == null
-                  ? null
-                  : finding.getInspectorConfirmedAt().toString(),
+              null,
               finding.isOfficial()));
     }
 
     List<ReportRenderPort.EvidenceView> evidenceViews = new ArrayList<>();
     for (Evidence item :
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId)) {
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId)) {
       byte[] content = loadEvidenceBytes(item);
       evidenceViews.add(
           new ReportRenderPort.EvidenceView(
@@ -933,7 +924,7 @@ public class ReportService {
         reportIdentity == null || reportIdentity.organizationName() == null
             ? null
             : reportIdentity.organizationName(),
-        displayName(version.getAuthorUserId()),
+        displayName(inspection.getInspectorId()),
         displayName(version.getReviewerUserId()),
         inspection.getFindingsConfirmedAt() == null
             ? null
@@ -1052,23 +1043,9 @@ public class ReportService {
                     HttpStatus.NOT_FOUND, "REPORT_VERSION_NOT_FOUND", "Report version not found"));
   }
 
-  private InspectionReportVersion requireVersionForAuthor(UUID versionId, UUID authorUserId) {
-    InspectionReportVersion version =
-        versions
-            .findById(versionId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND,
-                        "REPORT_VERSION_NOT_FOUND",
-                        "Report version not found"));
-    if (!version.getAuthorUserId().equals(authorUserId)) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "REPORT_SCOPE_DENIED",
-          "Only the report author may access this version");
-    }
-    return version;
+  private BusinessException inspectionNotFound() {
+    return new BusinessException(
+        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found");
   }
 
   /**
@@ -1436,19 +1413,27 @@ public class ReportService {
   }
 
   private InspectionReportVersionResponse toResponse(InspectionReportVersion version) {
+    UUID authorUserId =
+        inspections
+            .findById(version.getInspectionId())
+            .map(Inspection::getInspectorId)
+            .orElse(null);
+    return toResponse(version, authorUserId);
+  }
+
+  private InspectionReportVersionResponse toResponse(
+      InspectionReportVersion version, UUID authorUserId) {
     JsonNode content = readContentSnapshot(version.getContentSnapshot());
     return new InspectionReportVersionResponse(
         version.getId(),
         version.getInspectionReportId(),
         version.getVersionNo(),
         version.getStatus(),
-        version.getAuthorUserId(),
+        authorUserId,
         version.getSubmittedAt(),
         version.getReviewerUserId(),
         version.getReviewedAt(),
         version.getReturnReason(),
-        version.getWithdrawnAt(),
-        version.getWithdrawalReason(),
         version.getPublishedAt(),
         version.getCreatedAt(),
         textOrNull(content, "omissionDisclosure"),

@@ -15,7 +15,7 @@ class InspectionReportVersionTest {
   private final UUID reviewer = UUID.randomUUID();
 
   private InspectionReportVersion draft() {
-    return new InspectionReportVersion(reportId, 1, null, "{}");
+    return new InspectionReportVersion(reportId, 1, "{}");
   }
 
   private void verifyAndSubmit(InspectionReportVersion version) {
@@ -109,11 +109,10 @@ class InspectionReportVersionTest {
     InspectionReportVersion version = draft();
     verifyAndSubmit(version);
 
-    version.withdraw(author, "Please correct one value", author);
+    version.withdraw(author, author);
 
-    assertThat(version.getStatus()).isEqualTo(ReportStatus.RETURNED);
-    assertThat(version.getWithdrawnAt()).isNotNull();
-    assertThat(version.getWithdrawalReason()).contains("correct");
+    assertThat(version.getStatus()).isEqualTo(ReportStatus.DRAFT);
+    assertThat(version.getSubmittedAt()).isNull();
   }
 
   @Test

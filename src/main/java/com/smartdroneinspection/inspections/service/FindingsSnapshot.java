@@ -27,6 +27,8 @@ final class FindingsSnapshot {
                     .append(item.getFileName())
                     .append('|')
                     .append(item.getSizeBytes())
+                    .append('|')
+                    .append(item.isDeleted())
                     .append('\n'));
     findings.stream()
         .sorted(Comparator.comparing(item -> item.getId().toString()))
@@ -48,16 +50,7 @@ final class FindingsSnapshot {
                     .append('|')
                     .append(item.getRecommendedAction())
                     .append('|')
-                    .append(
-                        item.getInspectorConfirmedAt() == null
-                            ? null
-                            : item.getInspectorConfirmedAt()
-                                .truncatedTo(java.time.temporal.ChronoUnit.MICROS))
-                    .append('|')
-                    .append(
-                        item.getDeletedAt() == null
-                            ? null
-                            : item.getDeletedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS))
+                    .append(item.isDeleted())
                     .append('\n'));
     try {
       return HexFormat.of()

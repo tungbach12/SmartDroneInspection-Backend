@@ -21,7 +21,7 @@ import org.hibernate.type.SqlTypes;
  */
 @Entity
 @Table(name = "findings")
-@SQLRestriction("deleted_at is null")
+@SQLRestriction("is_deleted = false")
 public class Finding {
 
   @Id @GeneratedValue private UUID id;
@@ -31,10 +31,6 @@ public class Finding {
 
   @Column(name = "evidence_id")
   private UUID evidenceId;
-
-  @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 24)
-  private FindingStatus status;
 
   @Column(name = "finding_code", nullable = false, length = 64)
   private String findingCode;
@@ -56,32 +52,24 @@ public class Finding {
   @Column(name = "recommended_action", length = 4000)
   private String recommendedAction;
 
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 24)
+  private FindingStatus status;
+
   @Column(name = "model_name", length = 160)
   private String modelName;
-
-  @Column(name = "model_version", length = 80)
-  private String modelVersion;
-
-  @Column(name = "model_provider", length = 96)
-  private String modelProvider;
 
   @Column(name = "confidence", precision = 6, scale = 5)
   private BigDecimal confidence;
 
-  @Column(name = "inspector_confirmed_at")
-  private Instant inspectorConfirmedAt;
-
-  @Column(name = "deleted_at")
-  private Instant deletedAt;
-
   @Column(name = "forwarded_to_maintenance_at")
   private Instant forwardedToMaintenanceAt;
 
+  @Column(name = "is_deleted", nullable = false)
+  private boolean isDeleted;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
-
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
 
   protected Finding() {}
 
@@ -95,8 +83,6 @@ public class Finding {
       String recommendedAction,
       String boundingBox,
       String modelName,
-      String modelVersion,
-      String modelProvider,
       BigDecimal confidence) {
     this.inspectionId = inspectionId;
     this.evidenceId = evidenceId;
@@ -107,12 +93,10 @@ public class Finding {
     this.recommendedAction = recommendedAction;
     this.boundingBox = boundingBox;
     this.modelName = modelName;
-    this.modelVersion = modelVersion;
-    this.modelProvider = modelProvider;
     this.confidence = confidence;
     this.status = FindingStatus.PENDING;
+    this.isDeleted = false;
     this.createdAt = Instant.now();
-    this.updatedAt = createdAt;
   }
 
   public void revise(
@@ -126,9 +110,7 @@ public class Finding {
     this.severity = severity;
     this.technicalNotes = technicalNotes;
     this.recommendedAction = recommendedAction;
-    this.inspectorConfirmedAt = null;
     this.status = FindingStatus.PENDING;
-    this.updatedAt = Instant.now();
   }
 
   public boolean isPendingAiSuggestion() {
@@ -137,25 +119,21 @@ public class Finding {
 
   /** Keeps a tombstone while the evidence/report foreign-key identity remains stable. */
   public void delete() {
-    if (deletedAt != null) {
+    if (this.isDeleted) {
       throw new IllegalStateException("This finding is already removed");
     }
-    deletedAt = Instant.now();
-    updatedAt = deletedAt;
+    this.isDeleted = true;
   }
 
   public void restore() {
-    if (deletedAt == null) {
+    if (!this.isDeleted) {
       throw new IllegalStateException("This finding was not removed");
     }
-    deletedAt = null;
-    updatedAt = Instant.now();
+    this.isDeleted = false;
   }
 
   public void clearInspectorConfirmation() {
-    inspectorConfirmedAt = null;
     status = FindingStatus.PENDING;
-    updatedAt = Instant.now();
   }
 
   /** Marks this confirmed finding as handed to the maintenance workflow. */
@@ -168,22 +146,18 @@ public class Finding {
       throw new IllegalStateException("This finding was already forwarded to maintenance");
     }
     forwardedToMaintenanceAt = Instant.now();
-    updatedAt = forwardedToMaintenanceAt;
   }
 
   public void confirmByInspector() {
-    if (inspectorConfirmedAt != null) return;
-    inspectorConfirmedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-    status = FindingStatus.CONFIRMED;
-    updatedAt = inspectorConfirmedAt;
+    this.status = FindingStatus.CONFIRMED;
   }
 
   public boolean isOfficial() {
-    return inspectorConfirmedAt != null && status == FindingStatus.CONFIRMED;
+    return status == FindingStatus.CONFIRMED && !isDeleted;
   }
 
   public boolean isDeleted() {
-    return deletedAt != null;
+    return isDeleted;
   }
 
   public UUID getId() {
@@ -230,24 +204,8 @@ public class Finding {
     return modelName;
   }
 
-  public String getModelVersion() {
-    return modelVersion;
-  }
-
-  public String getModelProvider() {
-    return modelProvider;
-  }
-
   public BigDecimal getConfidence() {
     return confidence;
-  }
-
-  public Instant getInspectorConfirmedAt() {
-    return inspectorConfirmedAt;
-  }
-
-  public Instant getDeletedAt() {
-    return deletedAt;
   }
 
   public Instant getForwardedToMaintenanceAt() {
@@ -260,9 +218,5 @@ public class Finding {
 
   public Instant getCreatedAt() {
     return createdAt;
-  }
-
-  public Instant getUpdatedAt() {
-    return updatedAt;
   }
 }

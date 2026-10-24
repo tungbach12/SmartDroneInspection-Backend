@@ -8,7 +8,6 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
-import com.smartdroneinspection.inspections.domain.enums.EvidenceKind;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
@@ -174,13 +173,13 @@ public class EvidenceService {
         evidence.findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(inspectionId, fileName);
     if (sameName.isPresent()) {
       Evidence existing = sameName.get();
-      if (existing.isRetired()) {
+      if (existing.isDeleted()) {
         throw new BusinessException(
             HttpStatus.CONFLICT,
             "EVIDENCE_DUPLICATE_RETIRED",
             "Evidence with this filename already exists as a retired audit copy: " + fileName);
       }
-      return toResponse(existing, true);
+      return toResponse(existing);
     }
 
     String objectKey = "inspections/" + inspectionId + "/evidence/" + UUID.randomUUID();
@@ -196,17 +195,17 @@ public class EvidenceService {
 
     Evidence record =
         new Evidence(
-            inspection.getOrganizationId(),
             inspectionId,
             fieldSessionId,
-            EvidenceKind.INSPECTION,
             fileName,
             contentType,
             content.length,
             objectKey,
             captureTime,
             latitude,
-            longitude);
+            longitude,
+            null,
+            Instant.now());
     return toResponse(evidence.saveAndFlush(record));
   }
 
@@ -282,7 +281,7 @@ public class EvidenceService {
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
     List<Evidence> activeCaptures =
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     List<Evidence> targets;
     if (evidenceIds == null || evidenceIds.isEmpty()) {
       targets = activeCaptures;
@@ -362,7 +361,7 @@ public class EvidenceService {
   @Transactional(readOnly = true)
   public List<EvidenceResponse> listForFieldSession(UUID inspectionId, UUID fieldSessionId) {
     return evidence
-        .findByInspectionIdAndFieldSessionIdAndRetiredAtIsNullOrderByCreatedAtAsc(
+        .findByInspectionIdAndFieldSessionIdAndIsDeletedFalseOrderByCreatedAtAsc(
             inspectionId, fieldSessionId)
         .stream()
         .map(this::toResponse)
@@ -400,8 +399,8 @@ public class EvidenceService {
         safePageSize,
         result.getTotalElements(),
         result.getTotalPages(),
-        evidence.countByInspectionIdAndRetiredAtIsNull(inspectionId),
-        evidence.countByInspectionIdAndRetiredAtIsNotNull(inspectionId),
+        evidence.countByInspectionIdAndIsDeletedFalse(inspectionId),
+        evidence.countByInspectionIdAndIsDeletedTrue(inspectionId),
         summary.getLatestCreatedAt(),
         summary.getLatestRetiredAt());
   }
@@ -415,8 +414,8 @@ public class EvidenceService {
       var predicates = new java.util.ArrayList<Predicate>();
       predicates.add(builder.equal(root.get("inspectionId"), inspectionId));
       switch (status) {
-        case ACTIVE -> predicates.add(builder.isNull(root.get("retiredAt")));
-        case RETIRED -> predicates.add(builder.isNotNull(root.get("retiredAt")));
+        case ACTIVE -> predicates.add(builder.isFalse(root.get("isDeleted")));
+        case RETIRED -> predicates.add(builder.isTrue(root.get("isDeleted")));
         case ALL -> {}
       }
       var contentType = builder.lower(root.<String>get("contentType"));
@@ -579,33 +578,13 @@ public class EvidenceService {
         record.getFileName(),
         record.getContentType(),
         record.getSizeBytes(),
+        record.getObjectKey(),
         record.getCaptureTime(),
         record.getLatitude(),
         record.getLongitude(),
-        record.getUploadStatus(),
-        record.getCreatedAt(),
-        record.getRetiredAt(),
         record.getLocationDescription(),
-        false);
-  }
-
-  private EvidenceResponse toResponse(Evidence record, boolean deduplicated) {
-    EvidenceResponse response = toResponse(record);
-    return new EvidenceResponse(
-        response.id(),
-        response.inspectionId(),
-        response.fieldSessionId(),
-        response.fileName(),
-        response.contentType(),
-        response.sizeBytes(),
-        response.captureTime(),
-        response.latitude(),
-        response.longitude(),
-        response.uploadStatus(),
-        response.createdAt(),
-        response.retiredAt(),
-        response.locationDescription(),
-        deduplicated);
+        record.isDeleted(),
+        record.getCreatedAt());
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}

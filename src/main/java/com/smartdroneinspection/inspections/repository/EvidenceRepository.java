@@ -20,51 +20,46 @@ public interface EvidenceRepository
 
   List<Evidence> findByInspectionIdOrderByCreatedAtAsc(UUID inspectionId);
 
-  List<Evidence> findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(UUID inspectionId);
+  List<Evidence> findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(UUID inspectionId);
 
-  boolean existsByInspectionIdAndRetiredAtIsNullAndUploadStatus(
-      UUID inspectionId,
-      com.smartdroneinspection.inspections.domain.enums.UploadStatus uploadStatus);
+  boolean existsByInspectionIdAndIsDeletedFalse(UUID inspectionId);
 
-  List<Evidence> findByInspectionIdAndFieldSessionIdAndRetiredAtIsNullOrderByCreatedAtAsc(
+  List<Evidence> findByInspectionIdAndFieldSessionIdAndIsDeletedFalseOrderByCreatedAtAsc(
       UUID inspectionId, UUID fieldSessionId);
 
-  boolean existsByInspectionIdAndFieldSessionIdAndRetiredAtIsNullAndUploadStatus(
-      UUID inspectionId,
-      UUID fieldSessionId,
-      com.smartdroneinspection.inspections.domain.enums.UploadStatus uploadStatus);
+  boolean existsByInspectionIdAndFieldSessionIdAndIsDeletedFalse(
+      UUID inspectionId, UUID fieldSessionId);
 
   Optional<Evidence> findByIdAndInspectionId(UUID id, UUID inspectionId);
 
   Page<Evidence> findByInspectionId(UUID inspectionId, Pageable pageable);
 
-  Page<Evidence> findByInspectionIdAndRetiredAtIsNull(UUID inspectionId, Pageable pageable);
+  Page<Evidence> findByInspectionIdAndIsDeletedFalse(UUID inspectionId, Pageable pageable);
 
-  Page<Evidence> findByInspectionIdAndRetiredAtIsNotNull(UUID inspectionId, Pageable pageable);
+  Page<Evidence> findByInspectionIdAndIsDeletedTrue(UUID inspectionId, Pageable pageable);
 
-  @Query("select e from Evidence e where e.id = :id and e.organizationId = :organizationId")
+  @Query(
+      "select e from Evidence e join Inspection i on i.id = e.inspectionId where e.id = :id and"
+          + " i.organizationId = :organizationId")
   Optional<Evidence> findInOrganization(
       @Param("id") UUID id, @Param("organizationId") UUID organizationId);
 
   long countByInspectionId(UUID inspectionId);
 
   @Query(
-      "select max(e.createdAt) as latestCreatedAt, max(e.retiredAt) as latestRetiredAt "
+      "select max(e.createdAt) as latestCreatedAt "
           + "from Evidence e where e.inspectionId = :inspectionId")
   EvidenceSummary summarizeInspectionEvidence(@Param("inspectionId") UUID inspectionId);
 
-  /**
-   * The newest capture-added and capture-retired instants for one inspection. An Inspector's
-   * evidence decision is stale when either is later than the decision, so a paginated read can
-   * still answer "did the set change?" without loading every row.
-   */
   interface EvidenceSummary {
     Instant getLatestCreatedAt();
 
-    Instant getLatestRetiredAt();
+    default Instant getLatestRetiredAt() {
+      return null;
+    }
   }
 
-  long countByInspectionIdAndRetiredAtIsNull(UUID inspectionId);
+  long countByInspectionIdAndIsDeletedFalse(UUID inspectionId);
 
-  long countByInspectionIdAndRetiredAtIsNotNull(UUID inspectionId);
+  long countByInspectionIdAndIsDeletedTrue(UUID inspectionId);
 }

@@ -390,10 +390,10 @@ class InspectionReadinessApiIntegrationTest {
     if (evidenceId != null) {
       jdbcTemplate.update(
           """
-          INSERT INTO evidence (id, inspection_id, evidence_kind, file_name,
-            content_type, size_bytes, object_key, upload_status)
-          VALUES (?, ?, 'INSPECTION', 'credential.pdf', 'application/pdf', 100,
-            ?, 'AVAILABLE')
+          INSERT INTO evidence (id, inspection_id, file_name,
+            content_type, size_bytes, object_key)
+          VALUES (?, ?, 'credential.pdf', 'application/pdf', 100,
+            ?)
           """,
           evidenceId,
           inspectionId,

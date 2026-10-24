@@ -10,7 +10,6 @@ import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
-import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
@@ -205,8 +204,8 @@ public class InspectionPreparationService {
                         "FIELD_SESSION_NOT_COMPLETED",
                         "Complete a field session before requesting another one."));
     boolean hasCurrentEvidence =
-        evidence.existsByInspectionIdAndFieldSessionIdAndRetiredAtIsNullAndUploadStatus(
-            inspectionId, latestCompletedSession.getId(), UploadStatus.AVAILABLE);
+        evidence.existsByInspectionIdAndFieldSessionIdAndIsDeletedFalse(
+            inspectionId, latestCompletedSession.getId());
     if (!hasCurrentEvidence) {
       throw new BusinessException(
           HttpStatus.CONFLICT,

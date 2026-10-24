@@ -10,7 +10,6 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
-import com.smartdroneinspection.inspections.domain.enums.UploadStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
@@ -81,9 +80,7 @@ public class FindingService {
           "INSPECTION_STATE_CONFLICT",
           "Findings can only be confirmed after field work is completed");
     }
-    boolean hasActiveEvidence =
-        evidence.existsByInspectionIdAndRetiredAtIsNullAndUploadStatus(
-            inspectionId, UploadStatus.AVAILABLE);
+    boolean hasActiveEvidence = evidence.existsByInspectionIdAndIsDeletedFalse(inspectionId);
     if (!hasActiveEvidence) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -235,8 +232,6 @@ public class FindingService {
                         null,
                         detection.boundingBox(),
                         detection.modelName(),
-                        detection.modelVersion(),
-                        detection.provider(),
                         detection.confidence()))
             .toList();
     if (replace) {
@@ -328,8 +323,6 @@ public class FindingService {
             request.recommendedAction(),
             null,
             null,
-            null,
-            null,
             null);
     return toFindingResponse(findings.saveAndFlush(finding));
   }
@@ -402,7 +395,7 @@ public class FindingService {
 
   String findingsSnapshotHash(UUID inspectionId) {
     List<Evidence> currentEvidence =
-        evidence.findByInspectionIdAndRetiredAtIsNullOrderByCreatedAtAsc(inspectionId);
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     return FindingsSnapshot.hash(
         currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
@@ -469,19 +462,17 @@ public class FindingService {
         finding.getId(),
         finding.getInspectionId(),
         finding.getEvidenceId(),
-        finding.getStatus(),
         finding.getFindingCode(),
         finding.getDefectLabel(),
         finding.getSeverity(),
+        finding.getBoundingBox(),
         finding.getTechnicalNotes(),
         finding.getRecommendedAction(),
-        finding.getBoundingBox(),
+        finding.getStatus(),
         finding.getModelName(),
-        finding.getModelVersion(),
-        finding.getModelProvider(),
         finding.getConfidence(),
-        finding.getInspectorConfirmedAt(),
         finding.getForwardedToMaintenanceAt(),
-        finding.getDeletedAt());
+        finding.isDeleted(),
+        finding.getCreatedAt());
   }
 }

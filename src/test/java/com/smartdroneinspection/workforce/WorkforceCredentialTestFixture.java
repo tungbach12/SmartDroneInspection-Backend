@@ -75,14 +75,13 @@ final class WorkforceCredentialTestFixture {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO evidence (id, organization_id, inspection_id, evidence_kind,
+        INSERT INTO evidence (id, inspection_id,
                               file_name, content_type, size_bytes, object_key,
-                              upload_status, created_at)
-        VALUES (?, ?, ?, 'INSPECTION', ?, 'image/png', 1, ?, 'AVAILABLE',
+                              created_at)
+        VALUES (?, ?, ?, 'image/png', 1, ?,
                 CURRENT_TIMESTAMP)
         """,
         evidenceId,
-        organizationId,
         inspectionId,
         "credential-" + label + ".png",
         "credential-fixture/" + label + "/" + evidenceId);

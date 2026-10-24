@@ -309,9 +309,10 @@ public class InspectionController {
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
-      @Valid @RequestBody WithdrawVersionRequest request) {
+      @Valid @RequestBody(required = false) WithdrawVersionRequest request) {
     return ApiResponse.success(
-        reportService.withdrawVersion(actorId(jwt), inspectionId, versionId, request.reason()));
+        reportService.withdrawVersion(
+            actorId(jwt), inspectionId, versionId, request == null ? null : request.reason()));
   }
 
   @PostMapping("/report/versions/{versionId}/review")
