@@ -58,7 +58,6 @@ CREATE TABLE asset_categories (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
-    organization_id uuid,
     CONSTRAINT ck_asset_categories_code_normalized CHECK (((code)::text = upper(btrim((code)::text))))
 );
 
@@ -79,9 +78,6 @@ CREATE TABLE asset_documents (
     object_key character varying(1000) NOT NULL,
     document_date date,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    document_version character varying(64),
-    status character varying(24),
-    updated_at timestamp with time zone,
     CONSTRAINT ck_asset_documents_size CHECK ((size_bytes > 0))
 );
 
@@ -145,7 +141,6 @@ CREATE TABLE assets (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
     asset_code character varying(64) NOT NULL,
-    asset_type character varying(96),
     location jsonb,
     technical_profile jsonb,
     CONSTRAINT ck_assets_latitude CHECK (((latitude IS NULL) OR ((latitude >= ('-90'::integer)::numeric) AND (latitude <= (90)::numeric)))),
@@ -212,7 +207,6 @@ CREATE TABLE checklist_items (
     guidance_vi character varying(2000),
     validation_config jsonb,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    evidence_requirement jsonb,
     CONSTRAINT ck_checklist_item_code_normalized CHECK (((item_code)::text = upper(btrim((item_code)::text)))),
     CONSTRAINT ck_checklist_item_display_order CHECK ((display_order >= 0)),
     CONSTRAINT ck_checklist_item_response_type CHECK (((response_type)::text = ANY ((ARRAY['PASS_FAIL'::character varying, 'TEXT'::character varying, 'NUMBER'::character varying, 'BOOLEAN'::character varying, 'CHOICE'::character varying])::text[])))
@@ -262,9 +256,6 @@ CREATE TABLE checklist_templates (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
-    context character varying(32),
-    active_from timestamp with time zone,
-    active_until timestamp with time zone,
     CONSTRAINT ck_checklist_template_key_normalized CHECK (((template_key)::text = upper(btrim((template_key)::text)))),
     CONSTRAINT ck_checklist_template_publication CHECK (((((status)::text = 'DRAFT'::text) AND (published_at IS NULL)) OR (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'RETIRED'::character varying])::text[])) AND (published_at IS NOT NULL)))),
     CONSTRAINT ck_checklist_template_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'ACTIVE'::character varying, 'RETIRED'::character varying])::text[]))),
@@ -540,8 +531,6 @@ CREATE TABLE inspections (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
     organization_id uuid NOT NULL,
-    schedule_id uuid,
-    due_cycle_key character varying(64),
     objective character varying(1000),
     scope jsonb,
     component_scope jsonb,
@@ -1675,13 +1664,6 @@ CREATE UNIQUE INDEX uq_inspections_id_organization ON inspections USING btree (i
 
 
 --
--- Name: uq_inspections_schedule_due_cycle; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_inspections_schedule_due_cycle ON inspections USING btree (schedule_id, due_cycle_key) WHERE ((schedule_id IS NOT NULL) AND (due_cycle_key IS NOT NULL));
-
-
---
 -- Name: uq_maintenance_team_lead_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1714,14 +1696,6 @@ CREATE UNIQUE INDEX uq_subscriptions_active_organization ON subscriptions USING 
 --
 
 CREATE UNIQUE INDEX uq_users_id_organization ON users USING btree (id, organization_id);
-
-
---
--- Name: asset_categories asset_categories_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_categories
-    ADD CONSTRAINT asset_categories_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 
 
 --

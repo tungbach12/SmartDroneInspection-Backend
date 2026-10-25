@@ -94,7 +94,6 @@ class FullDatabaseSchemaMigrationTest {
         .contains(
             "uq_assets_organization_asset_code",
             "uq_asset_pair_assignments_active_asset",
-            "uq_inspections_schedule_due_cycle",
             "ix_notifications_recipient_status",
             "ix_notifications_delivery",
             "uq_users_id_organization",

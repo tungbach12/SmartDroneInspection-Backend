@@ -77,7 +77,7 @@ class ReadinessSnapshotFactoryTest {
   void sourceHashIsSha256OfTheDocumentedCanonicalUtf8Payload() {
     ReadinessSnapshotFactory.Snapshot snapshot = factory.create(minimalInput());
     String literalCanonicalPayload =
-        "{\"decision\":\"APPROVED\",\"permitSnapshot\":\"{\\\"permits\\\":[],\\\"blockers\\\":[],\\\"requires_human_verification\\\":false,\\\"human_verification_basis\\\":[],\\\"source_envelope\\\":{\\\"reviewer_id\\\":\\\"00000000-0000-0000-0000-000000000003\\\",\\\"inspection_id\\\":null,\\\"organization_id\\\":null,\\\"asset_id\\\":null,\\\"objective\\\":null,\\\"scope\\\":null,\\\"component_scope\\\":null,\\\"acceptance_criteria\\\":null,\\\"schedule_id\\\":null,\\\"due_cycle_key\\\":null,\\\"planned_start_at\\\":null,\\\"planned_end_at\\\":null,\\\"asset_pair\\\":null,\\\"preparation\\\":null,\\\"observed_source_set\\\":null,\\\"decision_reason\\\":null}}\","
+        "{\"decision\":\"APPROVED\",\"permitSnapshot\":\"{\\\"permits\\\":[],\\\"blockers\\\":[],\\\"requires_human_verification\\\":false,\\\"human_verification_basis\\\":[],\\\"source_envelope\\\":{\\\"reviewer_id\\\":\\\"00000000-0000-0000-0000-000000000003\\\",\\\"inspection_id\\\":null,\\\"organization_id\\\":null,\\\"asset_id\\\":null,\\\"objective\\\":null,\\\"scope\\\":null,\\\"component_scope\\\":null,\\\"acceptance_criteria\\\":null,\\\"planned_start_at\\\":null,\\\"planned_end_at\\\":null,\\\"asset_pair\\\":null,\\\"preparation\\\":null,\\\"observed_source_set\\\":null,\\\"decision_reason\\\":null}}\","
             + "\"permitSnapshotIds\":\"[]\",\"credentialSnapshot\":\"{\\\"reviewer\\\":null,\\\"inspectors\\\":[],\\\"attestations\\\":{\\\"applicabilityComplete\\\":false,\\\"applicabilityBasisReference\\\":null,\\\"noInspectorCredentialReason\\\":null,\\\"noDroneDocumentReason\\\":null,\\\"humanVerificationBasis\\\":null}}\","
             + "\"credentialSnapshotIds\":\"[]\",\"droneDocumentSnapshot\":\"[]\",\"droneDocumentSnapshotIds\":\"[]\"}";
 
@@ -123,8 +123,6 @@ class ReadinessSnapshotFactoryTest {
         .contains("\"scope\":{\"zone\":\"north\"}")
         .contains("\"component_scope\":{\"components\":[\"span\"]}")
         .contains("\"acceptance_criteria\":[\"no crack\"]")
-        .contains("\"schedule_id\":\"00000000-0000-0000-0000-000000000010\"")
-        .contains("\"due_cycle_key\":\"2026-Q2\"")
         .contains("\"planned_start_at\":\"2026-06-01T09:00:00Z\"")
         .contains("\"responded_at\":\"2026-06-01T08:00:00Z\"")
         .contains("\"shot_list\":{\"shots\":[\"span\"]}")
@@ -291,8 +289,6 @@ class ReadinessSnapshotFactoryTest {
             old.id(),
             old.organizationId(),
             old.assetId(),
-            old.scheduleId(),
-            old.dueCycleKey(),
             old.objective(),
             scope,
             old.componentScope(),
@@ -383,8 +379,6 @@ class ReadinessSnapshotFactoryTest {
         INSPECTION_ID,
         ORGANIZATION_ID,
         ASSET_ID,
-        UUID.fromString("00000000-0000-0000-0000-000000000010"),
-        "2026-Q2",
         "Inspect main span",
         scope,
         "{\"components\":[\"span\"]}",

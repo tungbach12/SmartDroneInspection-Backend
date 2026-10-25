@@ -250,15 +250,14 @@ class CompliancePersistenceTest {
     UUID inspectionId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspections (id, organization_id, asset_id, due_cycle_key, objective, status,
+        INSERT INTO inspections (id, organization_id, asset_id, objective, status,
                                  created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, 'Compliance persistence inspection', 'DRAFT',
+        VALUES (?, ?, ?, 'Compliance persistence inspection', 'DRAFT',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         inspectionId,
         organizationId,
-        assetId,
-        "mf1-" + inspectionId);
+        assetId);
 
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(

@@ -276,8 +276,6 @@ public class InspectionReadinessService {
         inspection.getId(),
         inspection.getOrganizationId(),
         inspection.getAssetId(),
-        inspection.getScheduleId(),
-        inspection.getDueCycleKey(),
         inspection.getObjective(),
         inspection.getScope(),
         inspection.getComponentScope(),

@@ -83,8 +83,6 @@ public final class ReadinessSnapshotFactory {
     envelope.put("component_scope", inspection == null ? null : json(inspection.componentScope()));
     envelope.put(
         "acceptance_criteria", inspection == null ? null : json(inspection.acceptanceCriteria()));
-    envelope.put("schedule_id", inspection == null ? null : inspection.scheduleId());
-    envelope.put("due_cycle_key", inspection == null ? null : inspection.dueCycleKey());
     envelope.put("planned_start_at", inspection == null ? null : inspection.plannedStartAt());
     envelope.put("planned_end_at", inspection == null ? null : inspection.plannedEndAt());
     envelope.put("asset_pair", input.pair() == null ? null : pairSnapshot(input.pair()));
@@ -230,8 +228,6 @@ public final class ReadinessSnapshotFactory {
       UUID id,
       UUID organizationId,
       UUID assetId,
-      UUID scheduleId,
-      String dueCycleKey,
       String objective,
       String scope,
       String componentScope,

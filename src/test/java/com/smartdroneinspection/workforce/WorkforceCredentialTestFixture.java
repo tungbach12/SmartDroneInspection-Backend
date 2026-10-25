@@ -119,8 +119,6 @@ final class WorkforceCredentialTestFixture {
                 null,
                 null,
                 null,
-                null,
-                "mf1-" + UUID.randomUUID(),
                 "Credential fixture inspection",
                 null,
                 null,

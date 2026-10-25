@@ -123,8 +123,6 @@ final class ComplianceTestFixture {
                 null,
                 null,
                 null,
-                null,
-                "mf1-" + UUID.randomUUID(),
                 "Compliance fixture inspection",
                 null,
                 null,

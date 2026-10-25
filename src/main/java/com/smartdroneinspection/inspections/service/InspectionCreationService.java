@@ -141,11 +141,9 @@ public class InspectionCreationService {
         new Inspection(
             organizationId,
             asset.getId(),
-            null,
             assetPairAssignmentId,
             inspectorId,
             droneId,
-            null,
             request.objective(),
             request.scope(),
             request.componentScope(),
