@@ -235,12 +235,7 @@ public class MaintenanceExecutionService {
         new MaintenanceWorkLog(
             order.getId(), request.taskId(), actorId, startedAt, request.hours());
     log.recordProgress(
-        startedAt,
-        endedAt,
-        request.hours(),
-        request.actualCostReferences(),
-        request.asLeftCondition(),
-        request.testReadings());
+        startedAt, endedAt, request.hours(), request.asLeftCondition(), request.testReadings());
     workLogs.saveAndFlush(log);
     return WorkLogResponse.from(log);
   }
@@ -259,12 +254,7 @@ public class MaintenanceExecutionService {
               ? log.getStartedAt()
               : now.minusSeconds(60);
       log.recordProgress(
-          start,
-          now,
-          log.getHours(),
-          log.getActualCostReferences(),
-          log.getAsLeftCondition(),
-          log.getTestReadings());
+          start, now, log.getHours(), log.getAsLeftCondition(), log.getTestReadings());
     }
     transition(log::submit);
     workLogs.saveAndFlush(log);
@@ -315,9 +305,6 @@ public class MaintenanceExecutionService {
             request.reason(),
             request.affectedTasks(),
             request.proposedDelta(),
-            request.supportingEvidence(),
-            request.proposedStartAt(),
-            request.proposedEndAt(),
             actorId);
     change.submit();
     changeOrders.saveAndFlush(change);
@@ -404,17 +391,7 @@ public class MaintenanceExecutionService {
             .orElse(1);
     MaintenanceReportVersion report =
         new MaintenanceReportVersion(
-            order.getId(),
-            nextVersion,
-            actorId,
-            request.contentSnapshot(),
-            request.approvedScopeHash(),
-            request.changeSnapshotHash(),
-            request.workLogSnapshotHash(),
-            request.actualCostSnapshotHash(),
-            request.llmProvider(),
-            request.llmModel(),
-            request.promptVersion());
+            order.getId(), nextVersion, actorId, request.contentSnapshot());
     reportVersions.saveAndFlush(report);
     return ReportVersionResponse.from(report);
   }
@@ -535,11 +512,6 @@ public class MaintenanceExecutionService {
                     Instant.now()));
           }
         }
-        case REJECTED ->
-            throw new BusinessException(
-                HttpStatus.BAD_REQUEST,
-                "ACCEPTANCE_DECISION_UNSUPPORTED",
-                "A terminal rejection is not part of MF4; record rework or re-inspection instead");
       }
       decision =
           new MaintenanceAcceptanceDecision(
@@ -549,8 +521,7 @@ public class MaintenanceExecutionService {
               request.decision(),
               request.technicalComments(),
               request.acceptanceChecklist(),
-              request.testResult(),
-              request.signatureReference());
+              request.testResult());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw conflict(ex);
     }
@@ -644,8 +615,6 @@ public class MaintenanceExecutionService {
                 line.unit(),
                 line.unitRate(),
                 line.currency(),
-                line.taxTreatment(),
-                line.evidenceReference(),
                 actorId);
       } catch (IllegalArgumentException ex) {
         throw new BusinessException(HttpStatus.BAD_REQUEST, "COST_LINE_INVALID", ex.getMessage());
@@ -950,8 +919,7 @@ public class MaintenanceExecutionService {
                   .map(UserAccess.ActiveUser::fullName)
                   .orElse("Reviewer"),
               dec.getDecidedAt() != null ? dec.getDecidedAt().toString() : "N/A",
-              dec.getTechnicalComments(),
-              dec.getSignatureReference());
+              dec.getTechnicalComments());
     }
 
     String scopeText =

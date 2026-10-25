@@ -50,11 +50,7 @@ class MaintenanceReportRendererTest {
             "USD", "1000.00", "50.00", "1050.00", "1020.00", "-30.00", "-2.86%"),
         "{}",
         new MaintenanceReportRenderContext.AcceptanceView(
-            "ACCEPTED",
-            "Reviewer Admin",
-            Instant.now().toString(),
-            "All acceptance criteria met",
-            "SIG-999-ABC"));
+            "ACCEPTED", "Reviewer Admin", Instant.now().toString(), "All acceptance criteria met"));
   }
 
   @Test

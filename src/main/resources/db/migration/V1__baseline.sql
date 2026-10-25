@@ -571,9 +571,7 @@ CREATE TABLE maintenance_acceptance_decisions (
     acceptance_checklist jsonb,
     test_result jsonb,
     decided_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    signature_reference character varying(1000),
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT ck_maintenance_acceptance_decision CHECK (((decision)::text = ANY ((ARRAY['ACCEPTED'::character varying, 'REWORK_REQUIRED'::character varying, 'REINSPECTION_REQUIRED'::character varying, 'REJECTED'::character varying])::text[])))
+    CONSTRAINT ck_maintenance_acceptance_decision CHECK (((decision)::text = ANY ((ARRAY['ACCEPTED'::character varying, 'REWORK_REQUIRED'::character varying, 'REINSPECTION_REQUIRED'::character varying])::text[])))
 );
 
 
@@ -588,9 +586,6 @@ CREATE TABLE maintenance_change_orders (
     reason character varying(2000) NOT NULL,
     affected_tasks jsonb,
     proposed_delta numeric(18,2),
-    supporting_evidence jsonb,
-    proposed_start_at timestamp with time zone,
-    proposed_end_at timestamp with time zone,
     status character varying(24) NOT NULL,
     requested_by_user_id uuid NOT NULL,
     decided_by_user_id uuid,
@@ -612,7 +607,6 @@ CREATE TABLE maintenance_cost_lines (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
     estimate_version_id uuid,
-    change_order_id uuid,
     task_id uuid,
     line_kind character varying(24) NOT NULL,
     state character varying(24) NOT NULL,
@@ -622,13 +616,10 @@ CREATE TABLE maintenance_cost_lines (
     unit_rate numeric(18,6) NOT NULL,
     amount numeric(18,2) NOT NULL,
     currency character(3) NOT NULL,
-    tax_treatment jsonb,
-    evidence_reference character varying(1000),
     entered_by_user_id uuid NOT NULL,
-    entered_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_maintenance_cost_line_kind CHECK (((line_kind)::text = ANY ((ARRAY['LABOR'::character varying, 'MATERIAL'::character varying, 'EQUIPMENT'::character varying, 'EXTERNAL_SERVICE'::character varying, 'OTHER'::character varying, 'CONTINGENCY'::character varying])::text[]))),
-    CONSTRAINT ck_maintenance_cost_line_state CHECK (((state)::text = ANY ((ARRAY['ESTIMATE'::character varying, 'CHANGE'::character varying, 'ACTUAL'::character varying])::text[]))),
+    CONSTRAINT ck_maintenance_cost_line_state CHECK (((state)::text = ANY ((ARRAY['ESTIMATE'::character varying, 'ACTUAL'::character varying])::text[]))),
     CONSTRAINT ck_maintenance_cost_line_values CHECK (((quantity >= (0)::numeric) AND (unit_rate >= (0)::numeric) AND (amount >= (0)::numeric)))
 );
 
@@ -646,7 +637,6 @@ CREATE TABLE maintenance_estimate_versions (
     approved_by_user_id uuid,
     approved_at timestamp with time zone,
     currency character(3) NOT NULL,
-    tax_basis jsonb,
     baseline_total numeric(18,2) DEFAULT 0 NOT NULL,
     assumptions jsonb,
     snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -668,14 +658,6 @@ CREATE TABLE maintenance_reports (
     status character varying(32) NOT NULL,
     author_user_id uuid NOT NULL,
     author_verified_at timestamp with time zone,
-    llm_provider character varying(96),
-    llm_model character varying(160),
-    prompt_version character varying(96),
-    generated_at timestamp with time zone,
-    approved_scope_hash character varying(128),
-    change_snapshot_hash character varying(128),
-    work_log_snapshot_hash character varying(128),
-    actual_cost_snapshot_hash character varying(128),
     content_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
     rendered_object_key character varying(1000),
     rendered_checksum_sha256 character(64),
@@ -700,12 +682,10 @@ CREATE TABLE maintenance_tasks (
     planned_end_at timestamp with time zone,
     acceptance_criteria jsonb,
     status character varying(24) NOT NULL,
-    completion_notes character varying(4000),
-    display_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_maintenance_tasks_order CHECK (((task_number > 0) AND (display_order >= 0))),
+    CONSTRAINT ck_maintenance_tasks_order CHECK ((task_number > 0)),
     CONSTRAINT ck_maintenance_tasks_status CHECK (((status)::text = ANY ((ARRAY['PLANNED'::character varying, 'READY'::character varying, 'IN_PROGRESS'::character varying, 'WORK_COMPLETED'::character varying, 'REWORK_REQUIRED'::character varying, 'ACCEPTED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
@@ -736,19 +716,18 @@ CREATE TABLE maintenance_team_members (
 
 CREATE TABLE maintenance_work_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
+    work_order_id uuid NOT NULL,
+    task_id uuid NOT NULL,
     engineer_user_id uuid NOT NULL,
     started_at timestamp with time zone NOT NULL,
     ended_at timestamp with time zone,
+    hours numeric(18,6) NOT NULL,
+    as_left_condition character varying(4000),
+    test_readings jsonb,
     status character varying(24) NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
-    work_order_id uuid NOT NULL,
-    task_id uuid NOT NULL,
-    hours numeric(18,6) NOT NULL,
-    actual_cost_references jsonb,
-    as_left_condition character varying(4000),
-    test_readings jsonb,
     CONSTRAINT ck_work_logs_status CHECK (((status)::text = ANY ((ARRAY['IN_PROGRESS'::character varying, 'PAUSED_FOR_CHANGE'::character varying, 'SUBMITTED'::character varying, 'VERIFIED'::character varying])::text[]))),
     CONSTRAINT ck_work_logs_time_order CHECK (((ended_at IS NULL) OR (ended_at >= started_at)))
 );
@@ -769,8 +748,8 @@ CREATE TABLE maintenance_work_orders (
     due_at timestamp with time zone,
     corrective_scope jsonb,
     acceptance_criteria jsonb,
-    owner_user_id uuid,
-    budget_approver_user_id uuid,
+    owner_user_id uuid NOT NULL,
+    budget_approver_user_id uuid NOT NULL,
     team_lead_user_id uuid,
     report_author_user_id uuid,
     accepting_reviewer_user_id uuid,
@@ -785,7 +764,7 @@ CREATE TABLE maintenance_work_orders (
 -- Name: TABLE maintenance_work_orders; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE maintenance_work_orders IS 'Storage contract only; MF1-MF4 workflow execution is outside this cutover.';
+COMMENT ON TABLE maintenance_work_orders IS 'MF4 corrective maintenance work orders, team designation, and approval gates; see Report 3 section 3.8.';
 
 
 --
@@ -2299,14 +2278,6 @@ ALTER TABLE ONLY maintenance_change_orders
 
 ALTER TABLE ONLY maintenance_change_orders
     ADD CONSTRAINT maintenance_change_orders_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
-
-
---
--- Name: maintenance_cost_lines maintenance_cost_lines_change_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY maintenance_cost_lines
-    ADD CONSTRAINT maintenance_cost_lines_change_order_id_fkey FOREIGN KEY (change_order_id) REFERENCES maintenance_change_orders(id) ON DELETE RESTRICT;
 
 
 --

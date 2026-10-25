@@ -351,8 +351,6 @@ public class WorkOrderService {
             "A task may only be assigned to an active member of this work order's team");
       }
     }
-    int displayOrder = tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId()).size();
-
     MaintenanceTask task =
         new MaintenanceTask(
             order.getId(),
@@ -362,8 +360,7 @@ public class WorkOrderService {
             request.assignedEngineerUserId(),
             request.plannedStartAt(),
             request.plannedEndAt(),
-            request.acceptanceCriteria(),
-            displayOrder);
+            request.acceptanceCriteria());
     try {
       tasks.saveAndFlush(task);
     } catch (RuntimeException ex) {
@@ -427,8 +424,6 @@ public class WorkOrderService {
                 line.unit(),
                 line.unitRate(),
                 request.currency(),
-                request.taxBasis(),
-                line.evidenceReference(),
                 actorId));
       } catch (IllegalArgumentException ex) {
         throw new BusinessException(HttpStatus.BAD_REQUEST, "COST_LINE_INVALID", ex.getMessage());
@@ -442,7 +437,6 @@ public class WorkOrderService {
             nextVersion,
             actorId,
             request.currency(),
-            request.taxBasis(),
             request.assumptions(),
             request.snapshot(),
             total);

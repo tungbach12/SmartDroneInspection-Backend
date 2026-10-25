@@ -52,10 +52,6 @@ public class MaintenanceWorkLog {
   @Column(nullable = false, precision = 18, scale = 6)
   private BigDecimal hours;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "actual_cost_references", columnDefinition = "jsonb")
-  private String actualCostReferences;
-
   @Column(name = "as_left_condition", length = 4000)
   private String asLeftCondition;
 
@@ -96,7 +92,6 @@ public class MaintenanceWorkLog {
       Instant startedAt,
       Instant endedAt,
       BigDecimal hours,
-      String actualCostReferences,
       String asLeftCondition,
       String testReadings) {
     if (status != WorkLogStatus.IN_PROGRESS) {
@@ -110,7 +105,6 @@ public class MaintenanceWorkLog {
     this.startedAt = from;
     this.endedAt = endedAt;
     this.hours = requireHours(hours);
-    this.actualCostReferences = JsonbText.toNullableJson(actualCostReferences);
     this.asLeftCondition = asLeftCondition;
     this.testReadings = JsonbText.toNullableJson(testReadings);
     this.updatedAt = Instant.now();
@@ -199,10 +193,6 @@ public class MaintenanceWorkLog {
 
   public BigDecimal getHours() {
     return hours;
-  }
-
-  public String getActualCostReferences() {
-    return JsonbText.fromJson(actualCostReferences);
   }
 
   public String getTestReadings() {

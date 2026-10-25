@@ -23,8 +23,7 @@ class MaintenanceTaskTest {
         LEAD,
         Instant.now(),
         Instant.now().plusSeconds(7200),
-        "{\"checks\":[]}",
-        0);
+        "{\"checks\":[]}");
   }
 
   @Test
@@ -45,16 +44,7 @@ class MaintenanceTaskTest {
   @Test
   void requiresName() {
     assertThatThrownBy(
-            () -> new MaintenanceTask(WORK_ORDER, 1, "  ", "method", LEAD, null, null, null, 0))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void rejectsNegativeDisplayOrder() {
-    assertThatThrownBy(
-            () ->
-                new MaintenanceTask(
-                    WORK_ORDER, 1, "Replace blade", null, LEAD, null, null, null, -1))
+            () -> new MaintenanceTask(WORK_ORDER, 1, "  ", "method", LEAD, null, null, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

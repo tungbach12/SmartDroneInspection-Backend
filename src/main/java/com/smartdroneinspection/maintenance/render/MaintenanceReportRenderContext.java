@@ -53,9 +53,5 @@ public record MaintenanceReportRenderContext(
       String variancePercent) {}
 
   public record AcceptanceView(
-      String decision,
-      String reviewerName,
-      String decidedAt,
-      String technicalComments,
-      String signatureReference) {}
+      String decision, String reviewerName, String decidedAt, String technicalComments) {}
 }

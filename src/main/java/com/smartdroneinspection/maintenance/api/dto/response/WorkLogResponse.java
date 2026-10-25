@@ -14,7 +14,6 @@ public record WorkLogResponse(
     Instant startedAt,
     Instant endedAt,
     BigDecimal hours,
-    String actualCostReferences,
     String asLeftCondition,
     String testReadings,
     WorkLogStatus status) {
@@ -27,7 +26,6 @@ public record WorkLogResponse(
         log.getStartedAt(),
         log.getEndedAt(),
         log.getHours(),
-        log.getActualCostReferences(),
         log.getAsLeftCondition(),
         log.getTestReadings(),
         log.getStatus());

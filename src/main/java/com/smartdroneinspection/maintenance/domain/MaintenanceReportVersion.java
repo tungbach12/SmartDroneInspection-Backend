@@ -43,30 +43,6 @@ public class MaintenanceReportVersion {
   @Column(name = "author_verified_at")
   private Instant authorVerifiedAt;
 
-  @Column(name = "llm_provider", length = 96)
-  private String llmProvider;
-
-  @Column(name = "llm_model", length = 160)
-  private String llmModel;
-
-  @Column(name = "prompt_version", length = 96)
-  private String promptVersion;
-
-  @Column(name = "generated_at")
-  private Instant generatedAt;
-
-  @Column(name = "approved_scope_hash", length = 128)
-  private String approvedScopeHash;
-
-  @Column(name = "change_snapshot_hash", length = 128)
-  private String changeSnapshotHash;
-
-  @Column(name = "work_log_snapshot_hash", length = 128)
-  private String workLogSnapshotHash;
-
-  @Column(name = "actual_cost_snapshot_hash", length = 128)
-  private String actualCostSnapshotHash;
-
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "content_snapshot", nullable = false, columnDefinition = "jsonb")
   private String contentSnapshot;
@@ -84,29 +60,11 @@ public class MaintenanceReportVersion {
   protected MaintenanceReportVersion() {}
 
   public MaintenanceReportVersion(
-      UUID workOrderId,
-      int versionNo,
-      UUID authorUserId,
-      String contentSnapshot,
-      String approvedScopeHash,
-      String changeSnapshotHash,
-      String workLogSnapshotHash,
-      String actualCostSnapshotHash,
-      String llmProvider,
-      String llmModel,
-      String promptVersion) {
+      UUID workOrderId, int versionNo, UUID authorUserId, String contentSnapshot) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.versionNo = requirePositive(versionNo, "versionNo");
     this.authorUserId = require(authorUserId, "authorUserId");
     this.contentSnapshot = JsonbText.toRequiredJson(contentSnapshot);
-    this.approvedScopeHash = approvedScopeHash;
-    this.changeSnapshotHash = changeSnapshotHash;
-    this.workLogSnapshotHash = workLogSnapshotHash;
-    this.actualCostSnapshotHash = actualCostSnapshotHash;
-    this.llmProvider = llmProvider;
-    this.llmModel = llmModel;
-    this.promptVersion = promptVersion;
-    this.generatedAt = llmProvider == null ? null : Instant.now();
     this.status = ReportVersionStatus.DRAFT;
     this.createdAt = Instant.now();
   }
@@ -211,26 +169,6 @@ public class MaintenanceReportVersion {
 
   public Instant getAuthorVerifiedAt() {
     return authorVerifiedAt;
-  }
-
-  public String getLlmProvider() {
-    return llmProvider;
-  }
-
-  public String getApprovedScopeHash() {
-    return approvedScopeHash;
-  }
-
-  public String getChangeSnapshotHash() {
-    return changeSnapshotHash;
-  }
-
-  public String getWorkLogSnapshotHash() {
-    return workLogSnapshotHash;
-  }
-
-  public String getActualCostSnapshotHash() {
-    return actualCostSnapshotHash;
   }
 
   public String getContentSnapshot() {

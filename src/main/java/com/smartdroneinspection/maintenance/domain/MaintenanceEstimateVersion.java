@@ -58,10 +58,6 @@ public class MaintenanceEstimateVersion {
   @Column(nullable = false, length = 3)
   private String currency;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "tax_basis", columnDefinition = "jsonb")
-  private String taxBasis;
-
   @Column(name = "baseline_total", nullable = false, precision = 18, scale = TOTAL_SCALE)
   private BigDecimal baselineTotal;
 
@@ -83,7 +79,6 @@ public class MaintenanceEstimateVersion {
       int versionNo,
       UUID preparedByUserId,
       String currency,
-      String taxBasis,
       String assumptions,
       String snapshot,
       BigDecimal baselineTotal) {
@@ -91,7 +86,6 @@ public class MaintenanceEstimateVersion {
     this.versionNo = requirePositive(versionNo, "versionNo");
     this.preparedByUserId = require(preparedByUserId, "preparedByUserId");
     this.currency = requireText(currency, "currency");
-    this.taxBasis = JsonbText.toNullableJson(taxBasis);
     this.assumptions = JsonbText.toNullableJson(assumptions);
     this.snapshot = JsonbText.toRequiredJson(snapshot);
     this.baselineTotal = requireTotal(baselineTotal);
@@ -227,10 +221,6 @@ public class MaintenanceEstimateVersion {
 
   public String getCurrency() {
     return currency;
-  }
-
-  public String getTaxBasis() {
-    return JsonbText.fromJson(taxBasis);
   }
 
   public BigDecimal getBaselineTotal() {

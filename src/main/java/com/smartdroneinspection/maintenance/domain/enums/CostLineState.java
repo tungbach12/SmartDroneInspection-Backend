@@ -8,6 +8,5 @@ package com.smartdroneinspection.maintenance.domain.enums;
  */
 public enum CostLineState {
   ESTIMATE,
-  CHANGE,
   ACTUAL
 }

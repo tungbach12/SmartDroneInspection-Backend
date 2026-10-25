@@ -15,7 +15,6 @@ import java.util.UUID;
  */
 public record CreateEstimateVersionRequest(
     @NotBlank String currency,
-    String taxBasis,
     String assumptions,
     @NotBlank String snapshot,
     @NotNull List<EstimateLineRequest> lines) {
@@ -27,6 +26,5 @@ public record CreateEstimateVersionRequest(
       @NotBlank String description,
       BigDecimal quantity,
       String unit,
-      BigDecimal unitRate,
-      String evidenceReference) {}
+      BigDecimal unitRate) {}
 }

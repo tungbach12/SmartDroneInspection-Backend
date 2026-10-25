@@ -7,6 +7,16 @@ import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.ChecklistItem;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision;
+import com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder;
+import com.smartdroneinspection.maintenance.domain.MaintenanceCostLine;
+import com.smartdroneinspection.maintenance.domain.MaintenanceEstimateVersion;
+import com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion;
+import com.smartdroneinspection.maintenance.domain.MaintenanceTask;
+import com.smartdroneinspection.maintenance.domain.MaintenanceTeamMember;
+import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
+import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
+import com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk;
 import com.smartdroneinspection.notifications.domain.Notification;
 import com.smartdroneinspection.subscriptions.domain.Subscription;
 import com.smartdroneinspection.users.domain.AuthSession;
@@ -35,7 +45,17 @@ class PersistenceEntityMappingTest {
           Organization.class,
           User.class,
           Subscription.class,
-          WorkforceCredential.class);
+          WorkforceCredential.class,
+          MaintenanceWorkOrder.class,
+          MaintenanceTask.class,
+          MaintenanceTeamMember.class,
+          MaintenanceEstimateVersion.class,
+          MaintenanceCostLine.class,
+          MaintenanceChangeOrder.class,
+          MaintenanceWorkLog.class,
+          MaintenanceReportVersion.class,
+          MaintenanceAcceptanceDecision.class,
+          RepairKnowledgeChunk.class);
 
   @Test
   void allFeatureEntitiesBuildValidHibernateMetadataWithoutDatabaseAccess() {

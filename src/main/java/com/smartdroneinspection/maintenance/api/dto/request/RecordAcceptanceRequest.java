@@ -13,5 +13,4 @@ public record RecordAcceptanceRequest(
     @NotNull AcceptanceDecisionKind decision,
     String technicalComments,
     String acceptanceChecklist,
-    String testResult,
-    String signatureReference) {}
+    String testResult) {}

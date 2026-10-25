@@ -15,41 +15,22 @@ class MaintenanceReportVersionTest {
   private static final UUID OTHER = UUID.randomUUID();
 
   private static MaintenanceReportVersion draft() {
-    return new MaintenanceReportVersion(
-        WORK_ORDER,
-        1,
-        AUTHOR,
-        "{\"summary\":\"Replaced blade\"}",
-        "scope-hash",
-        null,
-        "log-hash",
-        "cost-hash",
-        null,
-        null,
-        null);
+    return new MaintenanceReportVersion(WORK_ORDER, 1, AUTHOR, "{\"summary\":\"Replaced blade\"}");
   }
 
   @Test
-  void startsAsDraftWithSnapshotHashes() {
+  void startsAsDraft() {
     MaintenanceReportVersion report = draft();
 
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.DRAFT);
     assertThat(report.getContentSnapshot()).contains("Replaced blade");
-    assertThat(report.getApprovedScopeHash()).isEqualTo("scope-hash");
-    assertThat(report.getActualCostSnapshotHash()).isEqualTo("cost-hash");
   }
 
   @Test
   void requiresAuthorAndPositiveVersion() {
-    assertThatThrownBy(
-            () ->
-                new MaintenanceReportVersion(
-                    WORK_ORDER, 0, AUTHOR, "{}", null, null, null, null, null, null, null))
+    assertThatThrownBy(() -> new MaintenanceReportVersion(WORK_ORDER, 0, AUTHOR, "{}"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                new MaintenanceReportVersion(
-                    WORK_ORDER, 1, null, "{}", null, null, null, null, null, null, null))
+    assertThatThrownBy(() -> new MaintenanceReportVersion(WORK_ORDER, 1, null, "{}"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -109,26 +90,6 @@ class MaintenanceReportVersionTest {
     report.verifyAsAuthor(AUTHOR);
     report.submit();
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.SUBMITTED);
-  }
-
-  @Test
-  void aiMetadataIsOptionalAndDoesNotSetAuthority() {
-    MaintenanceReportVersion report =
-        new MaintenanceReportVersion(
-            WORK_ORDER,
-            2,
-            AUTHOR,
-            "{}",
-            null,
-            null,
-            null,
-            null,
-            "anthropic",
-            "claude-sonnet-5-5",
-            "v1");
-
-    assertThat(report.getLlmProvider()).isEqualTo("anthropic");
-    assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.DRAFT);
   }
 
   @Test

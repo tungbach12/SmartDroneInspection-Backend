@@ -55,12 +55,6 @@ public class MaintenanceTask {
   @Column(nullable = false, length = 24)
   private TaskStatus status;
 
-  @Column(name = "completion_notes", length = 4000)
-  private String completionNotes;
-
-  @Column(name = "display_order", nullable = false)
-  private int displayOrder;
-
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -81,12 +75,10 @@ public class MaintenanceTask {
       UUID assignedEngineerUserId,
       Instant plannedStartAt,
       Instant plannedEndAt,
-      String acceptanceCriteria,
-      int displayOrder) {
+      String acceptanceCriteria) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.taskNumber = requireNumber(taskNumber, "taskNumber");
     this.name = requireText(name, "name");
-    this.displayOrder = requireDisplayOrder(displayOrder);
     this.method = method;
     this.assignedEngineerUserId = assignedEngineerUserId;
     this.plannedStartAt = plannedStartAt;
@@ -174,13 +166,6 @@ public class MaintenanceTask {
     return value;
   }
 
-  private static int requireDisplayOrder(int value) {
-    if (value < 0) {
-      throw new IllegalArgumentException("displayOrder must not be negative");
-    }
-    return value;
-  }
-
   private static String requireText(String value, String name) {
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(name + " is required");
@@ -226,10 +211,6 @@ public class MaintenanceTask {
 
   public TaskStatus getStatus() {
     return status;
-  }
-
-  public int getDisplayOrder() {
-    return displayOrder;
   }
 
   public Instant getCreatedAt() {

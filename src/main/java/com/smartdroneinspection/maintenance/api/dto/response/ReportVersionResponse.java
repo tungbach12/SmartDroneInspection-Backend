@@ -12,10 +12,6 @@ public record ReportVersionResponse(
     ReportVersionStatus status,
     UUID authorUserId,
     Instant authorVerifiedAt,
-    String approvedScopeHash,
-    String changeSnapshotHash,
-    String workLogSnapshotHash,
-    String actualCostSnapshotHash,
     String contentSnapshot,
     String renderedObjectKey,
     String renderedChecksumSha256) {
@@ -27,10 +23,6 @@ public record ReportVersionResponse(
         report.getStatus(),
         report.getAuthorUserId(),
         report.getAuthorVerifiedAt(),
-        report.getApprovedScopeHash(),
-        report.getChangeSnapshotHash(),
-        report.getWorkLogSnapshotHash(),
-        report.getActualCostSnapshotHash(),
         report.getContentSnapshot(),
         report.getRenderedObjectKey(),
         report.getRenderedChecksumSha256());

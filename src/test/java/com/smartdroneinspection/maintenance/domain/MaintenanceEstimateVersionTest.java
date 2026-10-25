@@ -22,7 +22,7 @@ class MaintenanceEstimateVersionTest {
 
   private static MaintenanceEstimateVersion version(BigDecimal total) {
     return new MaintenanceEstimateVersion(
-        WORK_ORDER, 1, LEAD, "VND", null, null, "{\"lines\":[]}", total);
+        WORK_ORDER, 1, LEAD, "VND", null, "{\"lines\":[]}", total);
   }
 
   private static MaintenanceCostLine pricedLine(String quantity, String rate) {
@@ -37,8 +37,6 @@ class MaintenanceEstimateVersionTest {
         "hour",
         new BigDecimal(rate),
         "VND",
-        null,
-        null,
         LEAD);
   }
 

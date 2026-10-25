@@ -14,6 +14,5 @@ public record RecordWorkLogRequest(
     Instant startedAt,
     Instant endedAt,
     @NotNull BigDecimal hours,
-    String actualCostReferences,
     String asLeftCondition,
     String testReadings) {}

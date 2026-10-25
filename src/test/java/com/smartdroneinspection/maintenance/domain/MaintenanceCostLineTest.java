@@ -28,8 +28,6 @@ class MaintenanceCostLineTest {
         "hour",
         unitRate,
         "VND",
-        null,
-        null,
         ENGINEER);
   }
 
@@ -93,8 +91,6 @@ class MaintenanceCostLineTest {
                     "hour",
                     BigDecimal.TEN,
                     "VND",
-                    null,
-                    null,
                     ENGINEER))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
@@ -109,8 +105,6 @@ class MaintenanceCostLineTest {
                     BigDecimal.ONE,
                     "hour",
                     BigDecimal.TEN,
-                    null,
-                    null,
                     null,
                     ENGINEER))
         .isInstanceOf(IllegalArgumentException.class);

@@ -10,6 +10,5 @@ package com.smartdroneinspection.maintenance.domain.enums;
 public enum AcceptanceDecisionKind {
   ACCEPTED,
   REWORK_REQUIRED,
-  REINSPECTION_REQUIRED,
-  REJECTED
+  REINSPECTION_REQUIRED
 }

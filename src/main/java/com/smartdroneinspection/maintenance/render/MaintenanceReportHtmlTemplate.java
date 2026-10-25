@@ -201,7 +201,6 @@ final class MaintenanceReportHtmlTemplate {
     row(body, "Acceptance decision", av.decision());
     row(body, "Decided at", av.decidedAt());
     row(body, "Technical comments", av.technicalComments());
-    row(body, "Signature reference", av.signatureReference());
     body.append("</table>");
     body.append(
         "<p class=\"scope\">Technical acceptance is rendered by an independent Organization Admin"

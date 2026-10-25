@@ -53,12 +53,6 @@ public class MaintenanceAcceptanceDecision {
   @Column(name = "decided_at", nullable = false, updatable = false)
   private Instant decidedAt;
 
-  @Column(name = "signature_reference", length = 1000)
-  private String signatureReference;
-
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
-
   protected MaintenanceAcceptanceDecision() {}
 
   public MaintenanceAcceptanceDecision(
@@ -68,8 +62,7 @@ public class MaintenanceAcceptanceDecision {
       AcceptanceDecisionKind decision,
       String technicalComments,
       String acceptanceChecklist,
-      String testResult,
-      String signatureReference) {
+      String testResult) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.reportVersionId = require(reportVersionId, "reportVersionId");
     this.reviewerUserId = require(reviewerUserId, "reviewerUserId");
@@ -81,9 +74,7 @@ public class MaintenanceAcceptanceDecision {
     this.technicalComments = technicalComments;
     this.acceptanceChecklist = JsonbText.toNullableJson(acceptanceChecklist);
     this.testResult = JsonbText.toNullableJson(testResult);
-    this.signatureReference = signatureReference;
     this.decidedAt = Instant.now();
-    this.createdAt = this.decidedAt;
   }
 
   private static boolean isBlank(String value) {
@@ -138,9 +129,5 @@ public class MaintenanceAcceptanceDecision {
 
   public Instant getDecidedAt() {
     return decidedAt;
-  }
-
-  public String getSignatureReference() {
-    return signatureReference;
   }
 }

@@ -78,7 +78,6 @@ class MaintenanceWorkLogTest {
         start,
         end,
         new BigDecimal("4"),
-        "{\"lines\":[]}",
         "Torque 40 Nm",
         "{\"narrative\":\"Replaced blade and torque checked\",\"torque\":40}");
 
@@ -94,7 +93,7 @@ class MaintenanceWorkLogTest {
     Instant start = l.getStartedAt();
 
     assertThatThrownBy(
-            () -> l.recordProgress(start, start.minusSeconds(60), BigDecimal.ONE, null, null, null))
+            () -> l.recordProgress(start, start.minusSeconds(60), BigDecimal.ONE, null, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -102,7 +101,7 @@ class MaintenanceWorkLogTest {
   void submitsWithAnEndTime() {
     MaintenanceWorkLog l = log();
     Instant end = l.getStartedAt().plusSeconds(1800);
-    l.recordProgress(null, end, new BigDecimal("1"), null, null, null);
+    l.recordProgress(null, end, new BigDecimal("1"), null, null);
 
     l.submit();
 
@@ -119,11 +118,11 @@ class MaintenanceWorkLogTest {
   void cannotSubmitTwiceOrEditAfterSubmitting() {
     MaintenanceWorkLog l = log();
     Instant end = l.getStartedAt().plusSeconds(60);
-    l.recordProgress(null, end, BigDecimal.ONE, null, null, null);
+    l.recordProgress(null, end, BigDecimal.ONE, null, null);
     l.submit();
 
     assertThatThrownBy(l::submit).isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> l.recordProgress(null, end, BigDecimal.ONE, null, null, null))
+    assertThatThrownBy(() -> l.recordProgress(null, end, BigDecimal.ONE, null, null))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -149,7 +148,7 @@ class MaintenanceWorkLogTest {
   void leadVerifiesOnlySubmittedLogs() {
     MaintenanceWorkLog l = log();
     Instant end = l.getStartedAt().plusSeconds(3600);
-    l.recordProgress(null, end, BigDecimal.ONE, null, "Installed", "{}");
+    l.recordProgress(null, end, BigDecimal.ONE, "Installed", "{}");
 
     assertThatThrownBy(l::verify).isInstanceOf(IllegalStateException.class);
     l.submit();

@@ -43,16 +43,6 @@ public class MaintenanceChangeOrder {
   @Column(name = "proposed_delta", precision = 18, scale = 2)
   private BigDecimal proposedDelta;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "supporting_evidence", columnDefinition = "jsonb")
-  private String supportingEvidence;
-
-  @Column(name = "proposed_start_at")
-  private Instant proposedStartAt;
-
-  @Column(name = "proposed_end_at")
-  private Instant proposedEndAt;
-
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
   private ChangeOrderStatus status;
@@ -87,20 +77,13 @@ public class MaintenanceChangeOrder {
       String reason,
       String affectedTasks,
       BigDecimal proposedDelta,
-      String supportingEvidence,
-      Instant proposedStartAt,
-      Instant proposedEndAt,
       UUID requestedByUserId) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.changeNumber = requirePositive(changeNumber, "changeNumber");
     this.reason = requireText(reason, "reason");
     this.affectedTasks = JsonbText.toNullableJson(affectedTasks);
     this.proposedDelta = proposedDelta;
-    this.supportingEvidence = JsonbText.toNullableJson(supportingEvidence);
-    this.proposedStartAt = proposedStartAt;
-    this.proposedEndAt = proposedEndAt;
     this.requestedByUserId = require(requestedByUserId, "requestedByUserId");
-    requireWindow(proposedStartAt, proposedEndAt);
     this.status = ChangeOrderStatus.DRAFT;
     this.createdAt = Instant.now();
     this.updatedAt = this.createdAt;
@@ -163,12 +146,6 @@ public class MaintenanceChangeOrder {
     throw new IllegalStateException("Change order is " + status + "; expected one of " + allowed);
   }
 
-  private static void requireWindow(Instant start, Instant end) {
-    if (start != null && end != null && !end.isAfter(start)) {
-      throw new IllegalArgumentException("proposedEndAt must be after proposedStartAt");
-    }
-  }
-
   private static UUID require(UUID value, String name) {
     if (value == null) {
       throw new IllegalArgumentException(name + " is required");
@@ -212,18 +189,6 @@ public class MaintenanceChangeOrder {
 
   public BigDecimal getProposedDelta() {
     return proposedDelta;
-  }
-
-  public String getSupportingEvidence() {
-    return JsonbText.fromJson(supportingEvidence);
-  }
-
-  public Instant getProposedStartAt() {
-    return proposedStartAt;
-  }
-
-  public Instant getProposedEndAt() {
-    return proposedEndAt;
   }
 
   public ChangeOrderStatus getStatus() {
