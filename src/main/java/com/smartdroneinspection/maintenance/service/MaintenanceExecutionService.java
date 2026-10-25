@@ -300,12 +300,7 @@ public class MaintenanceExecutionService {
             .orElse(1);
     MaintenanceChangeOrder change =
         new MaintenanceChangeOrder(
-            order.getId(),
-            nextNumber,
-            request.reason(),
-            request.affectedTasks(),
-            request.proposedDelta(),
-            actorId);
+            order.getId(), nextNumber, request.reason(), request.proposedDelta(), actorId);
     change.submit();
     changeOrders.saveAndFlush(change);
     return ChangeOrderResponse.from(change);
@@ -390,10 +385,9 @@ public class MaintenanceExecutionService {
             .map(report -> report.getVersionNo() + 1)
             .orElse(1);
     MaintenanceReportVersion report =
-        new MaintenanceReportVersion(
-            order.getId(), nextVersion, actorId, request.contentSnapshot());
+        new MaintenanceReportVersion(order.getId(), nextVersion, request.contentSnapshot());
     reportVersions.saveAndFlush(report);
-    return ReportVersionResponse.from(report);
+    return ReportVersionResponse.from(report, order.getReportAuthorUserId());
   }
 
   /** MF4-16: only the author verifies the report against the team's records. */
@@ -402,12 +396,12 @@ public class MaintenanceExecutionService {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     MaintenanceReportVersion report = requireReport(order, versionNo);
     try {
-      report.verifyAsAuthor(actorId);
-    } catch (IllegalStateException ex) {
+      report.verifyAsAuthor(actorId, order.getReportAuthorUserId());
+    } catch (IllegalStateException | IllegalArgumentException ex) {
       throw conflict(ex);
     }
     reportVersions.saveAndFlush(report);
-    return ReportVersionResponse.from(report);
+    return ReportVersionResponse.from(report, order.getReportAuthorUserId());
   }
 
   /** MF4-17: the author submits the report; the work order moves to acceptance review. */
@@ -426,14 +420,14 @@ public class MaintenanceExecutionService {
     }
     reportVersions.saveAndFlush(report);
     workOrders.saveAndFlush(order);
-    return ReportVersionResponse.from(report);
+    return ReportVersionResponse.from(report, order.getReportAuthorUserId());
   }
 
   @Transactional(readOnly = true)
   public List<ReportVersionResponse> listReportVersions(UUID actorId, UUID workOrderId) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     return reportVersions.findByWorkOrderIdOrderByVersionNoDesc(order.getId()).stream()
-        .map(ReportVersionResponse::from)
+        .map(r -> ReportVersionResponse.from(r, order.getReportAuthorUserId()))
         .toList();
   }
 
@@ -790,7 +784,7 @@ public class MaintenanceExecutionService {
 
     String authorName =
         userAccess
-            .findActiveUser(report.getAuthorUserId())
+            .findActiveUser(order.getReportAuthorUserId())
             .map(UserAccess.ActiveUser::fullName)
             .orElse("Author");
     String leadName =

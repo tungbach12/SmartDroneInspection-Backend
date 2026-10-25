@@ -568,8 +568,8 @@ CREATE TABLE maintenance_acceptance_decisions (
     reviewer_user_id uuid NOT NULL,
     decision character varying(32) NOT NULL,
     technical_comments character varying(4000),
-    acceptance_checklist jsonb,
-    test_result jsonb,
+    acceptance_checklist character varying(4000),
+    test_result character varying(4000),
     decided_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_maintenance_acceptance_decision CHECK (((decision)::text = ANY ((ARRAY['ACCEPTED'::character varying, 'REWORK_REQUIRED'::character varying, 'REINSPECTION_REQUIRED'::character varying])::text[])))
 );
@@ -584,7 +584,6 @@ CREATE TABLE maintenance_change_orders (
     work_order_id uuid NOT NULL,
     change_number integer NOT NULL,
     reason character varying(2000) NOT NULL,
-    affected_tasks jsonb,
     proposed_delta numeric(18,2),
     status character varying(24) NOT NULL,
     requested_by_user_id uuid NOT NULL,
@@ -638,8 +637,7 @@ CREATE TABLE maintenance_estimate_versions (
     approved_at timestamp with time zone,
     currency character(3) NOT NULL,
     baseline_total numeric(18,2) DEFAULT 0 NOT NULL,
-    assumptions jsonb,
-    snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    assumptions character varying(4000),
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_maintenance_estimate_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'SUBMITTED'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'SUPERSEDED'::character varying])::text[]))),
     CONSTRAINT ck_maintenance_estimate_total CHECK ((baseline_total >= (0)::numeric)),
@@ -656,9 +654,8 @@ CREATE TABLE maintenance_reports (
     work_order_id uuid NOT NULL,
     version_no integer NOT NULL,
     status character varying(32) NOT NULL,
-    author_user_id uuid NOT NULL,
     author_verified_at timestamp with time zone,
-    content_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    content_snapshot text NOT NULL,
     rendered_object_key character varying(1000),
     rendered_checksum_sha256 character(64),
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -680,7 +677,7 @@ CREATE TABLE maintenance_tasks (
     assigned_engineer_user_id uuid,
     planned_start_at timestamp with time zone,
     planned_end_at timestamp with time zone,
-    acceptance_criteria jsonb,
+    acceptance_criteria character varying(4000),
     status character varying(24) NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -723,7 +720,7 @@ CREATE TABLE maintenance_work_logs (
     ended_at timestamp with time zone,
     hours numeric(18,6) NOT NULL,
     as_left_condition character varying(4000),
-    test_readings jsonb,
+    test_readings character varying(4000),
     status character varying(24) NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -746,8 +743,8 @@ CREATE TABLE maintenance_work_orders (
     status character varying(32) NOT NULL,
     priority character varying(24),
     due_at timestamp with time zone,
-    corrective_scope jsonb,
-    acceptance_criteria jsonb,
+    corrective_scope character varying(4000),
+    acceptance_criteria character varying(4000),
     owner_user_id uuid NOT NULL,
     budget_approver_user_id uuid NOT NULL,
     team_lead_user_id uuid,
@@ -2334,14 +2331,6 @@ ALTER TABLE ONLY maintenance_estimate_versions
 
 ALTER TABLE ONLY maintenance_estimate_versions
     ADD CONSTRAINT maintenance_estimate_versions_work_order_id_fkey FOREIGN KEY (work_order_id) REFERENCES maintenance_work_orders(id) ON DELETE RESTRICT;
-
-
---
--- Name: maintenance_reports maintenance_reports_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY maintenance_reports
-    ADD CONSTRAINT maintenance_reports_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --

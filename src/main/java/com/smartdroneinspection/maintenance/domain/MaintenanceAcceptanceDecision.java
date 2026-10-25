@@ -10,8 +10,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * An append-only record of the independent reviewer's decision on a completed work order.
@@ -42,12 +40,10 @@ public class MaintenanceAcceptanceDecision {
   @Column(name = "technical_comments", length = 4000)
   private String technicalComments;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "acceptance_checklist", columnDefinition = "jsonb")
+  @Column(name = "acceptance_checklist", length = 4000)
   private String acceptanceChecklist;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "test_result", columnDefinition = "jsonb")
+  @Column(name = "test_result", length = 4000)
   private String testResult;
 
   @Column(name = "decided_at", nullable = false, updatable = false)
@@ -72,8 +68,8 @@ public class MaintenanceAcceptanceDecision {
           "Only an acceptance may be recorded without technical comments");
     }
     this.technicalComments = technicalComments;
-    this.acceptanceChecklist = JsonbText.toNullableJson(acceptanceChecklist);
-    this.testResult = JsonbText.toNullableJson(testResult);
+    this.acceptanceChecklist = acceptanceChecklist;
+    this.testResult = testResult;
     this.decidedAt = Instant.now();
   }
 
@@ -120,11 +116,11 @@ public class MaintenanceAcceptanceDecision {
   }
 
   public String getAcceptanceChecklist() {
-    return JsonbText.fromJson(acceptanceChecklist);
+    return acceptanceChecklist;
   }
 
   public String getTestResult() {
-    return JsonbText.fromJson(testResult);
+    return testResult;
   }
 
   public Instant getDecidedAt() {

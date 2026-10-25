@@ -17,7 +17,6 @@ public record EstimateVersionResponse(
     String currency,
     BigDecimal baselineTotal,
     String assumptions,
-    String snapshot,
     Instant createdAt) {
 
   public static EstimateVersionResponse from(MaintenanceEstimateVersion version) {
@@ -31,7 +30,6 @@ public record EstimateVersionResponse(
         version.getCurrency(),
         version.getBaselineTotal(),
         version.getAssumptions(),
-        version.getSnapshot(),
         version.getCreatedAt());
   }
 }

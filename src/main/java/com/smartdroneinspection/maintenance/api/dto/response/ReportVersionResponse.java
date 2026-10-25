@@ -16,12 +16,12 @@ public record ReportVersionResponse(
     String renderedObjectKey,
     String renderedChecksumSha256) {
 
-  public static ReportVersionResponse from(MaintenanceReportVersion report) {
+  public static ReportVersionResponse from(MaintenanceReportVersion report, UUID authorUserId) {
     return new ReportVersionResponse(
         report.getId(),
         report.getVersionNo(),
         report.getStatus(),
-        report.getAuthorUserId(),
+        authorUserId,
         report.getAuthorVerifiedAt(),
         report.getContentSnapshot(),
         report.getRenderedObjectKey(),

@@ -16,8 +16,7 @@ class MaintenanceChangeOrderTest {
   private static final UUID ORG_ADMIN = UUID.randomUUID();
 
   private static MaintenanceChangeOrder change(BigDecimal delta) {
-    return new MaintenanceChangeOrder(
-        WORK_ORDER, 1, "Hidden damage found", "{\"taskIds\":[]}", delta, LEAD);
+    return new MaintenanceChangeOrder(WORK_ORDER, 1, "Hidden damage found", delta, LEAD);
   }
 
   @Test
@@ -30,18 +29,15 @@ class MaintenanceChangeOrderTest {
 
   @Test
   void requiresReasonAndRequester() {
-    assertThatThrownBy(
-            () -> new MaintenanceChangeOrder(WORK_ORDER, 1, "  ", null, BigDecimal.ONE, LEAD))
+    assertThatThrownBy(() -> new MaintenanceChangeOrder(WORK_ORDER, 1, "  ", BigDecimal.ONE, LEAD))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () -> new MaintenanceChangeOrder(WORK_ORDER, 1, "Why", null, BigDecimal.ONE, null))
+    assertThatThrownBy(() -> new MaintenanceChangeOrder(WORK_ORDER, 1, "Why", BigDecimal.ONE, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void rejectsNonPositiveChangeNumber() {
-    assertThatThrownBy(
-            () -> new MaintenanceChangeOrder(WORK_ORDER, 0, "Why", null, BigDecimal.ONE, LEAD))
+    assertThatThrownBy(() -> new MaintenanceChangeOrder(WORK_ORDER, 0, "Why", BigDecimal.ONE, LEAD))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

@@ -15,7 +15,7 @@ class MaintenanceReportVersionTest {
   private static final UUID OTHER = UUID.randomUUID();
 
   private static MaintenanceReportVersion draft() {
-    return new MaintenanceReportVersion(WORK_ORDER, 1, AUTHOR, "{\"summary\":\"Replaced blade\"}");
+    return new MaintenanceReportVersion(WORK_ORDER, 1, "{\"summary\":\"Replaced blade\"}");
   }
 
   @Test
@@ -27,10 +27,10 @@ class MaintenanceReportVersionTest {
   }
 
   @Test
-  void requiresAuthorAndPositiveVersion() {
-    assertThatThrownBy(() -> new MaintenanceReportVersion(WORK_ORDER, 0, AUTHOR, "{}"))
+  void requiresContentAndPositiveVersion() {
+    assertThatThrownBy(() -> new MaintenanceReportVersion(WORK_ORDER, 0, "{}"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> new MaintenanceReportVersion(WORK_ORDER, 1, null, "{}"))
+    assertThatThrownBy(() -> new MaintenanceReportVersion(WORK_ORDER, 1, "  "))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -38,10 +38,10 @@ class MaintenanceReportVersionTest {
   void onlyAuthorCanVerify() {
     MaintenanceReportVersion report = draft();
 
-    assertThatThrownBy(() -> report.verifyAsAuthor(OTHER))
+    assertThatThrownBy(() -> report.verifyAsAuthor(OTHER, AUTHOR))
         .isInstanceOf(IllegalStateException.class);
 
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
 
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.AUTHOR_VERIFIED);
     assertThat(report.getAuthorVerifiedAt()).isNotNull();
@@ -53,7 +53,7 @@ class MaintenanceReportVersionTest {
     report.editContent("{\"summary\":\"Corrected\"}");
     assertThat(report.getContentSnapshot()).contains("Corrected");
 
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
     report.submit();
 
     assertThatThrownBy(() -> report.editContent("{}")).isInstanceOf(IllegalStateException.class);
@@ -70,7 +70,7 @@ class MaintenanceReportVersionTest {
     assertThatThrownBy(draft()::submit).isInstanceOf(IllegalStateException.class);
 
     MaintenanceReportVersion report = draft();
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
     report.submit();
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.SUBMITTED);
   }
@@ -78,7 +78,7 @@ class MaintenanceReportVersionTest {
   @Test
   void returnRequiresReasonAndCanBeReverified() {
     MaintenanceReportVersion report = draft();
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
     report.submit();
 
     assertThatThrownBy(() -> report.returnToAuthor("  "))
@@ -87,7 +87,7 @@ class MaintenanceReportVersionTest {
     report.returnToAuthor("Add a torque reading");
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.RETURNED);
     report.editContent("{\"summary\":\"Corrected with torque\"}");
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
     report.submit();
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.SUBMITTED);
   }
@@ -95,7 +95,7 @@ class MaintenanceReportVersionTest {
   @Test
   void recordsArtefactWhenApproved() {
     MaintenanceReportVersion report = draft();
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
     report.submit();
     report.approveReport();
 
@@ -111,7 +111,7 @@ class MaintenanceReportVersionTest {
     assertThatThrownBy(() -> report.recordArtefact("key", "hash"))
         .isInstanceOf(IllegalStateException.class);
 
-    report.verifyAsAuthor(AUTHOR);
+    report.verifyAsAuthor(AUTHOR, AUTHOR);
     report.submit();
     report.approveReport();
 

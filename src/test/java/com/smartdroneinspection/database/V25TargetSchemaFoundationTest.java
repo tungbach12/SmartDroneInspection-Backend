@@ -260,7 +260,6 @@ class V25TargetSchemaFoundationTest {
                     "currency",
                     "baseline_total",
                     "assumptions",
-                    "snapshot",
                     "created_at")),
             Map.entry(
                 "maintenance_cost_lines",
@@ -284,7 +283,6 @@ class V25TargetSchemaFoundationTest {
                     "work_order_id",
                     "change_number",
                     "reason",
-                    "affected_tasks",
                     "proposed_delta",
                     "status",
                     "requested_by_user_id",
@@ -315,7 +313,6 @@ class V25TargetSchemaFoundationTest {
                     "work_order_id",
                     "version_no",
                     "status",
-                    "author_user_id",
                     "author_verified_at",
                     "content_snapshot",
                     "rendered_object_key",

@@ -433,13 +433,7 @@ public class WorkOrderService {
     BigDecimal total = MaintenanceEstimateVersion.totalOf(lines);
     MaintenanceEstimateVersion version =
         new MaintenanceEstimateVersion(
-            order.getId(),
-            nextVersion,
-            actorId,
-            request.currency(),
-            request.assumptions(),
-            request.snapshot(),
-            total);
+            order.getId(), nextVersion, actorId, request.currency(), request.assumptions(), total);
     estimates.saveAndFlush(version);
 
     for (MaintenanceCostLine line : lines) {

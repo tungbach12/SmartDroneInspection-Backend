@@ -12,8 +12,6 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * A proposal to widen an approved work order's scope, cost or time.
@@ -35,10 +33,6 @@ public class MaintenanceChangeOrder {
 
   @Column(nullable = false, length = 2000)
   private String reason;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "affected_tasks", columnDefinition = "jsonb")
-  private String affectedTasks;
 
   @Column(name = "proposed_delta", precision = 18, scale = 2)
   private BigDecimal proposedDelta;
@@ -75,13 +69,11 @@ public class MaintenanceChangeOrder {
       UUID workOrderId,
       int changeNumber,
       String reason,
-      String affectedTasks,
       BigDecimal proposedDelta,
       UUID requestedByUserId) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.changeNumber = requirePositive(changeNumber, "changeNumber");
     this.reason = requireText(reason, "reason");
-    this.affectedTasks = JsonbText.toNullableJson(affectedTasks);
     this.proposedDelta = proposedDelta;
     this.requestedByUserId = require(requestedByUserId, "requestedByUserId");
     this.status = ChangeOrderStatus.DRAFT;
@@ -181,10 +173,6 @@ public class MaintenanceChangeOrder {
 
   public String getReason() {
     return reason;
-  }
-
-  public String getAffectedTasks() {
-    return JsonbText.fromJson(affectedTasks);
   }
 
   public BigDecimal getProposedDelta() {

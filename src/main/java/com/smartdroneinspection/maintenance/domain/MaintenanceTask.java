@@ -11,8 +11,6 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * One planned unit of corrective work inside a work order.
@@ -47,8 +45,7 @@ public class MaintenanceTask {
   @Column(name = "planned_end_at")
   private Instant plannedEndAt;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "acceptance_criteria", columnDefinition = "jsonb")
+  @Column(name = "acceptance_criteria", length = 4000)
   private String acceptanceCriteria;
 
   @Enumerated(EnumType.STRING)
@@ -83,7 +80,7 @@ public class MaintenanceTask {
     this.assignedEngineerUserId = assignedEngineerUserId;
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    this.acceptanceCriteria = JsonbText.toNullableJson(acceptanceCriteria);
+    this.acceptanceCriteria = acceptanceCriteria;
     this.status = TaskStatus.PLANNED;
     this.createdAt = Instant.now();
     this.updatedAt = this.createdAt;
@@ -105,7 +102,7 @@ public class MaintenanceTask {
     this.assignedEngineerUserId = assignedEngineerUserId;
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    this.acceptanceCriteria = JsonbText.toNullableJson(acceptanceCriteria);
+    this.acceptanceCriteria = acceptanceCriteria;
     this.updatedAt = Instant.now();
   }
 
@@ -206,7 +203,7 @@ public class MaintenanceTask {
   }
 
   public String getAcceptanceCriteria() {
-    return JsonbText.fromJson(acceptanceCriteria);
+    return acceptanceCriteria;
   }
 
   public TaskStatus getStatus() {

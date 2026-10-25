@@ -12,8 +12,6 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * Task-level execution record made by the engineer who performed the work.
@@ -21,12 +19,6 @@ import org.hibernate.type.SqlTypes;
  * <p>Hours are recorded here, not inferred from a report. Recording work is not accepting it:
  * MF4-14 treats {@code WORK_COMPLETED} as a team declaration, and MF4-18 requires an independent
  * reviewer before closure.
- *
- * <p>The target schema has no free-text narrative column for this table: {@code work_summary} was
- * dropped by the V26 runtime cutover. Narrative for MF4-11 is therefore carried inside the {@code
- * test_readings} JSON document under a {@code narrative} key, which is the same shape the MF3
- * verified finding uses for its measurement summary. Restoring a dedicated column needs a forward
- * migration and is not done here.
  */
 @Entity
 @Table(name = "maintenance_work_logs")
@@ -55,8 +47,7 @@ public class MaintenanceWorkLog {
   @Column(name = "as_left_condition", length = 4000)
   private String asLeftCondition;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "test_readings", columnDefinition = "jsonb")
+  @Column(name = "test_readings", length = 4000)
   private String testReadings;
 
   @Enumerated(EnumType.STRING)
@@ -106,7 +97,7 @@ public class MaintenanceWorkLog {
     this.endedAt = endedAt;
     this.hours = requireHours(hours);
     this.asLeftCondition = asLeftCondition;
-    this.testReadings = JsonbText.toNullableJson(testReadings);
+    this.testReadings = testReadings;
     this.updatedAt = Instant.now();
   }
 
@@ -196,7 +187,7 @@ public class MaintenanceWorkLog {
   }
 
   public String getTestReadings() {
-    return JsonbText.fromJson(testReadings);
+    return testReadings;
   }
 
   public WorkLogStatus getStatus() {

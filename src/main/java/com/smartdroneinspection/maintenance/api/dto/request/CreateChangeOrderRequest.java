@@ -4,5 +4,4 @@ import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 
 /** MF4-12: a proposal to widen scope, cost or time. It authorizes nothing until approved. */
-public record CreateChangeOrderRequest(
-    @NotBlank String reason, String affectedTasks, BigDecimal proposedDelta) {}
+public record CreateChangeOrderRequest(@NotBlank String reason, BigDecimal proposedDelta) {}

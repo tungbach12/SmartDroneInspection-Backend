@@ -37,14 +37,10 @@ public class MaintenanceReportVersion {
   @Column(nullable = false, length = 32)
   private ReportVersionStatus status;
 
-  @Column(name = "author_user_id", nullable = false)
-  private UUID authorUserId;
-
   @Column(name = "author_verified_at")
   private Instant authorVerifiedAt;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "content_snapshot", nullable = false, columnDefinition = "jsonb")
+  @Column(name = "content_snapshot", nullable = false, columnDefinition = "text")
   private String contentSnapshot;
 
   @Column(name = "rendered_object_key", length = 1000)
@@ -59,20 +55,20 @@ public class MaintenanceReportVersion {
 
   protected MaintenanceReportVersion() {}
 
-  public MaintenanceReportVersion(
-      UUID workOrderId, int versionNo, UUID authorUserId, String contentSnapshot) {
+  public MaintenanceReportVersion(UUID workOrderId, int versionNo, String contentSnapshot) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.versionNo = requirePositive(versionNo, "versionNo");
-    this.authorUserId = require(authorUserId, "authorUserId");
-    this.contentSnapshot = JsonbText.toRequiredJson(contentSnapshot);
+    this.contentSnapshot = requireText(contentSnapshot, "contentSnapshot");
     this.status = ReportVersionStatus.DRAFT;
     this.createdAt = Instant.now();
   }
 
   /** MF4-16: only the designated author may verify the report against the team's records. */
-  public void verifyAsAuthor(UUID verifyingUserId) {
+  public void verifyAsAuthor(UUID verifyingUserId, UUID designatedAuthorUserId) {
     requireStatus(ReportVersionStatus.DRAFT, ReportVersionStatus.RETURNED);
-    if (!authorUserId.equals(verifyingUserId)) {
+    UUID actor = require(verifyingUserId, "verifyingUserId");
+    UUID author = require(designatedAuthorUserId, "designatedAuthorUserId");
+    if (!author.equals(actor)) {
       throw new IllegalStateException("Only the report author may verify this version");
     }
     this.authorVerifiedAt = Instant.now();
@@ -81,10 +77,7 @@ public class MaintenanceReportVersion {
 
   public void editContent(String newContent) {
     requireStatus(ReportVersionStatus.DRAFT, ReportVersionStatus.RETURNED);
-    if (newContent == null || newContent.isBlank()) {
-      throw new IllegalArgumentException("Report content is required");
-    }
-    this.contentSnapshot = JsonbText.toRequiredJson(newContent);
+    this.contentSnapshot = requireText(newContent, "Report content");
   }
 
   /** MF4-17: submission hands the version to the independent reviewer. */
@@ -147,6 +140,13 @@ public class MaintenanceReportVersion {
     return value;
   }
 
+  private static String requireText(String value, String name) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(name + " is required");
+    }
+    return value;
+  }
+
   public UUID getId() {
     return id;
   }
@@ -163,16 +163,12 @@ public class MaintenanceReportVersion {
     return status;
   }
 
-  public UUID getAuthorUserId() {
-    return authorUserId;
-  }
-
   public Instant getAuthorVerifiedAt() {
     return authorVerifiedAt;
   }
 
   public String getContentSnapshot() {
-    return JsonbText.fromJson(contentSnapshot);
+    return contentSnapshot;
   }
 
   /** Records the stored PDF artifact key and SHA-256 checksum for an approved completion report. */

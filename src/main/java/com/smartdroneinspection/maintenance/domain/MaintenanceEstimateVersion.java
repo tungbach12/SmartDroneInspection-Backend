@@ -61,13 +61,8 @@ public class MaintenanceEstimateVersion {
   @Column(name = "baseline_total", nullable = false, precision = 18, scale = TOTAL_SCALE)
   private BigDecimal baselineTotal;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(columnDefinition = "jsonb")
+  @Column(length = 4000)
   private String assumptions;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(nullable = false, columnDefinition = "jsonb")
-  private String snapshot;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -80,14 +75,12 @@ public class MaintenanceEstimateVersion {
       UUID preparedByUserId,
       String currency,
       String assumptions,
-      String snapshot,
       BigDecimal baselineTotal) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.versionNo = requirePositive(versionNo, "versionNo");
     this.preparedByUserId = require(preparedByUserId, "preparedByUserId");
     this.currency = requireText(currency, "currency");
-    this.assumptions = JsonbText.toNullableJson(assumptions);
-    this.snapshot = JsonbText.toRequiredJson(snapshot);
+    this.assumptions = assumptions;
     this.baselineTotal = requireTotal(baselineTotal);
     this.status = EstimateStatus.DRAFT;
     this.createdAt = Instant.now();
@@ -228,11 +221,7 @@ public class MaintenanceEstimateVersion {
   }
 
   public String getAssumptions() {
-    return JsonbText.fromJson(assumptions);
-  }
-
-  public String getSnapshot() {
-    return JsonbText.fromJson(snapshot);
+    return assumptions;
   }
 
   public Instant getCreatedAt() {
