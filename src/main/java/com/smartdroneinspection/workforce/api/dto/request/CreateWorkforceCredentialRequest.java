@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * ORG_ADMIN credential record request. The organization is always derived from the authenticated
+ * ORG_MANAGER credential record request. The organization is always derived from the authenticated
  * principal, so no organization or actor-zone field is accepted here.
  */
 public record CreateWorkforceCredentialRequest(

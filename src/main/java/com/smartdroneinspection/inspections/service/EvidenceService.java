@@ -97,7 +97,7 @@ public class EvidenceService {
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
     if (fieldSessionId != null) {
-      requireSessionInScope(actorId, inspection, fieldSessionId);
+      requireSessionInScope(inspection, fieldSessionId);
     }
     if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
       inspection.reopenFindings();
@@ -314,21 +314,18 @@ public class EvidenceService {
     return saved.stream().map(this::toResponse).toList();
   }
 
-  private void requireSessionInScope(UUID actorId, Inspection inspection, UUID fieldSessionId) {
+  private void requireSessionInScope(Inspection inspection, UUID fieldSessionId) {
     FieldSession session =
         sessions
             .findByIdAndInspectionId(fieldSessionId, inspection.getId())
-            .filter(
-                candidate -> candidate.getOrganizationId().equals(inspection.getOrganizationId()))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.CONFLICT,
                         "FIELD_SESSION_NOT_FOUND",
                         "The field session was not found in this inspection."));
-    if (!session.getInspectorUserId().equals(actorId)
-        || (!"IN_PROGRESS".equals(session.getStatus())
-            && !"FIELD_COMPLETED".equals(session.getStatus()))) {
+    if (!"IN_PROGRESS".equals(session.getStatus())
+        && !"FIELD_COMPLETED".equals(session.getStatus())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FIELD_SESSION_NOT_CURRENT",
@@ -515,8 +512,8 @@ public class EvidenceService {
             .orElseThrow(this::inspectionNotFound);
     // A reviewer may read the report of an inspection they did not author; the assigned Inspector
     // and
-    // a qualified ORG_ADMIN both need access to the evidence behind it.
-    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("ORG_ADMIN")) {
+    // a qualified ORG_MANAGER both need access to the evidence behind it.
+    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("ORG_MANAGER")) {
       throw inspectionNotFound();
     }
     return inspection;

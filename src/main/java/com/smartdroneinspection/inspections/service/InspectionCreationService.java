@@ -141,11 +141,9 @@ public class InspectionCreationService {
         new Inspection(
             organizationId,
             asset.getId(),
-            null,
             assetPairAssignmentId,
             inspectorId,
             droneId,
-            null,
             request.objective(),
             request.scope(),
             request.componentScope(),
@@ -229,9 +227,9 @@ public class InspectionCreationService {
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_ADMIN)) {
+    if (!actor.hasRole(Roles.ORG_MANAGER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ORG_ADMIN can perform this action.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ORG_MANAGER can perform this action.");
     }
     if (actor.organizationId() == null) {
       throw new BusinessException(

@@ -23,13 +23,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * ORG_ADMIN workforce credential records and their internal review. The tenant is taken from the
+ * ORG_MANAGER workforce credential records and their internal review. The tenant is taken from the
  * authenticated principal inside the service; no endpoint accepts an organization or actor zone.
  * Review here is an internal human decision and is not an external or government verification.
  */
 @RestController
 @RequestMapping("/api/v1/workforce/credentials")
-@PreAuthorize("hasRole('" + Roles.ORG_ADMIN + "')")
+@PreAuthorize("hasRole('" + Roles.ORG_MANAGER + "')")
 public class WorkforceCredentialController {
 
   private final WorkforceCredentialService credentials;

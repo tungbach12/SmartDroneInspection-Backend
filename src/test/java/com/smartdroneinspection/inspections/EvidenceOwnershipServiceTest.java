@@ -100,8 +100,6 @@ class EvidenceOwnershipServiceTest {
                 null,
                 null,
                 null,
-                null,
-                "mf3-" + UUID.randomUUID(),
                 "Foreign inspection",
                 null,
                 null,

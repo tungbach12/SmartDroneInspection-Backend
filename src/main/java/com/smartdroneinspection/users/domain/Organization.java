@@ -74,7 +74,7 @@ public class Organization {
     return createdByUserId;
   }
 
-  /** Records the initial ORG_ADMIN as the organization creator, per database-design.md §6.1. */
+  /** Records the initial ORG_MANAGER as the organization creator, per database-design.md §6.1. */
   public void attributeToCreator(UUID creatorUserId) {
     this.createdByUserId = creatorUserId;
     this.updatedAt = Instant.now();

@@ -18,10 +18,7 @@ import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
@@ -61,7 +58,6 @@ class InspectionFieldSessionApiIntegrationTest {
   @Autowired ChecklistTemplateRepository templates;
   @Autowired DroneRepository drones;
   @Autowired InspectionPreparationRepository preparations;
-  @Autowired InspectionReadinessDecisionRepository decisions;
   @Autowired JdbcTemplate jdbcTemplate;
 
   MockMvc mockMvc;
@@ -71,7 +67,6 @@ class InspectionFieldSessionApiIntegrationTest {
   UUID assetId;
   UUID droneId;
   UUID inspectionId;
-  UUID checklistTemplateId;
 
   @BeforeEach
   void setUp() {
@@ -81,8 +76,7 @@ class InspectionFieldSessionApiIntegrationTest {
     AssetTestFixture.Data fixture =
         new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
-    checklistTemplateId = fixture.checklistTemplateId();
-    reviewerId = createUser(organizationId, UserRole.ORG_ADMIN, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =
@@ -114,17 +108,13 @@ class InspectionFieldSessionApiIntegrationTest {
                 .with(inspector())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    json(
-                        Map.of(
-                            "checklistTemplateId",
-                            checklistTemplateId.toString(),
-                            "preFlightChecklistNote",
-                            "Drone identified; bridge accessible"))))
+                    json(Map.of("preFlightChecklistNote", "Drone identified; bridge accessible"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
         .andExpect(jsonPath("$.data.inspectionId").value(inspectionId.toString()))
-        .andExpect(jsonPath("$.data.inspectorUserId").value(inspectorId.toString()))
-        .andExpect(jsonPath("$.data.readinessDecisionId").exists())
+        .andExpect(jsonPath("$.data.inspectorUserId").doesNotExist())
+        .andExpect(jsonPath("$.data.droneId").doesNotExist())
+        .andExpect(jsonPath("$.data.preparationId").exists())
         .andExpect(jsonPath("$.data.startedAt").exists());
 
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
@@ -147,7 +137,7 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(
             jsonPath("$.data[0].preFlightChecklistNote")
                 .value("Drone identified; bridge accessible"))
-        .andExpect(jsonPath("$.data[0].readinessDecisionId").exists());
+        .andExpect(jsonPath("$.data[0].preparationId").exists());
   }
 
   @Test
@@ -267,13 +257,7 @@ class InspectionFieldSessionApiIntegrationTest {
             post("/api/v1/inspections/{i}/field-sessions", inspectionId)
                 .with(inspector())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json(
-                        Map.of(
-                            "checklistTemplateId",
-                            checklistTemplateId.toString(),
-                            "preFlightChecklistNote",
-                            "   "))))
+                .content(json(Map.of("preFlightChecklistNote", "   "))))
         .andExpect(status().isBadRequest());
 
     assertThat(sessionCount()).isZero();
@@ -286,13 +270,7 @@ class InspectionFieldSessionApiIntegrationTest {
             post("/api/v1/inspections/{i}/field-sessions", inspectionId)
                 .with(orgAdmin())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json(
-                        Map.of(
-                            "checklistTemplateId",
-                            checklistTemplateId.toString(),
-                            "preFlightChecklistNote",
-                            "Paperwork is fine"))))
+                .content(json(Map.of("preFlightChecklistNote", "Paperwork is fine"))))
         .andExpect(status().isForbidden());
 
     UUID sessionId = startSession();
@@ -342,13 +320,7 @@ class InspectionFieldSessionApiIntegrationTest {
             post("/api/v1/inspections/{i}/field-sessions", inspectionId)
                 .with(inspector(scopedOutsiderId))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    json(
-                        Map.of(
-                            "checklistTemplateId",
-                            checklistTemplateId.toString(),
-                            "preFlightChecklistNote",
-                            "Ready to fly"))))
+                .content(json(Map.of("preFlightChecklistNote", "Ready to fly"))))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
 
@@ -381,10 +353,7 @@ class InspectionFieldSessionApiIntegrationTest {
                     .content(
                         json(
                             Map.of(
-                                "checklistTemplateId",
-                                checklistTemplateId.toString(),
-                                "preFlightChecklistNote",
-                                "Drone identified; bridge accessible"))))
+                                "preFlightChecklistNote", "Drone identified; bridge accessible"))))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -425,26 +394,13 @@ class InspectionFieldSessionApiIntegrationTest {
   }
 
   private void insertApprovedReadinessDecision() {
-    InspectionPreparation preparation = new InspectionPreparation(inspectionId, inspectorId, 1);
+    InspectionPreparation preparation = new InspectionPreparation(inspectionId, 1);
     preparation.recordShotList("{\"shots\":[\"span\"]}");
     preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit(inspectorId);
+    preparation.submit();
     preparation = preparations.saveAndFlush(preparation);
-    preparation.markReady();
+    preparation.approve(reviewerId);
     preparations.saveAndFlush(preparation);
-
-    decisions.saveAndFlush(
-        new InspectionReadinessDecision(
-            inspectionId,
-            preparation.getId(),
-            preparation.getPreparationVersion(),
-            ReadinessDecisionType.APPROVED,
-            reviewerId,
-            null,
-            "{\"source_envelope\":{}}",
-            "[]",
-            "[]",
-            "a".repeat(64)));
   }
 
   private long sessionCount() {
@@ -475,6 +431,6 @@ class InspectionFieldSessionApiIntegrationTest {
   private RequestPostProcessor orgAdmin() {
     return jwt()
         .jwt(token -> token.subject(reviewerId.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 }

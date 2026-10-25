@@ -40,7 +40,7 @@ public class ComplianceController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('" + Roles.ORG_ADMIN + "')")
+  @PreAuthorize("hasRole('" + Roles.ORG_MANAGER + "')")
   public ResponseEntity<ApiResponse<FlightPermitResponse>> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateFlightPermitRequest body) {
     return ResponseEntity.status(201)
@@ -48,7 +48,14 @@ public class ComplianceController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('" + Roles.ORG_ADMIN + "', '" + Roles.ADMIN + "')")
+  @PreAuthorize(
+      "hasAnyRole('"
+          + Roles.ORG_MANAGER
+          + "', '"
+          + Roles.ADMIN
+          + "', '"
+          + Roles.PLATFORM_MANAGER
+          + "')")
   public ApiResponse<List<FlightPermitResponse>> list(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(compliance.list(subject(jwt)));
   }
@@ -58,7 +65,7 @@ public class ComplianceController {
    * trail inside the customer's own organization, not a determination by any authority.
    */
   @PutMapping("/{permitId}/review")
-  @PreAuthorize("hasRole('" + Roles.ORG_ADMIN + "')")
+  @PreAuthorize("hasRole('" + Roles.ORG_MANAGER + "')")
   public ApiResponse<FlightPermitResponse> review(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID permitId,

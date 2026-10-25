@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.util.Set;
 
 /**
- * ORG_ADMIN workforce provisioning request. The organization is always derived from the
+ * ORG_MANAGER workforce provisioning request. The organization is always derived from the
  * authenticated principal, so no organization or actor-zone field is accepted here.
  */
 public record ProvisionWorkforceUserRequest(

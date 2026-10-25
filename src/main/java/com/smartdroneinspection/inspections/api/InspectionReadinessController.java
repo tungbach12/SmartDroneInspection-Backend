@@ -3,7 +3,8 @@ package com.smartdroneinspection.inspections.api;
 import com.smartdroneinspection.inspections.api.dto.request.ApproveReadinessRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReturnReadinessRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ReadinessDecisionResponse;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
+import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.service.InspectionReadinessService;
 import com.smartdroneinspection.inspections.service.ReadinessReturnCommand;
 import com.smartdroneinspection.inspections.service.ReadinessReviewCommand;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Separate from {@link InspectionPreparationController} because the two actors are different: an
  * inspector prepares and submits, an organization administrator decides. The route check is
  * navigation policy only — the service independently re-derives the organization from the token, so
- * an ORG_ADMIN from another tenant receives nothing regardless of which ids the body carries.
+ * an ORG_MANAGER from another tenant receives nothing regardless of which ids the body carries.
  */
 @RestController
 @RequestMapping("/api/v1/inspections/{inspectionId}/readiness")
@@ -38,7 +39,7 @@ public class InspectionReadinessController {
   }
 
   @PostMapping("/{preparationId}/approval")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ReadinessDecisionResponse> approve(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -62,7 +63,7 @@ public class InspectionReadinessController {
   }
 
   @PostMapping("/{preparationId}/return")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ReadinessDecisionResponse> returnPreparation(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -81,17 +82,18 @@ public class InspectionReadinessController {
                     request.reason()))));
   }
 
-  private ReadinessDecisionResponse response(InspectionReadinessDecision decision) {
+  private ReadinessDecisionResponse response(InspectionPreparation preparation) {
+    String decision =
+        preparation.getStatus() == InspectionPreparationStatus.READY ? "APPROVED" : "RETURNED";
     return new ReadinessDecisionResponse(
-        decision.getId(),
-        decision.getInspectionId(),
-        decision.getPreparationId(),
-        decision.getPreparationVersion(),
-        decision.getDecision(),
-        decision.getReviewedByUserId(),
-        decision.getReason(),
-        decision.getSourceHash(),
-        decision.getDecidedAt());
+        preparation.getId(),
+        preparation.getInspectionId(),
+        preparation.getId(),
+        preparation.getPreparationVersion(),
+        decision,
+        preparation.getReviewedByUserId(),
+        preparation.getReviewReason(),
+        preparation.getReviewedAt());
   }
 
   private UUID subject(Jwt jwt) {

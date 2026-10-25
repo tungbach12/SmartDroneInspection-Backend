@@ -104,7 +104,7 @@ class AssetPairAdminApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/assets/{assetId}/pair-assignments", assetId)
-                .with(principal(orgAdminId, "ORG_ADMIN")))
+                .with(principal(orgAdminId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(1))
         .andExpect(jsonPath("$.data[0].id").value(draftId.toString()));
@@ -185,7 +185,7 @@ class AssetPairAdminApiIntegrationTest {
                     "/api/v1/assets/{assetId}/pair-assignments/{pairId}/activate",
                     assetId,
                     futurePairId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"Activate future pair\"}"))
         .andExpect(status().isConflict())
@@ -214,7 +214,7 @@ class AssetPairAdminApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/assets/{assetId}/pair-assignments/{pairId}/activate", assetId, firstId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{}"))
         .andExpect(status().isBadRequest());
@@ -222,7 +222,7 @@ class AssetPairAdminApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/assets/{assetId}/pair-assignments/{pairId}/activate", assetId, firstId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"Approved primary asset default\"}"))
         .andExpect(status().isOk())
@@ -260,7 +260,7 @@ class AssetPairAdminApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/assets/{assetId}/pair-assignments/{pairId}/activate", assetId, secondId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"Reassign future asset default\"}"))
         .andExpect(status().isOk())
@@ -341,7 +341,7 @@ class AssetPairAdminApiIntegrationTest {
       throws Exception {
     return mockMvc.perform(
         post("/api/v1/assets/{assetId}/pair-assignments", requestedAssetId)
-            .with(principal(actorId, "ORG_ADMIN"))
+            .with(principal(actorId, "ORG_MANAGER"))
             .contentType(MediaType.APPLICATION_JSON)
             .content(
                 pairRequestBody(
@@ -377,7 +377,7 @@ class AssetPairAdminApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             orgId);
-    admin.addRole(UserRole.ORG_ADMIN);
+    admin.addRole(UserRole.ORG_MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 

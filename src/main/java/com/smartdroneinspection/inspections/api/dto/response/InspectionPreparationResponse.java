@@ -8,7 +8,6 @@ import java.util.UUID;
 public record InspectionPreparationResponse(
     UUID id,
     UUID inspectionId,
-    UUID inspectorUserId,
     int preparationVersion,
     Instant plannedStartAt,
     Instant plannedEndAt,
@@ -19,5 +18,8 @@ public record InspectionPreparationResponse(
     String permitDocumentReferences,
     InspectionPreparationStatus status,
     Instant submittedAt,
+    UUID reviewedByUserId,
+    Instant reviewedAt,
+    String reviewReason,
     Instant createdAt,
     Instant updatedAt) {}

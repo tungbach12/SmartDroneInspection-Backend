@@ -44,7 +44,7 @@ public class InspectionListController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<InspectionResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateInspectionRequest request) {
@@ -52,7 +52,7 @@ public class InspectionListController {
   }
 
   @GetMapping("/{inspectionId}")
-  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_ADMIN', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_MANAGER', 'INSPECTOR')")
   public ApiResponse<InspectionResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(
@@ -60,7 +60,7 @@ public class InspectionListController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_ADMIN', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_MANAGER', 'INSPECTOR')")
   public ApiResponse<InspectionPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -74,7 +74,7 @@ public class InspectionListController {
    * the review queue is a filtered view of this collection rather than a second resource.
    */
   @GetMapping("/with-reports")
-  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_ADMIN', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_MANAGER', 'INSPECTOR')")
   public ApiResponse<InspectionPageResponse> listWithReports(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,

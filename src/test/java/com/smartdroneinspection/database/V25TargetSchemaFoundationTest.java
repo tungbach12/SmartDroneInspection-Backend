@@ -61,7 +61,38 @@ class V25TargetSchemaFoundationTest {
                 "workforce_credentials",
                 Set.of("organization_id", "user_id", "credential_type", "status", "expires_at")),
             Map.entry(
-                "drones", Set.of("organization_id", "serial_number", "model", "serviceability")),
+                "platform_drones",
+                Set.of(
+                    "serial_number",
+                    "model",
+                    "manufacturer",
+                    "payload_metadata",
+                    "monthly_rate_usd",
+                    "status")),
+            Map.entry(
+                "drone_leases",
+                Set.of(
+                    "platform_drone_id",
+                    "organization_id",
+                    "customer_drone_id",
+                    "requested_by_user_id",
+                    "lease_period_months",
+                    "monthly_rate_usd",
+                    "agreed_amount_usd",
+                    "status",
+                    "starts_at",
+                    "ends_at",
+                    "reclaimed_at")),
+            Map.entry(
+                "drones",
+                Set.of(
+                    "organization_id",
+                    "serial_number",
+                    "model",
+                    "serviceability",
+                    "ownership_type",
+                    "lease_id",
+                    "lease_expires_at")),
             Map.entry(
                 "drone_documents",
                 Set.of("drone_id", "document_type", "object_key", "checksum_sha256", "status")),
@@ -73,13 +104,19 @@ class V25TargetSchemaFoundationTest {
                 "checklist_templates",
                 Set.of(
                     "template_key",
-                    "context",
-                    "active_from",
-                    "active_until",
+                    "version_number",
+                    "asset_category_id",
+                    "status",
                     "created_by_user_id")),
             Map.entry(
                 "checklist_items",
-                Set.of("template_id", "item_code", "prompt", "required", "evidence_requirement")),
+                Set.of(
+                    "template_id",
+                    "item_code",
+                    "prompt",
+                    "response_type",
+                    "required",
+                    "display_order")),
             Map.entry(
                 "assets",
                 Set.of(
@@ -112,7 +149,6 @@ class V25TargetSchemaFoundationTest {
                 Set.of(
                     "organization_id",
                     "asset_id",
-                    "schedule_id",
                     "objective",
                     "scope",
                     "planned_start_at",
@@ -123,37 +159,32 @@ class V25TargetSchemaFoundationTest {
                 "inspection_preparations",
                 Set.of(
                     "inspection_id",
-                    "inspector_user_id",
                     "preparation_version",
                     "shot_list",
-                    "status")),
-            Map.entry(
-                "inspection_readiness_decisions",
-                Set.of(
-                    "inspection_id",
-                    "decision",
+                    "status",
                     "reviewed_by_user_id",
-                    "decided_at",
-                    "preparation_version",
-                    "source_hash")),
+                    "reviewed_at",
+                    "review_reason")),
             Map.entry(
                 "field_sessions",
                 Set.of(
                     "inspection_id",
-                    "organization_id",
-                    "inspector_user_id",
+                    "preparation_id",
                     "status",
                     "started_at",
-                    "ended_at")),
+                    "ended_at",
+                    "pre_flight_checklist_note",
+                    "outcome_notes")),
             Map.entry(
                 "checklist_responses",
                 Set.of(
                     "inspection_id",
-                    "context",
-                    "template_version",
-                    "responder_user_id",
-                    "answer",
-                    "created_at")),
+                    "checklist_item_id",
+                    "response_value",
+                    "notes",
+                    "completed_at",
+                    "created_at",
+                    "updated_at")),
             Map.entry(
                 "evidence",
                 Set.of(
@@ -348,7 +379,7 @@ class V25TargetSchemaFoundationTest {
                     "aggregate_id",
                     "created_at")));
 
-    assertThat(targetColumns).hasSize(33);
+    assertThat(targetColumns).hasSize(34);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate
@@ -537,7 +568,8 @@ class V25TargetSchemaFoundationTest {
 
     assertThat(roleCheck)
         .contains("ADMIN")
-        .contains("ORG_ADMIN")
+        .contains("PLATFORM_MANAGER")
+        .contains("ORG_MANAGER")
         .contains("INSPECTOR")
         .contains("MAINTENANCE_ENGINEER");
     assertThat(userColumns)

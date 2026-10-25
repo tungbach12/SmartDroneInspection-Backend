@@ -40,12 +40,12 @@ final class ComplianceTestFixture {
     UUID otherOrganizationId = saveOrganization("Compliance other tenant").getId();
     UUID unentitledOrganizationId = saveOrganization("Compliance unentitled tenant").getId();
 
-    UUID adminId = saveUser("compliance-admin", organizationId, UserRole.ORG_ADMIN).getId();
+    UUID adminId = saveUser("compliance-admin", organizationId, UserRole.ORG_MANAGER).getId();
     UUID inspectorId = saveUser("compliance-inspector", organizationId, UserRole.INSPECTOR).getId();
     UUID foreignAdminId =
-        saveUser("compliance-foreign-admin", otherOrganizationId, UserRole.ORG_ADMIN).getId();
+        saveUser("compliance-foreign-admin", otherOrganizationId, UserRole.ORG_MANAGER).getId();
     UUID unentitledAdminId =
-        saveUser("compliance-unentitled-admin", unentitledOrganizationId, UserRole.ORG_ADMIN)
+        saveUser("compliance-unentitled-admin", unentitledOrganizationId, UserRole.ORG_MANAGER)
             .getId();
 
     grantEntitlement(organizationId);
@@ -123,8 +123,6 @@ final class ComplianceTestFixture {
                 null,
                 null,
                 null,
-                null,
-                "mf1-" + UUID.randomUUID(),
                 "Compliance fixture inspection",
                 null,
                 null,

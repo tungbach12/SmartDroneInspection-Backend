@@ -191,7 +191,7 @@ public class AssetPairAdminService {
     UserAccess.ActiveUser actor =
         userAccess
             .findActiveUser(actorId)
-            .filter(user -> user.hasRole("ORG_ADMIN"))
+            .filter(user -> user.hasRole("ORG_MANAGER"))
             .orElseThrow(
                 () ->
                     new BusinessException(

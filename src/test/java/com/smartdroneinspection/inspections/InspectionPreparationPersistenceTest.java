@@ -71,7 +71,6 @@ class InspectionPreparationPersistenceTest {
 
     InspectionPreparation reloaded = entityManager.find(InspectionPreparation.class, saved.getId());
     assertThat(reloaded.getInspectionId()).isEqualTo(inspectionId);
-    assertThat(reloaded.getInspectorUserId()).isEqualTo(inspectorId);
     assertThat(reloaded.getPreparationVersion()).isEqualTo(1);
     assertThat(reloaded.getStatus()).isEqualTo(InspectionPreparationStatus.DRAFT);
     assertThat(reloaded.getShotList()).contains("Span P4");
@@ -83,7 +82,7 @@ class InspectionPreparationPersistenceTest {
   void aSubmissionIsPersistedWithAnAttributableTimestamp() {
     InspectionPreparation submitted = draftWithShotList(1);
     submitted.recordSafetyObservations("Live 110V near pier 3");
-    submitted.submit(inspectorId);
+    submitted.submit();
     persist(submitted);
 
     entityManager.clear();
@@ -92,6 +91,37 @@ class InspectionPreparationPersistenceTest {
         entityManager.find(InspectionPreparation.class, submitted.getId());
     assertThat(reloaded.getStatus()).isEqualTo(InspectionPreparationStatus.SUBMITTED);
     assertThat(reloaded.getSubmittedAt()).isNotNull();
+  }
+
+  @Test
+  void reviewDecisionsRoundTripOnPreparationVersion() {
+    UUID reviewerId = createInspector(organizationId);
+    InspectionPreparation first = draftWithShotList(1);
+    first.recordSafetyObservations("Live 110V near pier 3");
+    first.submit();
+    first.returnForRevision(reviewerId, "Include east abutment");
+    persist(first);
+
+    entityManager.clear();
+
+    InspectionPreparation returned = entityManager.find(InspectionPreparation.class, first.getId());
+    assertThat(returned.getStatus()).isEqualTo(InspectionPreparationStatus.RETURNED);
+    assertThat(returned.getReviewedByUserId()).isEqualTo(reviewerId);
+    assertThat(returned.getReviewedAt()).isNotNull();
+    assertThat(returned.getReviewReason()).isEqualTo("Include east abutment");
+
+    returned.startRevision();
+    returned.recordSafetyObservations("Live 110V near pier 3 and east abutment");
+    returned.submit();
+    returned.approve(reviewerId);
+    entityManager.flush();
+    entityManager.clear();
+
+    InspectionPreparation approved = entityManager.find(InspectionPreparation.class, first.getId());
+    assertThat(approved.getStatus()).isEqualTo(InspectionPreparationStatus.READY);
+    assertThat(approved.getReviewedByUserId()).isEqualTo(reviewerId);
+    assertThat(approved.getReviewedAt()).isNotNull();
+    assertThat(approved.getReviewReason()).isNull();
   }
 
   @Test
@@ -107,7 +137,7 @@ class InspectionPreparationPersistenceTest {
     persist(draftWithShotList(1));
 
     UUID otherInspectionId = createSecondInspection();
-    InspectionPreparation other = new InspectionPreparation(otherInspectionId, inspectorId, 1);
+    InspectionPreparation other = new InspectionPreparation(otherInspectionId, 1);
     other.recordShotList(
         """
         [{"component":"Pier base","modality":"RGB","required":true}]\
@@ -175,8 +205,7 @@ class InspectionPreparationPersistenceTest {
   }
 
   private InspectionPreparation draftWithShotList(int version) {
-    InspectionPreparation preparation =
-        new InspectionPreparation(inspectionId, inspectorId, version);
+    InspectionPreparation preparation = new InspectionPreparation(inspectionId, version);
     preparation.recordShotList(
         """
         [{"component":"Span P4","modality":"RGB","required":true}]\

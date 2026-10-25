@@ -46,7 +46,6 @@ public record InspectionReportContextResponse(
       String postponementReason,
       String abortReason,
       String outcomeNotes,
-      String limitations,
       String droneSerialNumber,
       String droneManufacturer,
       String droneModel) {}

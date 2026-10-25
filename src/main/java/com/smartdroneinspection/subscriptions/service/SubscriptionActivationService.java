@@ -48,10 +48,11 @@ public class SubscriptionActivationService {
             .orElseThrow(
                 () ->
                     new BusinessException(
-                        HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform Admin must be active"));
-    if (!actor.hasRole("ADMIN") || actor.organizationId() != null) {
+                        HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform Manager must be active"));
+    if (!actor.hasRole(com.smartdroneinspection.shared.auth.Roles.PLATFORM_MANAGER)
+        || actor.organizationId() != null) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform ADMIN role is required");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform PLATFORM_MANAGER role is required");
     }
     if (!userAccess.organizationExists(organizationId)) {
       throw new BusinessException(

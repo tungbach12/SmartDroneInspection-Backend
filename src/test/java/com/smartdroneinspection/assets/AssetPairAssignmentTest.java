@@ -70,6 +70,7 @@ class AssetPairAssignmentTest {
     pairing.respond(inspectorId, AssignmentResponse.ACCEPTED, null);
 
     assertThat(pairing.getAssignmentResponse()).isEqualTo(AssignmentResponse.ACCEPTED);
+    assertThat(pairing.getReason()).isEqualTo("Primary crew");
     assertThat(pairing.getRespondedAt()).isNotNull();
     assertThat(pairing.hasResponded()).isTrue();
   }

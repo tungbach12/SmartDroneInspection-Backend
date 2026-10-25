@@ -76,7 +76,6 @@ public interface ReportDraftPort {
       String preFlightChecklistNote,
       String postponementReason,
       String abortReason,
-      String limitations,
       String assignedDroneId) {}
 
   record InspectionSummary(

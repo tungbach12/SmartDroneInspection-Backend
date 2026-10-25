@@ -7,6 +7,15 @@ import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.ChecklistItem;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.assets.domain.DroneLease;
+import com.smartdroneinspection.assets.domain.PlatformDrone;
+import com.smartdroneinspection.inspections.domain.ChecklistResponse;
+import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.domain.Finding;
+import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionPreparation;
+import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision;
 import com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder;
 import com.smartdroneinspection.maintenance.domain.MaintenanceCostLine;
@@ -40,6 +49,15 @@ class PersistenceEntityMappingTest {
           AssetDocument.class,
           ChecklistItem.class,
           ChecklistTemplate.class,
+          PlatformDrone.class,
+          DroneLease.class,
+          Inspection.class,
+          InspectionPreparation.class,
+          FieldSession.class,
+          ChecklistResponse.class,
+          Evidence.class,
+          Finding.class,
+          InspectionReportVersion.class,
           Notification.class,
           AuthSession.class,
           Organization.class,

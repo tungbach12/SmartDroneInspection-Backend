@@ -134,10 +134,10 @@ class InspectionPreparationServiceTest {
 
   @Test
   void anAdditionalSessionPreparationCreatesANewVersionAndCanChangeThePlannedWindow() {
-    InspectionPreparation previous = new InspectionPreparation(inspectionId, inspectorId, 1);
+    InspectionPreparation previous = new InspectionPreparation(inspectionId, 1);
     previous.recordShotList(SPAN_SHOTS);
     previous.recordSafetyObservations("Initial hazards");
-    previous.submit(inspectorId);
+    previous.submit();
     previous.markReady();
     previous.markSuperseded();
     preparations.saveAndFlush(previous);
@@ -338,7 +338,7 @@ class InspectionPreparationServiceTest {
 
   @Test
   void anOrganizationAdminCannotDraftOrSubmitForAnInspector() {
-    UUID adminId = createUser(organizationId, UserRole.ORG_ADMIN, "org-admin");
+    UUID adminId = createUser(organizationId, UserRole.ORG_MANAGER, "org-admin");
 
     assertThatThrownBy(
             () ->

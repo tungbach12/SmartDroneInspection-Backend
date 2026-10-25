@@ -290,13 +290,4 @@ public class FlightPermit {
   public Instant getUpdatedAt() {
     return updatedAt;
   }
-
-  public enum PermitStatus {
-    APPLICATION,
-    ACTIVE,
-    EXPIRED,
-    REJECTED,
-    REVOKED,
-    NOT_APPLICABLE
-  }
 }
