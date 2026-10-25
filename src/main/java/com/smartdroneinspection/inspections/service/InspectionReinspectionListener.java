@@ -54,11 +54,9 @@ public class InspectionReinspectionListener {
         new Inspection(
             event.organizationId(),
             event.assetId(),
-            sourceInspection != null ? sourceInspection.getScheduleId() : null,
             sourceInspection != null ? sourceInspection.getAssetPairAssignmentId() : null,
             sourceInspection != null ? sourceInspection.getInspectorId() : null,
             sourceInspection != null ? sourceInspection.getDroneId() : null,
-            "reinspection-wo-" + event.workOrderId(),
             objective,
             sourceInspection != null ? sourceInspection.getScope() : "Re-inspection verification",
             sourceInspection != null ? sourceInspection.getComponentScope() : null,

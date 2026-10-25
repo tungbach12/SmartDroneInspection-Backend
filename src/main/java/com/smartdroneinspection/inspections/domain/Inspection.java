@@ -27,9 +27,6 @@ public class Inspection {
   @Column(name = "asset_id", nullable = false)
   private UUID assetId;
 
-  @Column(name = "schedule_id")
-  private UUID scheduleId;
-
   @Column(name = "asset_pair_assignment_id")
   private UUID assetPairAssignmentId;
 
@@ -38,9 +35,6 @@ public class Inspection {
 
   @Column(name = "drone_id")
   private UUID droneId;
-
-  @Column(name = "due_cycle_key", length = 64)
-  private String dueCycleKey;
 
   @Column(nullable = false, length = 1000)
   private String objective;
@@ -88,11 +82,9 @@ public class Inspection {
   public Inspection(
       UUID organizationId,
       UUID assetId,
-      UUID scheduleId,
       UUID assetPairAssignmentId,
       UUID inspectorId,
       UUID droneId,
-      String dueCycleKey,
       String objective,
       String scope,
       String componentScope,
@@ -101,11 +93,9 @@ public class Inspection {
       Instant plannedEndAt) {
     this.organizationId = organizationId;
     this.assetId = assetId;
-    this.scheduleId = scheduleId;
     this.assetPairAssignmentId = assetPairAssignmentId;
     this.inspectorId = inspectorId;
     this.droneId = droneId;
-    this.dueCycleKey = dueCycleKey;
     this.objective = objective;
     this.scope = scope;
     this.componentScope = componentScope;
@@ -121,8 +111,6 @@ public class Inspection {
     this(
         Objects.requireNonNull(organizationId, "Inspection organization is required"),
         Objects.requireNonNull(assetId, "Inspection asset is required"),
-        null,
-        null,
         null,
         null,
         null,
@@ -235,10 +223,6 @@ public class Inspection {
     return assetId;
   }
 
-  public UUID getScheduleId() {
-    return scheduleId;
-  }
-
   public UUID getAssetPairAssignmentId() {
     return assetPairAssignmentId;
   }
@@ -249,10 +233,6 @@ public class Inspection {
 
   public UUID getDroneId() {
     return droneId;
-  }
-
-  public String getDueCycleKey() {
-    return dueCycleKey;
   }
 
   public String getObjective() {
@@ -307,6 +287,13 @@ public class Inspection {
       throw new IllegalStateException("Only an assigned inspection can start preparation");
     }
     moveTo(InspectionStatus.PREPARING);
+  }
+
+  public void approveReadiness() {
+    if (status != InspectionStatus.PREPARING) {
+      throw new IllegalStateException("Only a preparing inspection can be approved for flight");
+    }
+    moveTo(InspectionStatus.READY_FOR_FLIGHT);
   }
 
   public void requestAdditionalSession() {

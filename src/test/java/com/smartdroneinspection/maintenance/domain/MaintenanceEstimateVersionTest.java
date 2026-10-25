@@ -18,7 +18,7 @@ class MaintenanceEstimateVersionTest {
 
   private static final UUID WORK_ORDER = UUID.randomUUID();
   private static final UUID LEAD = UUID.randomUUID();
-  private static final UUID ORG_ADMIN = UUID.randomUUID();
+  private static final UUID ORG_MANAGER = UUID.randomUUID();
 
   private static MaintenanceEstimateVersion version(BigDecimal total) {
     return new MaintenanceEstimateVersion(WORK_ORDER, 1, LEAD, "VND", null, total);
@@ -61,10 +61,10 @@ class MaintenanceEstimateVersionTest {
     v.submit();
     assertThat(v.getStatus()).isEqualTo(EstimateStatus.SUBMITTED);
 
-    v.approve(ORG_ADMIN);
+    v.approve(ORG_MANAGER);
 
     assertThat(v.getStatus()).isEqualTo(EstimateStatus.APPROVED);
-    assertThat(v.getApprovedByUserId()).isEqualTo(ORG_ADMIN);
+    assertThat(v.getApprovedByUserId()).isEqualTo(ORG_MANAGER);
     assertThat(v.getApprovedAt()).isNotNull();
     assertThat(v.isImmutable()).isTrue();
   }
@@ -84,7 +84,7 @@ class MaintenanceEstimateVersionTest {
   void rejectsApprovalBeforeSubmission() {
     MaintenanceEstimateVersion v = version(new BigDecimal("1000000"));
 
-    assertThatThrownBy(() -> v.approve(ORG_ADMIN)).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> v.approve(ORG_MANAGER)).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
@@ -100,7 +100,7 @@ class MaintenanceEstimateVersionTest {
     MaintenanceEstimateVersion v = version(new BigDecimal("1000000"));
     v.submit();
 
-    assertThatThrownBy(() -> v.reject(ORG_ADMIN, "  "))
+    assertThatThrownBy(() -> v.reject(ORG_MANAGER, "  "))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -111,7 +111,7 @@ class MaintenanceEstimateVersionTest {
 
     MaintenanceEstimateVersion approved = version(new BigDecimal("1"));
     approved.submit();
-    approved.approve(ORG_ADMIN);
+    approved.approve(ORG_MANAGER);
     approved.supersede();
 
     assertThat(approved.getStatus()).isEqualTo(EstimateStatus.SUPERSEDED);

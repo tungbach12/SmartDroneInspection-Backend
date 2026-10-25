@@ -92,7 +92,7 @@ class InspectionReadinessApiIntegrationTest {
         new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
-    reviewerId = createUser(organizationId, UserRole.ORG_ADMIN, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =
@@ -292,7 +292,7 @@ class InspectionReadinessApiIntegrationTest {
 
   @Test
   void aReviewerOfAnotherOrganizationGetsNothing() throws Exception {
-    UUID otherReviewerId = createUser(otherOrganizationId, UserRole.ORG_ADMIN, "outsider");
+    UUID otherReviewerId = createUser(otherOrganizationId, UserRole.ORG_MANAGER, "outsider");
 
     mockMvc
         .perform(
@@ -356,11 +356,11 @@ class InspectionReadinessApiIntegrationTest {
   }
 
   private UUID createSubmittedPreparation() {
-    InspectionPreparation preparation = new InspectionPreparation(inspectionId, inspectorId, 1);
+    InspectionPreparation preparation = new InspectionPreparation(inspectionId, 1);
     preparation.recordShotList("{\"shots\":[\"span\"]}");
     preparation.recordEvidenceTypes("[\"RGB\"]");
     preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit(inspectorId);
+    preparation.submit();
     return preparations.saveAndFlush(preparation).getId();
   }
 
@@ -443,7 +443,7 @@ class InspectionReadinessApiIntegrationTest {
   private long decisionCount() {
     Long count =
         jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM inspection_readiness_decisions WHERE inspection_id = ?",
+            "SELECT count(*) FROM inspection_preparations WHERE inspection_id = ? AND reviewed_at IS NOT NULL",
             Long.class,
             inspectionId);
     return count == null ? 0L : count;
@@ -461,7 +461,7 @@ class InspectionReadinessApiIntegrationTest {
   private RequestPostProcessor orgAdmin(UUID subject) {
     return jwt()
         .jwt(token -> token.subject(subject.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 
   private RequestPostProcessor inspector() {

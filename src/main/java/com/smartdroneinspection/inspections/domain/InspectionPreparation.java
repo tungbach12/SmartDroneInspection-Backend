@@ -41,9 +41,6 @@ public class InspectionPreparation {
   @Column(name = "inspection_id", nullable = false)
   private UUID inspectionId;
 
-  @Column(name = "inspector_user_id", nullable = false)
-  private UUID inspectorUserId;
-
   @Column(name = "preparation_version", nullable = false)
   private int preparationVersion;
 
@@ -69,6 +66,15 @@ public class InspectionPreparation {
   @Column(name = "submitted_at")
   private Instant submittedAt;
 
+  @Column(name = "reviewed_by_user_id")
+  private UUID reviewedByUserId;
+
+  @Column(name = "reviewed_at")
+  private Instant reviewedAt;
+
+  @Column(name = "review_reason", length = 2000)
+  private String reviewReason;
+
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
   private InspectionPreparationStatus status;
@@ -85,10 +91,8 @@ public class InspectionPreparation {
 
   protected InspectionPreparation() {}
 
-  public InspectionPreparation(UUID inspectionId, UUID inspectorUserId, int preparationVersion) {
+  public InspectionPreparation(UUID inspectionId, int preparationVersion) {
     this.inspectionId = Objects.requireNonNull(inspectionId, "Preparation inspection is required");
-    this.inspectorUserId =
-        Objects.requireNonNull(inspectorUserId, "Preparing inspector is required");
     if (preparationVersion < 1) {
       throw new IllegalArgumentException("Preparation version must start at 1");
     }
@@ -99,8 +103,7 @@ public class InspectionPreparation {
   }
 
   public InspectionPreparation nextDraftVersion(int nextVersion) {
-    InspectionPreparation next =
-        new InspectionPreparation(inspectionId, inspectorUserId, nextVersion);
+    InspectionPreparation next = new InspectionPreparation(inspectionId, nextVersion);
     next.shotList = shotList;
     next.evidenceTypes = evidenceTypes;
     next.accessConstraints = accessConstraints;
@@ -114,10 +117,6 @@ public class InspectionPreparation {
 
   public UUID getInspectionId() {
     return inspectionId;
-  }
-
-  public UUID getInspectorUserId() {
-    return inspectorUserId;
   }
 
   public int getPreparationVersion() {
@@ -146,6 +145,18 @@ public class InspectionPreparation {
 
   public Instant getSubmittedAt() {
     return submittedAt;
+  }
+
+  public UUID getReviewedByUserId() {
+    return reviewedByUserId;
+  }
+
+  public Instant getReviewedAt() {
+    return reviewedAt;
+  }
+
+  public String getReviewReason() {
+    return reviewReason;
   }
 
   public InspectionPreparationStatus getStatus() {
@@ -226,10 +237,7 @@ public class InspectionPreparation {
    * restrictions and record the acknowledgment, and MF2-07 may only approve a preparation that
    * carries them; refusing here keeps an incomplete version from ever reaching the reviewer.
    */
-  public void submit(UUID submittingInspectorId) {
-    if (submittingInspectorId == null || !inspectorUserId.equals(submittingInspectorId)) {
-      throw new IllegalStateException("Only the preparing inspector may submit this preparation");
-    }
+  public void submit() {
     if (!isEditable()) {
       throw new IllegalStateException("Only a draft or returned preparation may be submitted");
     }
@@ -244,12 +252,17 @@ public class InspectionPreparation {
     this.updatedAt = submittedAt;
   }
 
-  /**
-   * The reviewer accepted this submission (MF2-07).
-   *
-   * <p>This records that a submission was judged complete. It is not the readiness decision itself,
-   * which MF2-07 records separately with a reviewer identity, document versions and a source hash.
-   */
+  /** The reviewer accepted this submission (MF2-07). */
+  public void approve(UUID reviewerUserId) {
+    Objects.requireNonNull(reviewerUserId, "Reviewer is required");
+    requireSubmitted("marked ready");
+    this.status = InspectionPreparationStatus.READY;
+    this.reviewedByUserId = reviewerUserId;
+    this.reviewedAt = Instant.now();
+    this.reviewReason = null;
+    this.updatedAt = reviewedAt;
+  }
+
   public void markReady() {
     requireSubmitted("marked ready");
     this.status = InspectionPreparationStatus.READY;
@@ -257,15 +270,39 @@ public class InspectionPreparation {
   }
 
   /** The prior approval no longer governs after the inspection requests another field visit. */
-  public void markSuperseded() {
+  public void supersede(String reason) {
     if (status != InspectionPreparationStatus.READY) {
       throw new IllegalStateException("Only a ready preparation can be superseded");
     }
     this.status = InspectionPreparationStatus.SUPERSEDED;
+    if (reason != null && !reason.isBlank()) {
+      this.reviewReason = reason.trim();
+    }
     touch();
   }
 
+  public void markSuperseded() {
+    supersede(null);
+  }
+
   /** The reviewer sent this submission back for rework (MF2-07). */
+  public void returnForRevision(UUID reviewerUserId, String reason) {
+    Objects.requireNonNull(reviewerUserId, "Reviewer is required");
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A return decision requires a reason");
+    }
+    String trimmedReason = reason.trim();
+    if (trimmedReason.length() > 2000) {
+      throw new IllegalArgumentException("Review reason must not exceed 2000 characters");
+    }
+    requireSubmitted("returned");
+    this.status = InspectionPreparationStatus.RETURNED;
+    this.reviewedByUserId = reviewerUserId;
+    this.reviewedAt = Instant.now();
+    this.reviewReason = trimmedReason;
+    this.updatedAt = reviewedAt;
+  }
+
   public void markReturned() {
     requireSubmitted("returned");
     this.status = InspectionPreparationStatus.RETURNED;
@@ -279,6 +316,9 @@ public class InspectionPreparation {
     }
     this.status = InspectionPreparationStatus.DRAFT;
     this.submittedAt = null;
+    this.reviewedByUserId = null;
+    this.reviewedAt = null;
+    this.reviewReason = null;
     touch();
   }
 

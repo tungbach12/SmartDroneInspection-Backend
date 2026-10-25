@@ -119,7 +119,7 @@ class WorkforceCredentialAccessIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             ownerOrganizationId);
-    user.addRole(UserRole.ORG_ADMIN);
+    user.addRole(UserRole.ORG_MANAGER);
     return users.saveAndFlush(user).getId();
   }
 

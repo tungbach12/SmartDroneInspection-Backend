@@ -480,6 +480,6 @@ class WorkforceCredentialApiIntegrationTest {
   private RequestPostProcessor orgAdmin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 }

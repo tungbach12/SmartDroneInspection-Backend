@@ -76,11 +76,11 @@ class OrganizationRegistrationApiIntegrationTest {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.organizationCode").value(code.toUpperCase()))
-        .andExpect(jsonPath("$.data.user.roles", hasItem("ORG_ADMIN")))
+        .andExpect(jsonPath("$.data.user.roles", hasItem("ORG_MANAGER")))
         .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER_ORGANIZATION"));
 
     User user = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
-    assertThat(user.roleValues()).containsExactly("ORG_ADMIN");
+    assertThat(user.roleValues()).containsExactly("ORG_MANAGER");
     assertThat(user.getOrganizationId()).isNotNull();
 
     Organization organization = organizations.findById(user.getOrganizationId()).orElseThrow();
@@ -89,7 +89,7 @@ class OrganizationRegistrationApiIntegrationTest {
             subscriptions.findFirstByOrganizationIdAndStatus(
                 organization.getId(), Subscription.Status.ACTIVE))
         .isEmpty();
-    // database-design.md §6.1: the organization records the ORG_ADMIN who created it.
+    // database-design.md §6.1: the organization records the ORG_MANAGER who created it.
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT created_by_user_id FROM organizations WHERE id = ?",

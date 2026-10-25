@@ -17,7 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * ORG_ADMIN workforce lifecycle, scoped to a single customer organization.
+ * ORG_MANAGER workforce lifecycle, scoped to a single customer organization.
  *
  * <p>Every operation derives the tenant from the authenticated principal, never from request data,
  * and accepts only the two non-privileged workforce roles. Lifecycle writes are delegated to the
@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class WorkforceService {
 
-  /** Roles an ORG_ADMIN may grant. ADMIN and ORG_ADMIN are deliberately absent. */
+  /** Roles an ORG_MANAGER may grant. ADMIN and ORG_MANAGER are deliberately absent. */
   static final Set<String> GRANTABLE_ROLES = Set.of(Roles.INSPECTOR, Roles.MAINTENANCE_ENGINEER);
 
   private static final String NOT_FOUND_MESSAGE = "User was not found.";
@@ -101,14 +101,15 @@ public class WorkforceService {
   }
 
   /**
-   * Resolves the acting ORG_ADMIN's own organization from the users module. A suspended or disabled
-   * actor is absent here and is rejected, and an actor without an organization cannot provision.
+   * Resolves the acting ORG_MANAGER's own organization from the users module. A suspended or
+   * disabled actor is absent here and is rejected, and an actor without an organization cannot
+   * provision.
    */
   private UUID requireActorOrganization(UUID actorId) {
     UserAccess.ActiveUser actor =
         users
             .findActiveUser(actorId)
-            .filter(candidate -> candidate.hasRole(Roles.ORG_ADMIN))
+            .filter(candidate -> candidate.hasRole(Roles.ORG_MANAGER))
             .orElseThrow(
                 () ->
                     new BusinessException(
@@ -127,9 +128,9 @@ public class WorkforceService {
 
   /**
    * Fails closed for any user outside the actor's organization, and for any same-organization
-   * account that is not a grantable workforce role. An ORG_ADMIN must not manage a privileged ADMIN
-   * or ORG_ADMIN account here, so those are reported exactly like a missing user rather than
-   * disclosing that a privileged account exists.
+   * account that is not a grantable workforce role. An ORG_MANAGER must not manage a privileged
+   * ADMIN or ORG_MANAGER account here, so those are reported exactly like a missing user rather
+   * than disclosing that a privileged account exists.
    */
   private void requireWorkforceMemberOfActorOrganization(UUID userId, UUID organizationId) {
     users

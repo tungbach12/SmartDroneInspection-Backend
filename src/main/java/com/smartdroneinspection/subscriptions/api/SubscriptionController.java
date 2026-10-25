@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/subscriptions")
-@PreAuthorize("hasRole('" + Roles.ORG_ADMIN + "')")
+@PreAuthorize("hasRole('" + Roles.ORG_MANAGER + "')")
 public class SubscriptionController {
 
   private final SubscriptionService subscriptionService;

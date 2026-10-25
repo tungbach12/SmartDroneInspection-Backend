@@ -125,7 +125,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID orgAdminId =
         createUser(
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             ActorZone.CUSTOMER_ORGANIZATION,
             "org.admin." + UUID.randomUUID() + "@skyview.test",
             "John OrgAdmin");
@@ -133,7 +133,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID reviewerId =
         createUser(
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             ActorZone.CUSTOMER_ORGANIZATION,
             "reviewer." + UUID.randomUUID() + "@skyview.test",
             "Alice Reviewer");
@@ -143,7 +143,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{orgId}/subscriptions", organizationId)
-                .with(principal(platformAdminId, "ADMIN"))
+                .with(principal(platformAdminId, "PLATFORM_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -244,7 +244,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/assets/{assetId}/pair-assignments", assetId)
-                    .with(principal(orgAdminId, "ORG_ADMIN"))
+                    .with(principal(orgAdminId, "ORG_MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -264,7 +264,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/assets/{assetId}/pair-assignments/{pairId}/activate", assetId, pairId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -280,7 +280,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/inspections")
-                    .with(principal(orgAdminId, "ORG_ADMIN"))
+                    .with(principal(orgAdminId, "ORG_MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -386,7 +386,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     "/api/v1/inspections/{id}/readiness/{prepId}/approval",
                     inspectionId,
                     preparationId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -417,8 +417,6 @@ class ConnectedMainFlowE2eIntegrationTest {
                     .content(
                         objectMapper.writeValueAsString(
                             Map.of(
-                                "checklistTemplateId",
-                                template.getId().toString(),
                                 "preFlightChecklistNote",
                                 "Drone identified; bridge accessible and telemetry nominal"))))
             .andExpect(status().isOk())
@@ -563,7 +561,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .param("approve", "true")
-                .with(principal(reviewerId, "ORG_ADMIN")))
+                .with(principal(reviewerId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -573,7 +571,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{vId}/publish",
                     inspectionId,
                     reportVersionId)
-                .with(principal(reviewerId, "ORG_ADMIN")))
+                .with(principal(reviewerId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
 
@@ -584,7 +582,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", inspectionId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("findingIds", List.of(findingId)))))
         .andExpect(status().isOk())
@@ -602,7 +600,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[MF4] Step 4.1: Checking Repair Candidates Intake...");
     mockMvc
         .perform(
-            get("/api/v1/maintenance/repair-candidates").with(principal(orgAdminId, "ORG_ADMIN")))
+            get("/api/v1/maintenance/repair-candidates").with(principal(orgAdminId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data").isArray())
         .andExpect(jsonPath("$.data[?(@.findingId == '%s')]", findingId).exists());
@@ -612,7 +610,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/maintenance/work-orders")
-                    .with(principal(orgAdminId, "ORG_ADMIN"))
+                    .with(principal(orgAdminId, "ORG_MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -644,7 +642,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -727,7 +725,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(orgAdminId, "ORG_ADMIN")))
+                .with(principal(orgAdminId, "ORG_MANAGER")))
         .andExpect(status().isOk());
 
     log.info("[MF4] Step 4.6: Releasing and Starting Work Order...");
@@ -840,7 +838,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -880,7 +878,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -894,7 +892,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/close", workOrderId)
-                .with(principal(reviewerId, "ORG_ADMIN")))
+                .with(principal(reviewerId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
 
@@ -916,7 +914,7 @@ class ConnectedMainFlowE2eIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    admin.addRole(UserRole.ADMIN);
+    admin.addRole(UserRole.PLATFORM_MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 

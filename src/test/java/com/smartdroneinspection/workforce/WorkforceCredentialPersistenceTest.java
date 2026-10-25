@@ -66,7 +66,7 @@ class WorkforceCredentialPersistenceTest {
     organizationId = assetFixture.organizationId();
     assetCategoryId = assetFixture.categoryId();
     subjectUserId = createUser("inspector", UserRole.INSPECTOR);
-    verifierUserId = createUser("reviewer", UserRole.ORG_ADMIN);
+    verifierUserId = createUser("reviewer", UserRole.ORG_MANAGER);
   }
 
   @Test

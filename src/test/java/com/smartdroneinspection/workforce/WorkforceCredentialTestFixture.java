@@ -14,8 +14,8 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * MF1 credential fixtures: an entitled tenant with an ORG_ADMIN reviewer and an Inspector subject,
- * a second tenant for cross-tenant denial, and a third tenant with no subscription.
+ * MF1 credential fixtures: an entitled tenant with an ORG_MANAGER reviewer and an Inspector
+ * subject, a second tenant for cross-tenant denial, and a third tenant with no subscription.
  */
 final class WorkforceCredentialTestFixture {
 
@@ -40,14 +40,14 @@ final class WorkforceCredentialTestFixture {
     UUID otherOrganizationId = saveOrganization("Credential other tenant").getId();
     UUID unentitledOrganizationId = saveOrganization("Credential unentitled tenant").getId();
 
-    UUID reviewerId = saveUser("credential-reviewer", organizationId, UserRole.ORG_ADMIN).getId();
+    UUID reviewerId = saveUser("credential-reviewer", organizationId, UserRole.ORG_MANAGER).getId();
     UUID subjectId = saveUser("credential-subject", organizationId, UserRole.INSPECTOR).getId();
     UUID foreignReviewerId =
-        saveUser("credential-foreign-reviewer", otherOrganizationId, UserRole.ORG_ADMIN).getId();
+        saveUser("credential-foreign-reviewer", otherOrganizationId, UserRole.ORG_MANAGER).getId();
     UUID foreignSubjectId =
         saveUser("credential-foreign-subject", otherOrganizationId, UserRole.INSPECTOR).getId();
     UUID unentitledReviewerId =
-        saveUser("credential-unentitled-reviewer", unentitledOrganizationId, UserRole.ORG_ADMIN)
+        saveUser("credential-unentitled-reviewer", unentitledOrganizationId, UserRole.ORG_MANAGER)
             .getId();
 
     grantEntitlement(organizationId);
@@ -119,8 +119,6 @@ final class WorkforceCredentialTestFixture {
                 null,
                 null,
                 null,
-                null,
-                "mf1-" + UUID.randomUUID(),
                 "Credential fixture inspection",
                 null,
                 null,

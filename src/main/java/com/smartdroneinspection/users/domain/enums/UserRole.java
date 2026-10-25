@@ -4,7 +4,8 @@ import com.smartdroneinspection.shared.auth.Roles;
 
 public enum UserRole {
   ADMIN(Roles.ADMIN),
-  ORG_ADMIN(Roles.ORG_ADMIN),
+  PLATFORM_MANAGER(Roles.PLATFORM_MANAGER),
+  ORG_MANAGER(Roles.ORG_MANAGER),
   INSPECTOR(Roles.INSPECTOR),
   MAINTENANCE_ENGINEER(Roles.MAINTENANCE_ENGINEER);
 

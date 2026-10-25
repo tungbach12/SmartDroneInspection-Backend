@@ -115,6 +115,7 @@ class AssetPairAssignmentServiceTest {
             new RespondToAssignmentRequest(AssignmentResponse.ACCEPTED, null));
 
     assertThat(answered.assignmentResponse()).isEqualTo(AssignmentResponse.ACCEPTED);
+    assertThat(answered.reason()).isEqualTo("Primary crew");
     assertThat(answered.respondedAt()).isNotNull();
     assertThat(service.listUnansweredAssignments(inspectorId)).isEmpty();
   }

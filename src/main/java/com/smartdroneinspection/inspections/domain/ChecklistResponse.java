@@ -37,9 +37,6 @@ public class ChecklistResponse {
   @Column(length = 4000)
   private String notes;
 
-  @Column(name = "completed_by_user_id", nullable = false)
-  private UUID completedByUserId;
-
   @Column(name = "completed_at")
   private Instant completedAt;
 
@@ -52,16 +49,11 @@ public class ChecklistResponse {
   protected ChecklistResponse() {}
 
   public ChecklistResponse(
-      UUID inspectionId,
-      UUID checklistItemId,
-      String responseValue,
-      String notes,
-      UUID completedByUserId) {
+      UUID inspectionId, UUID checklistItemId, String responseValue, String notes) {
     this.inspectionId = inspectionId;
     this.checklistItemId = checklistItemId;
     this.responseValue = responseValue;
     this.notes = notes;
-    this.completedByUserId = completedByUserId;
     this.completedAt = Instant.now();
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
@@ -87,20 +79,19 @@ public class ChecklistResponse {
     return notes;
   }
 
-  public UUID getCompletedByUserId() {
-    return completedByUserId;
-  }
-
   public Instant getCompletedAt() {
     return completedAt;
   }
 
   /** Replaces the recorded answer, keeping the note exactly as the Inspector rewrote it. */
-  public void update(String responseValue, String notes, UUID completedByUserId) {
+  public void recordResponse(String responseValue, String notes) {
     this.responseValue = responseValue;
     this.notes = notes;
-    this.completedByUserId = completedByUserId;
     this.completedAt = Instant.now();
     this.updatedAt = Instant.now();
+  }
+
+  public void update(String responseValue, String notes) {
+    recordResponse(responseValue, notes);
   }
 }
