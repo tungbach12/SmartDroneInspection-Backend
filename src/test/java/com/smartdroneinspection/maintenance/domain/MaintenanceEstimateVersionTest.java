@@ -21,8 +21,7 @@ class MaintenanceEstimateVersionTest {
   private static final UUID ORG_ADMIN = UUID.randomUUID();
 
   private static MaintenanceEstimateVersion version(BigDecimal total) {
-    return new MaintenanceEstimateVersion(
-        WORK_ORDER, 1, LEAD, "VND", null, null, "{\"lines\":[]}", total);
+    return new MaintenanceEstimateVersion(WORK_ORDER, 1, LEAD, "VND", null, total);
   }
 
   private static MaintenanceCostLine pricedLine(String quantity, String rate) {
@@ -37,8 +36,6 @@ class MaintenanceEstimateVersionTest {
         "hour",
         new BigDecimal(rate),
         "VND",
-        null,
-        null,
         LEAD);
   }
 

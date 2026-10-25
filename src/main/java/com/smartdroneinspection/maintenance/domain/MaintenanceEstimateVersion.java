@@ -58,20 +58,11 @@ public class MaintenanceEstimateVersion {
   @Column(nullable = false, length = 3)
   private String currency;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "tax_basis", columnDefinition = "jsonb")
-  private String taxBasis;
-
   @Column(name = "baseline_total", nullable = false, precision = 18, scale = TOTAL_SCALE)
   private BigDecimal baselineTotal;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(columnDefinition = "jsonb")
+  @Column(length = 4000)
   private String assumptions;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(nullable = false, columnDefinition = "jsonb")
-  private String snapshot;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -83,17 +74,13 @@ public class MaintenanceEstimateVersion {
       int versionNo,
       UUID preparedByUserId,
       String currency,
-      String taxBasis,
       String assumptions,
-      String snapshot,
       BigDecimal baselineTotal) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.versionNo = requirePositive(versionNo, "versionNo");
     this.preparedByUserId = require(preparedByUserId, "preparedByUserId");
     this.currency = requireText(currency, "currency");
-    this.taxBasis = JsonbText.toNullableJson(taxBasis);
-    this.assumptions = JsonbText.toNullableJson(assumptions);
-    this.snapshot = JsonbText.toRequiredJson(snapshot);
+    this.assumptions = assumptions;
     this.baselineTotal = requireTotal(baselineTotal);
     this.status = EstimateStatus.DRAFT;
     this.createdAt = Instant.now();
@@ -229,20 +216,12 @@ public class MaintenanceEstimateVersion {
     return currency;
   }
 
-  public String getTaxBasis() {
-    return JsonbText.fromJson(taxBasis);
-  }
-
   public BigDecimal getBaselineTotal() {
     return baselineTotal;
   }
 
   public String getAssumptions() {
-    return JsonbText.fromJson(assumptions);
-  }
-
-  public String getSnapshot() {
-    return JsonbText.fromJson(snapshot);
+    return assumptions;
   }
 
   public Instant getCreatedAt() {

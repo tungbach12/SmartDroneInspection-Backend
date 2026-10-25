@@ -12,8 +12,6 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * A repair work order raised from one confirmed repair-required finding on a published report.
@@ -54,12 +52,10 @@ public class MaintenanceWorkOrder {
   @Column(name = "due_at")
   private Instant dueAt;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "corrective_scope", columnDefinition = "jsonb")
+  @Column(name = "corrective_scope", length = 4000)
   private String correctiveScope;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "acceptance_criteria", columnDefinition = "jsonb")
+  @Column(name = "acceptance_criteria", length = 4000)
   private String acceptanceCriteria;
 
   @Column(name = "owner_user_id", nullable = false)
@@ -119,8 +115,8 @@ public class MaintenanceWorkOrder {
     }
     this.priority = priority;
     this.dueAt = dueAt;
-    this.correctiveScope = JsonbText.toNullableJson(correctiveScope);
-    this.acceptanceCriteria = JsonbText.toNullableJson(acceptanceCriteria);
+    this.correctiveScope = correctiveScope;
+    this.acceptanceCriteria = acceptanceCriteria;
     this.updatedAt = Instant.now();
   }
 
@@ -386,11 +382,11 @@ public class MaintenanceWorkOrder {
   }
 
   public String getCorrectiveScope() {
-    return JsonbText.fromJson(correctiveScope);
+    return correctiveScope;
   }
 
   public String getAcceptanceCriteria() {
-    return JsonbText.fromJson(acceptanceCriteria);
+    return acceptanceCriteria;
   }
 
   public UUID getOwnerUserId() {

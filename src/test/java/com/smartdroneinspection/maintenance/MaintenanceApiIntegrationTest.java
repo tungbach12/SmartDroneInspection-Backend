@@ -864,11 +864,7 @@ class MaintenanceApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of(
-                            "contentSnapshot", "{\"summary\":\"Support replaced\"}",
-                            "approvedScopeHash", "scope-hash",
-                            "workLogSnapshotHash", "work-log-hash",
-                            "actualCostSnapshotHash", "actual-cost-hash"))))
+                        Map.of("contentSnapshot", "{\"summary\":\"Support replaced\"}"))))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -1233,11 +1229,7 @@ class MaintenanceApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of(
-                            "contentSnapshot", "{\"summary\":\"Support replaced\"}",
-                            "approvedScopeHash", "scope-hash",
-                            "workLogSnapshotHash", "work-log-hash",
-                            "actualCostSnapshotHash", "actual-cost-hash"))))
+                        Map.of("contentSnapshot", "{\"summary\":\"Support replaced\"}"))))
         .andExpect(status().isOk());
     mockMvc
         .perform(

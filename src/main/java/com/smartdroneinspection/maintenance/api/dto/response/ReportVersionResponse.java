@@ -12,25 +12,17 @@ public record ReportVersionResponse(
     ReportVersionStatus status,
     UUID authorUserId,
     Instant authorVerifiedAt,
-    String approvedScopeHash,
-    String changeSnapshotHash,
-    String workLogSnapshotHash,
-    String actualCostSnapshotHash,
     String contentSnapshot,
     String renderedObjectKey,
     String renderedChecksumSha256) {
 
-  public static ReportVersionResponse from(MaintenanceReportVersion report) {
+  public static ReportVersionResponse from(MaintenanceReportVersion report, UUID authorUserId) {
     return new ReportVersionResponse(
         report.getId(),
         report.getVersionNo(),
         report.getStatus(),
-        report.getAuthorUserId(),
+        authorUserId,
         report.getAuthorVerifiedAt(),
-        report.getApprovedScopeHash(),
-        report.getChangeSnapshotHash(),
-        report.getWorkLogSnapshotHash(),
-        report.getActualCostSnapshotHash(),
         report.getContentSnapshot(),
         report.getRenderedObjectKey(),
         report.getRenderedChecksumSha256());

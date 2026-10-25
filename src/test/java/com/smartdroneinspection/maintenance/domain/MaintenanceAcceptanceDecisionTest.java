@@ -28,8 +28,7 @@ class MaintenanceAcceptanceDecisionTest {
             AcceptanceDecisionKind.ACCEPTED,
             "Torque within specification",
             "{\"checks\":[\"torque\"]}",
-            "{\"pass\":true}",
-            null);
+            "{\"pass\":true}");
 
     assertThat(decision.getDecision()).isEqualTo(AcceptanceDecisionKind.ACCEPTED);
     assertThat(decision.getDecidedAt()).isNotNull();
@@ -45,7 +44,6 @@ class MaintenanceAcceptanceDecisionTest {
             REVIEWER,
             AcceptanceDecisionKind.REINSPECTION_REQUIRED,
             "Needs independent verification",
-            null,
             null,
             null);
 
@@ -64,7 +62,6 @@ class MaintenanceAcceptanceDecisionTest {
                     AcceptanceDecisionKind.REWORK_REQUIRED,
                     "  ",
                     null,
-                    null,
                     null))
         .isInstanceOf(IllegalArgumentException.class);
   }
@@ -80,20 +77,12 @@ class MaintenanceAcceptanceDecisionTest {
                     AcceptanceDecisionKind.ACCEPTED,
                     "ok",
                     null,
-                    null,
                     null))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new MaintenanceAcceptanceDecision(
-                    WORK_ORDER,
-                    null,
-                    REVIEWER,
-                    AcceptanceDecisionKind.ACCEPTED,
-                    "ok",
-                    null,
-                    null,
-                    null))
+                    WORK_ORDER, null, REVIEWER, AcceptanceDecisionKind.ACCEPTED, "ok", null, null))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
@@ -104,13 +93,12 @@ class MaintenanceAcceptanceDecisionTest {
                     AcceptanceDecisionKind.ACCEPTED,
                     "ok",
                     null,
-                    null,
                     null))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new MaintenanceAcceptanceDecision(
-                    WORK_ORDER, REPORT_VERSION, REVIEWER, null, "ok", null, null, null))
+                    WORK_ORDER, REPORT_VERSION, REVIEWER, null, "ok", null, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -123,7 +111,6 @@ class MaintenanceAcceptanceDecisionTest {
             REVIEWER,
             AcceptanceDecisionKind.ACCEPTED,
             "ok",
-            null,
             null,
             null);
 

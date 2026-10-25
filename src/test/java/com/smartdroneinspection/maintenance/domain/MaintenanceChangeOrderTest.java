@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.maintenance.domain.enums.ChangeOrderStatus;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -17,8 +16,7 @@ class MaintenanceChangeOrderTest {
   private static final UUID ORG_ADMIN = UUID.randomUUID();
 
   private static MaintenanceChangeOrder change(BigDecimal delta) {
-    return new MaintenanceChangeOrder(
-        WORK_ORDER, 1, "Hidden damage found", "{\"taskIds\":[]}", delta, null, null, null, LEAD);
+    return new MaintenanceChangeOrder(WORK_ORDER, 1, "Hidden damage found", delta, LEAD);
   }
 
   @Test
@@ -31,43 +29,15 @@ class MaintenanceChangeOrderTest {
 
   @Test
   void requiresReasonAndRequester() {
-    Instant now = Instant.now();
-    assertThatThrownBy(
-            () ->
-                new MaintenanceChangeOrder(
-                    WORK_ORDER, 1, "  ", null, BigDecimal.ONE, null, null, null, LEAD))
+    assertThatThrownBy(() -> new MaintenanceChangeOrder(WORK_ORDER, 1, "  ", BigDecimal.ONE, LEAD))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                new MaintenanceChangeOrder(
-                    WORK_ORDER, 1, "Why", null, BigDecimal.ONE, null, null, null, null))
+    assertThatThrownBy(() -> new MaintenanceChangeOrder(WORK_ORDER, 1, "Why", BigDecimal.ONE, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void rejectsNonPositiveChangeNumber() {
-    assertThatThrownBy(
-            () ->
-                new MaintenanceChangeOrder(
-                    WORK_ORDER, 0, "Why", null, BigDecimal.ONE, null, null, null, LEAD))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void rejectsWindowRunningBackwards() {
-    Instant start = Instant.now();
-    assertThatThrownBy(
-            () ->
-                new MaintenanceChangeOrder(
-                    WORK_ORDER,
-                    1,
-                    "Why",
-                    null,
-                    BigDecimal.ONE,
-                    null,
-                    start,
-                    start.minusSeconds(60),
-                    LEAD))
+    assertThatThrownBy(() -> new MaintenanceChangeOrder(WORK_ORDER, 0, "Why", BigDecimal.ONE, LEAD))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

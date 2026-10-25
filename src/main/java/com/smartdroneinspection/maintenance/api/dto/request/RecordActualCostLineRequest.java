@@ -19,6 +19,4 @@ public record RecordActualCostLineRequest(
     @NotNull BigDecimal quantity,
     String unit,
     @NotNull BigDecimal unitRate,
-    @NotBlank String currency,
-    String taxTreatment,
-    String evidenceReference) {}
+    @NotBlank String currency) {}

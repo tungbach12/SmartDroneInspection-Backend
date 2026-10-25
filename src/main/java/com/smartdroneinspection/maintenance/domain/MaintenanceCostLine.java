@@ -68,18 +68,8 @@ public class MaintenanceCostLine {
   @Column(nullable = false, length = 3)
   private String currency;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "tax_treatment", columnDefinition = "jsonb")
-  private String taxTreatment;
-
-  @Column(name = "evidence_reference", length = 1000)
-  private String evidenceReference;
-
   @Column(name = "entered_by_user_id", nullable = false)
   private UUID enteredByUserId;
-
-  @Column(name = "entered_at", nullable = false, updatable = false)
-  private Instant enteredAt;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -97,8 +87,6 @@ public class MaintenanceCostLine {
       String unit,
       BigDecimal unitRate,
       String currency,
-      String taxTreatment,
-      String evidenceReference,
       UUID enteredByUserId) {
     this.workOrderId = require(workOrderId, "workOrderId");
     this.lineKind = requireKind(lineKind, "lineKind");
@@ -110,12 +98,9 @@ public class MaintenanceCostLine {
     this.estimateVersionId = estimateVersionId;
     this.taskId = taskId;
     this.unit = unit;
-    this.taxTreatment = JsonbText.toNullableJson(taxTreatment);
-    this.evidenceReference = evidenceReference;
     this.enteredByUserId = require(enteredByUserId, "enteredByUserId");
     this.amount = computeAmount();
-    this.enteredAt = Instant.now();
-    this.createdAt = this.enteredAt;
+    this.createdAt = Instant.now();
   }
 
   /** MF4-07: the amount is quantity times unit rate, rounded once at the stored scale. */
@@ -232,19 +217,11 @@ public class MaintenanceCostLine {
     return currency;
   }
 
-  public String getTaxTreatment() {
-    return JsonbText.fromJson(taxTreatment);
-  }
-
-  public String getEvidenceReference() {
-    return evidenceReference;
-  }
-
   public UUID getEnteredByUserId() {
     return enteredByUserId;
   }
 
-  public Instant getEnteredAt() {
-    return enteredAt;
+  public Instant getCreatedAt() {
+    return createdAt;
   }
 }

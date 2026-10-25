@@ -14,11 +14,7 @@ import java.util.UUID;
  * quantity and unit rate and derives the version total from the lines.
  */
 public record CreateEstimateVersionRequest(
-    @NotBlank String currency,
-    String taxBasis,
-    String assumptions,
-    @NotBlank String snapshot,
-    @NotNull List<EstimateLineRequest> lines) {
+    @NotBlank String currency, String assumptions, @NotNull List<EstimateLineRequest> lines) {
 
   /** One priced line. A missing or null unit rate is rejected rather than stored as zero. */
   public record EstimateLineRequest(
@@ -27,6 +23,5 @@ public record CreateEstimateVersionRequest(
       @NotBlank String description,
       BigDecimal quantity,
       String unit,
-      BigDecimal unitRate,
-      String evidenceReference) {}
+      BigDecimal unitRate) {}
 }

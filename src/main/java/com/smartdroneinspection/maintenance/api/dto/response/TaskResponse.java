@@ -15,8 +15,7 @@ public record TaskResponse(
     Instant plannedStartAt,
     Instant plannedEndAt,
     String acceptanceCriteria,
-    TaskStatus status,
-    int displayOrder) {
+    TaskStatus status) {
 
   public static TaskResponse from(MaintenanceTask task) {
     return new TaskResponse(
@@ -28,7 +27,6 @@ public record TaskResponse(
         task.getPlannedStartAt(),
         task.getPlannedEndAt(),
         task.getAcceptanceCriteria(),
-        task.getStatus(),
-        task.getDisplayOrder());
+        task.getStatus());
   }
 }
