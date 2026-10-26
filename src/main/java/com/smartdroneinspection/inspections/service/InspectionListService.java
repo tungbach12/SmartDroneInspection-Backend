@@ -4,15 +4,12 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionListItemR
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPageResponse;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -36,8 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  * may the caller see, and in which tenant.
  *
  * <p>Scope is decided from the caller, never from a query parameter. An Inspector sees only the
- * inspections assigned to them, an ORG_ADMIN sees their own organization, and a platform ADMIN sees
- * every organization read-only. Cross-tenant administrative reads stay a separate, explicitly
+ * inspections assigned to them, an ORG_MANAGER sees their own organization, and a platform ADMIN
+ * sees every organization read-only. Cross-tenant administrative reads stay a separate, explicitly
  * authorized capability, so ADMIN is given no write path on this resource.
  */
 @Service
@@ -54,7 +51,6 @@ public class InspectionListService {
   private final InspectionRepository inspections;
   private final InspectionReportVersionRepository reports;
   private final InspectionPreparationRepository preparations;
-  private final InspectionReadinessDecisionRepository readinessDecisions;
   private final FindingRepository findings;
   private final UserAccess userAccess;
 
@@ -62,13 +58,11 @@ public class InspectionListService {
       InspectionRepository inspections,
       InspectionReportVersionRepository reports,
       InspectionPreparationRepository preparations,
-      InspectionReadinessDecisionRepository readinessDecisions,
       FindingRepository findings,
       UserAccess userAccess) {
     this.inspections = inspections;
     this.reports = reports;
     this.preparations = preparations;
-    this.readinessDecisions = readinessDecisions;
     this.findings = findings;
     this.userAccess = userAccess;
   }
@@ -150,20 +144,10 @@ public class InspectionListService {
     if (inspection.getStatus() != InspectionStatus.PREPARING) {
       return false;
     }
-    InspectionPreparation latest =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
-            .orElse(null);
-    if (latest == null || latest.getStatus() != InspectionPreparationStatus.SUBMITTED) {
-      return false;
-    }
-    // A readiness decision already taken on this very version is not pending work any more.
-    return readinessDecisions
-        .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
-        .filter(decision -> decision.getPreparationId() != null)
-        .filter(decision -> decision.getPreparationId().equals(latest.getId()))
-        .filter(decision -> decision.getDecision() != ReadinessDecisionType.INVALIDATED)
-        .isEmpty();
+    return preparations
+        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
+        .filter(latest -> latest.getStatus() == InspectionPreparationStatus.SUBMITTED)
+        .isPresent();
   }
 
   /**
@@ -256,7 +240,7 @@ public class InspectionListService {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope for the inspection list");
     }
-    if (actor.hasRole("ORG_ADMIN")) {
+    if (actor.hasRole("ORG_MANAGER")) {
       return Scope.forOrganization(inspections, actor.organizationId());
     }
     if (actor.hasRole("INSPECTOR")) {

@@ -57,7 +57,7 @@ class WorkforceServiceTest {
             organizationId);
     when(users.findActiveUser(actorId))
         .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(actorId, Set.of("ORG_ADMIN"), organizationId)));
+            Optional.of(new UserAccess.ActiveUser(actorId, Set.of("ORG_MANAGER"), organizationId)));
   }
 
   @Test
@@ -110,7 +110,7 @@ class WorkforceServiceTest {
 
   @Test
   void rejectsOrganizationAdministratorRoleOnRoleUpdateBeforeLifecycleWrite() {
-    assertForbiddenRoleUpdate("ORG_ADMIN");
+    assertForbiddenRoleUpdate("ORG_MANAGER");
   }
 
   @Test
@@ -160,7 +160,7 @@ class WorkforceServiceTest {
                     subjectId,
                     subject.email(),
                     subject.fullName(),
-                    Set.of("ORG_ADMIN"),
+                    Set.of("ORG_MANAGER"),
                     subject.status(),
                     organizationId)));
 
@@ -188,7 +188,7 @@ class WorkforceServiceTest {
                     subjectId,
                     subject.email(),
                     subject.fullName(),
-                    Set.of("INSPECTOR", "ORG_ADMIN"),
+                    Set.of("INSPECTOR", "ORG_MANAGER"),
                     subject.status(),
                     organizationId)));
 
@@ -295,7 +295,7 @@ class WorkforceServiceTest {
                     otherAdminId,
                     "peer-admin@example.test",
                     "Peer Admin",
-                    Set.of("ORG_ADMIN"),
+                    Set.of("ORG_MANAGER"),
                     "ACTIVE",
                     organizationId)));
 

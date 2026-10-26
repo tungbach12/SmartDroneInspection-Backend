@@ -122,6 +122,6 @@ class AssetCatalogApiIntegrationTest {
         .jwt(t -> t.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_ORG_ADMIN"));
+                "ROLE_ORG_MANAGER"));
   }
 }

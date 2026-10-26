@@ -9,8 +9,6 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * A field session under one inspection. MF3 evidence may be attributed to the session it came from.
@@ -19,10 +17,8 @@ import org.hibernate.type.SqlTypes;
  * migration contract that {@code ck_field_sessions_status} already fixed; the values below are the
  * only ones the database accepts.
  *
- * <p>A session is opened against one readiness decision and keeps that decision id, because MF2-10
- * re-checks readiness at the moment of the start. Recording which decision was used is what makes a
- * later audit answer "which approval did this flight rely on" instead of "some approval, at some
- * point".
+ * <p>A session is opened against one approved preparation version and keeps that preparation id,
+ * because MF2-10 re-checks readiness at the moment of the start.
  */
 @Entity
 @Table(name = "field_sessions")
@@ -30,6 +26,7 @@ public class FieldSession {
 
   public static final String PLANNED = "PLANNED";
   public static final String IN_PROGRESS = "IN_PROGRESS";
+  public static final String FIELD_COMPLETED = "FIELD_COMPLETED";
   public static final String POSTPONED = "POSTPONED";
   public static final String ABORTED = "ABORTED";
 
@@ -38,17 +35,8 @@ public class FieldSession {
   @Column(name = "inspection_id", nullable = false)
   private UUID inspectionId;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
-
-  @Column(name = "inspector_user_id", nullable = false)
-  private UUID inspectorUserId;
-
-  @Column(name = "drone_id")
-  private UUID droneId;
-
-  @Column(name = "readiness_decision_id")
-  private UUID readinessDecisionId;
+  @Column(name = "preparation_id")
+  private UUID preparationId;
 
   @Column(nullable = false, length = 24)
   private String status;
@@ -71,16 +59,6 @@ public class FieldSession {
   @Column(name = "pre_flight_checklist_note", length = 2000)
   private String preFlightChecklistNote;
 
-  @Column(name = "checklist_template_id")
-  private UUID checklistTemplateId;
-
-  @Column(name = "readiness_version")
-  private Integer readinessVersion;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(columnDefinition = "jsonb")
-  private String limitations;
-
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -93,33 +71,15 @@ public class FieldSession {
 
   protected FieldSession() {}
 
-  public FieldSession(
-      UUID inspectionId,
-      UUID organizationId,
-      UUID inspectorUserId,
-      UUID droneId,
-      UUID readinessDecisionId,
-      String status,
-      Instant startedAt,
-      Integer readinessVersion) {
+  public FieldSession(UUID inspectionId, UUID preparationId, String status, Instant startedAt) {
     this.inspectionId = inspectionId;
-    this.organizationId = organizationId;
-    this.inspectorUserId = inspectorUserId;
-    this.droneId = droneId;
-    this.readinessDecisionId = readinessDecisionId;
+    this.preparationId = preparationId;
     this.status = status;
     this.startedAt = startedAt;
-    this.readinessVersion = readinessVersion;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
 
-  /**
-   * Records that the session is under way (MF2-10).
-   *
-   * <p>Starting stamps the instant rather than accepting one, so a caller cannot backdate a session
-   * to sit inside an earlier planned window.
-   */
   public void recordPreFlightChecklistNote(String note) {
     if (note == null || note.isBlank()) {
       throw new IllegalArgumentException("Pre-flight checklist note is required");
@@ -136,12 +96,6 @@ public class FieldSession {
     this.updatedAt = startedAt;
   }
 
-  /**
-   * Weather or site safety stopped the session before any flight time (MF2-09/11).
-   *
-   * <p>A postponement ends the attempt but leaves the inspection able to try again: the readiness
-   * decision was not consumed, so the same inspection may be started once conditions allow.
-   */
   public void postpone(String postponementReason) {
     requireOpenSession();
     this.postponementReason = requireReason(postponementReason);
@@ -150,7 +104,6 @@ public class FieldSession {
     this.updatedAt = endedAt;
   }
 
-  /** The session cannot continue and will not resume under this record (MF2-11). */
   public void abort(String abortReason) {
     requireOpenSession();
     this.abortReason = requireReason(abortReason);
@@ -159,13 +112,12 @@ public class FieldSession {
     this.updatedAt = endedAt;
   }
 
-  /** Records normal completion of field work (MF2-12). */
   public void complete(String outcomeNotes) {
     if (!IN_PROGRESS.equals(status)) {
       throw new IllegalStateException("Only an in-progress session can be completed");
     }
     this.outcomeNotes = requireReason(outcomeNotes);
-    this.status = "FIELD_COMPLETED";
+    this.status = FIELD_COMPLETED;
     this.endedAt = Instant.now();
     this.updatedAt = endedAt;
   }
@@ -183,40 +135,10 @@ public class FieldSession {
     return reason.trim();
   }
 
-  /**
-   * A session opened against a readiness decision but not yet started on site.
-   *
-   * <p>The session is created {@code PLANNED} and becomes {@code IN_PROGRESS} only when the
-   * Inspector actually starts, so a row never claims a start instant it did not have.
-   */
-  public static FieldSession opening(
-      UUID inspectionId,
-      UUID organizationId,
-      UUID inspectorUserId,
-      UUID droneId,
-      UUID checklistTemplateId,
-      UUID readinessDecisionId,
-      Integer readinessVersion) {
-    FieldSession session =
-        new FieldSession(
-            inspectionId,
-            organizationId,
-            inspectorUserId,
-            droneId,
-            readinessDecisionId,
-            PLANNED,
-            null,
-            readinessVersion);
-    session.checklistTemplateId = checklistTemplateId;
-    return session;
+  public static FieldSession opening(UUID inspectionId, UUID preparationId) {
+    return new FieldSession(inspectionId, preparationId, PLANNED, null);
   }
 
-  /**
-   * Whether this session still occupies the inspection.
-   *
-   * <p>Only a planned or in-progress session does. A postponed or aborted one is history, and the
-   * inspection may be started again.
-   */
   public boolean isOpen() {
     return PLANNED.equals(status) || IN_PROGRESS.equals(status);
   }
@@ -233,20 +155,8 @@ public class FieldSession {
     return inspectionId;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
-  }
-
-  public UUID getInspectorUserId() {
-    return inspectorUserId;
-  }
-
-  public UUID getDroneId() {
-    return droneId;
-  }
-
-  public UUID getReadinessDecisionId() {
-    return readinessDecisionId;
+  public UUID getPreparationId() {
+    return preparationId;
   }
 
   public String getStatus() {
@@ -273,19 +183,7 @@ public class FieldSession {
     return outcomeNotes;
   }
 
-  public String getLimitations() {
-    return limitations;
-  }
-
   public String getPreFlightChecklistNote() {
     return preFlightChecklistNote;
-  }
-
-  public UUID getChecklistTemplateId() {
-    return checklistTemplateId;
-  }
-
-  public Integer getReadinessVersion() {
-    return readinessVersion;
   }
 }

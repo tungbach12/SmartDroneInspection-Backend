@@ -85,7 +85,7 @@ public class MaintenanceExecutionController {
   }
 
   @GetMapping("/work-logs")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<WorkLogResponse>> listWorkLogs(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.listWorkLogs(actorId(jwt), workOrderId));
@@ -111,7 +111,7 @@ public class MaintenanceExecutionController {
   }
 
   @GetMapping("/changes")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<ChangeOrderResponse>> listChanges(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.listChanges(actorId(jwt), workOrderId));
@@ -127,7 +127,7 @@ public class MaintenanceExecutionController {
   }
 
   @PostMapping("/changes/{changeNumber}/approve")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ChangeOrderResponse> approveChange(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -139,7 +139,7 @@ public class MaintenanceExecutionController {
   }
 
   @PostMapping("/changes/{changeNumber}/reject")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ChangeOrderResponse> rejectChange(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -151,7 +151,7 @@ public class MaintenanceExecutionController {
   }
 
   @PostMapping("/changes/{changeNumber}/return")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ChangeOrderResponse> returnChange(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -163,7 +163,7 @@ public class MaintenanceExecutionController {
   }
 
   @GetMapping("/reports")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<ReportVersionResponse>> listReportVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.listReportVersions(actorId(jwt), workOrderId));
@@ -198,7 +198,7 @@ public class MaintenanceExecutionController {
   }
 
   @GetMapping("/acceptance-decisions")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<AcceptanceDecisionResponse>> listAcceptanceDecisions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.listAcceptanceDecisions(actorId(jwt), workOrderId));
@@ -206,7 +206,7 @@ public class MaintenanceExecutionController {
 
   /** MF4-18: only the designated independent reviewer can reach this. */
   @PostMapping("/acceptance-decisions")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<AcceptanceDecisionResponse> recordAcceptance(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -216,7 +216,7 @@ public class MaintenanceExecutionController {
   }
 
   @GetMapping({"/report-versions/{versionNo}/pdf", "/reports/{versionNo}/pdf"})
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ResponseEntity<byte[]> getReportPdf(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -226,14 +226,14 @@ public class MaintenanceExecutionController {
   }
 
   @GetMapping("/cost-reconciliation")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<CostReconciliationResponse> reconciliationSummary(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.reconciliationSummary(actorId(jwt), workOrderId));
   }
 
   @PostMapping("/cost-reconciliation")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<CostReconciliationResponse> reconcile(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -242,7 +242,7 @@ public class MaintenanceExecutionController {
   }
 
   @PostMapping("/close")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<WorkOrderResponse> close(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.close(actorId(jwt), workOrderId));

@@ -15,9 +15,9 @@ import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
+import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
@@ -26,7 +26,6 @@ import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
@@ -83,7 +82,6 @@ public class ReportService {
 
   private final InspectionRepository inspections;
   private final InspectionPreparationRepository preparations;
-  private final InspectionReadinessDecisionRepository readinessDecisions;
   private final ReportContextAccess reportContextAccess;
   private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
   private final EvidenceRepository evidence;
@@ -101,7 +99,6 @@ public class ReportService {
   public ReportService(
       InspectionRepository inspections,
       InspectionPreparationRepository preparations,
-      InspectionReadinessDecisionRepository readinessDecisions,
       ReportContextAccess reportContextAccess,
       org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
       EvidenceRepository evidence,
@@ -117,7 +114,6 @@ public class ReportService {
       ObjectMapper objectMapper) {
     this.inspections = inspections;
     this.preparations = preparations;
-    this.readinessDecisions = readinessDecisions;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
     this.evidence = evidence;
@@ -166,8 +162,6 @@ public class ReportService {
         preparations.findByInspectionIdOrderByPreparationVersionDesc(inspectionId);
     InspectionPreparation latestPreparation =
         recordedPreparations.stream().findFirst().orElse(null);
-    InspectionReadinessDecision latestReadiness =
-        readinessDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
     Identity reportIdentity =
         reportContextAccess
             .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
@@ -268,10 +262,9 @@ public class ReportService {
                                   session.getPreFlightChecklistNote(),
                                   session.getPostponementReason(),
                                   session.getAbortReason(),
-                                  session.getLimitations(),
-                                  session.getDroneId() == null
+                                  inspection.getDroneId() == null
                                       ? null
-                                      : session.getDroneId().toString()))
+                                      : inspection.getDroneId().toString()))
                       .toList(),
                   locale));
     } catch (IOException ex) {
@@ -452,8 +445,8 @@ public class ReportService {
   }
 
   /**
-   * MF3-09: the qualified reviewer decides. Only an in-organization ORG_ADMIN who is not the author
-   * may review, and returning a draft requires a reason.
+   * MF3-09: the qualified reviewer decides. Only an in-organization ORG_MANAGER who is not the
+   * author may review, and returning a draft requires a reason.
    */
   @Transactional
   public InspectionReportVersionResponse reviewVersion(
@@ -836,8 +829,6 @@ public class ReportService {
         preparations
             .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
             .orElse(null);
-    var readiness =
-        readinessDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
     DroneContext assignedDrone =
         reportIdentity == null || reportIdentity.droneSerialNumber() == null
             ? null
@@ -849,13 +840,7 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     ReportRenderPort.ReportContext renderReportContext =
         buildRenderReportContext(
-            inspection,
-            reportIdentity,
-            assignedDrone,
-            preparation,
-            readiness,
-            recordedSessions,
-            locale);
+            inspection, reportIdentity, assignedDrone, preparation, recordedSessions, locale);
     ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
     JsonNode snapshot;
     try {
@@ -1012,9 +997,9 @@ public class ReportService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null || !actor.hasRole("ORG_ADMIN")) {
+    if (actor.organizationId() == null || !actor.hasRole("ORG_MANAGER")) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_ADMIN may review");
+          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_MANAGER may review");
     }
     Inspection inspection =
         inspections
@@ -1198,16 +1183,11 @@ public class ReportService {
   private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(
       UUID inspectionId, Locale locale) {
     return jdbcTemplate.query(
-        "SELECT item.prompt, item.prompt_vi, COALESCE(response.answer, response.response_value)::text AS answer, response.notes "
+        "SELECT item.prompt, item.prompt_vi, response.response_value::text AS answer, response.notes "
             + "FROM checklist_responses response "
-            + "JOIN field_sessions session "
-            + "  ON session.id = response.field_session_id "
-            + " AND session.inspection_id = response.inspection_id "
-            + "JOIN checklist_items item "
-            + "  ON item.id = response.checklist_item_id "
-            + " AND item.template_id = session.checklist_template_id "
+            + "JOIN checklist_items item ON item.id = response.checklist_item_id "
             + "WHERE response.inspection_id = ? "
-            + "ORDER BY response.completed_at NULLS LAST, response.created_at",
+            + "ORDER BY item.display_order, response.completed_at NULLS LAST, response.created_at",
         (result, rowNum) -> {
           String englishPrompt = result.getString("prompt");
           String vietnamesePrompt = result.getString("prompt_vi");
@@ -1251,12 +1231,24 @@ public class ReportService {
             .orElse(null);
   }
 
+  private static String readinessDecisionLabel(InspectionPreparation preparation) {
+    if (preparation == null || preparation.getStatus() == null) {
+      return null;
+    }
+    if (preparation.getStatus() == InspectionPreparationStatus.READY) {
+      return "APPROVED";
+    }
+    if (preparation.getStatus() == InspectionPreparationStatus.RETURNED) {
+      return "RETURNED";
+    }
+    return null;
+  }
+
   private InspectionReportContextResponse buildReportContextResponse(
       Inspection inspection,
       Identity identity,
       DroneContext drone,
       InspectionPreparation preparation,
-      InspectionReadinessDecision readiness,
       List<FieldSession> sessions) {
     PreparationContext preparationContext =
         preparation == null
@@ -1268,9 +1260,9 @@ public class ReportService {
                 preparation.getEvidenceTypes(),
                 preparation.getAccessConstraints(),
                 preparation.getSafetyObservations(),
-                readiness == null ? null : readiness.getDecision().name(),
-                readiness == null ? null : readiness.getDecidedAt(),
-                readiness == null ? null : readiness.getReason(),
+                readinessDecisionLabel(preparation),
+                preparation.getReviewedAt(),
+                preparation.getReviewReason(),
                 preparation.getPermitDocumentReferences(),
                 preparation.getSubmittedAt());
     return new InspectionReportContextResponse(
@@ -1293,7 +1285,6 @@ public class ReportService {
                         session.getPostponementReason(),
                         session.getAbortReason(),
                         session.getOutcomeNotes(),
-                        session.getLimitations(),
                         drone == null ? null : drone.serialNumber(),
                         drone == null ? null : drone.manufacturer(),
                         drone == null ? null : drone.model()))
@@ -1308,7 +1299,6 @@ public class ReportService {
       Identity identity,
       DroneContext drone,
       InspectionPreparation preparation,
-      InspectionReadinessDecision readiness,
       List<FieldSession> sessions,
       Locale locale) {
     InspectionPreparation prep = preparation;
@@ -1327,11 +1317,9 @@ public class ReportService {
         prep == null ? null : prep.getAccessConstraints(),
         prep == null ? null : prep.getSafetyObservations(),
         prep == null ? null : prep.getPermitDocumentReferences(),
-        readiness == null ? null : readiness.getDecision().name(),
-        readiness == null || readiness.getDecidedAt() == null
-            ? null
-            : readiness.getDecidedAt().toString(),
-        readiness == null ? null : readiness.getReason(),
+        readinessDecisionLabel(prep),
+        prep == null || prep.getReviewedAt() == null ? null : prep.getReviewedAt().toString(),
+        prep == null ? null : prep.getReviewReason(),
         buildChecklistSummaries(inspection.getId(), locale).stream()
             .map(
                 entry ->
@@ -1364,7 +1352,6 @@ public class ReportService {
             contextField(locale, "Postponement reason", session.getPostponementReason()),
             contextField(locale, "Abort reason", session.getAbortReason()),
             contextField(locale, "Field-session outcome", session.getOutcomeNotes()),
-            contextField(locale, "Recorded limitations", session.getLimitations()),
             contextField(locale, "Assigned Drone", drone == null ? null : droneLabel(drone)))
         .filter(Objects::nonNull)
         .collect(java.util.stream.Collectors.joining(" · "));
@@ -1397,12 +1384,8 @@ public class ReportService {
         preparations
             .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
             .orElse(null);
-    var readiness =
-        readinessDecisions
-            .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
-            .orElse(null);
     var sessions = fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
-    return buildReportContextResponse(inspection, identity, drone, prep, readiness, sessions);
+    return buildReportContextResponse(inspection, identity, drone, prep, sessions);
   }
 
   private static String quote(String value) {

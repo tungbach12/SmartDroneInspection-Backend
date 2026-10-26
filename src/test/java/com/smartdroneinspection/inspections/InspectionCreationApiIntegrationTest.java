@@ -92,7 +92,7 @@ class InspectionCreationApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    admin.addRole(UserRole.ORG_ADMIN);
+    admin.addRole(UserRole.ORG_MANAGER);
     adminId = users.saveAndFlush(admin).getId();
 
     User inspector =
@@ -162,7 +162,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isCreated())
@@ -212,7 +212,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isCreated())
@@ -243,7 +243,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isBadRequest())
@@ -271,7 +271,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isNotFound())
@@ -296,7 +296,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(firstBody))
         .andExpect(status().isCreated());
@@ -341,7 +341,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(conflictingBody))
         .andExpect(status().isConflict())
@@ -366,7 +366,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isBadRequest())

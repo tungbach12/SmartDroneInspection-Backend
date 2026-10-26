@@ -78,7 +78,7 @@ class InspectionListApiIntegrationTest {
     createInspection(fixture.otherOrganizationId(), fixture.otherInspectorId());
 
     mockMvc
-        .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.totalCount").value(1))
         .andExpect(jsonPath("$.data.items[0].id").value(fixture.inspectionId().toString()));
@@ -87,7 +87,7 @@ class InspectionListApiIntegrationTest {
   @Test
   void anOrganizationAdminFromAnotherOrganizationSeesNothing() throws Exception {
     mockMvc
-        .perform(get("/api/v1/inspections").with(principal(fixture.outsiderId(), "ORG_ADMIN")))
+        .perform(get("/api/v1/inspections").with(principal(fixture.outsiderId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.totalCount").value(0))
         .andExpect(jsonPath("$.data.items").isEmpty());
@@ -108,7 +108,7 @@ class InspectionListApiIntegrationTest {
         .andExpect(jsonPath("$.data.items[?(@.id == '%s')]".formatted(foreignInspection)).exists());
 
     mockMvc
-        .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.items[?(@.id == '%s')]".formatted(fixture.inspectionId())).exists())
@@ -174,7 +174,7 @@ class InspectionListApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/inspections/with-reports")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.totalCount").value(1))
         .andExpect(jsonPath("$.data.items[0].id").value(fixture.inspectionId().toString()));
@@ -187,7 +187,7 @@ class InspectionListApiIntegrationTest {
     createReport(fixture.inspectionId(), fixture.inspectorId());
 
     mockMvc
-        .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+        .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.items[0].reportStatus").value("DRAFT"))
         .andExpect(jsonPath("$.data.items[0].reportVersionNo").value(1))
@@ -216,7 +216,7 @@ class InspectionListApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/inspections/with-reports")
-                .with(principal(fixture.outsiderId(), "ORG_ADMIN")))
+                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.totalCount").value(0))
         .andExpect(jsonPath("$.data.items").isEmpty());

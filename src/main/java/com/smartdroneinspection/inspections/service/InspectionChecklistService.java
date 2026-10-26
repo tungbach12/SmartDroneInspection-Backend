@@ -138,9 +138,8 @@ public class InspectionChecklistService {
                         inspectionId,
                         checklistItemId,
                         serialize(request.responseValue()),
-                        request.notes(),
-                        inspectorId));
-    response.update(serialize(request.responseValue()), request.notes(), inspectorId);
+                        request.notes()));
+    response.recordResponse(serialize(request.responseValue()), request.notes());
     responses.saveAndFlush(response);
     return new ChecklistResponseResponse(
         response.getId(),
@@ -148,7 +147,6 @@ public class InspectionChecklistService {
         response.getChecklistItemId(),
         parseResponse(response.getResponseValue()),
         response.getNotes(),
-        response.getCompletedByUserId(),
         response.getCompletedAt());
   }
 

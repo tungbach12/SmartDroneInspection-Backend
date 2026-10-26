@@ -36,7 +36,7 @@ public class DroneDocumentController {
   }
 
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<DroneDocumentResponse> upload(
       @AuthenticationPrincipal Jwt jwt,
@@ -62,14 +62,14 @@ public class DroneDocumentController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<List<DroneDocumentResponse>> list(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID droneId) {
     return ApiResponse.success(documents.list(UUID.fromString(jwt.getSubject()), droneId));
   }
 
   @PatchMapping("/{documentId}/status")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<DroneDocumentResponse> updateStatus(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID droneId,

@@ -16,8 +16,11 @@ public class RolePolicy {
 
     switch (zone) {
       case PLATFORM -> {
-        if (organizationId != null || roles.size() != 1 || !roles.contains(UserRole.ADMIN)) {
-          throw new IllegalArgumentException("Platform users must have only the Admin role.");
+        if (organizationId != null
+            || roles.size() != 1
+            || (!roles.contains(UserRole.ADMIN) && !roles.contains(UserRole.PLATFORM_MANAGER))) {
+          throw new IllegalArgumentException(
+              "Platform users must have a single platform role (Admin or Platform Manager).");
         }
       }
       case CUSTOMER_ORGANIZATION -> {
@@ -26,7 +29,7 @@ public class RolePolicy {
             || roles.stream()
                 .anyMatch(
                     role ->
-                        role != UserRole.ORG_ADMIN
+                        role != UserRole.ORG_MANAGER
                             && role != UserRole.INSPECTOR
                             && role != UserRole.MAINTENANCE_ENGINEER)) {
           throw new IllegalArgumentException(

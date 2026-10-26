@@ -281,7 +281,6 @@ class ReportDraftClientTest {
                 null,
                 null,
                 null,
-                null,
                 "drone-1")));
   }
 

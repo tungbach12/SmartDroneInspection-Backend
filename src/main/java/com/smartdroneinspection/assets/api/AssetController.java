@@ -35,7 +35,7 @@ public class AssetController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<AssetResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateAssetRequest request) {
@@ -43,7 +43,7 @@ public class AssetController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<AssetPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -53,21 +53,21 @@ public class AssetController {
   }
 
   @GetMapping("/{assetId}")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
   }
 
   @GetMapping("/{assetId}/pair")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER', 'INSPECTOR')")
   public ApiResponse<AssetDefaultPairResponse> getActivePair(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.getActivePair(subject(jwt), assetId));
   }
 
   @PutMapping("/{assetId}/pair")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<AssetDefaultPairResponse> reassignPair(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,
@@ -78,7 +78,7 @@ public class AssetController {
   }
 
   @PutMapping("/{assetId}")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<AssetResponse> update(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,

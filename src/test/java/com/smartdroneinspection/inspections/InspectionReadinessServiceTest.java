@@ -15,18 +15,14 @@ import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.assets.repository.FlightPermitRepository;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.service.ComplianceGateService;
 import com.smartdroneinspection.inspections.service.InspectionReadinessService;
 import com.smartdroneinspection.inspections.service.ReadinessReturnCommand;
 import com.smartdroneinspection.inspections.service.ReadinessReviewCommand;
-import com.smartdroneinspection.inspections.service.ReadinessSnapshotFactory;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.domain.User;
@@ -61,7 +57,6 @@ class InspectionReadinessServiceTest {
 
   @Autowired InspectionRepository inspections;
   @Autowired InspectionPreparationRepository preparations;
-  @Autowired InspectionReadinessDecisionRepository decisions;
   @Autowired UserRepository users;
   @Autowired AssetRepository assets;
   @Autowired AssetCategoryRepository categories;
@@ -73,7 +68,6 @@ class InspectionReadinessServiceTest {
   @Autowired ComplianceGateService compliance;
   @Autowired WorkforceCredentialAccess workforceCredentials;
   @Autowired DroneDocumentReadinessAccess assetReadiness;
-  @Autowired ReadinessSnapshotFactory snapshots;
   @Autowired EntityManager entityManager;
 
   private UUID organizationId;
@@ -98,9 +92,9 @@ class InspectionReadinessServiceTest {
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector", UserStatus.ACTIVE);
-    reviewerId = createUser(organizationId, UserRole.ORG_ADMIN, "reviewer", UserStatus.ACTIVE);
+    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer", UserStatus.ACTIVE);
     otherOrgAdminId =
-        createUser(otherOrganizationId, UserRole.ORG_ADMIN, "other-admin", UserStatus.ACTIVE);
+        createUser(otherOrganizationId, UserRole.ORG_MANAGER, "other-admin", UserStatus.ACTIVE);
     assetId = createAsset(organizationId, fixture.categoryId(), reviewerId);
     droneId =
         drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
@@ -114,7 +108,7 @@ class InspectionReadinessServiceTest {
         insertCredential(
             reviewerId,
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             "ACTIVE",
             true,
             true,
@@ -151,31 +145,23 @@ class InspectionReadinessServiceTest {
         new InspectionReadinessService(
             inspections,
             preparations,
-            decisions,
             userAccess,
             compliance,
             workforceCredentials,
             assetReadiness,
             drones,
-            snapshots,
             entityManager);
   }
 
   @Test
   void independentQualifiedOrgAdminApprovesAndTransitionsInspectionAndPreparation() {
-    InspectionReadinessDecision decision =
+    InspectionPreparation decision =
         service.approve(reviewerId, inspectionId, preparationId, validReview());
 
-    assertThat(decision.getDecision()).isEqualTo(ReadinessDecisionType.APPROVED);
+    assertThat(decision.getStatus()).isEqualTo(InspectionPreparationStatus.READY);
     assertThat(decision.getReviewedByUserId()).isEqualTo(reviewerId);
-    assertThat(decision.getSourceHash()).matches("[0-9a-f]{64}");
-    assertThat(decision.getPermitSnapshot())
-        .contains("PERMIT-")
-        .contains("\"status\":\"ACTIVE\"")
-        .contains("source_envelope")
-        .contains("\"scope\":{\"zone\":\"north\"}")
-        .contains("\"component_scope\":{\"components\":[\"span\"]}")
-        .contains("\"shot_list\":{\"shots\":[\"span\"]}");
+    assertThat(decision.getReviewedAt()).isNotNull();
+    assertThat(decision.getReviewReason()).isNull();
     assertThat(statusOfInspection()).isEqualTo(InspectionStatus.READY_FOR_FLIGHT);
     assertThat(preparations.findById(preparationId).orElseThrow().getStatus())
         .isEqualTo(InspectionPreparationStatus.READY);
@@ -184,13 +170,13 @@ class InspectionReadinessServiceTest {
   @Test
   void assignedInspectorCannotReviewTheirOwnInspectionEvenWithOrgAdminRole() {
     User assignedInspector = users.findById(inspectorId).orElseThrow();
-    assignedInspector.addRole(UserRole.ORG_ADMIN);
+    assignedInspector.addRole(UserRole.ORG_MANAGER);
     users.saveAndFlush(assignedInspector);
     UUID dualRoleCredentialId =
         insertCredential(
             inspectorId,
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             "ACTIVE",
             true,
             true,
@@ -222,7 +208,7 @@ class InspectionReadinessServiceTest {
   @Test
   void inactiveReviewerCannotApprove() {
     UUID inactiveReviewer =
-        createUser(organizationId, UserRole.ORG_ADMIN, "inactive", UserStatus.DISABLED);
+        createUser(organizationId, UserRole.ORG_MANAGER, "inactive", UserStatus.DISABLED);
 
     assertThatThrownBy(
             () -> service.approve(inactiveReviewer, inspectionId, preparationId, validReview()))
@@ -252,13 +238,13 @@ class InspectionReadinessServiceTest {
             List.of(UUID.randomUUID()),
             "Please attach current authorization evidence");
 
-    InspectionReadinessDecision decision =
+    InspectionPreparation decision =
         service.returnPreparation(reviewerId, inspectionId, preparationId, command);
 
-    assertThat(decision.getDecision()).isEqualTo(ReadinessDecisionType.RETURNED);
-    assertThat(decision.getReason()).contains("authorization");
-    assertThat(decision.getPermitSnapshot()).contains("\"observed_source_set_complete\":false");
-    assertThat(decision.getPermitSnapshot()).contains(inspectorCredentialId.toString());
+    assertThat(decision.getStatus()).isEqualTo(InspectionPreparationStatus.RETURNED);
+    assertThat(decision.getReviewedByUserId()).isEqualTo(reviewerId);
+    assertThat(decision.getReviewedAt()).isNotNull();
+    assertThat(decision.getReviewReason()).contains("authorization");
     assertThat(statusOfInspection()).isEqualTo(InspectionStatus.PREPARING);
     assertThat(preparations.findById(preparationId).orElseThrow().getStatus())
         .isEqualTo(InspectionPreparationStatus.RETURNED);
@@ -310,7 +296,7 @@ class InspectionReadinessServiceTest {
         insertCredential(
             reviewerId,
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             "ACTIVE",
             true,
             true,
@@ -476,7 +462,7 @@ class InspectionReadinessServiceTest {
             error ->
                 assertThat(((BusinessException) error).code()).isEqualTo("READINESS_NOT_ALLOWED"));
     assertThat(statusOfInspection()).isEqualTo(InspectionStatus.READY_FOR_FLIGHT);
-    assertThat(decisions.findByInspectionIdOrderByDecidedAtDesc(inspectionId)).isEmpty();
+    assertThat(preparations.findById(preparationId).orElseThrow().getReviewedAt()).isNull();
   }
 
   private ReadinessReviewCommand validReview() {
@@ -496,10 +482,10 @@ class InspectionReadinessServiceTest {
   }
 
   private void assertNoDecisionOrStateChange() {
-    assertThat(decisions.findByInspectionIdOrderByDecidedAtDesc(inspectionId)).isEmpty();
     assertThat(statusOfInspection()).isEqualTo(InspectionStatus.PREPARING);
-    assertThat(preparations.findById(preparationId).orElseThrow().getStatus())
-        .isEqualTo(InspectionPreparationStatus.SUBMITTED);
+    InspectionPreparation prep = preparations.findById(preparationId).orElseThrow();
+    assertThat(prep.getStatus()).isEqualTo(InspectionPreparationStatus.SUBMITTED);
+    assertThat(prep.getReviewedAt()).isNull();
   }
 
   private UUID createAsset(UUID orgId, UUID categoryId, UUID creatorId) {
@@ -555,12 +541,11 @@ class InspectionReadinessServiceTest {
 
   private UUID createSubmittedPreparation(
       UUID inspectionId, UUID assignedInspectorId, int version) {
-    InspectionPreparation preparation =
-        new InspectionPreparation(inspectionId, assignedInspectorId, version);
+    InspectionPreparation preparation = new InspectionPreparation(inspectionId, version);
     preparation.recordShotList("{\"shots\":[\"span\"]}");
     preparation.recordEvidenceTypes("[\"RGB\"]");
     preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit(assignedInspectorId);
+    preparation.submit();
     return preparations.saveAndFlush(preparation).getId();
   }
 

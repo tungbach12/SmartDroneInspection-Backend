@@ -25,14 +25,12 @@ class InspectionPreparationTest {
       """;
 
   UUID inspectionId;
-  UUID inspectorId;
   InspectionPreparation preparation;
 
   @BeforeEach
   void setUp() {
     inspectionId = UUID.randomUUID();
-    inspectorId = UUID.randomUUID();
-    preparation = new InspectionPreparation(inspectionId, inspectorId, 1);
+    preparation = new InspectionPreparation(inspectionId, 1);
   }
 
   @Test
@@ -46,7 +44,7 @@ class InspectionPreparationTest {
 
   @Test
   void aPreparationVersionMustStartAtOne() {
-    assertThatThrownBy(() -> new InspectionPreparation(inspectionId, inspectorId, 0))
+    assertThatThrownBy(() -> new InspectionPreparation(inspectionId, 0))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("version");
   }
@@ -65,7 +63,7 @@ class InspectionPreparationTest {
     preparation.recordShotList(A_SHOT_LIST);
     preparation.recordSafetyObservations("Live 110V near pier 3");
 
-    preparation.submit(inspectorId);
+    preparation.submit();
 
     assertThat(preparation.getStatus()).isEqualTo(InspectionPreparationStatus.SUBMITTED);
     assertThat(preparation.getSubmittedAt()).isNotNull();
@@ -75,7 +73,7 @@ class InspectionPreparationTest {
   void submittingRequiresAComponentShotList() {
     preparation.recordSafetyObservations("Live 110V near pier 3");
 
-    assertThatThrownBy(() -> preparation.submit(inspectorId))
+    assertThatThrownBy(() -> preparation.submit())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("shot-list");
   }
@@ -84,7 +82,7 @@ class InspectionPreparationTest {
   void submittingRequiresRecordedSafetyObservations() {
     preparation.recordShotList(A_SHOT_LIST);
 
-    assertThatThrownBy(() -> preparation.submit(inspectorId))
+    assertThatThrownBy(() -> preparation.submit())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("Safety");
   }
@@ -94,28 +92,18 @@ class InspectionPreparationTest {
     preparation.recordShotList("  []  ");
     preparation.recordSafetyObservations("Live 110V near pier 3");
 
-    assertThatThrownBy(() -> preparation.submit(inspectorId))
+    assertThatThrownBy(() -> preparation.submit())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("shot-list");
-  }
-
-  @Test
-  void onlyThePreparingInspectorMaySubmit() {
-    preparation.recordShotList(A_SHOT_LIST);
-    preparation.recordSafetyObservations("Live 110V near pier 3");
-
-    assertThatThrownBy(() -> preparation.submit(UUID.randomUUID()))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("inspector");
   }
 
   @Test
   void aSubmittedPreparationCannotBeResubmitted() {
     preparation.recordShotList(A_SHOT_LIST);
     preparation.recordSafetyObservations("Live 110V near pier 3");
-    preparation.submit(inspectorId);
+    preparation.submit();
 
-    assertThatThrownBy(() -> preparation.submit(inspectorId))
+    assertThatThrownBy(() -> preparation.submit())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("draft");
   }
@@ -124,7 +112,7 @@ class InspectionPreparationTest {
   void aSubmittedPreparationCannotBeEdited() {
     preparation.recordShotList(A_SHOT_LIST);
     preparation.recordSafetyObservations("Live 110V near pier 3");
-    preparation.submit(inspectorId);
+    preparation.submit();
 
     assertThatThrownBy(
             () ->
@@ -139,33 +127,48 @@ class InspectionPreparationTest {
   @Test
   void aReviewerMarksTheSubmissionReadyOrReturnsIt() {
     submitted();
+    UUID reviewerId = UUID.randomUUID();
 
-    preparation.markReady();
+    preparation.approve(reviewerId);
     assertThat(preparation.getStatus()).isEqualTo(InspectionPreparationStatus.READY);
+    assertThat(preparation.getReviewedByUserId()).isEqualTo(reviewerId);
+    assertThat(preparation.getReviewedAt()).isNotNull();
+    assertThat(preparation.getReviewReason()).isNull();
 
-    InspectionPreparation returned = new InspectionPreparation(inspectionId, inspectorId, 2);
+    preparation.supersede("East face requires an additional session");
+    assertThat(preparation.getStatus()).isEqualTo(InspectionPreparationStatus.SUPERSEDED);
+    assertThat(preparation.getReviewReason()).isEqualTo("East face requires an additional session");
+
+    InspectionPreparation returned = new InspectionPreparation(inspectionId, 2);
     returned.recordShotList(A_SHOT_LIST);
     returned.recordSafetyObservations("Live 110V near pier 3");
-    returned.submit(inspectorId);
-    returned.markReturned();
+    returned.submit();
+    returned.returnForRevision(reviewerId, "Attach current airworthiness certificate");
 
     assertThat(returned.getStatus()).isEqualTo(InspectionPreparationStatus.RETURNED);
+    assertThat(returned.getReviewedByUserId()).isEqualTo(reviewerId);
+    assertThat(returned.getReviewedAt()).isNotNull();
+    assertThat(returned.getReviewReason()).isEqualTo("Attach current airworthiness certificate");
   }
 
   @Test
   void aReturnedPreparationMustGoBackToDraftBeforeResubmission() {
     submitted();
-    preparation.markReturned();
+    UUID reviewerId = UUID.randomUUID();
+    preparation.returnForRevision(reviewerId, "Add thermal modality");
 
-    assertThatThrownBy(() -> preparation.submit(inspectorId))
+    assertThatThrownBy(() -> preparation.submit())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("draft");
 
     preparation.startRevision();
     assertThat(preparation.getStatus()).isEqualTo(InspectionPreparationStatus.DRAFT);
+    assertThat(preparation.getReviewedByUserId()).isNull();
+    assertThat(preparation.getReviewedAt()).isNull();
+    assertThat(preparation.getReviewReason()).isNull();
 
     preparation.recordShotList(A_SHOT_LIST);
-    preparation.submit(inspectorId);
+    preparation.submit();
     assertThat(preparation.getStatus()).isEqualTo(InspectionPreparationStatus.SUBMITTED);
   }
 
@@ -183,6 +186,6 @@ class InspectionPreparationTest {
   private void submitted() {
     preparation.recordShotList(A_SHOT_LIST);
     preparation.recordSafetyObservations("Live 110V near pier 3");
-    preparation.submit(inspectorId);
+    preparation.submit();
   }
 }

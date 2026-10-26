@@ -34,6 +34,8 @@ class FullDatabaseSchemaMigrationTest {
             "users",
             "auth_sessions",
             "workforce_credentials",
+            "platform_drones",
+            "drone_leases",
             "drones",
             "drone_documents",
             "flight_permits",
@@ -45,7 +47,6 @@ class FullDatabaseSchemaMigrationTest {
             "asset_pair_assignments",
             "inspections",
             "inspection_preparations",
-            "inspection_readiness_decisions",
             "field_sessions",
             "checklist_responses",
             "evidence",
@@ -67,7 +68,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(37);
+    assertThat(expected).hasSize(38);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 

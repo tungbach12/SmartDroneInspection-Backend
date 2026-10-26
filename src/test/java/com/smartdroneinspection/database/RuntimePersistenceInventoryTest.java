@@ -30,11 +30,12 @@ class RuntimePersistenceInventoryTest {
           "checklist_templates",
           // MF2-11: the Inspector's recorded answers against the checklist items.
           "checklist_responses",
+          "platform_drones",
+          "drone_leases",
           "drones",
           "drone_documents",
           "flight_permits",
           "inspection_preparations",
-          "inspection_readiness_decisions",
           "inspections",
           "notifications",
           "organizations",
@@ -69,6 +70,8 @@ class RuntimePersistenceInventoryTest {
           "users",
           "auth_sessions",
           "workforce_credentials",
+          "platform_drones",
+          "drone_leases",
           "drones",
           "drone_documents",
           "flight_permits",
@@ -80,7 +83,6 @@ class RuntimePersistenceInventoryTest {
           "asset_pair_assignments",
           "inspections",
           "inspection_preparations",
-          "inspection_readiness_decisions",
           "field_sessions",
           "checklist_responses",
           "evidence",
@@ -130,7 +132,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(35);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(36);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

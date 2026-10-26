@@ -52,21 +52,21 @@ public class MaintenanceController {
   }
 
   @PostMapping("/suggest-scope")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<SuggestScopeResponse> suggestScope(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody SuggestScopeRequest request) {
     return ApiResponse.success(scopeAdvisorService.suggestScope(actorId(jwt), request));
   }
 
   @GetMapping("/repair-candidates")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<List<RepairCandidateResponse>> repairCandidates(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(workOrderService.repairCandidates(actorId(jwt)));
   }
 
   @GetMapping("/work-orders")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<WorkOrderPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "0") int page,
@@ -75,21 +75,21 @@ public class MaintenanceController {
   }
 
   @GetMapping("/work-orders/{workOrderId}")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<WorkOrderResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(workOrderService.get(actorId(jwt), workOrderId));
   }
 
   @PostMapping("/work-orders")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<WorkOrderResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateWorkOrderRequest request) {
     return ApiResponse.success(workOrderService.create(actorId(jwt), request));
   }
 
   @PostMapping("/work-orders/{workOrderId}/team")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<WorkOrderResponse> assignTeam(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -98,14 +98,14 @@ public class MaintenanceController {
   }
 
   @GetMapping("/work-orders/{workOrderId}/team")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<TeamMemberResponse>> team(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(workOrderService.team(actorId(jwt), workOrderId));
   }
 
   @GetMapping("/work-orders/{workOrderId}/tasks")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<TaskResponse>> listTasks(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(workOrderService.listTasks(actorId(jwt), workOrderId));
@@ -121,7 +121,7 @@ public class MaintenanceController {
   }
 
   @GetMapping("/work-orders/{workOrderId}/estimate-versions")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'MAINTENANCE_ENGINEER')")
   public ApiResponse<List<EstimateVersionResponse>> listEstimateVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(workOrderService.listEstimateVersions(actorId(jwt), workOrderId));
@@ -148,7 +148,7 @@ public class MaintenanceController {
   }
 
   @PostMapping("/work-orders/{workOrderId}/estimate-versions/{versionNo}/approve")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<EstimateVersionResponse> approveEstimate(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,
@@ -158,7 +158,7 @@ public class MaintenanceController {
   }
 
   @PostMapping("/work-orders/{workOrderId}/estimate-versions/{versionNo}/reject")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<EstimateVersionResponse> rejectEstimate(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID workOrderId,

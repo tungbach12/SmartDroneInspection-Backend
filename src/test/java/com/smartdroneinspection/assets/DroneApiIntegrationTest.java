@@ -338,7 +338,7 @@ class DroneApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    admin.addRole(UserRole.ORG_ADMIN);
+    admin.addRole(UserRole.ORG_MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 
@@ -402,6 +402,6 @@ class DroneApiIntegrationTest {
         .jwt(token -> token.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_ORG_ADMIN"));
+                "ROLE_ORG_MANAGER"));
   }
 }

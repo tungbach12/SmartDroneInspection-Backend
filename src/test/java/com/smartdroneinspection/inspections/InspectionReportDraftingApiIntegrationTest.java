@@ -186,22 +186,16 @@ class InspectionReportDraftingApiIntegrationTest {
         templateId);
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, status, checklist_template_id, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, 'POSTPONED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        "INSERT INTO field_sessions (id, inspection_id, status, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, 'POSTPONED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
-        fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId(),
-        templateId);
+        fixture.inspectionId());
     jdbcTemplate.update(
-        "INSERT INTO checklist_responses (id, inspection_id, checklist_item_id, response_value, notes, completed_by_user_id, completed_at, context, template_version, item_version, responder_user_id, answer, field_session_id, created_at, updated_at) "
-            + "VALUES (?, ?, ?, '\"PASS\"'::jsonb, 'Clear access', ?, CURRENT_TIMESTAMP, 'FIELD_SESSION', 1, 1, ?, '\"PASS\"'::jsonb, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        "INSERT INTO checklist_responses (id, inspection_id, checklist_item_id, response_value, notes, completed_at, created_at, updated_at) "
+            + "VALUES (?, ?, ?, '\"PASS\"'::jsonb, 'Clear access', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
         UUID.randomUUID(),
         fixture.inspectionId(),
-        itemId,
-        fixture.inspectorId(),
-        fixture.inspectorId(),
-        sessionId);
+        itemId);
 
     draft("vi");
 
@@ -249,17 +243,13 @@ class InspectionReportDraftingApiIntegrationTest {
     jdbcTemplate.update(
         """
         INSERT INTO field_sessions
-          (id, inspection_id, organization_id, inspector_user_id, drone_id, readiness_decision_id,
-           status, started_at, ended_at, checklist_template_id, readiness_version,
-           limitations, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, ?, NULL, NULL, 'POSTPONED', '2026-10-12T10:00:00Z',
-                '2026-10-12T10:30:00Z', NULL, NULL, '{"wind":"high"}',
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+          (id, inspection_id, preparation_id,
+           status, started_at, ended_at, created_at, updated_at, row_version)
+        VALUES (?, ?, NULL, 'POSTPONED', '2026-10-12T10:00:00Z',
+                '2026-10-12T10:30:00Z', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         sessionId,
-        fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
 
     draft();
 

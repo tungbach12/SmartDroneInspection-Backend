@@ -119,14 +119,14 @@ public class ComplianceService {
   }
 
   /**
-   * Resolves the acting ORG_ADMIN's own organization. A suspended or disabled actor is absent here
-   * and is rejected; the tenant is never taken from the request.
+   * Resolves the acting ORG_MANAGER's own organization. A suspended or disabled actor is absent
+   * here and is rejected; the tenant is never taken from the request.
    */
   private UUID requireActorOrganization(UUID actorId) {
     UserAccess.ActiveUser actor =
         users
             .findActiveUser(actorId)
-            .filter(candidate -> candidate.hasRole(Roles.ORG_ADMIN))
+            .filter(candidate -> candidate.hasRole(Roles.ORG_MANAGER))
             .orElseThrow(
                 () ->
                     new BusinessException(

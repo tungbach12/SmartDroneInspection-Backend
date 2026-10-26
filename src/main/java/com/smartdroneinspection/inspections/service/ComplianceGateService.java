@@ -116,7 +116,6 @@ public class ComplianceGateService {
     return new InspectionPreparationResponse(
         preparation.getId(),
         preparation.getInspectionId(),
-        preparation.getInspectorUserId(),
         preparation.getPreparationVersion(),
         inspection.getPlannedStartAt(),
         inspection.getPlannedEndAt(),
@@ -127,6 +126,9 @@ public class ComplianceGateService {
         preparation.getPermitDocumentReferences(),
         preparation.getStatus(),
         preparation.getSubmittedAt(),
+        preparation.getReviewedByUserId(),
+        preparation.getReviewedAt(),
+        preparation.getReviewReason(),
         preparation.getCreatedAt(),
         preparation.getUpdatedAt());
   }
@@ -163,15 +165,48 @@ public class ComplianceGateService {
               "The inspection has no planned field-session time to check a permit against."));
     }
 
-    List<FlightPermit> applicable =
+    List<FlightPermit> assetPermits =
         permits.findByOrganizationIdAndAssetIdOrderByCreatedAtDesc(
             organizationId, inspection.getAssetId());
-
-    if (applicable.isEmpty()) {
-      blockers.add(
-          new ComplianceGateResponse.Blocker(
-              "PERMIT_MISSING",
-              "No permit is recorded for this asset. Link the authorization the organization holds."));
+    List<UUID> referencedIds =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .map(this::referencedPermitIds)
+            .orElse(List.of());
+    List<FlightPermit> applicable;
+    if (!referencedIds.isEmpty()) {
+      applicable = new ArrayList<>();
+      for (UUID permitId : referencedIds) {
+        FlightPermit matched =
+            assetPermits.stream()
+                .filter(p -> p.getId().equals(permitId))
+                .findFirst()
+                .orElseGet(
+                    () ->
+                        permits
+                            .findByIdAndOrganizationId(permitId, organizationId)
+                            .filter(
+                                p ->
+                                    p.getAssetId() == null
+                                        || p.getAssetId().equals(inspection.getAssetId()))
+                            .orElse(null));
+        if (matched == null) {
+          blockers.add(
+              new ComplianceGateResponse.Blocker(
+                  "PERMIT_MISSING",
+                  "Referenced permit " + permitId + " was not found for this asset."));
+        } else {
+          applicable.add(matched);
+        }
+      }
+    } else {
+      applicable = assetPermits;
+      if (applicable.isEmpty()) {
+        blockers.add(
+            new ComplianceGateResponse.Blocker(
+                "PERMIT_MISSING",
+                "No permit is recorded for this asset. Link the authorization the organization holds."));
+      }
     }
 
     List<UUID> linked = new ArrayList<>();
@@ -314,6 +349,37 @@ public class ComplianceGateService {
    * change the compliance basis after a reviewer had judged it, which is what MF2-08 treats as an
    * invalidation rather than an edit.
    */
+  private List<UUID> referencedPermitIds(InspectionPreparation preparation) {
+    if (preparation == null
+        || preparation.getPermitDocumentReferences() == null
+        || preparation.getPermitDocumentReferences().isBlank()) {
+      return List.of();
+    }
+    String raw = preparation.getPermitDocumentReferences().trim();
+    if (!raw.startsWith("[") || !raw.endsWith("]")) {
+      return List.of();
+    }
+    String inner = raw.substring(1, raw.length() - 1).trim();
+    if (inner.isEmpty()) {
+      return List.of();
+    }
+    List<UUID> ids = new ArrayList<>();
+    for (String token : inner.split(",")) {
+      String candidate = token.trim();
+      if (candidate.startsWith("\"") && candidate.endsWith("\"") && candidate.length() >= 2) {
+        candidate = candidate.substring(1, candidate.length() - 1).trim();
+      }
+      if (!candidate.isEmpty()) {
+        try {
+          ids.add(UUID.fromString(candidate));
+        } catch (IllegalArgumentException ignored) {
+          // Non-UUID token; ignore and fall back if no valid UUIDs are present.
+        }
+      }
+    }
+    return List.copyOf(ids);
+  }
+
   private java.util.Optional<InspectionPreparation> currentPreparation(UUID inspectionId) {
     return preparations
         .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
@@ -346,17 +412,17 @@ public class ComplianceGateService {
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
 
-    if (!actor.hasRole(Roles.ORG_ADMIN)) {
+    if (!actor.hasRole(Roles.ORG_MANAGER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Role " + Roles.ORG_ADMIN + " is required");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Role " + Roles.ORG_MANAGER + " is required");
     }
     if (actor.organizationId() == null) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "User has no organization scope");
     }
-    if (!actor.hasRole(Roles.ORG_ADMIN)) {
+    if (!actor.hasRole(Roles.ORG_MANAGER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Role " + Roles.ORG_ADMIN + " is required");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Role " + Roles.ORG_MANAGER + " is required");
     }
     return actor.organizationId();
   }

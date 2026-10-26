@@ -64,7 +64,7 @@ class WorkflowBaselineTest {
       String email = "w3-" + role.name().toLowerCase() + "-" + UUID.randomUUID() + "@example.test";
       String password = PASSWORD_PREFIX + UUID.randomUUID();
       ActorZone actorZone = zoneFor(role);
-      UUID organizationId = role == UserRole.ADMIN ? null : organization.getId();
+      UUID organizationId = actorZone == ActorZone.PLATFORM ? null : organization.getId();
       User user =
           new User(
               email,
@@ -168,7 +168,9 @@ class WorkflowBaselineTest {
   }
 
   private ActorZone zoneFor(UserRole role) {
-    return role == UserRole.ADMIN ? ActorZone.PLATFORM : ActorZone.CUSTOMER_ORGANIZATION;
+    return (role == UserRole.ADMIN || role == UserRole.PLATFORM_MANAGER)
+        ? ActorZone.PLATFORM
+        : ActorZone.CUSTOMER_ORGANIZATION;
   }
 
   private record FixtureCredentials(String email, String password) {}

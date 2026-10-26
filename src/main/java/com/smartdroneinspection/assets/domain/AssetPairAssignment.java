@@ -230,7 +230,9 @@ public class AssetPairAssignment {
       throw new IllegalArgumentException("Declining a pairing requires a reason");
     }
     this.assignmentResponse = response;
-    this.reason = rejectionReason;
+    if (response == AssignmentResponse.REJECTED) {
+      this.reason = rejectionReason.trim();
+    }
     this.respondedAt = Instant.now();
     this.updatedAt = respondedAt;
   }

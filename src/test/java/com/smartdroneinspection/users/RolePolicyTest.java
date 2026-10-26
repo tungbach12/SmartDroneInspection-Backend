@@ -26,11 +26,25 @@ class RolePolicyTest {
   }
 
   @Test
+  void permitsSinglePlatformRoleAdminOrPlatformManager() {
+    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN)))
+        .doesNotThrowAnyException();
+    assertThatCode(
+            () -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.PLATFORM_MANAGER)))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   void rejectsAdminCombinedWithAnotherRole() {
     assertThatThrownBy(
             () ->
                 policy.validate(
                     ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                policy.validate(
+                    ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.PLATFORM_MANAGER)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -38,13 +52,16 @@ class RolePolicyTest {
   void requiresOrganizationForClient() {
     assertThatThrownBy(
             () ->
-                policy.validate(ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.ORG_ADMIN)))
+                policy.validate(
+                    ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.ORG_MANAGER)))
         .isInstanceOf(IllegalArgumentException.class);
 
     assertThatCode(
             () ->
                 policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.ORG_ADMIN)))
+                    ActorZone.CUSTOMER_ORGANIZATION,
+                    UUID.randomUUID(),
+                    Set.of(UserRole.ORG_MANAGER)))
         .doesNotThrowAnyException();
   }
 }

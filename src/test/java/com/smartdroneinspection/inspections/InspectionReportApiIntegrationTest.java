@@ -704,7 +704,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .param("approve", "false")
                 .param("reason", rationale)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RETURNED"));
   }
@@ -786,7 +786,7 @@ class InspectionReportApiIntegrationTest {
   void reviewerCannotApproveTheAuthorsOwnReport() throws Exception {
     UUID versionId = createSubmittedManualVersion();
 
-    // The author is not an ORG_ADMIN, so the role gate refuses the review outright.
+    // The author is not an ORG_MANAGER, so the role gate refuses the review outright.
     mockMvc
         .perform(
             post(
@@ -824,7 +824,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
   }
@@ -846,7 +846,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .param("approve", "false")
                 .param("reason", "Clarify the report narrative")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RETURNED"))
         .andExpect(jsonPath("$.data.returnReason").value("Clarify the report narrative"));
@@ -877,7 +877,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "false")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("REPORT_RETURN_REASON_REQUIRED"));
 
@@ -889,7 +889,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .param("approve", "false")
                 .param("reason", "The east face coverage is not disclosed")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RETURNED"))
         .andExpect(
@@ -903,7 +903,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("REPORT_REVIEWER_INVALID"));
 
@@ -961,7 +961,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
     mockMvc
@@ -970,7 +970,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty())
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
@@ -992,7 +992,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -1002,7 +1002,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
@@ -1010,7 +1010,7 @@ class InspectionReportApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1066,7 +1066,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
   }
@@ -1078,7 +1078,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
   }
 
@@ -1097,7 +1097,7 @@ class InspectionReportApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1146,7 +1146,7 @@ class InspectionReportApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(Map.of("findingIds", java.util.List.of()))))
@@ -1174,7 +1174,7 @@ class InspectionReportApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1325,7 +1325,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.outsiderId(), "ORG_ADMIN")))
+                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
   }
@@ -1349,7 +1349,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -1359,14 +1359,14 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
 
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1431,7 +1431,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -1441,7 +1441,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.versionNo").value(1))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));

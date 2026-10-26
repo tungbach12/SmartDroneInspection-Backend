@@ -8,6 +8,7 @@
       "users",
       "shared::storage",
       "subscriptions",
+      "subscriptions::gateway",
       "inspections::reportcontext",
       "assets::reportcontext"
     })

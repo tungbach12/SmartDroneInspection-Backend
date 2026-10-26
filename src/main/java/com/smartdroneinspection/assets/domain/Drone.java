@@ -1,5 +1,6 @@
 package com.smartdroneinspection.assets.domain;
 
+import com.smartdroneinspection.assets.domain.enums.DroneOwnershipType;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,7 +18,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * An organization-owned airframe registered in the Drone inventory.
+ * An organization-scoped airframe registered in the Drone inventory (either owned or leased from
+ * the platform).
  *
  * <p>Serviceability is a maintenance fact, not a permit or flight-readiness assertion. Only ACTIVE
  * drones are eligible for MF2 pairing; permit and readiness decisions belong to their own flows.
@@ -52,6 +54,16 @@ public class Drone {
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
   private DroneServiceability serviceability;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "ownership_type", nullable = false, length = 24)
+  private DroneOwnershipType ownershipType = DroneOwnershipType.OWNED;
+
+  @Column(name = "lease_id")
+  private UUID leaseId;
+
+  @Column(name = "lease_expires_at")
+  private Instant leaseExpiresAt;
 
   @Column(name = "last_maintenance_at")
   private Instant lastMaintenanceAt;
@@ -117,11 +129,38 @@ public class Drone {
     this.payloadMetadata = payloadMetadata;
     this.serviceability =
         Objects.requireNonNull(serviceability, "Drone serviceability is required");
+    this.ownershipType = DroneOwnershipType.OWNED;
     this.lastMaintenanceAt = lastMaintenanceAt;
     this.nextMaintenanceAt = nextMaintenanceAt;
     this.notes = notes;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
+  }
+
+  public static Drone createLeased(
+      UUID organizationId,
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String payloadMetadata,
+      UUID leaseId,
+      Instant leaseExpiresAt,
+      String notes) {
+    Drone drone =
+        new Drone(
+            organizationId,
+            serialNumber,
+            model,
+            manufacturer,
+            payloadMetadata,
+            DroneServiceability.ACTIVE,
+            null,
+            null,
+            notes);
+    drone.ownershipType = DroneOwnershipType.LEASED;
+    drone.leaseId = Objects.requireNonNull(leaseId, "Lease id is required");
+    drone.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "Lease expiry is required");
+    return drone;
   }
 
   public UUID getId() {
@@ -150,6 +189,18 @@ public class Drone {
 
   public DroneServiceability getServiceability() {
     return serviceability;
+  }
+
+  public DroneOwnershipType getOwnershipType() {
+    return ownershipType;
+  }
+
+  public UUID getLeaseId() {
+    return leaseId;
+  }
+
+  public Instant getLeaseExpiresAt() {
+    return leaseExpiresAt;
   }
 
   public Instant getLastMaintenanceAt() {
@@ -183,6 +234,31 @@ public class Drone {
       throw new IllegalStateException("Retired drones cannot change serviceability");
     }
     this.serviceability = target;
+    this.updatedAt = Instant.now();
+  }
+
+  public void activateLease(
+      UUID leaseId,
+      Instant leaseExpiresAt,
+      String model,
+      String manufacturer,
+      String payloadMetadata,
+      String notes) {
+    this.ownershipType = DroneOwnershipType.LEASED;
+    this.leaseId = Objects.requireNonNull(leaseId, "Lease id is required");
+    this.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "Lease expiry is required");
+    this.serviceability = DroneServiceability.ACTIVE;
+    this.model = model;
+    this.manufacturer = manufacturer;
+    this.payloadMetadata = payloadMetadata;
+    if (notes != null) {
+      this.notes = notes;
+    }
+    this.updatedAt = Instant.now();
+  }
+
+  public void reclaimLease() {
+    this.serviceability = DroneServiceability.RETIRED;
     this.updatedAt = Instant.now();
   }
 
