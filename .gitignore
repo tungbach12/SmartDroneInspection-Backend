@@ -38,3 +38,5 @@ Thumbs.db
 ai-inference/models/*.pt
 ai-inference/models/*.onnx
 ai-inference/models/*.old
+.claude/
+node_modules/

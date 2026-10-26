@@ -78,6 +78,14 @@ class PersistenceEntityOwnershipTest {
             "checklist_responses",
             "com.smartdroneinspection.inspections.domain.ChecklistResponse"),
         Arguments.of(
+            "inspections",
+            "recurring_inspection_schedules",
+            "com.smartdroneinspection.inspections.domain.RecurringInspectionSchedule"),
+        Arguments.of(
+            "inspections",
+            "schedule_occurrences",
+            "com.smartdroneinspection.inspections.domain.ScheduleOccurrence"),
+        Arguments.of(
             "subscriptions",
             "payment_transactions",
             "com.smartdroneinspection.subscriptions.domain.PaymentTransaction"),

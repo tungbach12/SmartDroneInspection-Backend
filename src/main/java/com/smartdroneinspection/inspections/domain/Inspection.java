@@ -67,6 +67,9 @@ public class Inspection {
   @Column(name = "findings_snapshot_hash", length = 64)
   private String findingsSnapshotHash;
 
+  @Column(name = "recurring_schedule_id")
+  private UUID recurringScheduleId;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -269,6 +272,14 @@ public class Inspection {
 
   public Instant getUpdatedAt() {
     return updatedAt;
+  }
+
+  public UUID getRecurringScheduleId() {
+    return recurringScheduleId;
+  }
+
+  public void setRecurringScheduleId(UUID recurringScheduleId) {
+    this.recurringScheduleId = recurringScheduleId;
   }
 
   public boolean isInspectedBy(UUID candidateInspectorId) {
