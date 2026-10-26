@@ -1,8 +1,11 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
+import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Finding;
@@ -268,6 +271,140 @@ public class FindingService {
     return findings.findRemovedByInspectionId(inspectionId).stream()
         .map(this::toFindingResponse)
         .toList();
+  }
+
+  /** Filtered and paginated query of findings across active, removed, and candidate statuses. */
+  @Transactional(readOnly = true)
+  public FindingPageResponse query(
+      UUID actorId,
+      UUID inspectionId,
+      FindingStatusFilter statusFilter,
+      FindingSeverity severity,
+      FindingSourceFilter sourceFilter,
+      String defectQuery,
+      String evidenceQuery,
+      int page,
+      int pageSize) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+
+    int validPage = Math.max(1, page);
+    int validPageSize = Math.max(1, Math.min(pageSize, 200));
+
+    List<Finding> allFindings = findings.findAllByInspectionIdIncludingRemoved(inspectionId);
+    List<Evidence> allEvidence = evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    java.util.Map<UUID, Evidence> evidenceMap =
+        allEvidence.stream().collect(java.util.stream.Collectors.toMap(Evidence::getId, e -> e));
+
+    long activeCount = allFindings.stream().filter(f -> !f.isDeleted()).count();
+    long removedCount = allFindings.stream().filter(Finding::isDeleted).count();
+    long pendingCount =
+        allFindings.stream()
+            .filter(f -> !f.isDeleted() && f.getStatus() == FindingStatus.PENDING)
+            .count();
+    long confirmedCount =
+        allFindings.stream()
+            .filter(f -> !f.isDeleted() && f.getStatus() == FindingStatus.CONFIRMED)
+            .count();
+
+    FindingStatusFilter effectiveStatus =
+        statusFilter != null ? statusFilter : FindingStatusFilter.ACTIVE;
+    FindingSourceFilter effectiveSource =
+        sourceFilter != null ? sourceFilter : FindingSourceFilter.ALL;
+    String cleanDefect = defectQuery != null ? defectQuery.trim().toLowerCase() : "";
+    String cleanEvidence = evidenceQuery != null ? evidenceQuery.trim().toLowerCase() : "";
+
+    List<Finding> filtered =
+        allFindings.stream()
+            .filter(
+                f -> {
+                  // Status filter
+                  switch (effectiveStatus) {
+                    case ACTIVE:
+                      if (f.isDeleted()) return false;
+                      break;
+                    case PENDING:
+                      if (f.isDeleted() || f.getStatus() != FindingStatus.PENDING) return false;
+                      break;
+                    case CONFIRMED:
+                      if (f.isDeleted() || f.getStatus() != FindingStatus.CONFIRMED) return false;
+                      break;
+                    case REMOVED:
+                      if (!f.isDeleted()) return false;
+                      break;
+                    case ALL:
+                    default:
+                      break;
+                  }
+
+                  // Severity filter
+                  if (severity != null && f.getSeverity() != severity) {
+                    return false;
+                  }
+
+                  // Source filter
+                  if (effectiveSource == FindingSourceFilter.AI && f.getModelName() == null) {
+                    return false;
+                  }
+                  if (effectiveSource == FindingSourceFilter.MANUAL && f.getModelName() != null) {
+                    return false;
+                  }
+
+                  // Defect query
+                  if (!cleanDefect.isEmpty()) {
+                    boolean match =
+                        (f.getDefectLabel() != null
+                                && f.getDefectLabel().toLowerCase().contains(cleanDefect))
+                            || (f.getFindingCode() != null
+                                && f.getFindingCode().toLowerCase().contains(cleanDefect))
+                            || (f.getTechnicalNotes() != null
+                                && f.getTechnicalNotes().toLowerCase().contains(cleanDefect))
+                            || (f.getRecommendedAction() != null
+                                && f.getRecommendedAction().toLowerCase().contains(cleanDefect))
+                            || (f.getModelName() != null
+                                && f.getModelName().toLowerCase().contains(cleanDefect));
+                    if (!match) return false;
+                  }
+
+                  // Evidence query
+                  if (!cleanEvidence.isEmpty()) {
+                    Evidence ev =
+                        f.getEvidenceId() != null ? evidenceMap.get(f.getEvidenceId()) : null;
+                    if (ev == null) return false;
+                    boolean match =
+                        (ev.getFileName() != null
+                                && ev.getFileName().toLowerCase().contains(cleanEvidence))
+                            || (ev.getLocationDescription() != null
+                                && ev.getLocationDescription()
+                                    .toLowerCase()
+                                    .contains(cleanEvidence));
+                    if (!match) return false;
+                  }
+
+                  return true;
+                })
+            .toList();
+
+    long totalCount = filtered.size();
+    int totalPages = (int) Math.ceil((double) totalCount / validPageSize);
+    int fromIndex = (validPage - 1) * validPageSize;
+    List<FindingResponse> items;
+    if (fromIndex >= filtered.size()) {
+      items = List.of();
+    } else {
+      int toIndex = Math.min(fromIndex + validPageSize, filtered.size());
+      items = filtered.subList(fromIndex, toIndex).stream().map(this::toFindingResponse).toList();
+    }
+
+    return new FindingPageResponse(
+        items,
+        validPage,
+        validPageSize,
+        totalCount,
+        totalPages,
+        activeCount,
+        removedCount,
+        pendingCount,
+        confirmedCount);
   }
 
   /**

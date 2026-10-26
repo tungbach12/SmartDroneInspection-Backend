@@ -40,6 +40,11 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
       nativeQuery = true)
   long countIncludingRemovedByInspectionId(@Param("inspectionId") UUID inspectionId);
 
+  @Query(
+      value = "SELECT * FROM findings WHERE inspection_id = :inspectionId ORDER BY created_at ASC",
+      nativeQuery = true)
+  List<Finding> findAllByInspectionIdIncludingRemoved(@Param("inspectionId") UUID inspectionId);
+
   List<Finding> findByForwardedToMaintenanceAtIsNotNull();
 
   List<Finding> findByInspectionIdAndForwardedToMaintenanceAtIsNotNull(UUID inspectionId);
