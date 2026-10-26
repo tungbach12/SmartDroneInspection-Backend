@@ -2,11 +2,8 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -24,19 +21,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class InspectionFieldSessionService {
 
   private final InspectionRepository inspections;
-  private final InspectionPreparationRepository preparations;
   private final FieldSessionRepository sessions;
   private final UserAccess userAccess;
   private final EntityManager entityManager;
 
   public InspectionFieldSessionService(
       InspectionRepository inspections,
-      InspectionPreparationRepository preparations,
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
     this.inspections = inspections;
-    this.preparations = preparations;
     this.sessions = sessions;
     this.userAccess = userAccess;
     this.entityManager = entityManager;
@@ -56,15 +50,19 @@ public class InspectionFieldSessionService {
       throw sessionFailure("SESSION_SCOPE_DENIED", "This inspection is not assigned to you.");
     }
     requireNoOpenSession(inspectionId);
-    if (inspection.getStatus() != InspectionStatus.READY_FOR_FLIGHT) {
+    if (!inspection.hasFlightPermit()) {
+      throw sessionFailure(
+          "FLIGHT_PERMIT_REQUIRED",
+          "A flight permit must be uploaded before starting the field session.");
+    }
+    if (inspection.getStatus() != InspectionStatus.READY_FOR_FLIGHT
+        && inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
       throw sessionFailure(
           "INSPECTION_NOT_READY_FOR_FLIGHT",
           "The inspection is not ready for flight, so no session may start.");
     }
 
-    InspectionPreparation currentPreparation = currentReadyPreparation(inspectionId);
-
-    FieldSession session = FieldSession.opening(inspectionId, currentPreparation.getId());
+    FieldSession session = FieldSession.opening(inspectionId);
     session.recordPreFlightChecklistNote(preFlightChecklistNote);
     session.start(Instant.now());
 
@@ -142,19 +140,6 @@ public class InspectionFieldSessionService {
     if (!session.isOpen() || !session.isInProgress()) {
       throw sessionFailure("SESSION_NOT_IN_PROGRESS", "This session is not in progress.");
     }
-    InspectionPreparation currentPreparation =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElse(null);
-    if (session.getPreparationId() == null
-        || currentPreparation == null
-        || currentPreparation.getStatus() != InspectionPreparationStatus.READY
-        || currentPreparation.getReviewedByUserId() == null
-        || !session.getPreparationId().equals(currentPreparation.getId())) {
-      throw sessionFailure(
-          "SESSION_READINESS_STALE",
-          "This session was opened against a readiness decision that is no longer current.");
-    }
     if (inspection.getStatus() != InspectionStatus.IN_PROGRESS) {
       throw sessionFailure(
           "SESSION_NOT_IN_PROGRESS", "The inspection has no active field session.");
@@ -182,18 +167,6 @@ public class InspectionFieldSessionService {
               }
             });
     return sessions.saveAndFlush(session);
-  }
-
-  private InspectionPreparation currentReadyPreparation(UUID inspectionId) {
-    return preparations
-        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-        .filter(preparation -> preparation.getStatus() == InspectionPreparationStatus.READY)
-        .filter(preparation -> preparation.getReviewedByUserId() != null)
-        .orElseThrow(
-            () ->
-                sessionFailure(
-                    "READINESS_NOT_APPROVED",
-                    "No current approved readiness decision covers this inspection."));
   }
 
   private void requireNoOpenSession(UUID inspectionId) {

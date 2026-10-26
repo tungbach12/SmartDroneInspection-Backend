@@ -1,16 +1,11 @@
 package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
-import com.smartdroneinspection.assets.domain.AssetPairAssignment;
 import com.smartdroneinspection.assets.domain.Drone;
-import com.smartdroneinspection.assets.domain.FlightPermit;
-import com.smartdroneinspection.assets.domain.enums.AssetPairAssignmentStatus;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
-import com.smartdroneinspection.assets.repository.AssetPairAssignmentRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
-import com.smartdroneinspection.assets.repository.FlightPermitRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -18,8 +13,11 @@ import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,28 +31,25 @@ public class InspectionCreationService {
 
   private final InspectionRepository inspections;
   private final AssetRepository assets;
-  private final AssetPairAssignmentRepository assetPairAssignments;
   private final DroneRepository drones;
-  private final FlightPermitRepository permits;
   private final UserAccess userAccess;
+  private final Optional<EvidenceObjectStore> objectStore;
   private final SubscriptionEntitlement subscriptionEntitlement;
   private final ApplicationEventPublisher eventPublisher;
 
   public InspectionCreationService(
       InspectionRepository inspections,
       AssetRepository assets,
-      AssetPairAssignmentRepository assetPairAssignments,
       DroneRepository drones,
-      FlightPermitRepository permits,
       UserAccess userAccess,
+      Optional<EvidenceObjectStore> objectStore,
       SubscriptionEntitlement subscriptionEntitlement,
       ApplicationEventPublisher eventPublisher) {
     this.inspections = inspections;
     this.assets = assets;
-    this.assetPairAssignments = assetPairAssignments;
     this.drones = drones;
-    this.permits = permits;
     this.userAccess = userAccess;
+    this.objectStore = objectStore;
     this.subscriptionEntitlement = subscriptionEntitlement;
     this.eventPublisher = eventPublisher;
   }
@@ -79,93 +74,55 @@ public class InspectionCreationService {
           HttpStatus.CONFLICT, "INVALID_STATE", "Cannot create an inspection for a retired asset.");
     }
 
-    if (request.plannedStartAt() != null && request.plannedEndAt() != null) {
-      if (!request.plannedEndAt().isAfter(request.plannedStartAt())) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
-      }
+    if (request.plannedStartAt() == null
+        || request.plannedEndAt() == null
+        || !request.plannedEndAt().isAfter(request.plannedStartAt())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
     }
 
-    UUID inspectorId;
-    UUID droneId;
-    UUID assetPairAssignmentId;
+    UserAccess.ActiveUser inspector =
+        userAccess
+            .findActiveUser(request.inspectorId())
+            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_INSPECTOR",
+                        "Assigned inspector must be active in the organization."));
 
-    if (request.inspectorId() == null && request.droneId() == null) {
-      AssetPairAssignment activePair =
-          assetPairAssignments
-              .findByOrganizationIdAndAssetIdAndStatus(
-                  organizationId, asset.getId(), AssetPairAssignmentStatus.ACTIVE)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.BAD_REQUEST,
-                          "PAIR_REQUIRED",
-                          "Asset has no active default inspector and drone pair assigned."));
-      inspectorId = activePair.getInspectorUserId();
-      droneId = activePair.getDroneId();
-      assetPairAssignmentId = activePair.getId();
-    } else {
-      if (request.inspectorId() == null || request.droneId() == null) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "PAIR_INCOMPLETE",
-            "Both inspector and drone must be provided for reassignment.");
-      }
-      UserAccess.ActiveUser inspector =
-          userAccess
-              .findActiveUser(request.inspectorId())
-              .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.BAD_REQUEST,
-                          "INVALID_INSPECTOR",
-                          "Assigned inspector must be active in the organization."));
+    Drone drone =
+        drones
+            .findWithLockByIdAndOrganizationId(request.droneId(), organizationId)
+            .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_DRONE",
+                        "Assigned drone must be active in the organization."));
 
-      Drone drone =
-          drones
-              .findWithLockByIdAndOrganizationId(request.droneId(), organizationId)
-              .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.BAD_REQUEST,
-                          "INVALID_DRONE",
-                          "Assigned drone must be active in the organization."));
-
-      Optional<AssetPairAssignment> activePair =
-          assetPairAssignments.findByOrganizationIdAndAssetIdAndStatus(
-              organizationId, asset.getId(), AssetPairAssignmentStatus.ACTIVE);
-      inspectorId = inspector.id();
-      droneId = drone.getId();
-      assetPairAssignmentId = activePair.map(AssetPairAssignment::getId).orElse(null);
-    }
-
-    if (request.plannedStartAt() != null && request.plannedEndAt() != null) {
-      if (inspections.hasScheduleConflict(
-          organizationId, inspectorId, droneId, request.plannedStartAt(), request.plannedEndAt())) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "SCHEDULE_CONFLICT",
-            "The assigned inspector or drone has a schedule conflict with another active inspection in this window.");
-      }
+    if (inspections.hasScheduleConflict(
+        organizationId,
+        inspector.id(),
+        drone.getId(),
+        request.plannedStartAt(),
+        request.plannedEndAt())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SCHEDULE_CONFLICT",
+          "The assigned inspector or drone has a schedule conflict with another active inspection in this window.");
     }
 
     Inspection inspection =
         new Inspection(
             organizationId,
             asset.getId(),
-            assetPairAssignmentId,
-            inspectorId,
-            droneId,
-            request.objective(),
-            request.scope(),
-            request.componentScope(),
-            request.acceptanceCriteria(),
+            inspector.id(),
+            drone.getId(),
             request.plannedStartAt(),
             request.plannedEndAt());
-
-    inspection.dispatch();
 
     Inspection saved = inspections.saveAndFlush(inspection);
 
@@ -185,14 +142,13 @@ public class InspectionCreationService {
       UUID assetId,
       UUID inspectorId,
       UUID droneId,
-      UUID assetPairAssignmentId,
-      String objective,
-      String scope,
-      String componentScope,
-      String acceptanceCriteria,
       Instant plannedStartAt,
       Instant plannedEndAt,
       UUID recurringScheduleId) {
+    if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
+    }
     subscriptionEntitlement.requireActive(organizationId, plannedStartAt);
 
     Asset asset =
@@ -220,7 +176,7 @@ public class InspectionCreationService {
     Drone drone =
         drones
             .findWithLockByIdAndOrganizationId(droneId, organizationId)
-            .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
+            .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
             .orElseThrow(
                 () ->
                     new BusinessException(
@@ -240,20 +196,14 @@ public class InspectionCreationService {
         new Inspection(
             organizationId,
             asset.getId(),
-            assetPairAssignmentId,
             inspector.id(),
             drone.getId(),
-            objective,
-            scope,
-            componentScope,
-            acceptanceCriteria,
             plannedStartAt,
             plannedEndAt);
 
     if (recurringScheduleId != null) {
       inspection.setRecurringScheduleId(recurringScheduleId);
     }
-    inspection.dispatch();
 
     Inspection saved = inspections.saveAndFlush(inspection);
 
@@ -284,6 +234,86 @@ public class InspectionCreationService {
     return toResponse(inspection, asset);
   }
 
+  @Transactional
+  public InspectionResponse uploadFlightPermit(
+      UUID actorId,
+      UUID inspectionId,
+      String fileKey,
+      String fileName,
+      byte[] content,
+      String contentType) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    UUID organizationId = actor.organizationId();
+
+    Inspection inspection =
+        inspections
+            .findByIdAndOrganizationId(inspectionId, organizationId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+
+    if (!inspection.isInspectedBy(actorId) && !actor.hasRole(Roles.ORG_MANAGER)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only the assigned inspector or organization manager can upload the flight permit.");
+    }
+
+    UserAccess.ActiveUser assignedInspector =
+        userAccess
+            .findActiveUser(inspection.getInspectorId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_INSPECTOR",
+                        "Assigned inspector is no longer active."));
+
+    if (!assignedInspector.hasValidPilotLicense(Instant.now())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_REQUIRED",
+          "The assigned inspector must hold an active, non-expired pilot license.");
+    }
+
+    String effectiveKey = fileKey;
+    if (content != null && content.length > 0 && objectStore.isPresent()) {
+      effectiveKey =
+          "inspections/"
+              + inspectionId
+              + "/flight-permit/"
+              + UUID.randomUUID()
+              + "-"
+              + (fileName != null ? fileName : "permit.pdf");
+      try {
+        objectStore
+            .get()
+            .put(
+                effectiveKey,
+                contentType != null ? contentType : "application/pdf",
+                content.length,
+                new ByteArrayInputStream(content));
+      } catch (IOException e) {
+        throw new BusinessException(
+            HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Failed to store flight permit file.");
+      }
+    }
+
+    if (effectiveKey == null || effectiveKey.isBlank()) {
+      effectiveKey = "permits/" + UUID.randomUUID() + "-" + fileName;
+    }
+
+    inspection.recordFlightPermit(
+        effectiveKey,
+        fileName != null && !fileName.isBlank() ? fileName : "flight-permit.pdf",
+        Instant.now());
+    Inspection saved = inspections.saveAndFlush(inspection);
+    Asset asset =
+        assets.findByIdAndOrganizationId(inspection.getAssetId(), organizationId).orElse(null);
+    return toResponse(saved, asset);
+  }
+
   private InspectionResponse toResponse(Inspection inspection, Asset asset) {
     String assetName = asset == null ? null : asset.getName();
     String inspectorName =
@@ -298,36 +328,22 @@ public class InspectionCreationService {
                 .orElse(null)
             : null;
 
-    FlightPermit permit =
-        permits
-            .findByOrganizationIdAndAssetIdOrderByCreatedAtDesc(
-                inspection.getOrganizationId(), inspection.getAssetId())
-            .stream()
-            .findFirst()
-            .orElse(null);
-
     return new InspectionResponse(
         inspection.getId(),
         inspection.getOrganizationId(),
         inspection.getAssetId(),
         assetName,
         asset == null ? null : asset.getLocationText(),
-        inspection.getAssetPairAssignmentId(),
+        asset == null ? java.util.List.of() : asset.getInspectionItems(),
         inspection.getInspectorId(),
         inspectorName,
         inspection.getDroneId(),
         drone == null ? null : drone.getSerialNumber(),
         drone == null ? null : drone.getModel(),
         drone == null ? null : drone.getServiceability().name(),
-        permit == null ? null : permit.getPermitReference(),
-        permit == null ? null : permit.getIssuingAuthority(),
-        permit == null ? null : permit.getValidFrom(),
-        permit == null ? null : permit.getValidUntil(),
-        permit == null ? null : permit.getReadinessStatus().name(),
-        inspection.getObjective(),
-        inspection.getScope(),
-        inspection.getComponentScope(),
-        inspection.getAcceptanceCriteria(),
+        inspection.getFlightPermitFileKey(),
+        inspection.getFlightPermitFileName(),
+        inspection.getFlightPermitUploadedAt(),
         inspection.getPlannedStartAt(),
         inspection.getPlannedEndAt(),
         inspection.getStatus().name(),

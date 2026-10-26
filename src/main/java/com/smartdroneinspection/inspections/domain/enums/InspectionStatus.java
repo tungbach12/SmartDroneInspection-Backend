@@ -8,7 +8,6 @@ package com.smartdroneinspection.inspections.domain.enums;
 public enum InspectionStatus {
   DRAFT,
   ASSIGNED,
-  PREPARING,
   READY_FOR_FLIGHT,
   IN_PROGRESS,
   FIELD_COMPLETED,

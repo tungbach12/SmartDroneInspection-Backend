@@ -178,4 +178,34 @@ class InspectionReminderJobTest {
     assertThat(sent).isEqualTo(0);
     verify(eventPublisher, never()).publishEvent(any());
   }
+
+  @Test
+  void emitsReminderWhenInspectionIsReadyForFlight() {
+    Instant now = Instant.now();
+    Instant plannedStart = now.plus(1, ChronoUnit.DAYS);
+    ScheduleOccurrence occ =
+        new ScheduleOccurrence(
+            UUID.randomUUID(),
+            orgId,
+            0L,
+            plannedStart.toString(),
+            plannedStart,
+            plannedStart.plusSeconds(3600),
+            OccurrenceStatus.GENERATED);
+    occ.markGenerated(inspectionId);
+    ReflectionTestUtils.setField(occ, "id", occurrenceId);
+
+    Inspection inspection = mock(Inspection.class);
+    when(inspection.getId()).thenReturn(inspectionId);
+    when(inspection.getOrganizationId()).thenReturn(orgId);
+    when(inspection.getInspectorId()).thenReturn(inspectorId);
+    when(inspection.getStatus()).thenReturn(InspectionStatus.READY_FOR_FLIGHT);
+    when(inspection.getPlannedStartAt()).thenReturn(plannedStart);
+
+    when(occurrenceRepository.findById(occurrenceId)).thenReturn(Optional.of(occ));
+    when(inspectionRepository.findById(inspectionId)).thenReturn(Optional.of(inspection));
+
+    assertThat(reminderJob.processSingleReminder(occurrenceId, now)).isTrue();
+    verify(eventPublisher).publishEvent(any(InspectionReminderDueEvent.class));
+  }
 }

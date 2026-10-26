@@ -69,7 +69,11 @@ public class UserAccessService implements UserAccess {
                     Set.copyOf(user.roleValues()),
                     user.getOrganizationId(),
                     user.getFullName(),
-                    user.getEmail()));
+                    user.getEmail(),
+                    user.getPilotLicenseNumber(),
+                    user.getPilotLicenseClass(),
+                    user.getPilotLicenseExpiresAt(),
+                    user.getPilotLicenseFileKey()));
   }
 
   @Override

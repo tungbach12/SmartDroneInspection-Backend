@@ -56,7 +56,8 @@ public class ReportAssetContextAccess implements ReportContextAccess {
             categories.findById(record.getCategoryId()).map(AssetCategory::getName).orElse(null),
             drone == null ? null : drone.getSerialNumber(),
             drone == null ? null : drone.getManufacturer(),
-            drone == null ? null : drone.getModel()));
+            drone == null ? null : drone.getModel(),
+            record.getInspectionItems()));
   }
 
   private String locationLabel(String raw) {

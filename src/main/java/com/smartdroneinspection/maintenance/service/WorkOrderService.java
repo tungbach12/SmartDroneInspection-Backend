@@ -29,7 +29,6 @@ import com.smartdroneinspection.maintenance.repository.MaintenanceTeamMemberRepo
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkOrderRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
-import com.smartdroneinspection.workforce.credential.WorkforceCredentialAccess;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -76,7 +75,6 @@ public class WorkOrderService {
   private final MaintenanceTaskRepository tasks;
   private final MaintenanceEstimateVersionRepository estimates;
   private final MaintenanceCostLineRepository costLines;
-  private final WorkforceCredentialAccess workforceCredentials;
   private final RepairCandidateAccess repairCandidateAccess;
   private final UserAccess userAccess;
   private final ApplicationEventPublisher eventPublisher;
@@ -87,7 +85,6 @@ public class WorkOrderService {
       MaintenanceTaskRepository tasks,
       MaintenanceEstimateVersionRepository estimates,
       MaintenanceCostLineRepository costLines,
-      WorkforceCredentialAccess workforceCredentials,
       RepairCandidateAccess repairCandidateAccess,
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher) {
@@ -96,7 +93,6 @@ public class WorkOrderService {
     this.tasks = tasks;
     this.estimates = estimates;
     this.costLines = costLines;
-    this.workforceCredentials = workforceCredentials;
     this.repairCandidateAccess = repairCandidateAccess;
     this.userAccess = userAccess;
     this.eventPublisher = eventPublisher;
@@ -569,9 +565,6 @@ public class WorkOrderService {
           HttpStatus.BAD_REQUEST,
           "TEAM_MEMBER_OUT_OF_SCOPE",
           "Team members must be active users of the same organization");
-    }
-    if (!workforceCredentials.currentlyQualifies(organizationId, userId, Instant.now())) {
-      throw forbidden("The assigned " + role + " holds a credential that is not currently valid");
     }
   }
 

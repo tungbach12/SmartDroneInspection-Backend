@@ -13,7 +13,6 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
@@ -42,7 +41,6 @@ class DroneApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired AssetCategoryRepository categories;
-  @Autowired ChecklistTemplateRepository templates;
   @Autowired AssetRepository assets;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -53,7 +51,7 @@ class DroneApiIntegrationTest {
   @BeforeEach
   void setUp() {
     mockMvc = webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
-    fixture = new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
+    fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     grantEntitlement(fixture.organizationId());
     grantEntitlement(fixture.otherOrganizationId());
   }

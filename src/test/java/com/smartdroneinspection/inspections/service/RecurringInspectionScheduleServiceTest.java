@@ -13,7 +13,6 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
-import com.smartdroneinspection.assets.repository.AssetPairAssignmentRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateRecurringScheduleRequest;
@@ -46,7 +45,6 @@ class RecurringInspectionScheduleServiceTest {
   private ScheduleOccurrenceRepository occurrenceRepository;
   private InspectionCreationService creationService;
   private AssetRepository assetRepository;
-  private AssetPairAssignmentRepository assetPairAssignments;
   private DroneRepository droneRepository;
   private UserAccess userAccess;
   private SubscriptionEntitlement subscriptionEntitlement;
@@ -65,7 +63,6 @@ class RecurringInspectionScheduleServiceTest {
     occurrenceRepository = mock(ScheduleOccurrenceRepository.class);
     creationService = mock(InspectionCreationService.class);
     assetRepository = mock(AssetRepository.class);
-    assetPairAssignments = mock(AssetPairAssignmentRepository.class);
     droneRepository = mock(DroneRepository.class);
     userAccess = mock(UserAccess.class);
     subscriptionEntitlement = mock(SubscriptionEntitlement.class);
@@ -76,7 +73,6 @@ class RecurringInspectionScheduleServiceTest {
             occurrenceRepository,
             creationService,
             assetRepository,
-            assetPairAssignments,
             droneRepository,
             userAccess,
             subscriptionEntitlement);
@@ -117,20 +113,7 @@ class RecurringInspectionScheduleServiceTest {
     LocalDateTime futureAnchor = LocalDateTime.now().plusDays(2);
     CreateRecurringScheduleRequest request =
         new CreateRecurringScheduleRequest(
-            assetId,
-            "Monthly bridge inspection",
-            null,
-            null,
-            null,
-            futureAnchor,
-            "UTC",
-            "MONTH",
-            1,
-            7200L,
-            3,
-            null,
-            inspectorId,
-            droneId);
+            assetId, futureAnchor, "UTC", "MONTH", 1, 7200L, 3, null, inspectorId, droneId);
 
     when(scheduleRepository.saveAndFlush(any(RecurringInspectionSchedule.class)))
         .thenAnswer(
@@ -148,18 +131,7 @@ class RecurringInspectionScheduleServiceTest {
     Inspection mockInspection = mock(Inspection.class);
     when(mockInspection.getId()).thenReturn(UUID.randomUUID());
     when(creationService.dispatchInspectionInternal(
-            eq(orgId),
-            eq(assetId),
-            eq(inspectorId),
-            eq(droneId),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any(),
-            any()))
+            eq(orgId), eq(assetId), eq(inspectorId), eq(droneId), any(), any(), any()))
         .thenReturn(mockInspection);
 
     RecurringScheduleResponse response = service.create(managerId, request);
@@ -186,10 +158,6 @@ class RecurringInspectionScheduleServiceTest {
     CreateRecurringScheduleRequest request =
         new CreateRecurringScheduleRequest(
             assetId,
-            "Monthly bridge inspection",
-            null,
-            null,
-            null,
             LocalDateTime.now().plusDays(1),
             "UTC",
             "WEEK",
@@ -211,10 +179,6 @@ class RecurringInspectionScheduleServiceTest {
     CreateRecurringScheduleRequest request =
         new CreateRecurringScheduleRequest(
             assetId,
-            "Monthly bridge inspection",
-            null,
-            null,
-            null,
             futureAnchor,
             "Asia/Ho_Chi_Minh",
             "MONTH",
@@ -285,10 +249,6 @@ class RecurringInspectionScheduleServiceTest {
             managerId,
             inspectorId,
             droneId,
-            "Survey",
-            null,
-            null,
-            null,
             pastAnchor,
             "UTC",
             "MONTH",
@@ -320,8 +280,7 @@ class RecurringInspectionScheduleServiceTest {
     // Verify schedule did NOT advance and remains at occurrence 0
     assertThat(schedule.getNextOccurrence()).isEqualTo(0L);
     verify(creationService, never())
-        .dispatchInspectionInternal(
-            any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        .dispatchInspectionInternal(any(), any(), any(), any(), any(), any(), any());
   }
 
   @Test
@@ -352,7 +311,7 @@ class RecurringInspectionScheduleServiceTest {
     Inspection mockInsp = mock(Inspection.class);
     when(mockInsp.getId()).thenReturn(UUID.randomUUID());
     when(creationService.dispatchInspectionInternal(
-            any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(mockInsp);
 
     ScheduleOccurrenceResponse resp = service.retryOccurrence(managerId, scheduleId, occId);
@@ -423,6 +382,32 @@ class RecurringInspectionScheduleServiceTest {
     assertThat(schedule.getNextOccurrence()).isEqualTo(1L);
   }
 
+  @Test
+  void createScheduleRequiresExplicitInspectorAndDroneWithoutDefaultPairFallback() {
+    Asset asset = mock(Asset.class);
+    when(asset.getId()).thenReturn(assetId);
+    when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
+    when(assetRepository.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(asset));
+
+    CreateRecurringScheduleRequest missingAssignment =
+        new CreateRecurringScheduleRequest(
+            assetId,
+            LocalDateTime.now().plusDays(2),
+            "UTC",
+            "MONTH",
+            1,
+            7200L,
+            3,
+            null,
+            null,
+            null);
+
+    assertThatThrownBy(() -> service.create(managerId, missingAssignment))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            ex -> assertThat(((BusinessException) ex).code()).isEqualTo("ASSIGNMENT_REQUIRED"));
+  }
+
   private RecurringInspectionSchedule mockSchedule(LocalDateTime anchor) {
     RecurringInspectionSchedule s =
         new RecurringInspectionSchedule(
@@ -431,10 +416,6 @@ class RecurringInspectionScheduleServiceTest {
             managerId,
             inspectorId,
             droneId,
-            "Visual check",
-            null,
-            null,
-            null,
             anchor,
             "UTC",
             "MONTH",

@@ -12,7 +12,6 @@ import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.ByteArrayInputStream;
@@ -47,7 +46,6 @@ class AssetDocumentApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired AssetCategoryRepository categories;
-  @Autowired ChecklistTemplateRepository templates;
   @Autowired AssetRepository assets;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -78,7 +76,7 @@ class AssetDocumentApiIntegrationTest {
     org.mockito.Mockito.when(objectStore.open(org.mockito.ArgumentMatchers.anyString()))
         .thenAnswer(
             invocation -> new ByteArrayInputStream(storedObjects.get(invocation.getArgument(0))));
-    fixture = new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
+    fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
   }
 
   @Test

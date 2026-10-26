@@ -1,12 +1,9 @@
 package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
-import com.smartdroneinspection.assets.domain.AssetPairAssignment;
 import com.smartdroneinspection.assets.domain.Drone;
-import com.smartdroneinspection.assets.domain.enums.AssetPairAssignmentStatus;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
-import com.smartdroneinspection.assets.repository.AssetPairAssignmentRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateRecurringScheduleRequest;
@@ -45,7 +42,6 @@ public class RecurringInspectionScheduleService {
   private final ScheduleOccurrenceRepository occurrenceRepository;
   private final InspectionCreationService creationService;
   private final AssetRepository assetRepository;
-  private final AssetPairAssignmentRepository assetPairAssignments;
   private final DroneRepository droneRepository;
   private final UserAccess userAccess;
   private final SubscriptionEntitlement subscriptionEntitlement;
@@ -55,7 +51,6 @@ public class RecurringInspectionScheduleService {
       ScheduleOccurrenceRepository occurrenceRepository,
       InspectionCreationService creationService,
       AssetRepository assetRepository,
-      AssetPairAssignmentRepository assetPairAssignments,
       DroneRepository droneRepository,
       UserAccess userAccess,
       SubscriptionEntitlement subscriptionEntitlement) {
@@ -63,7 +58,6 @@ public class RecurringInspectionScheduleService {
     this.occurrenceRepository = occurrenceRepository;
     this.creationService = creationService;
     this.assetRepository = assetRepository;
-    this.assetPairAssignments = assetPairAssignments;
     this.droneRepository = droneRepository;
     this.userAccess = userAccess;
     this.subscriptionEntitlement = subscriptionEntitlement;
@@ -95,60 +89,33 @@ public class RecurringInspectionScheduleService {
           "This asset already has an active recurring inspection schedule. End the existing schedule before creating a new one.");
     }
 
-    UUID inspectorId;
-    UUID droneId;
-    UUID assetPairAssignmentId;
-
-    if (request.inspectorId() == null && request.droneId() == null) {
-      AssetPairAssignment activePair =
-          assetPairAssignments
-              .findByOrganizationIdAndAssetIdAndStatus(
-                  organizationId, asset.getId(), AssetPairAssignmentStatus.ACTIVE)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.BAD_REQUEST,
-                          "PAIR_REQUIRED",
-                          "Asset has no active default inspector and drone pair assigned."));
-      inspectorId = activePair.getInspectorUserId();
-      droneId = activePair.getDroneId();
-      assetPairAssignmentId = activePair.getId();
-    } else {
-      if (request.inspectorId() == null || request.droneId() == null) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "PAIR_INCOMPLETE",
-            "Both inspector and drone must be provided when not using default pair.");
-      }
-      UserAccess.ActiveUser inspector =
-          userAccess
-              .findActiveUser(request.inspectorId())
-              .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.BAD_REQUEST,
-                          "INVALID_INSPECTOR",
-                          "Assigned inspector must be active in the organization."));
-
-      Drone drone =
-          droneRepository
-              .findByIdAndOrganizationId(request.droneId(), organizationId)
-              .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.BAD_REQUEST,
-                          "INVALID_DRONE",
-                          "Assigned drone must be active in the organization."));
-
-      Optional<AssetPairAssignment> activePair =
-          assetPairAssignments.findByOrganizationIdAndAssetIdAndStatus(
-              organizationId, asset.getId(), AssetPairAssignmentStatus.ACTIVE);
-      inspectorId = inspector.id();
-      droneId = drone.getId();
-      assetPairAssignmentId = activePair.map(AssetPairAssignment::getId).orElse(null);
+    if (request.inspectorId() == null || request.droneId() == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "ASSIGNMENT_REQUIRED",
+          "Both inspector and drone must be provided.");
     }
+    UserAccess.ActiveUser inspector =
+        userAccess
+            .findActiveUser(request.inspectorId())
+            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_INSPECTOR",
+                        "Assigned inspector must be active in the organization."));
+
+    Drone drone =
+        droneRepository
+            .findByIdAndOrganizationId(request.droneId(), organizationId)
+            .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_DRONE",
+                        "Assigned drone must be active in the organization."));
 
     RecurringInspectionSchedule schedule;
     try {
@@ -157,13 +124,8 @@ public class RecurringInspectionScheduleService {
               organizationId,
               asset.getId(),
               actor.id(),
-              inspectorId,
-              droneId,
-              assetPairAssignmentId,
-              request.objective(),
-              request.scope(),
-              request.componentScope(),
-              request.acceptanceCriteria(),
+              inspector.id(),
+              drone.getId(),
               request.anchor(),
               request.timezone(),
               request.unit(),
@@ -351,11 +313,6 @@ public class RecurringInspectionScheduleService {
               schedule.getAssetId(),
               schedule.getInspectorId(),
               schedule.getDroneId(),
-              schedule.getAssetPairAssignmentId(),
-              schedule.getObjective(),
-              schedule.getScope(),
-              schedule.getComponentScope(),
-              schedule.getAcceptanceCriteria(),
               occurrence.getPlannedStartAt(),
               occurrence.getPlannedEndAt(),
               schedule.getId());
@@ -498,11 +455,6 @@ public class RecurringInspectionScheduleService {
                 schedule.getAssetId(),
                 schedule.getInspectorId(),
                 schedule.getDroneId(),
-                schedule.getAssetPairAssignmentId(),
-                schedule.getObjective(),
-                schedule.getScope(),
-                schedule.getComponentScope(),
-                schedule.getAcceptanceCriteria(),
                 due,
                 plannedEnd,
                 schedule.getId());
@@ -597,10 +549,6 @@ public class RecurringInspectionScheduleService {
         schedule.getDroneId(),
         drone == null ? null : drone.getSerialNumber(),
         drone == null ? null : drone.getModel(),
-        schedule.getObjective(),
-        schedule.getScope(),
-        schedule.getComponentScope(),
-        schedule.getAcceptanceCriteria(),
         schedule.getAnchorDate(),
         schedule.getTimezone(),
         schedule.getRecurrenceUnit(),
@@ -633,10 +581,6 @@ public class RecurringInspectionScheduleService {
         base.droneId(),
         base.droneSerialNumber(),
         base.droneModel(),
-        base.objective(),
-        base.scope(),
-        base.componentScope(),
-        base.acceptanceCriteria(),
         base.anchor(),
         base.timezone(),
         base.unit(),

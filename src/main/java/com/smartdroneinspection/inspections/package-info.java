@@ -4,8 +4,6 @@
       "assets::domain",
       "assets::enums",
       "assets::repository",
-      "assets::readiness",
-      "workforce::credential",
       "users",
       "shared::api",
       "shared::auth",

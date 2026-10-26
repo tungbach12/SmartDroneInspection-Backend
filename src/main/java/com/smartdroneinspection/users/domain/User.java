@@ -82,6 +82,18 @@ public class User {
   @Column(name = "roles", nullable = false, length = 255)
   private String roles = "";
 
+  @Column(name = "pilot_license_number", length = 100)
+  private String pilotLicenseNumber;
+
+  @Column(name = "pilot_license_class", length = 16)
+  private String pilotLicenseClass;
+
+  @Column(name = "pilot_license_expires_at")
+  private Instant pilotLicenseExpiresAt;
+
+  @Column(name = "pilot_license_file_key", length = 1000)
+  private String pilotLicenseFileKey;
+
   protected User() {}
 
   public User(
@@ -164,6 +176,38 @@ public class User {
 
   public UUID getOrganizationId() {
     return organizationId;
+  }
+
+  public String getPilotLicenseNumber() {
+    return pilotLicenseNumber;
+  }
+
+  public String getPilotLicenseClass() {
+    return pilotLicenseClass;
+  }
+
+  public Instant getPilotLicenseExpiresAt() {
+    return pilotLicenseExpiresAt;
+  }
+
+  public String getPilotLicenseFileKey() {
+    return pilotLicenseFileKey;
+  }
+
+  public void updatePilotLicense(
+      String licenseNumber, String licenseClass, Instant expiresAt, String fileKey) {
+    this.pilotLicenseNumber = licenseNumber;
+    this.pilotLicenseClass = licenseClass;
+    this.pilotLicenseExpiresAt = expiresAt;
+    this.pilotLicenseFileKey = fileKey;
+    this.updatedAt = Instant.now();
+  }
+
+  public boolean hasValidPilotLicense(Instant at) {
+    Instant checkTime = at != null ? at : Instant.now();
+    return pilotLicenseNumber != null
+        && !pilotLicenseNumber.isBlank()
+        && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
   }
 
   public int getAuthVersion() {

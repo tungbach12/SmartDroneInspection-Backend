@@ -5,11 +5,8 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionPageRespo
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
-import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
-import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -50,19 +47,16 @@ public class InspectionListService {
 
   private final InspectionRepository inspections;
   private final InspectionReportVersionRepository reports;
-  private final InspectionPreparationRepository preparations;
   private final FindingRepository findings;
   private final UserAccess userAccess;
 
   public InspectionListService(
       InspectionRepository inspections,
       InspectionReportVersionRepository reports,
-      InspectionPreparationRepository preparations,
       FindingRepository findings,
       UserAccess userAccess) {
     this.inspections = inspections;
     this.reports = reports;
-    this.preparations = preparations;
     this.findings = findings;
     this.userAccess = userAccess;
   }
@@ -106,22 +100,8 @@ public class InspectionListService {
         result.getTotalPages());
   }
 
-  /**
-   * The one decision the organization administrator is being asked for on this inspection.
-   *
-   * <p>MF3-09/10 keeps the reviewer's decision at report level: the administrator does not accept
-   * each evidence item or each finding. So the queue names a phase rather than a per-item task, and
-   * the phases are strictly ordered - readiness, then the report, then the post-publication
-   * corrective disposition (MF3-12).
-   *
-   * <p>Each phase is decided by what the server already records, never by the inspection status
-   * alone: {@code PREPARING} covers an open draft and a submitted preparation, and only the second
-   * one is waiting for a reviewer.
-   */
+  /** The one decision the organization administrator is being asked for on this inspection. */
   private String pendingAction(Inspection inspection, InspectionReportVersion report) {
-    if (readinessReviewPending(inspection)) {
-      return "READINESS_REVIEW";
-    }
     if (report != null) {
       ReportStatus reportStatus = report.getStatus();
       if (reportStatus == ReportStatus.SUBMITTED) {
@@ -132,22 +112,6 @@ public class InspectionListService {
       }
     }
     return "NONE";
-  }
-
-  /**
-   * A submitted preparation is waiting for a readiness decision.
-   *
-   * <p>A returned preparation is not: it is with the Inspector again, who reopens the draft and
-   * submits a new version. The reviewer is asked only for what is actually in front of them.
-   */
-  private boolean readinessReviewPending(Inspection inspection) {
-    if (inspection.getStatus() != InspectionStatus.PREPARING) {
-      return false;
-    }
-    return preparations
-        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
-        .filter(latest -> latest.getStatus() == InspectionPreparationStatus.SUBMITTED)
-        .isPresent();
   }
 
   /**
@@ -168,59 +132,42 @@ public class InspectionListService {
 
   /**
    * Report rows for one page of inspections only. Reading every report to decorate one page would
-   * grow with the whole table instead of the page.
+   * turn a bounded query into an N-plus-1 problem; this finds the latest version for each id.
    */
-  private Map<UUID, InspectionReportVersion> reportsFor(List<Inspection> rows) {
-    if (rows.isEmpty()) {
+  private Map<UUID, InspectionReportVersion> reportsFor(List<Inspection> pageRows) {
+    if (pageRows.isEmpty()) {
       return Map.of();
     }
-    Map<UUID, InspectionReportVersion> byInspection = new HashMap<>();
-    reports
-        .findByInspectionIdInOrderByVersionNoDesc(rows.stream().map(Inspection::getId).toList())
-        .forEach(report -> byInspection.putIfAbsent(report.getInspectionId(), report));
-    return byInspection;
-  }
-
-  /**
-   * A platform administrator reading across tenants is an authorized administrative read, not a
-   * tenant-bound one, so it is recorded in the application log rather than treated as a violation.
-   */
-  private void logCrossTenantRead(Scope scope, UUID actorId, Page<Inspection> result, String view) {
-    if (scope.platformAdmin()) {
-      log.info(
-          "Cross-tenant {} list read by platform administrator actorId={} rows={} total={}",
-          view,
-          actorId,
-          result.getNumberOfElements(),
-          result.getTotalElements());
+    List<UUID> inspectionIds = pageRows.stream().map(Inspection::getId).toList();
+    List<InspectionReportVersion> allVersions =
+        reports.findByInspectionIdInOrderByVersionNoDesc(inspectionIds);
+    Map<UUID, InspectionReportVersion> latest = new HashMap<>();
+    for (InspectionReportVersion version : allVersions) {
+      latest.merge(
+          version.getInspectionId(),
+          version,
+          (existing, incoming) ->
+              incoming.getVersionNo() > existing.getVersionNo() ? incoming : existing);
     }
+    return latest;
   }
 
-  private static InspectionListItemResponse toItem(
+  private InspectionListItemResponse toItem(
       Inspection inspection, InspectionReportVersion report, String pendingAction) {
     return new InspectionListItemResponse(
         inspection.getId(),
         inspection.getOrganizationId(),
         inspection.getAssetId(),
         inspection.getInspectorId(),
-        inspection.getObjective(),
         inspection.getStatus().name(),
         inspection.getPlannedStartAt(),
         inspection.getPlannedEndAt(),
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         report == null ? null : report.getId(),
-        report == null ? null : report.getStatus().name(),
+        report == null || report.getStatus() == null ? null : report.getStatus().name(),
         report == null ? null : report.getVersionNo(),
         pendingAction);
-  }
-
-  private static PageRequest pageRequest(int page, int pageSize) {
-    return PageRequest.of(Math.max(page, 1) - 1, clampPageSize(pageSize), NEWEST_FIRST);
-  }
-
-  private static int clampPageSize(int pageSize) {
-    return Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
   }
 
   private Scope requireScope(UUID actorId) {
@@ -229,67 +176,93 @@ public class InspectionListService {
             .findActiveUser(actorId)
             .orElseThrow(
                 () ->
-                    new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
+                    new BusinessException(
+                        HttpStatus.UNAUTHORIZED,
+                        "ACCOUNT_INACTIVE",
+                        "Authentication is required."));
 
-    // Platform authority is checked before organization scope because a platform user has no
-    // organization by rule; ordering it the other way would deny the very role meant to oversee.
     if (actor.hasRole("ADMIN")) {
-      return Scope.platformWide(inspections);
+      return new Scope.PlatformAdmin(inspections);
     }
-    if (actor.organizationId() == null) {
+    UUID organizationId = actor.organizationId();
+    if (organizationId == null) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope for the inspection list");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "The user does not belong to an organization.");
     }
     if (actor.hasRole("ORG_MANAGER")) {
-      return Scope.forOrganization(inspections, actor.organizationId());
+      return new Scope.OrganizationManager(organizationId, inspections);
     }
     if (actor.hasRole("INSPECTOR")) {
-      return Scope.forAssignedInspector(inspections, actor.organizationId(), actorId);
+      return new Scope.Inspector(organizationId, actor.id(), inspections);
     }
     throw new BusinessException(
-        HttpStatus.FORBIDDEN, "FORBIDDEN", "This role cannot browse inspections");
+        HttpStatus.FORBIDDEN, "FORBIDDEN", "The user has no permission to view inspections.");
   }
 
-  /** The resolved read scope for one caller. */
-  private record Scope(
-      InspectionRepository inspections,
-      UUID organizationId,
-      UUID inspectorId,
-      boolean platformAdmin) {
+  private static Pageable pageRequest(int page, int pageSize) {
+    int safePage = Math.max(page, 1);
+    return PageRequest.of(safePage - 1, clampPageSize(pageSize), NEWEST_FIRST);
+  }
 
-    static Scope platformWide(InspectionRepository inspections) {
-      return new Scope(inspections, null, null, true);
+  private static int clampPageSize(int pageSize) {
+    return Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
+  }
+
+  private void logCrossTenantRead(
+      Scope scope, UUID actorId, Page<Inspection> result, String subject) {
+    if (scope instanceof Scope.PlatformAdmin) {
+      log.info(
+          "Platform admin {} read page {} of cross-tenant {} list ({} rows)",
+          actorId,
+          result.getNumber() + 1,
+          subject,
+          result.getNumberOfElements());
+    }
+  }
+
+  private sealed interface Scope {
+
+    Page<Inspection> query(Pageable pageable);
+
+    Page<Inspection> queryWithReport(Pageable pageable);
+
+    record PlatformAdmin(InspectionRepository repository) implements Scope {
+      @Override
+      public Page<Inspection> query(Pageable pageable) {
+        return repository.findAll(pageable);
+      }
+
+      @Override
+      public Page<Inspection> queryWithReport(Pageable pageable) {
+        return repository.findWithReport(pageable);
+      }
     }
 
-    static Scope forOrganization(InspectionRepository inspections, UUID organizationId) {
-      return new Scope(inspections, organizationId, null, false);
+    record OrganizationManager(UUID organizationId, InspectionRepository repository)
+        implements Scope {
+      @Override
+      public Page<Inspection> query(Pageable pageable) {
+        return repository.findByOrganizationId(organizationId, pageable);
+      }
+
+      @Override
+      public Page<Inspection> queryWithReport(Pageable pageable) {
+        return repository.findWithReportByOrganizationId(organizationId, pageable);
+      }
     }
 
-    static Scope forAssignedInspector(
-        InspectionRepository inspections, UUID organizationId, UUID inspectorId) {
-      return new Scope(inspections, organizationId, inspectorId, false);
-    }
+    record Inspector(UUID organizationId, UUID inspectorId, InspectionRepository repository)
+        implements Scope {
+      @Override
+      public Page<Inspection> query(Pageable pageable) {
+        return repository.findByOrganizationIdAndInspectorId(organizationId, inspectorId, pageable);
+      }
 
-    Page<Inspection> query(Pageable pageRequest) {
-      if (platformAdmin) {
-        return inspections.findAll(pageRequest);
+      @Override
+      public Page<Inspection> queryWithReport(Pageable pageable) {
+        return repository.findWithReportByOrganizationIdAndInspectorId(
+            organizationId, inspectorId, pageable);
       }
-      if (inspectorId != null) {
-        return inspections.findByOrganizationIdAndInspectorId(
-            organizationId, inspectorId, pageRequest);
-      }
-      return inspections.findByOrganizationId(organizationId, pageRequest);
-    }
-
-    Page<Inspection> queryWithReport(Pageable pageRequest) {
-      if (platformAdmin) {
-        return inspections.findWithReport(pageRequest);
-      }
-      if (inspectorId != null) {
-        return inspections.findWithReportByOrganizationIdAndInspectorId(
-            organizationId, inspectorId, pageRequest);
-      }
-      return inspections.findWithReportByOrganizationId(organizationId, pageRequest);
     }
   }
 }

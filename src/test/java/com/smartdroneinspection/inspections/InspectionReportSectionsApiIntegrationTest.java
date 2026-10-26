@@ -633,20 +633,12 @@ class InspectionReportSectionsApiIntegrationTest {
         fixture.organizationId());
     jdbcTemplate.update(
         "UPDATE inspections SET drone_id = ? WHERE id = ?", droneId, fixture.inspectionId());
-    UUID prepId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO inspection_preparations (id, inspection_id, preparation_version, shot_list, safety_observations, status, submitted_at, reviewed_by_user_id, reviewed_at, review_reason, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, 1, '[{\"code\":\"NORTH\",\"angle\":\"east face\"}]', 'No standing water', 'READY', CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, 'Ready for field session', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
-        prepId,
-        fixture.inspectionId(),
-        fixture.reviewerId());
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, preparation_id, status, started_at, pre_flight_checklist_note, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, 'IN_PROGRESS', CURRENT_TIMESTAMP, 'Bridge access checked; Drone identified', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        "INSERT INTO field_sessions (id, inspection_id, status, started_at, pre_flight_checklist_note, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, 'IN_PROGRESS', CURRENT_TIMESTAMP, 'Bridge access checked; Drone identified', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
-        fixture.inspectionId(),
-        prepId);
+        fixture.inspectionId());
     UUID versionId = approvedVersion();
     publish(versionId);
 
@@ -665,8 +657,6 @@ class InspectionReportSectionsApiIntegrationTest {
     assertThat(text).contains("District 1");
     assertThat(text).contains("SurveyCo");
     assertThat(text).contains("DRONE-REPORT-01");
-    assertThat(text).contains("Planned shot list");
-    assertThat(text).contains("NORTH");
     String normalizedText = text.replaceAll("\\s+", " ");
     assertThat(normalizedText).contains("Recorded field sessions");
     assertThat(normalizedText).contains("Bridge access checked; Drone identified");

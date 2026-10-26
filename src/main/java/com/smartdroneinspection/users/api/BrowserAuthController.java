@@ -146,6 +146,18 @@ public class BrowserAuthController {
                     UUID.fromString(jwt.getSubject()), request.visionFallbackEnabled())));
   }
 
+  @PutMapping("/me/pilot-license")
+  public ResponseEntity<ApiResponse<UserResponse>> updatePilotLicense(
+      @AuthenticationPrincipal Jwt jwt,
+      @Valid @RequestBody
+          com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest request) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(
+            ApiResponse.success(
+                auth.updatePilotLicense(UUID.fromString(jwt.getSubject()), request)));
+  }
+
   @GetMapping("/me")
   public ResponseEntity<ApiResponse<UserResponse>> me(@AuthenticationPrincipal Jwt jwt) {
     return ResponseEntity.ok()

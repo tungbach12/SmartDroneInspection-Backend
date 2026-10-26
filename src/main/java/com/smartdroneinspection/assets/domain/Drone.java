@@ -74,6 +74,15 @@ public class Drone {
   @Column(length = 2000)
   private String notes;
 
+  @Column(name = "registration_number", length = 100)
+  private String registrationNumber;
+
+  @Column(name = "registration_file_key", length = 1000)
+  private String registrationFileKey;
+
+  @Column(name = "registration_expires_at")
+  private Instant registrationExpiresAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -107,6 +116,34 @@ public class Drone {
         null,
         null,
         null);
+  }
+
+  public Drone(
+      UUID organizationId,
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String payloadMetadata,
+      DroneServiceability serviceability,
+      Instant lastMaintenanceAt,
+      Instant nextMaintenanceAt,
+      String notes,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt) {
+    this(
+        organizationId,
+        serialNumber,
+        model,
+        manufacturer,
+        payloadMetadata,
+        serviceability,
+        lastMaintenanceAt,
+        nextMaintenanceAt,
+        notes);
+    this.registrationNumber = registrationNumber;
+    this.registrationFileKey = registrationFileKey;
+    this.registrationExpiresAt = registrationExpiresAt;
   }
 
   public Drone(
@@ -213,6 +250,26 @@ public class Drone {
 
   public String getNotes() {
     return notes;
+  }
+
+  public String getRegistrationNumber() {
+    return registrationNumber;
+  }
+
+  public String getRegistrationFileKey() {
+    return registrationFileKey;
+  }
+
+  public Instant getRegistrationExpiresAt() {
+    return registrationExpiresAt;
+  }
+
+  public void updateRegistration(
+      String registrationNumber, String registrationFileKey, Instant registrationExpiresAt) {
+    this.registrationNumber = registrationNumber;
+    this.registrationFileKey = registrationFileKey;
+    this.registrationExpiresAt = registrationExpiresAt;
+    this.updatedAt = Instant.now();
   }
 
   public Instant getCreatedAt() {

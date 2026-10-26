@@ -5,8 +5,6 @@ import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -61,22 +59,6 @@ public final class MaintenanceTestFixture {
   /** Seeds a published report version that MF4 work orders point at. */
   private SourceData createPublishedReportVersion(
       UUID organizationId, UUID assetId, UUID authorUserId) {
-    UUID categoryId =
-        jdbcTemplate.queryForObject(
-            "SELECT category_id FROM assets WHERE id = ?", UUID.class, assetId);
-    UUID checklistTemplateId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO checklist_templates (id, template_key, version_number, asset_category_id, name,
-                                        status, created_by_user_id, published_at, created_at, updated_at, row_version)
-        VALUES (?, ?, 1, ?, 'MF4 Source Checklist', 'ACTIVE', ?, CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-        """,
-        checklistTemplateId,
-        ("MF4-" + UUID.randomUUID()).toUpperCase(Locale.ROOT),
-        categoryId,
-        authorUserId);
-
     UUID droneId = UUID.randomUUID();
     jdbcTemplate.update(
         """
@@ -93,10 +75,9 @@ public final class MaintenanceTestFixture {
     jdbcTemplate.update(
         """
         INSERT INTO inspections (id, asset_id, status, created_at, updated_at, row_version,
-                                 organization_id, objective, scope, component_scope, acceptance_criteria,
-                                 inspector_id, drone_id)
+                                 organization_id, inspector_id, drone_id)
         VALUES (?, ?, 'REPAIR_PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
-                ?, 'MF4 source inspection', '{"method":"visual"}', '[]', '{"checks":[]}', ?, ?)
+                ?, ?, ?)
         """,
         inspectionId,
         assetId,
@@ -207,20 +188,6 @@ public final class MaintenanceTestFixture {
         ("F-" + UUID.randomUUID().toString().substring(0, 8)).toUpperCase(Locale.ROOT),
         referenceFindingId);
     return findingId;
-  }
-
-  public void grantCredential(UUID organizationId, UUID userId, String status, Instant expiredAt) {
-    jdbcTemplate.update(
-        """
-        INSERT INTO workforce_credentials (id, organization_id, user_id, credential_type, status,
-                                          expires_at, created_at, updated_at, row_version)
-        VALUES (?, ?, ?, 'ELECTRICAL_SAFETY', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
-        """,
-        UUID.randomUUID(),
-        organizationId,
-        userId,
-        status,
-        expiredAt == null ? null : Timestamp.from(expiredAt));
   }
 
   public record Data(

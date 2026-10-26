@@ -240,6 +240,24 @@ public class AuthService {
     return toResponse(user);
   }
 
+  @Transactional
+  public UserResponse updatePilotLicense(
+      UUID userId,
+      com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest request) {
+    User user =
+        users
+            .findDetailedById(userId)
+            .filter(User::active)
+            .orElseThrow(
+                () -> new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found"));
+    user.updatePilotLicense(
+        request.licenseNumber().trim(),
+        request.licenseClass() == null ? null : request.licenseClass().trim(),
+        request.expiresAt(),
+        request.fileKey() == null ? null : request.fileKey().trim());
+    return toResponse(users.saveAndFlush(user));
+  }
+
   @Transactional(readOnly = true)
   public UserResponse me(UUID userId) {
     User user =
@@ -306,7 +324,11 @@ public class AuthService {
         user.roleValues(),
         user.getActorZone().name(),
         user.getOrganizationId(),
-        user.isVisionFallbackEnabled());
+        user.isVisionFallbackEnabled(),
+        user.getPilotLicenseNumber(),
+        user.getPilotLicenseClass(),
+        user.getPilotLicenseExpiresAt(),
+        user.getPilotLicenseFileKey());
   }
 
   public void revokeAllSessions(UUID userId, String reason) {

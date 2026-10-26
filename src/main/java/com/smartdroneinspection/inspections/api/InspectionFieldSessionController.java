@@ -5,10 +5,8 @@ import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionReque
 import com.smartdroneinspection.inspections.api.dto.request.PostponeFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparationResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.service.InspectionFieldSessionService;
-import com.smartdroneinspection.inspections.service.InspectionPreparationService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -28,12 +26,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class InspectionFieldSessionController {
 
   private final InspectionFieldSessionService fieldSessions;
-  private final InspectionPreparationService preparations;
 
-  public InspectionFieldSessionController(
-      InspectionFieldSessionService fieldSessions, InspectionPreparationService preparations) {
+  public InspectionFieldSessionController(InspectionFieldSessionService fieldSessions) {
     this.fieldSessions = fieldSessions;
-    this.preparations = preparations;
   }
 
   @GetMapping
@@ -80,16 +75,6 @@ public class InspectionFieldSessionController {
             fieldSessions.complete(subject(jwt), inspectionId, sessionId, request.outcomeNotes())));
   }
 
-  @PostMapping("/additional-session")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionPreparationResponse> requestAdditionalSession(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @Valid @RequestBody PostponeFieldSessionRequest request) {
-    return ApiResponse.success(
-        preparations.requestAdditionalSession(subject(jwt), inspectionId, request.reason()));
-  }
-
   @PostMapping("/{sessionId}/abort")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FieldSessionResponse> abort(
@@ -105,7 +90,6 @@ public class InspectionFieldSessionController {
     return new FieldSessionResponse(
         session.getId(),
         session.getInspectionId(),
-        session.getPreparationId(),
         session.getStatus(),
         session.getPreFlightChecklistNote(),
         session.getStartedAt(),
@@ -115,7 +99,7 @@ public class InspectionFieldSessionController {
         session.getOutcomeNotes());
   }
 
-  private UUID subject(Jwt jwt) {
+  private static UUID subject(Jwt jwt) {
     return UUID.fromString(jwt.getSubject());
   }
 }

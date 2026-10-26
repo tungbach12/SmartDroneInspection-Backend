@@ -11,10 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.security.MessageDigest;
@@ -62,7 +60,6 @@ class InspectionEvidenceApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionPreparationRepository preparations;
   @Autowired EvidenceRepository evidence;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
@@ -288,64 +285,8 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void additionalSessionUsesMf2PreparationAndRetainsThePriorDecision() throws Exception {
-    InspectionPreparation previous = new InspectionPreparation(fixture.inspectionId(), 1);
-    previous.recordShotList("{\"shots\":[\"main span\"]}");
-    previous.recordSafetyObservations("No hazards observed");
-    previous.submit();
-    previous = preparations.saveAndFlush(previous);
-    previous.approve(fixture.reviewerId());
-    previous = preparations.saveAndFlush(previous);
-    UUID completedSessionId = insertCompletedFieldSession();
-    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES, completedSessionId);
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/field-sessions/additional-session",
-                    fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(Map.of("reason", "East face needs access"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.preparationVersion").value(2))
-        .andExpect(jsonPath("$.data.status").value("DRAFT"));
-
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM inspections WHERE id = ?",
-                String.class,
-                fixture.inspectionId()))
-        .isEqualTo("PREPARING");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM inspection_preparations WHERE id = ? "
-                    + "AND status = 'SUPERSEDED' AND review_reason = 'East face needs access'",
-                Long.class,
-                previous.getId()))
-        .isEqualTo(1L);
-  }
-
-  @Test
   void evidenceUploadCanBeAssociatedWithACompletedSession() throws Exception {
-    InspectionPreparation preparation = new InspectionPreparation(fixture.inspectionId(), 1);
-    preparation.recordShotList("[{\"component\":\"main span\"}]");
-    preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit();
-    preparation = preparations.saveAndFlush(preparation);
-    preparation.approve(fixture.reviewerId());
-    preparation = preparations.saveAndFlush(preparation);
-    UUID sessionId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, "
-            + "preparation_id, status, started_at, ended_at, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
-            + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
-        sessionId,
-        fixture.inspectionId(),
-        preparation.getId());
-
+    UUID sessionId = insertCompletedFieldSession();
     MvcResult response =
         uploadResponse(
             fixture.inspectorId(), "INSPECTOR", "completed-session.png", PNG_BYTES, sessionId);

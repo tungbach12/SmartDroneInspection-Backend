@@ -15,10 +15,7 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
@@ -55,9 +52,7 @@ class InspectionFieldSessionApiIntegrationTest {
   @Autowired UserRepository users;
   @Autowired AssetRepository assets;
   @Autowired AssetCategoryRepository categories;
-  @Autowired ChecklistTemplateRepository templates;
   @Autowired DroneRepository drones;
-  @Autowired InspectionPreparationRepository preparations;
   @Autowired JdbcTemplate jdbcTemplate;
 
   MockMvc mockMvc;
@@ -74,7 +69,7 @@ class InspectionFieldSessionApiIntegrationTest {
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
 
     AssetTestFixture.Data fixture =
-        new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
+        new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
@@ -97,7 +92,6 @@ class InspectionFieldSessionApiIntegrationTest {
     droneId =
         drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
     inspectionId = createReadyInspection();
-    insertApprovedReadinessDecision();
   }
 
   @Test
@@ -114,7 +108,6 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data.inspectionId").value(inspectionId.toString()))
         .andExpect(jsonPath("$.data.inspectorUserId").doesNotExist())
         .andExpect(jsonPath("$.data.droneId").doesNotExist())
-        .andExpect(jsonPath("$.data.preparationId").exists())
         .andExpect(jsonPath("$.data.startedAt").exists());
 
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
@@ -136,8 +129,7 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"))
         .andExpect(
             jsonPath("$.data[0].preFlightChecklistNote")
-                .value("Drone identified; bridge accessible"))
-        .andExpect(jsonPath("$.data[0].preparationId").exists());
+                .value("Drone identified; bridge accessible"));
   }
 
   @Test
@@ -381,8 +373,8 @@ class InspectionFieldSessionApiIntegrationTest {
   private UUID createReadyInspection() {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, status, objective, planned_start_at, planned_end_at) "
-            + "VALUES (?, ?, ?, ?, ?, 'READY_FOR_FLIGHT', 'Inspect main span', ?, ?)",
+        "INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_uploaded_at, status, planned_start_at, planned_end_at) "
+            + "VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'READY_FOR_FLIGHT', ?, ?)",
         id,
         organizationId,
         assetId,
@@ -391,16 +383,6 @@ class InspectionFieldSessionApiIntegrationTest {
         Timestamp.from(PLANNED_START),
         Timestamp.from(PLANNED_START.plus(2, ChronoUnit.HOURS)));
     return id;
-  }
-
-  private void insertApprovedReadinessDecision() {
-    InspectionPreparation preparation = new InspectionPreparation(inspectionId, 1);
-    preparation.recordShotList("{\"shots\":[\"span\"]}");
-    preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit();
-    preparation = preparations.saveAndFlush(preparation);
-    preparation.approve(reviewerId);
-    preparations.saveAndFlush(preparation);
   }
 
   private long sessionCount() {
