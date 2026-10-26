@@ -197,9 +197,8 @@ class InspectionPreparationPersistenceTest {
     UUID id = UUID.randomUUID();
     String code = "BRIDGE-" + id;
     jdbcTemplate.update(
-        "INSERT INTO asset_categories (id, organization_id, code, name) VALUES (?, ?, ?, 'Bridge')",
+        "INSERT INTO asset_categories (id, code, name) VALUES (?, ?, 'Bridge')",
         id,
-        ownerOrganizationId,
         code.toUpperCase());
     return id;
   }
