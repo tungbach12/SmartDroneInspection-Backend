@@ -390,6 +390,8 @@ public class EvidenceService {
             evidenceFilter(inspectionId, status, mediaType, search),
             PageRequest.of(safePage - 1, safePageSize, EVIDENCE_ORDER));
     EvidenceRepository.EvidenceSummary summary = evidence.summarizeInspectionEvidence(inspectionId);
+    Instant latestCreatedAt = summary != null ? summary.getLatestCreatedAt() : null;
+    Instant latestRetiredAt = summary != null ? summary.getLatestRetiredAt() : null;
     return new EvidencePageResponse(
         result.getContent().stream().map(this::toResponse).toList(),
         safePage,
@@ -398,8 +400,8 @@ public class EvidenceService {
         result.getTotalPages(),
         evidence.countByInspectionIdAndIsDeletedFalse(inspectionId),
         evidence.countByInspectionIdAndIsDeletedTrue(inspectionId),
-        summary.getLatestCreatedAt(),
-        summary.getLatestRetiredAt());
+        latestCreatedAt,
+        latestRetiredAt);
   }
 
   private static Specification<Evidence> evidenceFilter(
