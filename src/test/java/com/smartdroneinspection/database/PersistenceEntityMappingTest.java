@@ -5,9 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.AssetDocument;
+import com.smartdroneinspection.assets.domain.AssetPairAssignment;
 import com.smartdroneinspection.assets.domain.ChecklistItem;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.DroneDocument;
 import com.smartdroneinspection.assets.domain.DroneLease;
+import com.smartdroneinspection.assets.domain.FlightPermit;
 import com.smartdroneinspection.assets.domain.PlatformDrone;
 import com.smartdroneinspection.inspections.domain.ChecklistResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
@@ -27,6 +31,7 @@ import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
 import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
 import com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk;
 import com.smartdroneinspection.notifications.domain.Notification;
+import com.smartdroneinspection.subscriptions.domain.PaymentTransaction;
 import com.smartdroneinspection.subscriptions.domain.Subscription;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.Organization;
@@ -47,10 +52,12 @@ class PersistenceEntityMappingTest {
           Asset.class,
           AssetCategory.class,
           AssetDocument.class,
+          AssetPairAssignment.class,
           ChecklistItem.class,
           ChecklistTemplate.class,
-          PlatformDrone.class,
-          DroneLease.class,
+          Drone.class,
+          DroneDocument.class,
+          FlightPermit.class,
           Inspection.class,
           InspectionPreparation.class,
           FieldSession.class,
@@ -58,11 +65,14 @@ class PersistenceEntityMappingTest {
           Evidence.class,
           Finding.class,
           InspectionReportVersion.class,
+          PlatformDrone.class,
+          DroneLease.class,
           Notification.class,
           AuthSession.class,
           Organization.class,
           User.class,
           Subscription.class,
+          PaymentTransaction.class,
           WorkforceCredential.class,
           MaintenanceWorkOrder.class,
           MaintenanceTask.class,

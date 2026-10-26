@@ -262,9 +262,8 @@ class ComplianceGateServiceTest {
     UUID otherCategoryId = UUID.randomUUID();
     String code = "BRIDGE-" + UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO asset_categories (id, organization_id, code, name) VALUES (?, ?, ?, 'Bridge')",
+        "INSERT INTO asset_categories (id, code, name) VALUES (?, ?, 'Bridge')",
         otherCategoryId,
-        otherOrganizationId,
         code.toUpperCase());
     UUID foreignAssetId =
         assets

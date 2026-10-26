@@ -99,42 +99,77 @@ class V25TargetSchemaFoundationTest {
             Map.entry(
                 "flight_permits",
                 Set.of("organization_id", "permit_type", "valid_from", "valid_until", "status")),
-            Map.entry("asset_categories", Set.of("organization_id", "code", "name", "active")),
+            Map.entry(
+                "asset_categories",
+                Set.of(
+                    "code",
+                    "name",
+                    "description",
+                    "active",
+                    "created_at",
+                    "updated_at",
+                    "row_version")),
             Map.entry(
                 "checklist_templates",
                 Set.of(
                     "template_key",
                     "version_number",
                     "asset_category_id",
+                    "name",
+                    "description",
+                    "name_vi",
+                    "description_vi",
                     "status",
-                    "created_by_user_id")),
+                    "created_by_user_id",
+                    "published_at",
+                    "created_at",
+                    "updated_at",
+                    "row_version")),
             Map.entry(
                 "checklist_items",
                 Set.of(
                     "template_id",
                     "item_code",
+                    "section_name",
                     "prompt",
                     "response_type",
                     "required",
-                    "display_order")),
+                    "display_order",
+                    "guidance",
+                    "section_name_vi",
+                    "prompt_vi",
+                    "guidance_vi",
+                    "validation_config",
+                    "created_at")),
             Map.entry(
                 "assets",
                 Set.of(
                     "organization_id",
                     "asset_code",
                     "category_id",
-                    "asset_type",
+                    "name",
+                    "description",
                     "location",
+                    "latitude",
+                    "longitude",
                     "technical_profile",
-                    "status")),
+                    "status",
+                    "created_at",
+                    "updated_at",
+                    "row_version")),
             Map.entry(
                 "asset_documents",
                 Set.of(
                     "asset_id",
                     "document_type",
+                    "file_name",
+                    "content_type",
+                    "size_bytes",
                     "object_key",
                     "checksum_sha256",
-                    "uploaded_by_user_id")),
+                    "document_date",
+                    "uploaded_by_user_id",
+                    "created_at")),
             Map.entry(
                 "asset_pair_assignments",
                 Set.of(
@@ -149,12 +184,21 @@ class V25TargetSchemaFoundationTest {
                 Set.of(
                     "organization_id",
                     "asset_id",
+                    "asset_pair_assignment_id",
                     "objective",
                     "scope",
+                    "component_scope",
+                    "acceptance_criteria",
                     "planned_start_at",
+                    "planned_end_at",
                     "inspector_id",
                     "drone_id",
-                    "status")),
+                    "status",
+                    "findings_confirmed_at",
+                    "findings_snapshot_hash",
+                    "created_at",
+                    "updated_at",
+                    "row_version")),
             Map.entry(
                 "inspection_preparations",
                 Set.of(
@@ -430,8 +474,8 @@ class V25TargetSchemaFoundationTest {
     jdbcTemplate.update(
         """
         INSERT INTO assets
-          (id, organization_id, category_id, asset_code, asset_type, name, location, status)
-        VALUES (?, ?, ?, ?, 'TEST', 'Test asset', '{"label":"Test location"}'::jsonb, 'ACTIVE')
+          (id, organization_id, category_id, asset_code, name, location, status)
+        VALUES (?, ?, ?, ?, 'Test asset', '{"label":"Test location"}'::jsonb, 'ACTIVE')
         """,
         assetId,
         primaryOrganization,
