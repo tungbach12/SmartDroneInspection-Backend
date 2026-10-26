@@ -71,7 +71,7 @@ public class OrganizationRegistrationService {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organization.getId());
-    orgAdmin.addRole(UserRole.ORG_ADMIN);
+    orgAdmin.addRole(UserRole.ORG_MANAGER);
     orgAdmin = users.saveAndFlush(orgAdmin);
 
     organization.attributeToCreator(orgAdmin.getId());

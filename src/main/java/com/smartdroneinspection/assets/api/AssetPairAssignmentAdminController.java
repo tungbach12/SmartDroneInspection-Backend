@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/assets/{assetId}/pair-assignments")
-@PreAuthorize("hasRole('ORG_ADMIN')")
+@PreAuthorize("hasRole('ORG_MANAGER')")
 public class AssetPairAssignmentAdminController {
 
   private final AssetPairAdminService pairAssignments;

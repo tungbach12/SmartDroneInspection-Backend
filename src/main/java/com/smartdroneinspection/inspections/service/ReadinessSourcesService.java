@@ -125,7 +125,7 @@ public class ReadinessSourcesService {
     UserAccess.ActiveUser user =
         userAccess
             .findActiveUser(userId)
-            .filter(candidate -> candidate.hasRole(Roles.ORG_ADMIN))
+            .filter(candidate -> candidate.hasRole(Roles.ORG_MANAGER))
             .orElseThrow(
                 () ->
                     new BusinessException(

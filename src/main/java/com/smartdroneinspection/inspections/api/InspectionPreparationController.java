@@ -52,14 +52,14 @@ public class InspectionPreparationController {
    * Reading is separated from acting - the administrator still cannot draft or submit here.
    */
   @GetMapping
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<List<InspectionPreparationResponse>> listPreparations(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(preparations.listPreparations(subject(jwt), inspectionId));
   }
 
   @GetMapping("/{preparationId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<InspectionPreparationResponse> getPreparation(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID preparationId) {
     return ApiResponse.success(preparations.getPreparation(subject(jwt), preparationId));
@@ -98,7 +98,7 @@ public class InspectionPreparationController {
    * tenant is refused rather than linked.
    */
   @PostMapping("/compliance/permits")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<InspectionPreparationResponse> linkPermitReferences(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -115,7 +115,7 @@ public class InspectionPreparationController {
    * clearing the mission.
    */
   @GetMapping("/compliance")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ComplianceGateResponse> evaluateCompliance(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(compliance.evaluate(subject(jwt), inspectionId));

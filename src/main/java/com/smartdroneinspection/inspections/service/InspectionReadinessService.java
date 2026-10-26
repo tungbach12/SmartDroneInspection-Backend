@@ -12,12 +12,9 @@ import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.response.ComplianceGateResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -29,7 +26,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -42,40 +38,34 @@ public class InspectionReadinessService {
 
   private final InspectionRepository inspections;
   private final InspectionPreparationRepository preparations;
-  private final InspectionReadinessDecisionRepository decisions;
   private final UserAccess userAccess;
   private final ComplianceGateService compliance;
   private final WorkforceCredentialAccess workforceCredentials;
   private final DroneDocumentReadinessAccess assetReadiness;
   private final DroneRepository drones;
-  private final ReadinessSnapshotFactory snapshots;
   private final EntityManager entityManager;
 
   public InspectionReadinessService(
       InspectionRepository inspections,
       InspectionPreparationRepository preparations,
-      InspectionReadinessDecisionRepository decisions,
       UserAccess userAccess,
       ComplianceGateService compliance,
       WorkforceCredentialAccess workforceCredentials,
       DroneDocumentReadinessAccess assetReadiness,
       DroneRepository drones,
-      ReadinessSnapshotFactory snapshots,
       EntityManager entityManager) {
     this.inspections = inspections;
     this.preparations = preparations;
-    this.decisions = decisions;
     this.userAccess = userAccess;
     this.compliance = compliance;
     this.workforceCredentials = workforceCredentials;
     this.assetReadiness = assetReadiness;
     this.drones = drones;
-    this.snapshots = snapshots;
     this.entityManager = entityManager;
   }
 
   @Transactional
-  public InspectionReadinessDecision approve(
+  public InspectionPreparation approve(
       UUID reviewerId, UUID inspectionId, UUID preparationId, ReadinessReviewCommand command) {
     UserAccess.ActiveUser reviewer = requireOrgAdmin(reviewerId);
     Inspection inspection = lockInspection(inspectionId, requireOrganization(reviewer));
@@ -110,12 +100,10 @@ public class InspectionReadinessService {
           "An empty Drone document selection requires a documented basis.");
     }
 
-    List<WorkforceCredentialSummary> inspectorCredentials =
-        resolveInspectorCredentials(
-            command.inspectorCredentialIds(), reviewer.organizationId(), inspection);
-    List<DroneDocumentSummary> droneDocuments =
-        resolveDroneDocuments(command.droneDocumentIds(), reviewer.organizationId(), inspection);
-    AssetPairReadinessSummary pair = requirePair(reviewer.organizationId(), inspection);
+    resolveInspectorCredentials(
+        command.inspectorCredentialIds(), reviewer.organizationId(), inspection);
+    resolveDroneDocuments(command.droneDocumentIds(), reviewer.organizationId(), inspection);
+    requirePair(reviewer.organizationId(), inspection);
     requireServiceableDrone(reviewer.organizationId(), inspection);
     ComplianceGateService.ComplianceGateEvaluation gate =
         compliance.evaluateReadiness(reviewerId, inspectionId);
@@ -129,276 +117,41 @@ public class InspectionReadinessService {
           "Human-verification findings require an explicit traceable basis.");
     }
 
-    ReadinessSnapshotFactory.ReadinessSnapshotInput input =
-        snapshotInput(
-            ReadinessDecisionType.APPROVED,
-            inspection,
-            preparation,
-            new ReadinessSources(
-                pair,
-                gate,
-                reviewerCredential,
-                inspectorCredentials,
-                droneDocuments,
-                attestations(reviewerId, command),
-                new ObservedSources(List.of(), List.of(), List.of(), null)));
-    ReadinessSnapshotFactory.Snapshot snapshot = snapshots.create(input);
-    InspectionReadinessDecision decision =
-        decision(
-            inspection, preparation, reviewerId, ReadinessDecisionType.APPROVED, null, snapshot);
-    preparations
-        .findWithLockByIdAndInspectionId(preparationId, inspectionId)
-        .orElseThrow(InspectionReadinessService::preparationNotFound)
-        .markReady();
-    inspection.moveTo(InspectionStatus.READY_FOR_FLIGHT);
-    decisions.saveAndFlush(decision);
-    preparations.flush();
-    inspections.flush();
-    return decision;
+    InspectionPreparation lockedPreparation =
+        preparations
+            .findWithLockByIdAndInspectionId(preparationId, inspectionId)
+            .orElseThrow(InspectionReadinessService::preparationNotFound);
+    lockedPreparation.approve(reviewerId);
+    inspection.approveReadiness();
+    InspectionPreparation savedPreparation = preparations.saveAndFlush(lockedPreparation);
+    inspections.saveAndFlush(inspection);
+    return savedPreparation;
   }
 
   @Transactional
-  public InspectionReadinessDecision returnPreparation(
+  public InspectionPreparation returnPreparation(
       UUID reviewerId, UUID inspectionId, UUID preparationId, ReadinessReturnCommand command) {
     UserAccess.ActiveUser reviewer = requireOrgAdmin(reviewerId);
     Inspection inspection = lockInspection(inspectionId, requireOrganization(reviewer));
     requireReviewableInspection(inspection);
     requireIndependentReviewer(reviewerId, inspection);
-    InspectionPreparation preparation = lockCurrentSubmittedPreparation(inspection, preparationId);
+    lockCurrentSubmittedPreparation(inspection, preparationId);
     if (blank(command.reason())) {
       throw readinessFailure(
           "RETURN_REASON_REQUIRED", "A reason is required to return preparation.");
     }
 
     Instant decidedAt = Instant.now();
-    WorkforceCredentialSummary reviewerCredential =
-        requireReviewerCredential(
-            command.reviewerCredentialId(), reviewer.organizationId(), reviewerId, decidedAt);
-    List<DroneDocumentSummary> observedDocuments =
-        inspection.getDroneId() == null
-            ? List.of()
-            : assetReadiness.findForDrone(
-                reviewer.organizationId(),
-                inspection.getDroneId(),
-                command.droneDocumentIdsObserved());
-    List<UUID> unresolvedDocuments =
-        unresolved(command.droneDocumentIdsObserved(), observedDocuments);
-    List<WorkforceCredentialSummary> observedCredentials =
-        command.inspectorCredentialIdsObserved().stream()
-            .map(
-                credentialId ->
-                    workforceCredentials.findByIdAndOrganizationIdAndUserId(
-                        credentialId, reviewer.organizationId(), inspection.getInspectorId()))
-            .flatMap(java.util.Optional::stream)
-            .sorted(Comparator.comparing(WorkforceCredentialSummary::id))
-            .toList();
-    List<UUID> unresolvedCredentials =
-        unresolvedCredentialIds(command.inspectorCredentialIdsObserved(), observedCredentials);
-    List<UUID> unresolvedIds = new ArrayList<>(unresolvedDocuments);
-    unresolvedIds.addAll(unresolvedCredentials);
-    unresolvedIds.sort(Comparator.naturalOrder());
+    requireReviewerCredential(
+        command.reviewerCredentialId(), reviewer.organizationId(), reviewerId, decidedAt);
+    compliance.evaluateReadiness(reviewerId, inspectionId);
 
-    ComplianceGateService.ComplianceGateEvaluation gate =
-        compliance.evaluateReadiness(reviewerId, inspectionId);
-    ReadinessSnapshotFactory.ReadinessSnapshotInput input =
-        snapshotInput(
-            ReadinessDecisionType.RETURNED,
-            inspection,
-            preparation,
-            new ReadinessSources(
-                null,
-                gate,
-                reviewerCredential,
-                observedCredentials,
-                observedDocuments,
-                attestations(reviewerId, null),
-                new ObservedSources(
-                    command.inspectorCredentialIdsObserved(),
-                    command.droneDocumentIdsObserved(),
-                    unresolvedIds,
-                    command.reason())));
-    ReadinessSnapshotFactory.Snapshot snapshot = snapshots.create(input);
-    InspectionReadinessDecision decision =
-        decision(
-            inspection,
-            preparation,
-            reviewerId,
-            ReadinessDecisionType.RETURNED,
-            command.reason(),
-            snapshot);
-    preparations
-        .findWithLockByIdAndInspectionId(preparationId, inspectionId)
-        .orElseThrow(InspectionReadinessService::preparationNotFound)
-        .markReturned();
-    decisions.saveAndFlush(decision);
-    preparations.flush();
-    return decision;
-  }
-
-  private ReadinessSnapshotFactory.ReadinessSnapshotInput snapshotInput(
-      ReadinessDecisionType type,
-      Inspection inspection,
-      InspectionPreparation preparation,
-      ReadinessSources sources) {
-    AttestationSnapshot attestation = sources.attestation();
-    return new ReadinessSnapshotFactory.ReadinessSnapshotInput(
-        type,
-        attestation.reviewerId(),
-        inspectionSource(inspection),
-        preparationSource(preparation),
-        sources.pair() == null ? null : pairSource(sources.pair()),
-        complianceSource(sources.gate(), attestation.humanVerificationBasis()),
-        credentialSource(sources.reviewerCredential()),
-        sources.inspectorCredentials().stream().map(this::credentialSource).toList(),
-        sources.droneDocuments().stream().map(this::documentSource).toList(),
-        attestation.value(),
-        sources.observed().credentialIds(),
-        sources.observed().documentIds(),
-        sources.observed().unresolvedIds(),
-        sources.observed().reason());
-  }
-
-  private AttestationSnapshot attestations(UUID reviewerId, ReadinessReviewCommand command) {
-    ReadinessSnapshotFactory.Attestations value =
-        command == null
-            ? new ReadinessSnapshotFactory.Attestations(false, null, null, null, null)
-            : new ReadinessSnapshotFactory.Attestations(
-                command.applicabilityComplete(),
-                command.applicabilityBasisReference(),
-                command.noInspectorCredentialReason(),
-                command.noDroneDocumentReason(),
-                command.humanVerificationBasis());
-    return new AttestationSnapshot(reviewerId, value, value.humanVerificationBasis());
-  }
-
-  private ReadinessSnapshotFactory.InspectionSource inspectionSource(Inspection inspection) {
-    return new ReadinessSnapshotFactory.InspectionSource(
-        inspection.getId(),
-        inspection.getOrganizationId(),
-        inspection.getAssetId(),
-        inspection.getObjective(),
-        inspection.getScope(),
-        inspection.getComponentScope(),
-        inspection.getAcceptanceCriteria(),
-        inspection.getPlannedStartAt(),
-        inspection.getPlannedEndAt());
-  }
-
-  private ReadinessSnapshotFactory.PreparationSource preparationSource(
-      InspectionPreparation preparation) {
-    return new ReadinessSnapshotFactory.PreparationSource(
-        preparation.getId(),
-        preparation.getPreparationVersion(),
-        preparation.getStatus().name(),
-        preparation.getShotList(),
-        preparation.getEvidenceTypes(),
-        preparation.getAccessConstraints(),
-        preparation.getSafetyObservations(),
-        preparation.getPermitDocumentReferences(),
-        preparation.getSubmittedAt());
-  }
-
-  private ReadinessSnapshotFactory.PairSource pairSource(AssetPairReadinessSummary pair) {
-    return new ReadinessSnapshotFactory.PairSource(
-        pair.id(),
-        pair.organizationId(),
-        pair.assetId(),
-        pair.inspectorUserId(),
-        pair.droneId(),
-        pair.status().name(),
-        pair.validFrom(),
-        pair.validUntil(),
-        pair.assignmentResponse() == null ? null : pair.assignmentResponse().name(),
-        pair.respondedAt());
-  }
-
-  private ReadinessSnapshotFactory.ComplianceSource complianceSource(
-      ComplianceGateService.ComplianceGateEvaluation gate, String humanVerificationBasis) {
-    return new ReadinessSnapshotFactory.ComplianceSource(
-        gate.permits().stream().map(this::permitSource).toList(),
-        gate.blockers().stream()
-            .map(
-                blocker ->
-                    new ReadinessSnapshotFactory.ReadinessFinding(blocker.code(), blocker.detail()))
-            .toList(),
-        gate.linkedPermitIds(),
-        gate.requiresHumanVerification(),
-        humanVerificationBasis == null || humanVerificationBasis.isBlank()
-            ? gate.humanVerificationBasis()
-            : List.of(humanVerificationBasis));
-  }
-
-  private ReadinessSnapshotFactory.PermitSource permitSource(
-      ComplianceGateService.PermitReadinessSource permit) {
-    return new ReadinessSnapshotFactory.PermitSource(
-        permit.id(),
-        permit.organizationId(),
-        permit.assetId(),
-        permit.permitType(),
-        permit.issuingAuthority(),
-        permit.permitReference(),
-        permit.areaReference(),
-        permit.geographicScope(),
-        permit.validFrom(),
-        permit.validUntil(),
-        permit.status(),
-        permit.legalBasis());
-  }
-
-  private ReadinessSnapshotFactory.CredentialSource credentialSource(
-      WorkforceCredentialSummary credential) {
-    return new ReadinessSnapshotFactory.CredentialSource(
-        credential.id(),
-        credential.organizationId(),
-        credential.userId(),
-        credential.credentialType(),
-        credential.issuer(),
-        credential.credentialReference(),
-        credential.issuedAt(),
-        credential.expiresAt(),
-        credential.status().name(),
-        credential.evidenceId(),
-        credential.verifiedByUserId(),
-        credential.verifiedAt(),
-        credential.verificationReason());
-  }
-
-  private ReadinessSnapshotFactory.DroneDocumentSource documentSource(
-      DroneDocumentSummary document) {
-    return new ReadinessSnapshotFactory.DroneDocumentSource(
-        document.id(),
-        document.droneId(),
-        document.documentType(),
-        document.issuer(),
-        document.documentReference(),
-        document.validFrom(),
-        document.validUntil(),
-        document.status().name(),
-        document.reviewedByUserId(),
-        document.reviewedAt(),
-        document.uploadedByUserId(),
-        document.createdAt(),
-        document.checksumSha256());
-  }
-
-  private InspectionReadinessDecision decision(
-      Inspection inspection,
-      InspectionPreparation preparation,
-      UUID reviewerId,
-      ReadinessDecisionType type,
-      String reason,
-      ReadinessSnapshotFactory.Snapshot snapshot) {
-    return new InspectionReadinessDecision(
-        inspection.getId(),
-        preparation.getId(),
-        preparation.getPreparationVersion(),
-        type,
-        reviewerId,
-        reason,
-        snapshot.permitSnapshot(),
-        snapshot.credentialSnapshot(),
-        snapshot.droneDocumentSnapshot(),
-        snapshot.sourceHash());
+    InspectionPreparation lockedPreparation =
+        preparations
+            .findWithLockByIdAndInspectionId(preparationId, inspectionId)
+            .orElseThrow(InspectionReadinessService::preparationNotFound);
+    lockedPreparation.returnForRevision(reviewerId, command.reason());
+    return preparations.saveAndFlush(lockedPreparation);
   }
 
   private WorkforceCredentialSummary requireReviewerCredential(
@@ -545,28 +298,20 @@ public class InspectionReadinessService {
     return inspection;
   }
 
-  /**
-   * Refuses to review a preparation while a different preparation still holds the current approval.
-   *
-   * <p>Only an {@code APPROVED} decision can authorize a later start, so only that decision blocks
-   * a new review. A returned preparation is reopened and resubmitted under the same version, and
-   * the additional-session handoff already appends an invalidation, so neither blocks the reviewer.
-   */
   private void requireNoCurrentApprovalForAnotherPreparation(
       Inspection inspection, InspectionPreparation preparation) {
-    decisions
-        .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
-        .filter(decision -> decision.getDecision() == ReadinessDecisionType.APPROVED)
-        .filter(
-            decision ->
-                !preparation.getId().equals(decision.getPreparationId())
-                    || preparation.getPreparationVersion() != decision.getPreparationVersion())
-        .ifPresent(
-            decision -> {
-              throw readinessFailure(
-                  "READINESS_INVALIDATION_REQUIRED",
-                  "The prior approval must be invalidated before reviewing another preparation.");
-            });
+    boolean anotherReady =
+        preparations.findByInspectionIdOrderByPreparationVersionDesc(inspection.getId()).stream()
+            .filter(other -> other.getStatus() == InspectionPreparationStatus.READY)
+            .anyMatch(
+                other ->
+                    !preparation.getId().equals(other.getId())
+                        || preparation.getPreparationVersion() != other.getPreparationVersion());
+    if (anotherReady) {
+      throw readinessFailure(
+          "READINESS_INVALIDATION_REQUIRED",
+          "The prior approval must be invalidated before reviewing another preparation.");
+    }
   }
 
   private InspectionPreparation lockCurrentSubmittedPreparation(
@@ -577,8 +322,7 @@ public class InspectionReadinessService {
         versions.stream().findFirst().orElseThrow(InspectionReadinessService::preparationNotFound);
     if (!latest.getId().equals(preparationId)
         || !latest.belongsTo(inspection.getId())
-        || latest.getStatus() != InspectionPreparationStatus.SUBMITTED
-        || !latest.getInspectorUserId().equals(inspection.getInspectorId())) {
+        || latest.getStatus() != InspectionPreparationStatus.SUBMITTED) {
       throw readinessFailure(
           "PREPARATION_NOT_CURRENT",
           "Only the current submitted preparation assigned to this inspection can be reviewed.");
@@ -612,8 +356,9 @@ public class InspectionReadinessService {
                 () ->
                     new BusinessException(
                         HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active."));
-    if (!reviewer.hasRole(Roles.ORG_ADMIN)) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Role ORG_ADMIN is required.");
+    if (!reviewer.hasRole(Roles.ORG_MANAGER)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Role ORG_MANAGER is required.");
     }
     requireOrganization(reviewer);
     return reviewer;
@@ -627,17 +372,6 @@ public class InspectionReadinessService {
     return actor.organizationId();
   }
 
-  private List<UUID> unresolved(List<UUID> requested, List<DroneDocumentSummary> resolved) {
-    List<UUID> ids = resolved.stream().map(DroneDocumentSummary::id).toList();
-    return requested.stream().filter(id -> !ids.contains(id)).distinct().sorted().toList();
-  }
-
-  private List<UUID> unresolvedCredentialIds(
-      List<UUID> requested, List<WorkforceCredentialSummary> resolved) {
-    List<UUID> ids = resolved.stream().map(WorkforceCredentialSummary::id).toList();
-    return requested.stream().filter(id -> !ids.contains(id)).distinct().sorted().toList();
-  }
-
   private static boolean blank(String value) {
     return value == null || value.isBlank();
   }
@@ -647,23 +381,6 @@ public class InspectionReadinessService {
         code.equals("REVIEWER_NOT_INDEPENDENT") ? HttpStatus.FORBIDDEN : HttpStatus.CONFLICT;
     return new BusinessException(status, code, message);
   }
-
-  private record ObservedSources(
-      List<UUID> credentialIds, List<UUID> documentIds, List<UUID> unresolvedIds, String reason) {}
-
-  private record AttestationSnapshot(
-      UUID reviewerId,
-      ReadinessSnapshotFactory.Attestations value,
-      String humanVerificationBasis) {}
-
-  private record ReadinessSources(
-      AssetPairReadinessSummary pair,
-      ComplianceGateService.ComplianceGateEvaluation gate,
-      WorkforceCredentialSummary reviewerCredential,
-      List<WorkforceCredentialSummary> inspectorCredentials,
-      List<DroneDocumentSummary> droneDocuments,
-      AttestationSnapshot attestation,
-      ObservedSources observed) {}
 
   private static BusinessException preparationNotFound() {
     return new BusinessException(

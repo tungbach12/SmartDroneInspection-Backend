@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * the only way to approve over HTTP would be to type UUIDs, which is not a workflow anyone
  * completes.
  *
- * <p>Only a same-organization ORG_ADMIN reaches these. The reviewer's own credentials are a
+ * <p>Only a same-organization ORG_MANAGER reaches these. The reviewer's own credentials are a
  * separate route because they describe the caller rather than the inspection, and folding them in
  * would force a choice: either repeat them per inspection or return one inspection's records to
  * every caller.
@@ -39,7 +39,7 @@ public class ReadinessSourcesController {
 
   /** The caller's own credentials, which an approval must reference. */
   @GetMapping("/workforce/credentials/me")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<List<MyCredentialResponse>> myCredentials(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(
         sources.ownCredentials(subject(jwt)).stream()
@@ -66,7 +66,7 @@ public class ReadinessSourcesController {
    * one would confirm the inspection exists.
    */
   @GetMapping("/inspections/{inspectionId}/readiness/sources")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ReadinessSourcesResponse> inspectionSources(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(sources.sources(subject(jwt), inspectionId));

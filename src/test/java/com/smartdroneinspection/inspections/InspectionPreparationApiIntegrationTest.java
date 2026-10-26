@@ -123,6 +123,7 @@ class InspectionPreparationApiIntegrationTest {
                 .content("{\"acknowledgment\":\"Restrictions read\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+        .andExpect(jsonPath("$.data.inspectorUserId").doesNotExist())
         .andExpect(jsonPath("$.data.submittedAt").exists());
   }
 
@@ -351,6 +352,6 @@ class InspectionPreparationApiIntegrationTest {
   private RequestPostProcessor orgAdmin() {
     return jwt()
         .jwt(token -> token.subject(adminId.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 }

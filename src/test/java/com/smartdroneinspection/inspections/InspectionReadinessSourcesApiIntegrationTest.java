@@ -83,7 +83,7 @@ class InspectionReadinessSourcesApiIntegrationTest {
         new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
-    reviewerId = createUser(organizationId, UserRole.ORG_ADMIN, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =
@@ -148,7 +148,7 @@ class InspectionReadinessSourcesApiIntegrationTest {
 
   @Test
   void aReviewerOfAnotherOrganizationSeesNoSources() throws Exception {
-    UUID outsiderId = createUser(otherOrganizationId, UserRole.ORG_ADMIN, "outsider");
+    UUID outsiderId = createUser(otherOrganizationId, UserRole.ORG_MANAGER, "outsider");
 
     mockMvc
         .perform(
@@ -263,7 +263,7 @@ class InspectionReadinessSourcesApiIntegrationTest {
   private RequestPostProcessor orgAdmin(UUID subject) {
     return jwt()
         .jwt(token -> token.subject(subject.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 
   private RequestPostProcessor inspector() {

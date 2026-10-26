@@ -170,6 +170,7 @@ class InspectionChecklistApiIntegrationTest {
                             "Ghi chú tiếng Việt của kiểm tra viên"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.checklistItemId").value(checklistItemId.toString()))
+        .andExpect(jsonPath("$.data.completedByUserId").doesNotExist())
         .andExpect(jsonPath("$.data.notes").value("Ghi chú tiếng Việt của kiểm tra viên"));
 
     mockMvc

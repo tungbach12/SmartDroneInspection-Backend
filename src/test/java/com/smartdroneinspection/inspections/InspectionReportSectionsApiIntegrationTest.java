@@ -231,14 +231,14 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID versionId = insertDraftVersion();
 
     // Section authoring is the author's work. A qualified reviewer may read a draft but cannot
-    // rewrite it, and the route refuses the ORG_ADMIN role before the use-case scope check runs.
+    // rewrite it, and the route refuses the ORG_MANAGER role before the use-case scope check runs.
     mockMvc
         .perform(
             put(
                     "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -359,7 +359,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/preview",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isForbidden());
   }
 
@@ -390,7 +390,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/document",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
         .andExpect(
@@ -428,7 +428,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isConflict());
 
     assertThat(storedBytes(renderedKey(versionId))).isEqualTo(first);
@@ -619,7 +619,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/document",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.outsiderId(), "ORG_ADMIN")))
+                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
         .andExpect(status().is4xxClientError());
   }
 
@@ -635,28 +635,17 @@ class InspectionReportSectionsApiIntegrationTest {
         "UPDATE inspections SET drone_id = ? WHERE id = ?", droneId, fixture.inspectionId());
     UUID prepId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO inspection_preparations (id, inspection_id, inspector_user_id, preparation_version, shot_list, safety_observations, status, submitted_at, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, 1, '[{\"code\":\"NORTH\",\"angle\":\"east face\"}]', 'No standing water', 'READY', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        "INSERT INTO inspection_preparations (id, inspection_id, preparation_version, shot_list, safety_observations, status, submitted_at, reviewed_by_user_id, reviewed_at, review_reason, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, 1, '[{\"code\":\"NORTH\",\"angle\":\"east face\"}]', 'No standing water', 'READY', CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, 'Ready for field session', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         prepId,
         fixture.inspectionId(),
-        fixture.inspectorId());
-    jdbcTemplate.update(
-        "INSERT INTO inspection_readiness_decisions (id, inspection_id, preparation_id, preparation_version, decision, reviewed_by_user_id, decided_at, reason, source_hash) "
-            + "VALUES (?, ?, ?, 1, 'APPROVED', ?, CURRENT_TIMESTAMP, 'Ready for field session', ?)",
-        UUID.randomUUID(),
-        fixture.inspectionId(),
-        prepId,
-        fixture.reviewerId(),
-        "a".repeat(64));
+        fixture.reviewerId());
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, drone_id, readiness_decision_id, status, started_at, pre_flight_checklist_note, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, ?, (SELECT id FROM inspection_readiness_decisions WHERE preparation_id = ?), 'IN_PROGRESS', CURRENT_TIMESTAMP, 'Bridge access checked; Drone identified', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
+        "INSERT INTO field_sessions (id, inspection_id, preparation_id, status, started_at, pre_flight_checklist_note, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, ?, 'IN_PROGRESS', CURRENT_TIMESTAMP, 'Bridge access checked; Drone identified', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
         fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId(),
-        droneId,
         prepId);
     UUID versionId = approvedVersion();
     publish(versionId);
@@ -703,7 +692,7 @@ class InspectionReportSectionsApiIntegrationTest {
                         "/api/v1/inspections/{id}/report/versions/{versionId}/document",
                         fixture.inspectionId(),
                         versionId)
-                    .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                    .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
             .andExpect(status().isOk())
             .andReturn();
     return result.getResponse().getContentAsByteArray();
@@ -734,7 +723,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
   }
 
@@ -826,7 +815,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
     return versionId;
   }

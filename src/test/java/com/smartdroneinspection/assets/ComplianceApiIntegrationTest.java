@@ -39,7 +39,7 @@ import tools.jackson.databind.ObjectMapper;
  * MF1-07 permit and compliance records.
  *
  * <p>A permit record is what a customer organization states about a permit it holds. Nothing in
- * this slice consults a registry, a government API or an authority: the review an ORG_ADMIN
+ * this slice consults a registry, a government API or an authority: the review an ORG_MANAGER
  * performs is an internal human decision, {@code NOT_APPLICABLE} is the organization's own record,
  * and no field, status or message may imply external verification.
  */
@@ -574,6 +574,6 @@ class ComplianceApiIntegrationTest {
   private RequestPostProcessor orgAdmin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 }

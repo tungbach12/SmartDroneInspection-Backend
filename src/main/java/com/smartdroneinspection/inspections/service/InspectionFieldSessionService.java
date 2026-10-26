@@ -3,13 +3,10 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -23,26 +20,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * MF2-09 and MF2-10: the assigned Inspector opens a field session on site.
- *
- * <p>The readiness decision is re-checked here rather than trusted from the moment it was made,
- * because MF2-07's approval is only a statement about a source basis at one instant. This is the
- * point at which "stale, expired or revoked readiness" becomes a decision this system can make.
- *
- * <p>No Drone actuation happens here. Start records that the software agreed the paperwork and the
- * pre-flight checklist were in order; it does not arm the aircraft, and the session start time is
- * not hardware flight time.
- *
- * <p>Lock ordering is inspection-first, the same order the preparation and readiness services use,
- * so a start cannot interleave with a preparation submission or a readiness decision on the same
- * inspection.
- */
 @Service
 public class InspectionFieldSessionService {
 
   private final InspectionRepository inspections;
-  private final InspectionReadinessDecisionRepository decisions;
   private final InspectionPreparationRepository preparations;
   private final FieldSessionRepository sessions;
   private final UserAccess userAccess;
@@ -50,38 +31,19 @@ public class InspectionFieldSessionService {
 
   public InspectionFieldSessionService(
       InspectionRepository inspections,
-      InspectionReadinessDecisionRepository decisions,
       InspectionPreparationRepository preparations,
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
     this.inspections = inspections;
-    this.decisions = decisions;
     this.preparations = preparations;
     this.sessions = sessions;
     this.userAccess = userAccess;
     this.entityManager = entityManager;
   }
 
-  /**
-   * Opens a field session against the inspection's current approved readiness decision (MF2-10).
-   *
-   * <p>The pre-flight note is required because MF2-09 has the Inspector identify the assigned Drone
-   * and complete the current pre-flight checklist on site before asking to start. Recording that
-   * without a note would make the attestation unfalsifiable.
-   *
-   * <p>{@code checklistTemplateId} is recorded but not resolved here. Checklist templates are
-   * platform-scoped rather than organization-scoped — {@code checklist_templates} carries no {@code
-   * organization_id} and links only to an asset category — so there is no tenant check to perform
-   * and a lookup would add nothing. MF2-11 records checklist responses against the session, which
-   * is where the template version becomes auditable.
-   */
   @Transactional
-  public FieldSession start(
-      UUID inspectorId,
-      UUID inspectionId,
-      UUID checklistTemplateId,
-      String preFlightChecklistNote) {
+  public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
     UUID organizationId = requireInspector(inspectorId);
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
@@ -93,9 +55,6 @@ public class InspectionFieldSessionService {
     if (!inspection.isInspectedBy(inspectorId)) {
       throw sessionFailure("SESSION_SCOPE_DENIED", "This inspection is not assigned to you.");
     }
-    // Checked before the inspection status, so a second start is reported as the duplicate it is
-    // rather than as "not ready for flight", which would only be true because the first start
-    // already moved the inspection to IN_PROGRESS.
     requireNoOpenSession(inspectionId);
     if (inspection.getStatus() != InspectionStatus.READY_FOR_FLIGHT) {
       throw sessionFailure(
@@ -103,32 +62,9 @@ public class InspectionFieldSessionService {
           "The inspection is not ready for flight, so no session may start.");
     }
 
-    InspectionReadinessDecision readiness = currentReadinessDecision(inspectionId);
-    InspectionPreparation currentPreparation =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElseThrow(
-                () ->
-                    sessionFailure(
-                        "READINESS_NOT_APPROVED",
-                        "No current approved preparation covers this inspection."));
-    if (currentPreparation.getStatus() != InspectionPreparationStatus.READY
-        || !currentPreparation.getId().equals(readiness.getPreparationId())
-        || currentPreparation.getPreparationVersion() != readiness.getPreparationVersion()) {
-      throw sessionFailure(
-          "READINESS_NOT_APPROVED",
-          "The approved readiness decision does not cover the latest preparation.");
-    }
+    InspectionPreparation currentPreparation = currentReadyPreparation(inspectionId);
 
-    FieldSession session =
-        FieldSession.opening(
-            inspectionId,
-            organizationId,
-            inspectorId,
-            inspection.getDroneId(),
-            checklistTemplateId,
-            readiness.getId(),
-            readiness.getPreparationVersion());
+    FieldSession session = FieldSession.opening(inspectionId, currentPreparation.getId());
     session.recordPreFlightChecklistNote(preFlightChecklistNote);
     session.start(Instant.now());
 
@@ -137,14 +73,6 @@ public class InspectionFieldSessionService {
     return sessions.saveAndFlush(session);
   }
 
-  /**
-   * The sessions of one inspection that this Inspector is assigned to.
-   *
-   * <p>Scoped to the caller rather than the organization: an Inspector sees their own field work,
-   * not a colleague's, even inside the same tenant. A caller from another organization gets {@code
-   * INSPECTION_NOT_FOUND} rather than an empty list, because an empty list would confirm the
-   * inspection exists.
-   */
   @Transactional(readOnly = true)
   public List<FieldSession> listSessions(UUID inspectorId, UUID inspectionId) {
     UUID organizationId = requireInspector(inspectorId);
@@ -161,13 +89,6 @@ public class InspectionFieldSessionService {
     return sessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
   }
 
-  /**
-   * Records a postponement (MF2-09).
-   *
-   * <p>The inspection returns to {@code READY_FOR_FLIGHT} because the readiness decision was not
-   * consumed: weather and site safety can stop a session that was correctly approved, and the same
-   * approval is still the current one.
-   */
   @Transactional
   public FieldSession postpone(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
     UUID organizationId = requireInspector(inspectorId);
@@ -182,10 +103,9 @@ public class InspectionFieldSessionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "SESSION_NOT_IN_PROGRESS", exception.getMessage());
     }
-    return reopenInspection(session);
+    return reopenInspection(session, organizationId);
   }
 
-  /** Records an abort (MF2-11). The inspection stays in progress until the session is ended. */
   @Transactional
   public FieldSession abort(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
     UUID organizationId = requireInspector(inspectorId);
@@ -203,7 +123,6 @@ public class InspectionFieldSessionService {
     return sessions.saveAndFlush(session);
   }
 
-  /** Closes a normally completed field session and returns the inspection to MF3 (MF2-12). */
   @Transactional
   public FieldSession complete(
       UUID inspectorId, UUID inspectionId, UUID sessionId, String outcomeNotes) {
@@ -219,18 +138,19 @@ public class InspectionFieldSessionService {
     FieldSession session =
         sessions
             .findByIdAndInspectionId(sessionId, inspectionId)
-            .filter(candidate -> candidate.getOrganizationId().equals(organizationId))
             .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
-    if (!session.getInspectorUserId().equals(inspectorId)) {
-      throw sessionFailure("SESSION_SCOPE_DENIED", "This field session is not assigned to you.");
-    }
     if (!session.isOpen() || !session.isInProgress()) {
       throw sessionFailure("SESSION_NOT_IN_PROGRESS", "This session is not in progress.");
     }
-    if (session.getReadinessDecisionId() == null
-        || !session
-            .getReadinessDecisionId()
-            .equals(currentReadinessDecision(inspectionId).getId())) {
+    InspectionPreparation currentPreparation =
+        preparations
+            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+            .orElse(null);
+    if (session.getPreparationId() == null
+        || currentPreparation == null
+        || currentPreparation.getStatus() != InspectionPreparationStatus.READY
+        || currentPreparation.getReviewedByUserId() == null
+        || !session.getPreparationId().equals(currentPreparation.getId())) {
       throw sessionFailure(
           "SESSION_READINESS_STALE",
           "This session was opened against a readiness decision that is no longer current.");
@@ -251,9 +171,9 @@ public class InspectionFieldSessionService {
     return sessions.saveAndFlush(session);
   }
 
-  private FieldSession reopenInspection(FieldSession session) {
+  private FieldSession reopenInspection(FieldSession session, UUID organizationId) {
     inspections
-        .findWithLockByIdAndOrganizationId(session.getInspectionId(), session.getOrganizationId())
+        .findWithLockByIdAndOrganizationId(session.getInspectionId(), organizationId)
         .ifPresent(
             inspection -> {
               if (inspection.getStatus() == InspectionStatus.IN_PROGRESS) {
@@ -264,17 +184,11 @@ public class InspectionFieldSessionService {
     return sessions.saveAndFlush(session);
   }
 
-  /**
-   * The decision that currently governs the inspection.
-   *
-   * <p>"Latest" means the most recently {@code decidedAt}. MF2-08 appends an {@code INVALIDATED}
-   * decision rather than editing the approval, so an inspection whose newest decision is anything
-   * other than {@code APPROVED} refuses to start even though an older approval row still exists.
-   */
-  private InspectionReadinessDecision currentReadinessDecision(UUID inspectionId) {
-    return decisions
-        .findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId)
-        .filter(decision -> decision.getDecision() == ReadinessDecisionType.APPROVED)
+  private InspectionPreparation currentReadyPreparation(UUID inspectionId) {
+    return preparations
+        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
+        .filter(preparation -> preparation.getStatus() == InspectionPreparationStatus.READY)
+        .filter(preparation -> preparation.getReviewedByUserId() != null)
         .orElseThrow(
             () ->
                 sessionFailure(
@@ -292,23 +206,17 @@ public class InspectionFieldSessionService {
     }
   }
 
-  /**
-   * The session the caller named, inside the inspection they named.
-   *
-   * <p>The inspection id is part of the lookup on purpose. A session id alone would let a caller
-   * close a session through a different inspection's URL, which is the same mistake the preparation
-   * submission route guards against by re-reading the scoped record first. The repository already
-   * has {@code findByIdAndInspectionId}, so this is one query rather than a second authorization
-   * pass.
-   */
   private FieldSession requireOwnedOpenSession(
       UUID inspectionId, UUID sessionId, UUID organizationId, UUID inspectorId) {
+    Inspection inspection =
+        inspections
+            .findByIdAndOrganizationId(inspectionId, organizationId)
+            .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
     FieldSession session =
         sessions
             .findByIdAndInspectionId(sessionId, inspectionId)
-            .filter(candidate -> candidate.getOrganizationId().equals(organizationId))
             .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
-    if (!session.getInspectorUserId().equals(inspectorId)) {
+    if (!inspection.isInspectedBy(inspectorId)) {
       throw sessionFailure("SESSION_SCOPE_DENIED", "This field session is not assigned to you.");
     }
     return session;

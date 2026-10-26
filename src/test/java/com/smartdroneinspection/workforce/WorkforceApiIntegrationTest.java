@@ -65,7 +65,8 @@ class WorkforceApiIntegrationTest {
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
     organizationA = saveOrganization("Alpha");
     grantEntitlement(organizationA.getId());
-    orgAdmin = saveUser("org-admin", organizationA.getId(), UserRole.ORG_ADMIN, UserStatus.ACTIVE);
+    orgAdmin =
+        saveUser("org-admin", organizationA.getId(), UserRole.ORG_MANAGER, UserStatus.ACTIVE);
   }
 
   private void grantEntitlement(UUID organizationId) {
@@ -110,7 +111,7 @@ class WorkforceApiIntegrationTest {
   @Test
   void rejectsPlatformAndOrganizationAdministratorRolesWithoutCreatingRows() throws Exception {
     assertRejectedWithoutRows("ADMIN");
-    assertRejectedWithoutRows("ORG_ADMIN");
+    assertRejectedWithoutRows("ORG_MANAGER");
   }
 
   @Test
@@ -270,7 +271,7 @@ class WorkforceApiIntegrationTest {
                     organizationA.getId(),
                     "facade-org-admin-" + UUID.randomUUID() + "@example.test",
                     "Escalated Admin",
-                    java.util.Set.of("ORG_ADMIN"),
+                    java.util.Set.of("ORG_MANAGER"),
                     "127.0.0.1",
                     "JUnit",
                     "facade-test"))
@@ -319,7 +320,7 @@ class WorkforceApiIntegrationTest {
                 userAccess.updateWorkforceRoles(
                     orgAdmin.getId(),
                     inspector.getId(),
-                    java.util.Set.of("ORG_ADMIN"),
+                    java.util.Set.of("ORG_MANAGER"),
                     "127.0.0.1",
                     "JUnit",
                     "facade-test"))
@@ -340,7 +341,7 @@ class WorkforceApiIntegrationTest {
         saveUser(
             "facade-peer-admin-status",
             organizationA.getId(),
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             UserStatus.ACTIVE);
     UUID sessionId = insertSession(peerAdmin.getId());
     long[] counts = lifecycleCounts();
@@ -372,7 +373,7 @@ class WorkforceApiIntegrationTest {
         saveUser(
             "facade-peer-admin-roles",
             organizationA.getId(),
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             UserStatus.ACTIVE);
     var beforeRoles = users.findDetailedById(peerAdmin.getId()).orElseThrow().roleValues();
     UUID sessionId = insertSession(peerAdmin.getId());
@@ -519,7 +520,7 @@ class WorkforceApiIntegrationTest {
                 .with(orgAdmin(orgAdmin.getId()))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"roles\":[\"ORG_ADMIN\"]}"))
+                .content("{\"roles\":[\"ORG_MANAGER\"]}"))
         .andExpect(status().isBadRequest());
 
     assertLifecycleCountsUnchanged(counts);
@@ -596,7 +597,7 @@ class WorkforceApiIntegrationTest {
   @Test
   void cannotSuspendSameOrganizationAdministrator() throws Exception {
     User peerAdmin =
-        saveUser("peer-admin", organizationA.getId(), UserRole.ORG_ADMIN, UserStatus.ACTIVE);
+        saveUser("peer-admin", organizationA.getId(), UserRole.ORG_MANAGER, UserStatus.ACTIVE);
 
     mockMvc
         .perform(
@@ -709,6 +710,6 @@ class WorkforceApiIntegrationTest {
   private RequestPostProcessor orgAdmin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_ADMIN"));
+        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
   }
 }

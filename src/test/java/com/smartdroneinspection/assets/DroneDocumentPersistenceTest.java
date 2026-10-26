@@ -143,7 +143,7 @@ class DroneDocumentPersistenceTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    user.addRole(UserRole.ORG_ADMIN);
+    user.addRole(UserRole.ORG_MANAGER);
     return users.saveAndFlush(user).getId();
   }
 }

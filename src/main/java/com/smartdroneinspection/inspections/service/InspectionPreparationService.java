@@ -6,14 +6,11 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparati
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
 import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -44,7 +41,6 @@ public class InspectionPreparationService {
 
   private final InspectionPreparationRepository preparations;
   private final InspectionRepository inspections;
-  private final InspectionReadinessDecisionRepository readinessDecisions;
   private final FieldSessionRepository sessions;
   private final EvidenceRepository evidence;
   private final EvidenceService evidenceService;
@@ -55,14 +51,12 @@ public class InspectionPreparationService {
   public InspectionPreparationService(
       InspectionPreparationRepository preparations,
       InspectionRepository inspections,
-      InspectionReadinessDecisionRepository readinessDecisions,
       FieldSessionRepository sessions,
       EvidenceRepository evidence,
       EvidenceService evidenceService,
       UserAccess userAccess) {
     this.preparations = preparations;
     this.inspections = inspections;
-    this.readinessDecisions = readinessDecisions;
     this.sessions = sessions;
     this.evidence = evidence;
     this.evidenceService = evidenceService;
@@ -93,7 +87,7 @@ public class InspectionPreparationService {
           "This inspection is not assigned to you.");
     }
 
-    java.util.Optional<InspectionPreparation> openDraft = openDraft(inspectionId, inspectorId);
+    java.util.Optional<InspectionPreparation> openDraft = openDraft(inspectionId);
     InspectionPreparation preparation;
     if (openDraft.isPresent()) {
       if (inspection.getStatus() != InspectionStatus.PREPARING) {
@@ -109,8 +103,8 @@ public class InspectionPreparationService {
       }
       preparation =
           initialPreparation
-              ? new InspectionPreparation(inspection.getId(), inspectorId, 1)
-              : startNextVersion(inspection, inspectorId);
+              ? new InspectionPreparation(inspection.getId(), 1)
+              : startNextVersion(inspection);
     }
     boolean additionalSessionPreparation = preparation.getPreparationVersion() > 1;
     if (additionalSessionPreparation
@@ -195,7 +189,6 @@ public class InspectionPreparationService {
     FieldSession latestCompletedSession =
         sessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
             .filter(session -> "FIELD_COMPLETED".equals(session.getStatus()))
-            .filter(session -> session.getInspectorUserId().equals(inspectorId))
             .reduce((first, second) -> second)
             .orElseThrow(
                 () ->
@@ -220,39 +213,15 @@ public class InspectionPreparationService {
                 latest ->
                     preparations.findWithLockByIdAndInspectionId(latest.getId(), inspectionId))
             .filter(item -> item.getStatus() == InspectionPreparationStatus.READY)
-            .filter(item -> item.getInspectorUserId().equals(inspectorId))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.CONFLICT,
                         "PREPARATION_NOT_CURRENT",
                         "An approved current preparation is required to request another session."));
-    InspectionReadinessDecision approval =
-        readinessDecisions
-            .findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId)
-            .filter(decision -> decision.getDecision() == ReadinessDecisionType.APPROVED)
-            .filter(decision -> preparation.getId().equals(decision.getPreparationId()))
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "PREPARATION_NOT_CURRENT",
-                        "The latest preparation does not have a current readiness approval."));
 
-    preparation.markSuperseded();
+    preparation.supersede(reason.trim());
     preparations.saveAndFlush(preparation);
-    readinessDecisions.saveAndFlush(
-        new InspectionReadinessDecision(
-            inspectionId,
-            preparation.getId(),
-            preparation.getPreparationVersion(),
-            ReadinessDecisionType.INVALIDATED,
-            inspectorId,
-            reason.trim(),
-            approval.getPermitSnapshot(),
-            approval.getCredentialSnapshot(),
-            approval.getDroneDocumentSnapshot(),
-            approval.getSourceHash()));
     inspection.requestAdditionalSession();
     InspectionPreparation next =
         preparation.nextDraftVersion(preparation.getPreparationVersion() + 1);
@@ -286,12 +255,6 @@ public class InspectionPreparationService {
             .orElseThrow(InspectionPreparationService::preparationNotFound);
     refreshInspection(inspection);
 
-    if (!preparation.getInspectorUserId().equals(inspectorId)) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "PREPARATION_SCOPE_DENIED",
-          "This preparation belongs to another inspector.");
-    }
     if (!inspection.isInspectedBy(inspectorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
@@ -310,7 +273,7 @@ public class InspectionPreparationService {
     }
 
     try {
-      preparation.submit(inspectorId);
+      preparation.submit();
     } catch (IllegalStateException | IllegalArgumentException exception) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "PREPARATION_INCOMPLETE", exception.getMessage());
@@ -355,9 +318,8 @@ public class InspectionPreparationService {
    * <p>Only a DRAFT qualifies. A returned version has to be reopened through review rework rather
    * than silently absorbed into a new edit, otherwise the record of what was sent back is lost.
    */
-  private java.util.Optional<InspectionPreparation> openDraft(UUID inspectionId, UUID inspectorId) {
+  private java.util.Optional<InspectionPreparation> openDraft(UUID inspectionId) {
     return preparations.findByInspectionIdOrderByPreparationVersionDesc(inspectionId).stream()
-        .filter(preparation -> preparation.getInspectorUserId().equals(inspectorId))
         .filter(preparation -> preparation.getStatus() == InspectionPreparationStatus.DRAFT)
         .findFirst();
   }
@@ -366,21 +328,18 @@ public class InspectionPreparationService {
     entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
   }
 
-  private InspectionPreparation startNextVersion(Inspection inspection, UUID inspectorId) {
+  private InspectionPreparation startNextVersion(Inspection inspection) {
     return preparations
         .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
         .map(
             previous -> {
-              if (!previous.getInspectorUserId().equals(inspectorId)) {
-                throw preparationNotAllowed();
-              }
               if (previous.getStatus() == InspectionPreparationStatus.RETURNED) {
                 previous.startRevision();
                 return preparations.save(previous);
               }
               throw preparationNotAllowed();
             })
-        .orElseGet(() -> new InspectionPreparation(inspection.getId(), inspectorId, 1));
+        .orElseGet(() -> new InspectionPreparation(inspection.getId(), 1));
   }
 
   private InspectionPreparationResponse toResponse(InspectionPreparation preparation) {
@@ -391,7 +350,6 @@ public class InspectionPreparationService {
     return new InspectionPreparationResponse(
         preparation.getId(),
         preparation.getInspectionId(),
-        preparation.getInspectorUserId(),
         preparation.getPreparationVersion(),
         inspection.getPlannedStartAt(),
         inspection.getPlannedEndAt(),
@@ -402,6 +360,9 @@ public class InspectionPreparationService {
         preparation.getPermitDocumentReferences(),
         preparation.getStatus(),
         preparation.getSubmittedAt(),
+        preparation.getReviewedByUserId(),
+        preparation.getReviewedAt(),
+        preparation.getReviewReason(),
         preparation.getCreatedAt(),
         preparation.getUpdatedAt());
   }
@@ -434,11 +395,11 @@ public class InspectionPreparationService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (!actor.hasRole(Roles.INSPECTOR) && !actor.hasRole(Roles.ORG_ADMIN)) {
+    if (!actor.hasRole(Roles.INSPECTOR) && !actor.hasRole(Roles.ORG_MANAGER)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Role " + Roles.INSPECTOR + " or " + Roles.ORG_ADMIN + " is required");
+          "Role " + Roles.INSPECTOR + " or " + Roles.ORG_MANAGER + " is required");
     }
     if (actor.organizationId() == null) {
       throw new BusinessException(

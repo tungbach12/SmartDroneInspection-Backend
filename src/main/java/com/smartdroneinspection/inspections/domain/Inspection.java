@@ -289,6 +289,13 @@ public class Inspection {
     moveTo(InspectionStatus.PREPARING);
   }
 
+  public void approveReadiness() {
+    if (status != InspectionStatus.PREPARING) {
+      throw new IllegalStateException("Only a preparing inspection can be approved for flight");
+    }
+    moveTo(InspectionStatus.READY_FOR_FLIGHT);
+  }
+
   public void requestAdditionalSession() {
     if (status != InspectionStatus.FIELD_COMPLETED) {
       throw new IllegalStateException(

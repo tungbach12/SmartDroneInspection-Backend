@@ -12,12 +12,9 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.security.MessageDigest;
@@ -66,7 +63,6 @@ class InspectionEvidenceApiIntegrationTest {
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
   @Autowired InspectionPreparationRepository preparations;
-  @Autowired InspectionReadinessDecisionRepository readinessDecisions;
   @Autowired EvidenceRepository evidence;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
@@ -160,7 +156,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
                     fixture.inspectionId(),
                     evidenceId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"locationDescription\":\"Girder G4 east face\"}"))
         .andExpect(status().isForbidden());
@@ -251,7 +247,7 @@ class InspectionEvidenceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
-                .with(principal(fixture.outsiderId(), "ORG_ADMIN")))
+                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
 
@@ -269,7 +265,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/evidence/{evidenceId}/content",
                     fixture.inspectionId(),
                     evidenceId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
   }
 
@@ -293,26 +289,13 @@ class InspectionEvidenceApiIntegrationTest {
 
   @Test
   void additionalSessionUsesMf2PreparationAndRetainsThePriorDecision() throws Exception {
-    InspectionPreparation previous =
-        new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
+    InspectionPreparation previous = new InspectionPreparation(fixture.inspectionId(), 1);
     previous.recordShotList("{\"shots\":[\"main span\"]}");
     previous.recordSafetyObservations("No hazards observed");
-    previous.submit(fixture.inspectorId());
+    previous.submit();
     previous = preparations.saveAndFlush(previous);
-    previous.markReady();
+    previous.approve(fixture.reviewerId());
     previous = preparations.saveAndFlush(previous);
-    readinessDecisions.saveAndFlush(
-        new InspectionReadinessDecision(
-            fixture.inspectionId(),
-            previous.getId(),
-            previous.getPreparationVersion(),
-            ReadinessDecisionType.APPROVED,
-            fixture.reviewerId(),
-            null,
-            "{}",
-            "[]",
-            "[]",
-            "a".repeat(64)));
     UUID completedSessionId = insertCompletedFieldSession();
     uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES, completedSessionId);
 
@@ -337,49 +320,31 @@ class InspectionEvidenceApiIntegrationTest {
         .isEqualTo("PREPARING");
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM inspection_readiness_decisions WHERE inspection_id = ? "
-                    + "AND decision = 'INVALIDATED' AND reason = 'East face needs access'",
+                "SELECT count(*) FROM inspection_preparations WHERE id = ? "
+                    + "AND status = 'SUPERSEDED' AND review_reason = 'East face needs access'",
                 Long.class,
-                fixture.inspectionId()))
+                previous.getId()))
         .isEqualTo(1L);
   }
 
   @Test
   void evidenceUploadCanBeAssociatedWithACompletedSession() throws Exception {
-    InspectionPreparation preparation =
-        new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
+    InspectionPreparation preparation = new InspectionPreparation(fixture.inspectionId(), 1);
     preparation.recordShotList("[{\"component\":\"main span\"}]");
     preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit(fixture.inspectorId());
+    preparation.submit();
     preparation = preparations.saveAndFlush(preparation);
-    preparation.markReady();
+    preparation.approve(fixture.reviewerId());
     preparation = preparations.saveAndFlush(preparation);
-    UUID readinessId =
-        readinessDecisions
-            .saveAndFlush(
-                new InspectionReadinessDecision(
-                    fixture.inspectionId(),
-                    preparation.getId(),
-                    preparation.getPreparationVersion(),
-                    ReadinessDecisionType.APPROVED,
-                    fixture.reviewerId(),
-                    null,
-                    "{}",
-                    "[]",
-                    "[]",
-                    "a".repeat(64)))
-            .getId();
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, "
-            + "readiness_decision_id, status, started_at, ended_at, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+        "INSERT INTO field_sessions (id, inspection_id, "
+            + "preparation_id, status, started_at, ended_at, created_at, updated_at, row_version) "
+            + "VALUES (?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
             + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
         fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId(),
-        readinessId);
+        preparation.getId());
 
     MvcResult response =
         uploadResponse(
@@ -411,7 +376,7 @@ class InspectionEvidenceApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -419,7 +384,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
 
     mockMvc
@@ -513,14 +478,12 @@ class InspectionEvidenceApiIntegrationTest {
   private UUID insertCompletedFieldSession() {
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, "
+        "INSERT INTO field_sessions (id, inspection_id, "
             + "status, started_at, ended_at, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+            + "VALUES (?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
             + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
-        fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
     return sessionId;
   }
 

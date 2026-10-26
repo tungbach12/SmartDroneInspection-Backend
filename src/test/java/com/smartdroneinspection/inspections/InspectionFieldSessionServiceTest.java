@@ -13,11 +13,8 @@ import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.service.InspectionFieldSessionService;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -40,14 +37,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * MF2-10: starting a field session rechecks readiness at the moment of the start.
- *
- * <p>MF2-07 records that a decision was made against a particular source basis. This test covers
- * the other half of that promise — the decision is only usable while that basis still holds. Every
- * refusal here leaves the inspection and the session table untouched, because a failed recheck must
- * not half-start a mission.
- */
+/** MF2-10: starting a field session rechecks readiness at the moment of the start. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @Transactional
@@ -57,7 +47,6 @@ class InspectionFieldSessionServiceTest {
 
   @Autowired InspectionRepository inspections;
   @Autowired InspectionPreparationRepository preparations;
-  @Autowired InspectionReadinessDecisionRepository decisions;
   @Autowired FieldSessionRepository sessions;
   @Autowired UserRepository users;
   @Autowired AssetRepository assets;
@@ -75,8 +64,7 @@ class InspectionFieldSessionServiceTest {
   private UUID assetId;
   private UUID droneId;
   private UUID inspectionId;
-  private UUID readinessDecisionId;
-  private UUID checklistTemplateId;
+  private UUID preparationId;
   private long initialSessionCount;
   private long initialPreparationCount;
   private InspectionFieldSessionService service;
@@ -87,8 +75,7 @@ class InspectionFieldSessionServiceTest {
         new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
-    checklistTemplateId = fixture.checklistTemplateId();
-    reviewerId = createUser(organizationId, UserRole.ORG_ADMIN, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =
@@ -109,7 +96,7 @@ class InspectionFieldSessionServiceTest {
     droneId =
         drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
     inspectionId = createReadyInspection();
-    readinessDecisionId = insertApprovedReadinessDecision();
+    preparationId = insertApprovedReadinessDecision();
     initialSessionCount =
         jdbcTemplate.queryForObject(
             "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
@@ -123,19 +110,16 @@ class InspectionFieldSessionServiceTest {
 
     service =
         new InspectionFieldSessionService(
-            inspections, decisions, preparations, sessions, userAccess, entityManager);
+            inspections, preparations, sessions, userAccess, entityManager);
   }
 
   @Test
   void theAssignedInspectorStartsASessionAgainstTheCurrentReadinessDecision() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     assertThat(session.getStatus()).isEqualTo("IN_PROGRESS");
     assertThat(session.getInspectionId()).isEqualTo(inspectionId);
-    assertThat(session.getInspectorUserId()).isEqualTo(inspectorId);
-    assertThat(session.getDroneId()).isEqualTo(droneId);
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
     assertThat(
             jdbcTemplate.queryForObject(
@@ -148,16 +132,9 @@ class InspectionFieldSessionServiceTest {
   @Test
   void theSessionRecordsWhichReadinessDecisionItStartedAgainst() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
-    assertThat(readinessDecisionIdOf(session.getId())).isEqualTo(readinessDecisionId);
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT readiness_version FROM field_sessions WHERE id = ?",
-                Integer.class,
-                session.getId()))
-        .isEqualTo(1);
+    assertThat(preparationIdOf(session.getId())).isEqualTo(preparationId);
   }
 
   @Test
@@ -174,9 +151,7 @@ class InspectionFieldSessionServiceTest {
     current.recordSafetyObservations("No hazards observed");
     preparations.saveAndFlush(current);
 
-    assertThatThrownBy(
-            () ->
-                service.start(inspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -195,28 +170,15 @@ class InspectionFieldSessionServiceTest {
             .orElseThrow();
     next.recordShotList("{\"shots\":[\"east face\"]}");
     next.recordSafetyObservations("No hazards observed");
-    next.submit(inspectorId);
+    next.submit();
     next = preparations.saveAndFlush(next);
-    next.markReady();
+    next.approve(reviewerId);
     preparations.saveAndFlush(next);
-    decisions.saveAndFlush(
-        new InspectionReadinessDecision(
-            inspectionId,
-            next.getId(),
-            next.getPreparationVersion(),
-            ReadinessDecisionType.APPROVED,
-            reviewerId,
-            null,
-            "{\"source_envelope\":{}}",
-            "[]",
-            "[]",
-            "b".repeat(64)));
     jdbcTemplate.update(
         "UPDATE inspections SET status = 'READY_FOR_FLIGHT' WHERE id = ?", inspectionId);
 
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed east face is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed east face is accessible");
 
     assertThat(session.getStatus()).isEqualTo("IN_PROGRESS");
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
@@ -225,11 +187,11 @@ class InspectionFieldSessionServiceTest {
   @Test
   void anInspectionWithoutAnApprovedReadinessDecisionCannotStart() {
     jdbcTemplate.update(
-        "DELETE FROM inspection_readiness_decisions WHERE inspection_id = ?", inspectionId);
+        "UPDATE inspection_preparations SET status = 'SUBMITTED', reviewed_by_user_id = NULL, reviewed_at = NULL WHERE inspection_id = ?",
+        inspectionId);
+    entityManager.clear();
 
-    assertThatThrownBy(
-            () ->
-                service.start(inspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -240,18 +202,11 @@ class InspectionFieldSessionServiceTest {
   @Test
   void aReturnedReadinessDecisionCannotStartASession() {
     jdbcTemplate.update(
-        "INSERT INTO inspection_readiness_decisions (id, inspection_id, decision,"
-            + " reviewed_by_user_id, source_hash, reason) VALUES (?, ?, 'RETURNED', ?, ?, ?)",
-        UUID.randomUUID(),
-        inspectionId,
-        reviewerId,
-        "b".repeat(64),
-        "Needs rework");
+        "UPDATE inspection_preparations SET status = 'RETURNED', review_reason = 'Needs rework' WHERE id = ?",
+        preparationId);
     jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
 
-    assertThatThrownBy(
-            () ->
-                service.start(inspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -260,26 +215,13 @@ class InspectionFieldSessionServiceTest {
     assertNoSessionStarted();
   }
 
-  /**
-   * MF2-08: an invalidated decision is the newest one, so a start must refuse even though an older
-   * APPROVED row still exists on the same inspection.
-   */
   @Test
   void anInvalidatedReadinessDecisionCannotStartASession() {
-    jdbcTemplate.update(
-        "INSERT INTO inspection_readiness_decisions (id, inspection_id, decision,"
-            + " reviewed_by_user_id, source_hash, reason, decided_at)"
-            + " VALUES (?, ?, 'INVALIDATED', ?, ?, ?, ?)",
-        UUID.randomUUID(),
-        inspectionId,
-        reviewerId,
-        "c".repeat(64),
-        "Permit withdrawn after approval",
-        Timestamp.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+    InspectionPreparation preparation = preparations.findById(preparationId).orElseThrow();
+    preparation.supersede("Permit withdrawn after approval");
+    preparations.saveAndFlush(preparation);
 
-    assertThatThrownBy(
-            () ->
-                service.start(inspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -291,9 +233,7 @@ class InspectionFieldSessionServiceTest {
   void anInspectionThatIsNoLongerReadyForFlightCannotStart() {
     jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
 
-    assertThatThrownBy(
-            () ->
-                service.start(inspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -306,10 +246,7 @@ class InspectionFieldSessionServiceTest {
   void anotherInspectorCannotStartThisSession() {
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
-    assertThatThrownBy(
-            () ->
-                service.start(
-                    otherInspectorId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(otherInspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -321,8 +258,7 @@ class InspectionFieldSessionServiceTest {
   void anInspectorFromAnotherOrganizationStartsNothing() {
     UUID outsiderId = createUser(otherOrganizationId, UserRole.INSPECTOR, "outsider");
 
-    assertThatThrownBy(
-            () -> service.start(outsiderId, inspectionId, checklistTemplateId, "Ready at the gate"))
+    assertThatThrownBy(() -> service.start(outsiderId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -332,7 +268,7 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void aBlankPreFlightNoteCannotStart() {
-    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, checklistTemplateId, "   "))
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "   "))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -343,15 +279,10 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void aSecondStartIsRefusedWhileTheFirstSessionIsStillOpen() {
-    service.start(inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     assertThatThrownBy(
-            () ->
-                service.start(
-                    inspectorId,
-                    inspectionId,
-                    checklistTemplateId,
-                    "Confirmed bridge is accessible"))
+            () -> service.start(inspectorId, inspectionId, "Confirmed bridge is accessible"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -368,8 +299,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void postponingRecordsTheReasonAndLeavesTheInspectionReadyForAnotherAttempt() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     service.postpone(inspectorId, inspectionId, session.getId(), "High wind above 10 m/s");
 
@@ -383,15 +313,10 @@ class InspectionFieldSessionServiceTest {
     assertThat(statusOfInspection()).isEqualTo("READY_FOR_FLIGHT");
   }
 
-  /**
-   * An abort is not a postponement: it does not hand the inspection back for another attempt, and
-   * it must not carry a postponement reason.
-   */
   @Test
   void abortingRecordsTheReasonAndDoesNotReturnTheInspectionToReadyForFlight() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     service.abort(inspectorId, inspectionId, session.getId(), "Structure found unsafe on site");
 
@@ -414,8 +339,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void abortingWithoutAReasonIsRefused() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     assertThatThrownBy(() -> service.abort(inspectorId, inspectionId, session.getId(), "  "))
         .isInstanceOf(BusinessException.class)
@@ -428,8 +352,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void normalCompletionReturnsTheInspectionToMf3WithRecordedOutcome() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     FieldSession completed =
         service.complete(inspectorId, inspectionId, session.getId(), "East span surveyed");
@@ -443,8 +366,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void anAbortedSessionCannotBeCompleted() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     service.abort(inspectorId, inspectionId, session.getId(), "Structure unsafe");
 
     assertThatThrownBy(
@@ -459,14 +381,11 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void anInspectionMayBeStartedAgainAfterAPostponement() {
-    FieldSession first =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    FieldSession first = service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     service.postpone(inspectorId, inspectionId, first.getId(), "High wind above 10 m/s");
 
     FieldSession second =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     assertThat(second.getId()).isNotEqualTo(first.getId());
     assertThat(sessionStatus(second.getId())).isEqualTo("IN_PROGRESS");
@@ -476,8 +395,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void postponingWithoutAReasonIsRefused() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
     assertThatThrownBy(() -> service.postpone(inspectorId, inspectionId, session.getId(), "  "))
         .isInstanceOf(BusinessException.class)
@@ -491,8 +409,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void anotherInspectorCannotPostponeThisSession() {
     FieldSession session =
-        service.start(
-            inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
     assertThatThrownBy(
@@ -504,14 +421,9 @@ class InspectionFieldSessionServiceTest {
     assertThat(sessionStatus(session.getId())).isEqualTo("IN_PROGRESS");
   }
 
-  /**
-   * MF2-12 hands MF3 a list of this inspection's sessions, so the list must be scoped to the
-   * assigned Inspector rather than the whole organization: an Inspector sees their own field work,
-   * not a colleague's.
-   */
   @Test
   void listingSessionsReturnsOnlyTheCallersOwnWork() {
-    service.start(inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
     assertThat(service.listSessions(inspectorId, inspectionId)).hasSize(1);
@@ -520,7 +432,7 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void listingSessionsOfAnotherOrganizationSeesNothing() {
-    service.start(inspectorId, inspectionId, checklistTemplateId, "Confirmed bridge is accessible");
+    service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     UUID outsiderId = createUser(otherOrganizationId, UserRole.INSPECTOR, "outsider");
 
     assertThatThrownBy(() -> service.listSessions(outsiderId, inspectionId))
@@ -530,11 +442,6 @@ class InspectionFieldSessionServiceTest {
                 assertThat(((BusinessException) error).code()).isEqualTo("INSPECTION_NOT_FOUND"));
   }
 
-  /**
-   * The session id alone must not be enough to close a session: it has to belong to the inspection
-   * the caller named. Otherwise a session id belonging to a different inspection could be closed
-   * through this inspection's URL, and the scope check would look at the wrong record.
-   */
   @Test
   void closingASessionOfAnotherInspectionIsRefused() {
     UUID sessionId = startSession("Confirmed bridge is accessible").getId();
@@ -549,7 +456,7 @@ class InspectionFieldSessionServiceTest {
   }
 
   private FieldSession startSession(String preFlightNote) {
-    return service.start(inspectorId, inspectionId, checklistTemplateId, preFlightNote);
+    return service.start(inspectorId, inspectionId, preFlightNote);
   }
 
   private long preparationCountForInspection() {
@@ -600,67 +507,30 @@ class InspectionFieldSessionServiceTest {
     return id;
   }
 
-  /**
-   * An APPROVED readiness decision whose snapshot carries the source hash the session start
-   * rechecks. The real MF2-07 path produces this through {@code ReadinessSnapshotFactory}; the
-   * session rule under test is "the decision is usable", not "the hash is computed correctly".
-   */
   private UUID insertApprovedReadinessDecision() {
-    InspectionPreparation preparation = new InspectionPreparation(inspectionId, inspectorId, 1);
+    InspectionPreparation preparation = new InspectionPreparation(inspectionId, 1);
     preparation.recordShotList("{\"shots\":[\"span\"]}");
     preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit(inspectorId);
+    preparation.submit();
     preparation = preparations.saveAndFlush(preparation);
-    preparation.markReady();
-    preparations.saveAndFlush(preparation);
-
-    InspectionReadinessDecision decision =
-        new InspectionReadinessDecision(
-            inspectionId,
-            preparation.getId(),
-            preparation.getPreparationVersion(),
-            ReadinessDecisionType.APPROVED,
-            reviewerId,
-            null,
-            "{\"source_envelope\":{}}",
-            "[]",
-            "[]",
-            "a".repeat(64));
-    return decisions.saveAndFlush(decision).getId();
+    preparation.approve(reviewerId);
+    return preparations.saveAndFlush(preparation).getId();
   }
 
-  /**
-   * The MF3 additional-session handoff: the prior approval is invalidated, the approved preparation
-   * is superseded and a next-version draft is opened.
-   */
   private void applyAdditionalSessionHandoff() {
     InspectionPreparation preparation =
         preparations
             .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
             .orElseThrow();
-    InspectionReadinessDecision approval =
-        decisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElseThrow();
-    preparation.markSuperseded();
+    preparation.supersede("Inspector requested an additional field session");
     preparations.saveAndFlush(preparation);
-    decisions.saveAndFlush(
-        new InspectionReadinessDecision(
-            inspectionId,
-            preparation.getId(),
-            preparation.getPreparationVersion(),
-            ReadinessDecisionType.INVALIDATED,
-            inspectorId,
-            "Inspector requested an additional field session",
-            approval.getPermitSnapshot(),
-            approval.getCredentialSnapshot(),
-            approval.getDroneDocumentSnapshot(),
-            approval.getSourceHash()));
     preparations.saveAndFlush(
         preparation.nextDraftVersion(preparation.getPreparationVersion() + 1));
   }
 
-  private UUID readinessDecisionIdOf(UUID sessionId) {
+  private UUID preparationIdOf(UUID sessionId) {
     return jdbcTemplate.queryForObject(
-        "SELECT readiness_decision_id FROM field_sessions WHERE id = ?", UUID.class, sessionId);
+        "SELECT preparation_id FROM field_sessions WHERE id = ?", UUID.class, sessionId);
   }
 
   private String sessionStatus(UUID sessionId) {

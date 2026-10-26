@@ -11,5 +11,4 @@ public record ChecklistResponseResponse(
     UUID checklistItemId,
     JsonNode responseValue,
     String notes,
-    UUID completedByUserId,
     Instant completedAt) {}

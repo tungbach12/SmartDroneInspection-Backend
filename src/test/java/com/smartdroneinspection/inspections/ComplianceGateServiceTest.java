@@ -241,7 +241,8 @@ class ComplianceGateServiceTest {
 
     assertThatThrownBy(
             () ->
-                service.evaluate(createUser(otherOrganizationId, UserRole.ORG_ADMIN), inspectionId))
+                service.evaluate(
+                    createUser(otherOrganizationId, UserRole.ORG_MANAGER), inspectionId))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
@@ -342,6 +343,34 @@ class ComplianceGateServiceTest {
     assertThat(gate.linkedPermitIds()).contains(active.getId());
     assertThat(gate.blockers())
         .anySatisfy(blocker -> assertThat(blocker.code()).isEqualTo("PERMIT_OUTSIDE_VALIDITY"));
+  }
+
+  @Test
+  void explicitlyLinkedPermitReferencesFilterApplicablePermitsForTheCurrentPreparation() {
+    FlightPermit active =
+        grantedPermit(
+            plannedStart.minus(1, ChronoUnit.DAYS), plannedStart.plus(1, ChronoUnit.DAYS));
+    FlightPermit expired = grantedPermit(plannedStart, plannedStart.plus(1, ChronoUnit.DAYS));
+    expired.defineValidity(
+        plannedStart.minus(10, ChronoUnit.DAYS), plannedStart.minus(1, ChronoUnit.DAYS));
+    permits.saveAndFlush(expired);
+
+    jdbcTemplate.update(
+        """
+        INSERT INTO inspection_preparations
+          (id, inspection_id, preparation_version, shot_list, status)
+        VALUES (?, ?, 1, '[{"component":"Span P4"}]'::jsonb, 'DRAFT')
+        """,
+        UUID.randomUUID(),
+        inspectionId);
+
+    service.linkPermitReferences(
+        adminId, inspectionId, new LinkPermitReferencesRequest(List.of(active.getId())));
+
+    ComplianceGateResponse gate = service.evaluate(adminId, inspectionId);
+
+    assertThat(gate.blockers()).isEmpty();
+    assertThat(gate.linkedPermitIds()).containsExactly(active.getId());
   }
 
   private UUID createInspector() {

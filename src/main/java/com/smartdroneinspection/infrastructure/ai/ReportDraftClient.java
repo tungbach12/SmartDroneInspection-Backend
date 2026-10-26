@@ -276,8 +276,6 @@ public class ReportDraftClient implements ReportDraftPort {
         builder.append(" | Postponement reason: ").append(session.postponementReason());
       if (hasText(session.abortReason()))
         builder.append(" | Abort reason: ").append(session.abortReason());
-      if (hasText(session.limitations()))
-        builder.append(" | Recorded limitations: ").append(session.limitations());
       builder
           .append(" | Assigned drone reference (not proof used): ")
           .append(session.assignedDroneId());

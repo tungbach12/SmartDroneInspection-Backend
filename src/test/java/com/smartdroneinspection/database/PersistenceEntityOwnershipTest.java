@@ -27,6 +27,9 @@ class PersistenceEntityOwnershipTest {
     return Stream.of(
         Arguments.of("assets", "assets", "com.smartdroneinspection.assets.domain.Asset"),
         Arguments.of(
+            "assets", "platform_drones", "com.smartdroneinspection.assets.domain.PlatformDrone"),
+        Arguments.of("assets", "drone_leases", "com.smartdroneinspection.assets.domain.DroneLease"),
+        Arguments.of(
             "assets", "asset_categories", "com.smartdroneinspection.assets.domain.AssetCategory"),
         Arguments.of(
             "assets", "asset_documents", "com.smartdroneinspection.assets.domain.AssetDocument"),
@@ -67,10 +70,6 @@ class PersistenceEntityOwnershipTest {
             "inspections",
             "inspection_preparations",
             "com.smartdroneinspection.inspections.domain.InspectionPreparation"),
-        Arguments.of(
-            "inspections",
-            "inspection_readiness_decisions",
-            "com.smartdroneinspection.inspections.domain.InspectionReadinessDecision"),
         Arguments.of(
             "inspections",
             "field_sessions",
