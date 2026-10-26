@@ -67,6 +67,9 @@ public class Inspection {
   @Column(name = "findings_snapshot_hash", length = 64)
   private String findingsSnapshotHash;
 
+  @Column(name = "recurring_schedule_id")
+  private UUID recurringScheduleId;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -97,9 +100,9 @@ public class Inspection {
     this.inspectorId = inspectorId;
     this.droneId = droneId;
     this.objective = objective;
-    this.scope = scope;
-    this.componentScope = componentScope;
-    this.acceptanceCriteria = acceptanceCriteria;
+    this.scope = normalizeJson(scope);
+    this.componentScope = normalizeJson(componentScope);
+    this.acceptanceCriteria = normalizeJson(acceptanceCriteria);
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
     this.status = InspectionStatus.DRAFT;
@@ -271,6 +274,14 @@ public class Inspection {
     return updatedAt;
   }
 
+  public UUID getRecurringScheduleId() {
+    return recurringScheduleId;
+  }
+
+  public void setRecurringScheduleId(UUID recurringScheduleId) {
+    this.recurringScheduleId = recurringScheduleId;
+  }
+
   public boolean isInspectedBy(UUID candidateInspectorId) {
     return inspectorId != null && inspectorId.equals(candidateInspectorId);
   }
@@ -325,5 +336,43 @@ public class Inspection {
     }
     this.status = nextStatus;
     this.updatedAt = Instant.now();
+  }
+
+  public static String normalizeJson(String raw) {
+    if (raw == null || raw.isBlank()) {
+      return null;
+    }
+    String trimmed = raw.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
+        || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      return trimmed;
+    }
+    if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() >= 2) {
+      return trimmed;
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append('"');
+    for (int i = 0; i < trimmed.length(); i++) {
+      char c = trimmed.charAt(i);
+      switch (c) {
+        case '"' -> sb.append("\\\"");
+        case '\\' -> sb.append("\\\\");
+        case '\b' -> sb.append("\\b");
+        case '\f' -> sb.append("\\f");
+        case '\n' -> sb.append("\\n");
+        case '\r' -> sb.append("\\r");
+        case '\t' -> sb.append("\\t");
+        default -> {
+          if (c < ' ') {
+            String t = "000" + Integer.toHexString(c);
+            sb.append("\\u").append(t.substring(t.length() - 4));
+          } else {
+            sb.append(c);
+          }
+        }
+      }
+    }
+    sb.append('"');
+    return sb.toString();
   }
 }

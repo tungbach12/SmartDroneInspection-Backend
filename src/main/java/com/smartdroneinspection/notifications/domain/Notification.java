@@ -59,6 +59,9 @@ public class Notification {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
+  @Column(name = "deduplication_key", length = 192, unique = true)
+  private String deduplicationKey;
+
   protected Notification() {}
 
   public Notification(
@@ -69,6 +72,18 @@ public class Notification {
       String title,
       String body,
       String targetPath) {
+    this(recipientUserId, organizationId, eventType, channel, title, body, targetPath, null);
+  }
+
+  public Notification(
+      UUID recipientUserId,
+      UUID organizationId,
+      String eventType,
+      NotificationChannel channel,
+      String title,
+      String body,
+      String targetPath,
+      String deduplicationKey) {
     this.recipientUserId = recipientUserId;
     this.organizationId = organizationId;
     this.eventType = eventType;
@@ -76,9 +91,35 @@ public class Notification {
     this.title = title;
     this.body = body;
     this.targetPath = targetPath;
-    this.status = NotificationStatus.PENDING;
+    this.deduplicationKey = deduplicationKey;
     this.attemptCount = 0;
     this.createdAt = Instant.now();
+    if (channel == NotificationChannel.IN_APP) {
+      this.status = NotificationStatus.SENT;
+      this.sentAt = this.createdAt;
+    } else {
+      this.status = NotificationStatus.PENDING;
+    }
+  }
+
+  public void markRead() {
+    if (this.readAt != null) {
+      return;
+    }
+    Instant now = Instant.now();
+    this.readAt = now;
+    if (this.sentAt == null) {
+      this.sentAt = now;
+    }
+    this.status = NotificationStatus.READ;
+  }
+
+  public void markAsRead() {
+    markRead();
+  }
+
+  public boolean isRead() {
+    return this.readAt != null || this.status == NotificationStatus.READ;
   }
 
   public UUID getId() {
@@ -115,5 +156,29 @@ public class Notification {
 
   public NotificationStatus getStatus() {
     return status;
+  }
+
+  public int getAttemptCount() {
+    return attemptCount;
+  }
+
+  public String getLastErrorCode() {
+    return lastErrorCode;
+  }
+
+  public Instant getSentAt() {
+    return sentAt;
+  }
+
+  public Instant getReadAt() {
+    return readAt;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public String getDeduplicationKey() {
+    return deduplicationKey;
   }
 }

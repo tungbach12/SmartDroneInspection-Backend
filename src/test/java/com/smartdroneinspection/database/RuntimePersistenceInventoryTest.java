@@ -37,6 +37,8 @@ class RuntimePersistenceInventoryTest {
           "flight_permits",
           "inspection_preparations",
           "inspections",
+          "recurring_inspection_schedules",
+          "schedule_occurrences",
           "notifications",
           "organizations",
           // MF1 entitlement, workforce credential, Drone/document and permit runtime entities.
@@ -82,6 +84,8 @@ class RuntimePersistenceInventoryTest {
           "asset_documents",
           "asset_pair_assignments",
           "inspections",
+          "recurring_inspection_schedules",
+          "schedule_occurrences",
           "inspection_preparations",
           "field_sessions",
           "checklist_responses",
@@ -132,7 +136,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(36);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(38);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

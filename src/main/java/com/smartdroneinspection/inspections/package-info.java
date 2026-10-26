@@ -12,6 +12,7 @@
       "shared::exception",
       "shared::storage",
       "shared",
+      "subscriptions",
       "inspections::reportcontext",
       "assets::reportcontext"
     })

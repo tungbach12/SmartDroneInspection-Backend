@@ -14,12 +14,16 @@ import com.smartdroneinspection.assets.repository.FlightPermitRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +37,8 @@ public class InspectionCreationService {
   private final DroneRepository drones;
   private final FlightPermitRepository permits;
   private final UserAccess userAccess;
+  private final SubscriptionEntitlement subscriptionEntitlement;
+  private final ApplicationEventPublisher eventPublisher;
 
   public InspectionCreationService(
       InspectionRepository inspections,
@@ -40,19 +46,27 @@ public class InspectionCreationService {
       AssetPairAssignmentRepository assetPairAssignments,
       DroneRepository drones,
       FlightPermitRepository permits,
-      UserAccess userAccess) {
+      UserAccess userAccess,
+      SubscriptionEntitlement subscriptionEntitlement,
+      ApplicationEventPublisher eventPublisher) {
     this.inspections = inspections;
     this.assets = assets;
     this.assetPairAssignments = assetPairAssignments;
     this.drones = drones;
     this.permits = permits;
     this.userAccess = userAccess;
+    this.subscriptionEntitlement = subscriptionEntitlement;
+    this.eventPublisher = eventPublisher;
   }
 
   @Transactional
   public InspectionResponse create(UUID actorId, CreateInspectionRequest request) {
     UserAccess.ActiveUser actor = requireOrgAdmin(actorId);
     UUID organizationId = actor.organizationId();
+
+    Instant entitlementCheckAt =
+        request.plannedStartAt() != null ? request.plannedStartAt() : Instant.now();
+    subscriptionEntitlement.requireActive(organizationId, entitlementCheckAt);
 
     Asset asset =
         assets
@@ -110,7 +124,7 @@ public class InspectionCreationService {
 
       Drone drone =
           drones
-              .findByIdAndOrganizationId(request.droneId(), organizationId)
+              .findWithLockByIdAndOrganizationId(request.droneId(), organizationId)
               .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
               .orElseThrow(
                   () ->
@@ -154,7 +168,103 @@ public class InspectionCreationService {
     inspection.dispatch();
 
     Inspection saved = inspections.saveAndFlush(inspection);
+
+    eventPublisher.publishEvent(
+        new InspectionAssignedEvent(
+            saved.getId(),
+            saved.getOrganizationId(),
+            saved.getInspectorId(),
+            saved.getPlannedStartAt()));
+
     return toResponse(saved, asset);
+  }
+
+  @Transactional
+  public Inspection dispatchInspectionInternal(
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      UUID assetPairAssignmentId,
+      String objective,
+      String scope,
+      String componentScope,
+      String acceptanceCriteria,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID recurringScheduleId) {
+    subscriptionEntitlement.requireActive(organizationId, plannedStartAt);
+
+    Asset asset =
+        assets
+            .findByIdAndOrganizationId(assetId, organizationId)
+            .orElseThrow(
+                () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+
+    if (asset.getStatus() == AssetStatus.RETIRED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Cannot create an inspection for a retired asset.");
+    }
+
+    UserAccess.ActiveUser inspector =
+        userAccess
+            .findActiveUser(inspectorId)
+            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_INSPECTOR",
+                        "Assigned inspector must be active in the organization."));
+
+    Drone drone =
+        drones
+            .findWithLockByIdAndOrganizationId(droneId, organizationId)
+            .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_DRONE",
+                        "Assigned drone must be active in the organization."));
+
+    if (inspections.hasScheduleConflict(
+        organizationId, inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SCHEDULE_CONFLICT",
+          "The assigned inspector or drone has a schedule conflict with another active inspection in this window.");
+    }
+
+    Inspection inspection =
+        new Inspection(
+            organizationId,
+            asset.getId(),
+            assetPairAssignmentId,
+            inspector.id(),
+            drone.getId(),
+            objective,
+            scope,
+            componentScope,
+            acceptanceCriteria,
+            plannedStartAt,
+            plannedEndAt);
+
+    if (recurringScheduleId != null) {
+      inspection.setRecurringScheduleId(recurringScheduleId);
+    }
+    inspection.dispatch();
+
+    Inspection saved = inspections.saveAndFlush(inspection);
+
+    eventPublisher.publishEvent(
+        new InspectionAssignedEvent(
+            saved.getId(),
+            saved.getOrganizationId(),
+            saved.getInspectorId(),
+            saved.getPlannedStartAt()));
+
+    return saved;
   }
 
   @Transactional(readOnly = true)

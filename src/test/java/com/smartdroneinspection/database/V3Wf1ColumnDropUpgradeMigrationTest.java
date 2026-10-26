@@ -109,6 +109,7 @@ class V3Wf1ColumnDropUpgradeMigrationTest {
               .defaultSchema(upgradeSchema)
               .schemas(upgradeSchema)
               .createSchemas(false)
+              .target("3")
               .load();
 
       MigrateResult v3Migration = v3UpgradeFlyway.migrate();
@@ -116,7 +117,6 @@ class V3Wf1ColumnDropUpgradeMigrationTest {
       assertThat(v3Migration.targetSchemaVersion).isEqualTo("3");
       assertThat(v3UpgradeFlyway.info().current().getVersion())
           .isEqualTo(MigrationVersion.fromVersion("3"));
-      assertThat(v3UpgradeFlyway.info().pending()).isEmpty();
       assertThat(v3UpgradeFlyway.info().applied())
           .filteredOn(info -> info.getVersion() != null)
           .extracting(
@@ -128,8 +128,18 @@ class V3Wf1ColumnDropUpgradeMigrationTest {
               tuple("2", "V2__role_restructure_and_drone_leasing.sql", MigrationState.SUCCESS),
               tuple("3", "V3__drop_unused_wf1_columns.sql", MigrationState.SUCCESS));
 
-      assertThatCode(v3UpgradeFlyway::validate).doesNotThrowAnyException();
-      ValidateResult v3Validation = v3UpgradeFlyway.validateWithResult();
+      Flyway fullUpgradeFlyway =
+          Flyway.configure()
+              .dataSource(upgradeDataSource)
+              .locations(MIGRATION_LOCATIONS)
+              .defaultSchema(upgradeSchema)
+              .schemas(upgradeSchema)
+              .createSchemas(false)
+              .load();
+      fullUpgradeFlyway.migrate();
+      assertThat(fullUpgradeFlyway.info().pending()).isEmpty();
+      assertThatCode(fullUpgradeFlyway::validate).doesNotThrowAnyException();
+      ValidateResult v3Validation = fullUpgradeFlyway.validateWithResult();
       assertThat(v3Validation.validationSuccessful)
           .as("Flyway validation after V3 upgrade: %s", v3Validation.invalidMigrations)
           .isTrue();
@@ -137,7 +147,7 @@ class V3Wf1ColumnDropUpgradeMigrationTest {
 
       List<HistoryRecord> historyAtV3 = flywayHistory(upgradeJdbcTemplate);
       assertThat(historyAtV3)
-          .hasSize(3)
+          .hasSizeGreaterThanOrEqualTo(3)
           .allSatisfy(
               record -> {
                 assertThat(record.checksum()).isNotNull();

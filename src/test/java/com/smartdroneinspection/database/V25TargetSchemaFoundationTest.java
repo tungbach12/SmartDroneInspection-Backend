@@ -421,9 +421,35 @@ class V25TargetSchemaFoundationTest {
                     "event_type",
                     "aggregate_type",
                     "aggregate_id",
-                    "created_at")));
+                    "created_at")),
+            Map.entry(
+                "recurring_inspection_schedules",
+                Set.of(
+                    "organization_id",
+                    "asset_id",
+                    "created_by_user_id",
+                    "inspector_id",
+                    "drone_id",
+                    "objective",
+                    "anchor_date",
+                    "timezone",
+                    "recurrence_unit",
+                    "recurrence_interval",
+                    "duration_seconds",
+                    "reminder_days",
+                    "status")),
+            Map.entry(
+                "schedule_occurrences",
+                Set.of(
+                    "schedule_id",
+                    "organization_id",
+                    "occurrence_index",
+                    "occurrence_key",
+                    "planned_start_at",
+                    "planned_end_at",
+                    "status")));
 
-    assertThat(targetColumns).hasSize(34);
+    assertThat(targetColumns).hasSize(36);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate

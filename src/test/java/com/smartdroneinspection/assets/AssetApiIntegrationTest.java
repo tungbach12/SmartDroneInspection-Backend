@@ -548,6 +548,41 @@ class AssetApiIntegrationTest {
         .isEqualTo(com.smartdroneinspection.assets.domain.enums.AssetPairAssignmentStatus.ACTIVE);
   }
 
+  @Test
+  void orgAdminCanRetireAsset() throws Exception {
+    var asset =
+        assets.saveAndFlush(
+            new com.smartdroneinspection.assets.domain.Asset(
+                fixture.organizationId(),
+                fixture.categoryId(),
+                "BR-RETIRE-01",
+                "Retire Bridge",
+                null,
+                "{\"label\":\"District 1\"}",
+                null,
+                null,
+                null,
+                fixture.clientId()));
+
+    mockMvc
+        .perform(
+            post("/api/v1/assets/{assetId}/retire", asset.getId()).with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.status").value("RETIRED"));
+
+    var reloaded = assets.findById(asset.getId()).orElseThrow();
+    org.assertj.core.api.Assertions.assertThat(reloaded.getStatus())
+        .isEqualTo(com.smartdroneinspection.assets.domain.enums.AssetStatus.RETIRED);
+
+    // Retiring again should fail with 409 INVALID_STATE
+    mockMvc
+        .perform(
+            post("/api/v1/assets/{assetId}/retire", asset.getId()).with(client(fixture.clientId())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INVALID_STATE"));
+  }
+
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
