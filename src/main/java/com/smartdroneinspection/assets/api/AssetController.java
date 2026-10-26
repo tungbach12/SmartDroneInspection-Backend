@@ -86,6 +86,13 @@ public class AssetController {
     return ApiResponse.success(assets.update(subject(jwt), assetId, request));
   }
 
+  @PostMapping("/{assetId}/retire")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
+  public ApiResponse<AssetResponse> retire(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
+    return ApiResponse.success(assets.retire(subject(jwt), assetId));
+  }
+
   private static UUID subject(Jwt jwt) {
     return UUID.fromString(jwt.getSubject());
   }

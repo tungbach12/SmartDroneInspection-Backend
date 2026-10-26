@@ -87,6 +87,14 @@ public class RecurringInspectionScheduleService {
           HttpStatus.CONFLICT, "INVALID_STATE", "Cannot create a schedule for a retired asset.");
     }
 
+    if (scheduleRepository.existsByOrganizationIdAndAssetIdAndStatus(
+        organizationId, asset.getId(), "ACTIVE")) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "ACTIVE_SCHEDULE_EXISTS",
+          "This asset already has an active recurring inspection schedule. End the existing schedule before creating a new one.");
+    }
+
     UUID inspectorId;
     UUID droneId;
     UUID assetPairAssignmentId;

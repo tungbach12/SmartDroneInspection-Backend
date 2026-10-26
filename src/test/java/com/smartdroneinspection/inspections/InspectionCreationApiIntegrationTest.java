@@ -84,6 +84,13 @@ class InspectionCreationApiIntegrationTest {
         "Other " + otherOrganizationId,
         "ORG-" + otherOrganizationId);
 
+    jdbcTemplate.update(
+        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
+        organizationId);
+    jdbcTemplate.update(
+        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
+        otherOrganizationId);
+
     User admin =
         new User(
             "admin-" + UUID.randomUUID() + "@example.test",
@@ -384,6 +391,38 @@ class InspectionCreationApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void orgAdminCreatesInspectionWithPlainTextScopeAndAcceptanceCriteria() throws Exception {
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+    Instant end = start.plus(4, ChronoUnit.HOURS);
+
+    String body =
+        "{\"assetId\":\""
+            + assetId
+            + "\",\"objective\":\"Periodic visual crack survey\","
+            + "\"scope\":\"su chua\","
+            + "\"componentScope\":\"big\","
+            + "\"acceptanceCriteria\":\"50% overlap, GSD < 1mm/px\","
+            + "\"plannedStartAt\":\""
+            + start
+            + "\",\"plannedEndAt\":\""
+            + end
+            + "\"}";
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections")
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.status").value("ASSIGNED"))
+        .andExpect(jsonPath("$.data.scope").value("\"su chua\""))
+        .andExpect(jsonPath("$.data.componentScope").value("\"big\""))
+        .andExpect(jsonPath("$.data.acceptanceCriteria").value("\"50% overlap, GSD < 1mm/px\""));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor jwtUser(

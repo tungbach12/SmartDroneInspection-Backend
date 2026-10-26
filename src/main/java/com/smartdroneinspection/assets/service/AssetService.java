@@ -249,6 +249,16 @@ public class AssetService {
     return toResponse(assets.saveAndFlush(asset));
   }
 
+  @Transactional
+  public AssetResponse retire(UUID actorId, UUID assetId) {
+    Asset asset = requireOwnedAsset(actorId, assetId);
+    if (asset.getStatus() == AssetStatus.RETIRED) {
+      throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATE", "Asset is already retired");
+    }
+    asset.retire();
+    return toResponse(assets.saveAndFlush(asset));
+  }
+
   private Asset requireOwnedAsset(UUID actorId, UUID assetId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
     UUID organizationId = requireOrganization(actor);

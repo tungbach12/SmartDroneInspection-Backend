@@ -137,9 +137,9 @@ public class RecurringInspectionSchedule {
       throw new IllegalArgumentException("Schedule end must not precede the first occurrence");
     }
     this.objective = objective;
-    this.scope = scope;
-    this.componentScope = componentScope;
-    this.acceptanceCriteria = acceptanceCriteria;
+    this.scope = Inspection.normalizeJson(scope);
+    this.componentScope = Inspection.normalizeJson(componentScope);
+    this.acceptanceCriteria = Inspection.normalizeJson(acceptanceCriteria);
     this.anchorDate = anchor;
     this.timezone = timezone;
     this.recurrenceUnit = unit;

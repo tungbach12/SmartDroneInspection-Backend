@@ -206,6 +206,43 @@ class RecurringInspectionScheduleServiceTest {
   }
 
   @Test
+  void createScheduleRejectsWhenActiveScheduleAlreadyExistsForAsset() {
+    LocalDateTime futureAnchor = LocalDateTime.now().plusDays(2).truncatedTo(ChronoUnit.HOURS);
+    CreateRecurringScheduleRequest request =
+        new CreateRecurringScheduleRequest(
+            assetId,
+            "Monthly bridge inspection",
+            null,
+            null,
+            null,
+            futureAnchor,
+            "Asia/Ho_Chi_Minh",
+            "MONTH",
+            1,
+            7200L,
+            3,
+            null,
+            inspectorId,
+            droneId);
+
+    when(scheduleRepository.existsByOrganizationIdAndAssetIdAndStatus(orgId, assetId, "ACTIVE"))
+        .thenReturn(true);
+    Asset mockAsset = mock(Asset.class);
+    when(mockAsset.getId()).thenReturn(assetId);
+    when(mockAsset.getStatus()).thenReturn(AssetStatus.ACTIVE);
+    when(assetRepository.findByIdAndOrganizationId(assetId, orgId))
+        .thenReturn(Optional.of(mockAsset));
+
+    assertThatThrownBy(() -> service.create(managerId, request))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            ex -> {
+              BusinessException be = (BusinessException) ex;
+              assertThat(be.code()).isEqualTo("ACTIVE_SCHEDULE_EXISTS");
+            });
+  }
+
+  @Test
   void pauseAndResumeScheduleWithCatchupGeneration() {
     UUID scheduleId = UUID.randomUUID();
     RecurringInspectionSchedule schedule = mockSchedule(LocalDateTime.now().plusDays(5));

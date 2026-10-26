@@ -41,6 +41,9 @@ public interface RecurringInspectionScheduleRepository
   Page<RecurringInspectionSchedule> findByOrganizationIdAndAssetIdAndStatus(
       UUID organizationId, UUID assetId, String status, Pageable pageable);
 
+  boolean existsByOrganizationIdAndAssetIdAndStatus(
+      UUID organizationId, UUID assetId, String status);
+
   @Query(
       "select s from RecurringInspectionSchedule s where s.status = 'ACTIVE' order by s.createdAt asc")
   List<RecurringInspectionSchedule> findActiveSchedules(Pageable pageable);
