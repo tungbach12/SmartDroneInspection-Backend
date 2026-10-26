@@ -5,6 +5,8 @@ import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingHandoffRequest;
+import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
+import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
@@ -13,10 +15,12 @@ import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
+import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
+import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
@@ -299,6 +303,31 @@ public class InspectionController {
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
+  }
+
+  @GetMapping("/findings/query")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<FindingPageResponse> queryFindings(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(defaultValue = "ACTIVE") FindingStatusFilter status,
+      @RequestParam(required = false) FindingSeverity severity,
+      @RequestParam(defaultValue = "ALL") FindingSourceFilter source,
+      @RequestParam(required = false) String defectQuery,
+      @RequestParam(required = false) String evidenceQuery,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "50") int pageSize) {
+    return ApiResponse.success(
+        findingService.query(
+            actorId(jwt),
+            inspectionId,
+            status,
+            severity,
+            source,
+            defectQuery,
+            evidenceQuery,
+            page,
+            pageSize));
   }
 
   @PostMapping("/report/draft")
