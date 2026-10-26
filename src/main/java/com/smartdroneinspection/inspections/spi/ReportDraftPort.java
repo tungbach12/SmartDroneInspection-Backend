@@ -33,7 +33,6 @@ public interface ReportDraftPort {
 
   record DraftContext(
       InspectionSummary inspection,
-      List<ChecklistEntrySummary> checklistResponses,
       List<FindingSummary> findings,
       List<EvidenceSummary> evidence,
       List<CandidateSummary> candidates,
@@ -41,19 +40,11 @@ public interface ReportDraftPort {
       Locale locale) {
     public DraftContext(
         InspectionSummary inspection,
-        List<ChecklistEntrySummary> checklistResponses,
         List<FindingSummary> findings,
         List<EvidenceSummary> evidence,
         List<CandidateSummary> candidates,
         List<FieldSessionSummary> fieldSessions) {
-      this(
-          inspection,
-          checklistResponses,
-          findings,
-          evidence,
-          candidates,
-          fieldSessions,
-          Locale.ENGLISH);
+      this(inspection, findings, evidence, candidates, fieldSessions, Locale.ENGLISH);
     }
   }
 
@@ -79,15 +70,16 @@ public interface ReportDraftPort {
       String assignedDroneId) {}
 
   record InspectionSummary(
-      String objective,
-      String scope,
-      String componentScope,
-      String acceptanceCriteria,
+      List<String> inspectionItems,
+      String flightPermitFileName,
       String plannedStartAt,
       String plannedEndAt,
-      String assignedDroneId) {}
+      String assignedDroneId) {
 
-  record ChecklistEntrySummary(String prompt, String responseValue, String notes) {}
+    public InspectionSummary {
+      inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+    }
+  }
 
   record FindingSummary(
       String defectLabel, String severity, String technicalNotes, String recommendedAction) {}

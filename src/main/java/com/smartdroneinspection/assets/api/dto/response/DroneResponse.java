@@ -17,6 +17,9 @@ public record DroneResponse(
     Instant lastMaintenanceAt,
     Instant nextMaintenanceAt,
     String notes,
+    String registrationNumber,
+    String registrationFileKey,
+    Instant registrationExpiresAt,
     Instant createdAt) {
 
   public static DroneResponse from(Drone drone) {
@@ -33,6 +36,9 @@ public record DroneResponse(
         drone.getLastMaintenanceAt(),
         drone.getNextMaintenanceAt(),
         drone.getNotes(),
+        drone.getRegistrationNumber(),
+        drone.getRegistrationFileKey(),
+        drone.getRegistrationExpiresAt(),
         drone.getCreatedAt());
   }
 }

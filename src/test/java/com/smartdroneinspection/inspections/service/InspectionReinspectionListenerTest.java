@@ -50,7 +50,6 @@ class InspectionReinspectionListenerTest {
     Inspection sourceInspection = mock(Inspection.class);
     when(sourceInspection.getInspectorId()).thenReturn(inspectorId);
     when(sourceInspection.getDroneId()).thenReturn(droneId);
-    when(sourceInspection.getScope()).thenReturn("Bridge pier inspection");
     when(inspections.findById(finding.getInspectionId())).thenReturn(Optional.of(sourceInspection));
 
     ReinspectionRequestedEvent event =
@@ -74,9 +73,7 @@ class InspectionReinspectionListenerTest {
     assertThat(saved.getOrganizationId()).isEqualTo(orgId);
     assertThat(saved.getAssetId()).isEqualTo(assetId);
     assertThat(saved.getInspectorId()).isEqualTo(inspectorId);
-    assertThat(saved.getObjective()).contains("Re-inspection for Work Order");
-    assertThat(saved.getObjective()).contains("Concrete spalling");
-    assertThat(saved.getObjective()).contains("Re-check ultrasonic density");
+    assertThat(saved.getDroneId()).isEqualTo(droneId);
     assertThat(saved.getStatus()).isEqualTo(InspectionStatus.ASSIGNED);
   }
 }

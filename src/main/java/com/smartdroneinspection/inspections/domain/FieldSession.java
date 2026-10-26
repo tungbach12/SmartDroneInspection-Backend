@@ -16,9 +16,6 @@ import java.util.UUID;
  * <p>The status vocabulary is a {@code String} rather than an enum so this class does not widen the
  * migration contract that {@code ck_field_sessions_status} already fixed; the values below are the
  * only ones the database accepts.
- *
- * <p>A session is opened against one approved preparation version and keeps that preparation id,
- * because MF2-10 re-checks readiness at the moment of the start.
  */
 @Entity
 @Table(name = "field_sessions")
@@ -34,9 +31,6 @@ public class FieldSession {
 
   @Column(name = "inspection_id", nullable = false)
   private UUID inspectionId;
-
-  @Column(name = "preparation_id")
-  private UUID preparationId;
 
   @Column(nullable = false, length = 24)
   private String status;
@@ -71,9 +65,8 @@ public class FieldSession {
 
   protected FieldSession() {}
 
-  public FieldSession(UUID inspectionId, UUID preparationId, String status, Instant startedAt) {
+  public FieldSession(UUID inspectionId, String status, Instant startedAt) {
     this.inspectionId = inspectionId;
-    this.preparationId = preparationId;
     this.status = status;
     this.startedAt = startedAt;
     this.createdAt = Instant.now();
@@ -135,8 +128,8 @@ public class FieldSession {
     return reason.trim();
   }
 
-  public static FieldSession opening(UUID inspectionId, UUID preparationId) {
-    return new FieldSession(inspectionId, preparationId, PLANNED, null);
+  public static FieldSession opening(UUID inspectionId) {
+    return new FieldSession(inspectionId, PLANNED, null);
   }
 
   public boolean isOpen() {
@@ -153,10 +146,6 @@ public class FieldSession {
 
   public UUID getInspectionId() {
     return inspectionId;
-  }
-
-  public UUID getPreparationId() {
-    return preparationId;
   }
 
   public String getStatus() {
@@ -185,5 +174,13 @@ public class FieldSession {
 
   public String getPreFlightChecklistNote() {
     return preFlightChecklistNote;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
   }
 }

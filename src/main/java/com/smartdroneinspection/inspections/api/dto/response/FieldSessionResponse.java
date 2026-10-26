@@ -6,7 +6,6 @@ import java.util.UUID;
 public record FieldSessionResponse(
     UUID id,
     UUID inspectionId,
-    UUID preparationId,
     String status,
     String preFlightChecklistNote,
     Instant startedAt,

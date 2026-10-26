@@ -12,8 +12,6 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "inspections")
@@ -27,35 +25,26 @@ public class Inspection {
   @Column(name = "asset_id", nullable = false)
   private UUID assetId;
 
-  @Column(name = "asset_pair_assignment_id")
-  private UUID assetPairAssignmentId;
-
   @Column(name = "inspector_id", nullable = false)
   private UUID inspectorId;
 
   @Column(name = "drone_id")
   private UUID droneId;
 
-  @Column(nullable = false, length = 1000)
-  private String objective;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(columnDefinition = "jsonb")
-  private String scope;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "component_scope", columnDefinition = "jsonb")
-  private String componentScope;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "acceptance_criteria", columnDefinition = "jsonb")
-  private String acceptanceCriteria;
-
   @Column(name = "planned_start_at")
   private Instant plannedStartAt;
 
   @Column(name = "planned_end_at")
   private Instant plannedEndAt;
+
+  @Column(name = "flight_permit_file_key", length = 1000)
+  private String flightPermitFileKey;
+
+  @Column(name = "flight_permit_file_name", length = 500)
+  private String flightPermitFileName;
+
+  @Column(name = "flight_permit_uploaded_at")
+  private Instant flightPermitUploadedAt;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 32)
@@ -85,44 +74,50 @@ public class Inspection {
   public Inspection(
       UUID organizationId,
       UUID assetId,
-      UUID assetPairAssignmentId,
       UUID inspectorId,
       UUID droneId,
-      String objective,
-      String scope,
-      String componentScope,
-      String acceptanceCriteria,
       Instant plannedStartAt,
       Instant plannedEndAt) {
-    this.organizationId = organizationId;
-    this.assetId = assetId;
-    this.assetPairAssignmentId = assetPairAssignmentId;
+    this.organizationId =
+        Objects.requireNonNull(organizationId, "Inspection organization is required");
+    this.assetId = Objects.requireNonNull(assetId, "Inspection asset is required");
     this.inspectorId = inspectorId;
     this.droneId = droneId;
-    this.objective = objective;
-    this.scope = normalizeJson(scope);
-    this.componentScope = normalizeJson(componentScope);
-    this.acceptanceCriteria = normalizeJson(acceptanceCriteria);
+    if (plannedStartAt != null && plannedEndAt != null && !plannedEndAt.isAfter(plannedStartAt)) {
+      throw new IllegalArgumentException("Planned end must be after planned start");
+    }
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    this.status = InspectionStatus.DRAFT;
+    this.status =
+        (inspectorId != null && droneId != null)
+            ? InspectionStatus.ASSIGNED
+            : InspectionStatus.DRAFT;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
 
-  public Inspection(UUID organizationId, UUID assetId, String objective, Instant plannedStartAt) {
-    this(
-        Objects.requireNonNull(organizationId, "Inspection organization is required"),
-        Objects.requireNonNull(assetId, "Inspection asset is required"),
-        null,
-        null,
-        null,
-        objective,
-        null,
-        null,
-        null,
-        plannedStartAt,
-        null);
+  public Inspection(UUID organizationId, UUID assetId, Instant plannedStartAt) {
+    this(organizationId, assetId, null, null, plannedStartAt, null);
+  }
+
+  public void recordFlightPermit(String fileKey, String fileName, Instant uploadedAt) {
+    if (fileKey == null || fileKey.isBlank()) {
+      throw new IllegalArgumentException("Flight permit file key must not be blank");
+    }
+    if (fileName == null || fileName.isBlank()) {
+      throw new IllegalArgumentException("Flight permit file name must not be blank");
+    }
+    this.flightPermitFileKey = fileKey.trim();
+    this.flightPermitFileName = fileName.trim();
+    this.flightPermitUploadedAt = uploadedAt != null ? uploadedAt : Instant.now();
+    if (this.status == InspectionStatus.ASSIGNED) {
+      this.status = InspectionStatus.READY_FOR_FLIGHT;
+    }
+    this.updatedAt = Instant.now();
+  }
+
+  public boolean hasFlightPermit() {
+    return flightPermitFileKey != null && !flightPermitFileKey.isBlank();
   }
 
   /** MF3-06: the Inspector confirms the reviewed evidence/findings baseline before drafting. */
@@ -226,10 +221,6 @@ public class Inspection {
     return assetId;
   }
 
-  public UUID getAssetPairAssignmentId() {
-    return assetPairAssignmentId;
-  }
-
   public UUID getInspectorId() {
     return inspectorId;
   }
@@ -238,20 +229,16 @@ public class Inspection {
     return droneId;
   }
 
-  public String getObjective() {
-    return objective;
+  public String getFlightPermitFileKey() {
+    return flightPermitFileKey;
   }
 
-  public String getScope() {
-    return scope;
+  public String getFlightPermitFileName() {
+    return flightPermitFileName;
   }
 
-  public String getComponentScope() {
-    return componentScope;
-  }
-
-  public String getAcceptanceCriteria() {
-    return acceptanceCriteria;
+  public Instant getFlightPermitUploadedAt() {
+    return flightPermitUploadedAt;
   }
 
   public Instant getPlannedStartAt() {
@@ -293,28 +280,6 @@ public class Inspection {
     moveTo(InspectionStatus.ASSIGNED);
   }
 
-  public void startPreparation() {
-    if (status != InspectionStatus.ASSIGNED) {
-      throw new IllegalStateException("Only an assigned inspection can start preparation");
-    }
-    moveTo(InspectionStatus.PREPARING);
-  }
-
-  public void approveReadiness() {
-    if (status != InspectionStatus.PREPARING) {
-      throw new IllegalStateException("Only a preparing inspection can be approved for flight");
-    }
-    moveTo(InspectionStatus.READY_FOR_FLIGHT);
-  }
-
-  public void requestAdditionalSession() {
-    if (status != InspectionStatus.FIELD_COMPLETED) {
-      throw new IllegalStateException(
-          "An additional session can only be requested after field work is completed");
-    }
-    moveTo(InspectionStatus.PREPARING);
-  }
-
   public void completeFieldSession() {
     requireStatus(InspectionStatus.IN_PROGRESS);
     moveTo(InspectionStatus.FIELD_COMPLETED);
@@ -336,43 +301,5 @@ public class Inspection {
     }
     this.status = nextStatus;
     this.updatedAt = Instant.now();
-  }
-
-  public static String normalizeJson(String raw) {
-    if (raw == null || raw.isBlank()) {
-      return null;
-    }
-    String trimmed = raw.trim();
-    if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
-        || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-      return trimmed;
-    }
-    if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() >= 2) {
-      return trimmed;
-    }
-    StringBuilder sb = new StringBuilder();
-    sb.append('"');
-    for (int i = 0; i < trimmed.length(); i++) {
-      char c = trimmed.charAt(i);
-      switch (c) {
-        case '"' -> sb.append("\\\"");
-        case '\\' -> sb.append("\\\\");
-        case '\b' -> sb.append("\\b");
-        case '\f' -> sb.append("\\f");
-        case '\n' -> sb.append("\\n");
-        case '\r' -> sb.append("\\r");
-        case '\t' -> sb.append("\\t");
-        default -> {
-          if (c < ' ') {
-            String t = "000" + Integer.toHexString(c);
-            sb.append("\\u").append(t.substring(t.length() - 4));
-          } else {
-            sb.append(c);
-          }
-        }
-      }
-    }
-    sb.append('"');
-    return sb.toString();
   }
 }

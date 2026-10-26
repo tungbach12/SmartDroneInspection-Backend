@@ -2,6 +2,7 @@ package com.smartdroneinspection.assets.api.dto.response;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record AssetResponse(
@@ -15,7 +16,11 @@ public record AssetResponse(
     String status,
     UUID categoryId,
     Instant createdAt,
-    AssetDefaultPairResponse defaultPair) {
+    List<String> inspectionItems) {
+
+  public AssetResponse {
+    inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+  }
 
   public AssetResponse(
       UUID id,
@@ -39,6 +44,6 @@ public record AssetResponse(
         status,
         categoryId,
         createdAt,
-        null);
+        List.of());
   }
 }

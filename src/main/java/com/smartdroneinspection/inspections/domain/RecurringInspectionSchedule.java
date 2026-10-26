@@ -13,8 +13,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /** Recurrence definition; generated inspections keep their own immutable assignment snapshots. */
 @Entity
@@ -37,24 +35,6 @@ public class RecurringInspectionSchedule {
 
   @Column(name = "drone_id", nullable = false)
   private UUID droneId;
-
-  @Column(name = "asset_pair_assignment_id")
-  private UUID assetPairAssignmentId;
-
-  @Column(nullable = false, length = 1000)
-  private String objective;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(columnDefinition = "jsonb")
-  private String scope;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "component_scope", columnDefinition = "jsonb")
-  private String componentScope;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "acceptance_criteria", columnDefinition = "jsonb")
-  private String acceptanceCriteria;
 
   @Column(name = "anchor_date", nullable = false)
   private LocalDateTime anchorDate;
@@ -103,10 +83,6 @@ public class RecurringInspectionSchedule {
       UUID createdByUserId,
       UUID inspectorId,
       UUID droneId,
-      String objective,
-      String scope,
-      String componentScope,
-      String acceptanceCriteria,
       LocalDateTime anchor,
       String timezone,
       String unit,
@@ -120,10 +96,6 @@ public class RecurringInspectionSchedule {
         Objects.requireNonNull(createdByUserId, "Created by user ID is required");
     this.inspectorId = Objects.requireNonNull(inspectorId, "Inspector ID is required");
     this.droneId = Objects.requireNonNull(droneId, "Drone ID is required");
-    if (objective == null || objective.isBlank() || objective.length() > 1000) {
-      throw new IllegalArgumentException(
-          "Inspection objective is required (maximum 1000 characters)");
-    }
     if (durationSeconds < 1 || durationSeconds > 604800) {
       throw new IllegalArgumentException(
           "Inspection duration must be between one second and seven days");
@@ -136,10 +108,6 @@ public class RecurringInspectionSchedule {
     if (endsAt != null && endsAt.isBefore(this.recurrence.occurrenceAt(0))) {
       throw new IllegalArgumentException("Schedule end must not precede the first occurrence");
     }
-    this.objective = objective;
-    this.scope = Inspection.normalizeJson(scope);
-    this.componentScope = Inspection.normalizeJson(componentScope);
-    this.acceptanceCriteria = Inspection.normalizeJson(acceptanceCriteria);
     this.anchorDate = anchor;
     this.timezone = timezone;
     this.recurrenceUnit = unit;
@@ -151,44 +119,6 @@ public class RecurringInspectionSchedule {
     this.status = "ACTIVE";
     this.createdAt = Instant.now();
     this.updatedAt = Instant.now();
-  }
-
-  public RecurringInspectionSchedule(
-      UUID organizationId,
-      UUID assetId,
-      UUID createdByUserId,
-      UUID inspectorId,
-      UUID droneId,
-      UUID assetPairAssignmentId,
-      String objective,
-      String scope,
-      String componentScope,
-      String acceptanceCriteria,
-      LocalDateTime anchor,
-      String timezone,
-      String unit,
-      int interval,
-      long durationSeconds,
-      int reminderDays,
-      Instant endsAt) {
-    this(
-        organizationId,
-        assetId,
-        createdByUserId,
-        inspectorId,
-        droneId,
-        objective,
-        scope,
-        componentScope,
-        acceptanceCriteria,
-        anchor,
-        timezone,
-        unit,
-        interval,
-        durationSeconds,
-        reminderDays,
-        endsAt);
-    this.assetPairAssignmentId = assetPairAssignmentId;
   }
 
   @PrePersist
@@ -283,26 +213,6 @@ public class RecurringInspectionSchedule {
 
   public UUID getDroneId() {
     return droneId;
-  }
-
-  public UUID getAssetPairAssignmentId() {
-    return assetPairAssignmentId;
-  }
-
-  public String getObjective() {
-    return objective;
-  }
-
-  public String getScope() {
-    return scope;
-  }
-
-  public String getComponentScope() {
-    return componentScope;
-  }
-
-  public String getAcceptanceCriteria() {
-    return acceptanceCriteria;
   }
 
   public LocalDateTime getAnchorDate() {

@@ -6,7 +6,6 @@ import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsReques
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.PreparationContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
@@ -14,10 +13,8 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
 import com.smartdroneinspection.inspections.domain.ReportSections;
-import com.smartdroneinspection.inspections.domain.enums.InspectionPreparationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
@@ -25,7 +22,6 @@ import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
@@ -81,7 +77,6 @@ public class ReportService {
   private static final String PDF_MEDIA_TYPE = "application/pdf";
 
   private final InspectionRepository inspections;
-  private final InspectionPreparationRepository preparations;
   private final ReportContextAccess reportContextAccess;
   private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
   private final EvidenceRepository evidence;
@@ -98,7 +93,6 @@ public class ReportService {
 
   public ReportService(
       InspectionRepository inspections,
-      InspectionPreparationRepository preparations,
       ReportContextAccess reportContextAccess,
       org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
       EvidenceRepository evidence,
@@ -113,7 +107,6 @@ public class ReportService {
       ApplicationEventPublisher events,
       ObjectMapper objectMapper) {
     this.inspections = inspections;
-    this.preparations = preparations;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
     this.evidence = evidence;
@@ -158,10 +151,6 @@ public class ReportService {
     List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
     List<FieldSession> recordedSessions =
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
-    List<InspectionPreparation> recordedPreparations =
-        preparations.findByInspectionIdOrderByPreparationVersionDesc(inspectionId);
-    InspectionPreparation latestPreparation =
-        recordedPreparations.stream().findFirst().orElse(null);
     Identity reportIdentity =
         reportContextAccess
             .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
@@ -190,10 +179,8 @@ public class ReportService {
           port.draftSections(
               new ReportDraftPort.DraftContext(
                   new InspectionSummary(
-                      inspection.getObjective(),
-                      inspection.getScope(),
-                      inspection.getComponentScope(),
-                      inspection.getAcceptanceCriteria(),
+                      reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
+                      inspection.getFlightPermitFileName(),
                       inspection.getPlannedStartAt() == null
                           ? null
                           : inspection.getPlannedStartAt().toString(),
@@ -201,7 +188,6 @@ public class ReportService {
                           ? null
                           : inspection.getPlannedEndAt().toString(),
                       inspection.getDroneId() == null ? null : inspection.getDroneId().toString()),
-                  buildChecklistSummaries(inspectionId, locale),
                   confirmedFindings.stream()
                       .map(
                           finding ->
@@ -825,10 +811,6 @@ public class ReportService {
         reportContextAccess
             .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
-    var preparation =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElse(null);
     DroneContext assignedDrone =
         reportIdentity == null || reportIdentity.droneSerialNumber() == null
             ? null
@@ -840,15 +822,9 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     ReportRenderPort.ReportContext renderReportContext =
         buildRenderReportContext(
-            inspection, reportIdentity, assignedDrone, preparation, recordedSessions, locale);
+            inspection, reportIdentity, assignedDrone, recordedSessions, locale);
     ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
-    JsonNode snapshot;
-    try {
-      snapshot = objectMapper.readTree(version.getContentSnapshot());
-    } catch (JacksonException exception) {
-      snapshot = objectMapper.createObjectNode();
-    }
-    String purposeScopeCriteria = composePurposeScopeCriteria(inspection, snapshot, locale);
+    String purposeScopeCriteria = composePurposeScopeCriteria(inspection, reportIdentity, locale);
 
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
     Map<UUID, List<String>> componentLocationByEvidence = new LinkedHashMap<>();
@@ -902,7 +878,7 @@ public class ReportService {
         documentReference(version),
         version.getVersionNo(),
         version.getStatus().name(),
-        inspection.getObjective(),
+        reportIdentity == null ? null : reportIdentity.assetName(),
         reportIdentity == null || reportIdentity.assetName() == null
             ? null
             : reportIdentity.assetName(),
@@ -1049,7 +1025,6 @@ public class ReportService {
     snapshot.append("{\"model\":").append(quote(port.modelName()));
     snapshot.append(",\"assetId\":").append(quote(inspection.getAssetId().toString()));
     snapshot.append(",\"inspectionId\":").append(quote(inspection.getId().toString()));
-    snapshot.append(",\"objective\":").append(quote(inspection.getObjective()));
     snapshot.append(",\"evidenceCount\":").append(confirmedEvidence.size());
     snapshot.append(",\"findingsCount\":").append(confirmedFindings.size());
     appendSection(snapshot, "executiveSummary", proposal.executiveSummary());
@@ -1091,132 +1066,25 @@ public class ReportService {
   }
 
   private String composePurposeScopeCriteria(
-      Inspection inspection, JsonNode snapshot, Locale locale) {
+      Inspection inspection, Identity identity, Locale locale) {
     StringBuilder content = new StringBuilder();
-    appendStructuredValue(
-        content,
-        ReportHtmlTemplate.localized(locale, "Objective"),
-        objectMapper.getNodeFactory().textNode(inspection.getObjective()));
-    appendStructuredValue(
-        content,
-        ReportHtmlTemplate.localized(locale, "Scope"),
-        jsonField(inspection.getScope(), "summary"));
-    appendArrayValues(
-        content,
-        ReportHtmlTemplate.localized(locale, "Included components"),
-        inspection.getComponentScope(),
-        "items");
-    appendArrayValues(
-        content,
-        ReportHtmlTemplate.localized(locale, "Acceptance criteria"),
-        inspection.getAcceptanceCriteria(),
-        "criteria");
-    preparations
-        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
-        .map(preparation -> parseJson(preparation.getShotList()))
-        .ifPresent(shotList -> appendShotList(content, shotList, locale));
-    return content.isEmpty() ? null : content.toString();
-  }
-
-  private JsonNode jsonField(String raw, String field) {
-    JsonNode node = parseJson(raw);
-    if (node == null) return null;
-    JsonNode value = node.get(field);
-    return value == null ? node : value;
-  }
-
-  private JsonNode parseJson(String raw) {
-    if (raw == null || raw.isBlank()) return null;
-    try {
-      return objectMapper.readTree(raw);
-    } catch (JacksonException exception) {
-      return objectMapper.getNodeFactory().textNode(raw);
+    if (inspection.getFlightPermitFileName() != null
+        && !inspection.getFlightPermitFileName().isBlank()) {
+      content
+          .append(ReportHtmlTemplate.localized(locale, "Flight permit"))
+          .append(": ")
+          .append(inspection.getFlightPermitFileName())
+          .append('\n');
     }
-  }
-
-  private void appendArrayValues(StringBuilder content, String label, String raw, String field) {
-    JsonNode node = jsonField(raw, field);
-    if (node == null || node.isNull()) return;
-    content.append(label).append(':');
-    if (node.isArray()) {
-      node.forEach(
-          item ->
-              content
-                  .append("\n• ")
-                  .append(item.isValueNode() ? item.asString("") : item.toString()));
-    } else {
-      content.append("\n• ").append(node.isValueNode() ? node.asString("") : node.toString());
-    }
-    content.append('\n');
-  }
-
-  private void appendShotList(StringBuilder content, JsonNode shotList, Locale locale) {
-    if (shotList == null || !shotList.isArray() || shotList.isEmpty()) return;
-    content.append(ReportHtmlTemplate.localized(locale, "Planned shot-list"));
-    content.append(':');
-    shotList.forEach(
-        item -> {
-          String code = item.path("code").asString("");
-          String angle = item.path("angle").asString("");
-          if (!code.isBlank() || !angle.isBlank()) {
-            content.append("\n• ").append(code);
-            if (!angle.isBlank()) content.append(" — ").append(angle);
-            if (item.path("required").asBoolean(false)) {
-              content.append(ReportHtmlTemplate.localized(locale, " (required)"));
-            }
-          }
-        });
-    content.append('\n');
-  }
-
-  private void appendStructuredValue(StringBuilder content, String label, JsonNode value) {
-    if (value == null || value.isNull() || value.isMissingNode()) return;
-    String text = value.isValueNode() ? value.asString("") : value.toString();
-    if (text.isBlank()) return;
-    content.append(label).append(": ").append(text).append('\n');
-  }
-
-  private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(UUID inspectionId) {
-    return buildChecklistSummaries(inspectionId, Locale.ENGLISH);
-  }
-
-  private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(
-      UUID inspectionId, Locale locale) {
-    return jdbcTemplate.query(
-        "SELECT item.prompt, item.prompt_vi, response.response_value::text AS answer, response.notes "
-            + "FROM checklist_responses response "
-            + "JOIN checklist_items item ON item.id = response.checklist_item_id "
-            + "WHERE response.inspection_id = ? "
-            + "ORDER BY item.display_order, response.completed_at NULLS LAST, response.created_at",
-        (result, rowNum) -> {
-          String englishPrompt = result.getString("prompt");
-          String vietnamesePrompt = result.getString("prompt_vi");
-          String prompt =
-              locale != null
-                      && "vi".equalsIgnoreCase(locale.getLanguage())
-                      && vietnamesePrompt != null
-                      && !vietnamesePrompt.isBlank()
-                  ? vietnamesePrompt
-                  : englishPrompt;
-          return new ReportDraftPort.ChecklistEntrySummary(
-              prompt, responseLabel(result.getString("answer")), result.getString("notes"));
-        },
-        inspectionId);
-  }
-
-  private String responseLabel(String rawAnswer) {
-    if (rawAnswer == null || rawAnswer.isBlank()) return null;
-    try {
-      JsonNode answer = objectMapper.readTree(rawAnswer);
-      if (answer.isValueNode()) return answer.asString();
-      for (String key : List.of("value", "answer", "response", "selectedValue")) {
-        JsonNode value = answer.get(key);
-        if (value != null && value.isValueNode()) return value.asString();
+    if (identity != null
+        && identity.inspectionItems() != null
+        && !identity.inspectionItems().isEmpty()) {
+      content.append(ReportHtmlTemplate.localized(locale, "Included components")).append(":\n");
+      for (String item : identity.inspectionItems()) {
+        content.append(" - ").append(item).append('\n');
       }
-      return answer.toString();
-    } catch (JacksonException exception) {
-      return rawAnswer;
     }
+    return content.isEmpty() ? null : content.toString();
   }
 
   private String evidenceByFindingSession(Finding finding, List<Evidence> currentEvidence) {
@@ -1231,40 +1099,8 @@ public class ReportService {
             .orElse(null);
   }
 
-  private static String readinessDecisionLabel(InspectionPreparation preparation) {
-    if (preparation == null || preparation.getStatus() == null) {
-      return null;
-    }
-    if (preparation.getStatus() == InspectionPreparationStatus.READY) {
-      return "APPROVED";
-    }
-    if (preparation.getStatus() == InspectionPreparationStatus.RETURNED) {
-      return "RETURNED";
-    }
-    return null;
-  }
-
   private InspectionReportContextResponse buildReportContextResponse(
-      Inspection inspection,
-      Identity identity,
-      DroneContext drone,
-      InspectionPreparation preparation,
-      List<FieldSession> sessions) {
-    PreparationContext preparationContext =
-        preparation == null
-            ? null
-            : new PreparationContext(
-                preparation.getPreparationVersion(),
-                preparation.getStatus().name(),
-                preparation.getShotList(),
-                preparation.getEvidenceTypes(),
-                preparation.getAccessConstraints(),
-                preparation.getSafetyObservations(),
-                readinessDecisionLabel(preparation),
-                preparation.getReviewedAt(),
-                preparation.getReviewReason(),
-                preparation.getPermitDocumentReferences(),
-                preparation.getSubmittedAt());
+      Inspection inspection, Identity identity, DroneContext drone, List<FieldSession> sessions) {
     return new InspectionReportContextResponse(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1272,7 +1108,7 @@ public class ReportService {
         identity == null ? null : identity.assetLocation(),
         identity == null ? null : identity.assetCategory(),
         drone,
-        preparationContext,
+        null,
         sessions.stream()
             .map(
                 session ->
@@ -1298,10 +1134,8 @@ public class ReportService {
       Inspection inspection,
       Identity identity,
       DroneContext drone,
-      InspectionPreparation preparation,
       List<FieldSession> sessions,
       Locale locale) {
-    InspectionPreparation prep = preparation;
     return new ReportRenderPort.ReportContext(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1311,31 +1145,8 @@ public class ReportService {
         drone == null ? null : drone.serialNumber(),
         drone == null ? null : drone.manufacturer(),
         drone == null ? null : drone.model(),
-        prep == null ? null : prep.getStatus().name(),
-        prep == null ? null : prep.getShotList(),
-        prep == null ? null : prep.getEvidenceTypes(),
-        prep == null ? null : prep.getAccessConstraints(),
-        prep == null ? null : prep.getSafetyObservations(),
-        prep == null ? null : prep.getPermitDocumentReferences(),
-        readinessDecisionLabel(prep),
-        prep == null || prep.getReviewedAt() == null ? null : prep.getReviewedAt().toString(),
-        prep == null ? null : prep.getReviewReason(),
-        buildChecklistSummaries(inspection.getId(), locale).stream()
-            .map(
-                entry ->
-                    ReportHtmlTemplate.localized(locale, "Checklist response")
-                        + ": "
-                        + entry.prompt()
-                        + " — "
-                        + entry.responseValue()
-                        + (entry.notes() == null
-                            ? ""
-                            : " ("
-                                + ReportHtmlTemplate.localized(locale, "Notes")
-                                + ": "
-                                + entry.notes()
-                                + ")"))
-            .toList(),
+        inspection.getFlightPermitFileName(),
+        identity == null ? List.of() : identity.inspectionItems(),
         sessions.stream().map(session -> fieldSessionSummary(session, drone, locale)).toList(),
         ReportHtmlTemplate.localized(
             locale,
@@ -1380,12 +1191,8 @@ public class ReportService {
             ? null
             : new DroneContext(
                 identity.droneSerialNumber(), identity.droneManufacturer(), identity.droneModel());
-    var prep =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
-            .orElse(null);
     var sessions = fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
-    return buildReportContextResponse(inspection, identity, drone, prep, sessions);
+    return buildReportContextResponse(inspection, identity, drone, sessions);
   }
 
   private static String quote(String value) {

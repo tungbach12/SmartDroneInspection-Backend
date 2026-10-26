@@ -93,19 +93,7 @@ class EvidenceOwnershipServiceTest {
         upperCode("AST"));
 
     return inspections
-        .saveAndFlush(
-            new Inspection(
-                organizationId,
-                assetId,
-                null,
-                null,
-                null,
-                "Foreign inspection",
-                null,
-                null,
-                null,
-                null,
-                null))
+        .saveAndFlush(new Inspection(organizationId, assetId, null, null, null, null))
         .getId();
   }
 

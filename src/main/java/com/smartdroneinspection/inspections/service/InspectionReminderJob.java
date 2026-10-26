@@ -97,9 +97,7 @@ public class InspectionReminderJob {
     }
 
     InspectionStatus status = inspection.getStatus();
-    if (status != InspectionStatus.ASSIGNED
-        && status != InspectionStatus.PREPARING
-        && status != InspectionStatus.READY_FOR_FLIGHT) {
+    if (status != InspectionStatus.ASSIGNED && status != InspectionStatus.READY_FOR_FLIGHT) {
       return false;
     }
 

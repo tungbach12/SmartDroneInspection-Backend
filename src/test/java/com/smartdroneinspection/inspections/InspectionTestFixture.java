@@ -41,18 +41,7 @@ public final class InspectionTestFixture {
     UUID assetId = createAsset(organizationId);
     Inspection inspection =
         inspections.saveAndFlush(
-            new Inspection(
-                organizationId,
-                assetId,
-                null,
-                inspector.getId(),
-                null,
-                "Visual inspection of the main span",
-                "{\"method\":\"visual\"}",
-                "[\"main span\"]",
-                "{\"criteria\":\"no visible structural damage\"}",
-                null,
-                null));
+            new Inspection(organizationId, assetId, inspector.getId(), null, null, null));
     advanceToFieldCompleted(inspection);
     return new Data(
         organizationId,

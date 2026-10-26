@@ -9,12 +9,9 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.FieldSession;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.service.InspectionFieldSessionService;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -37,7 +34,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-/** MF2-10: starting a field session rechecks readiness at the moment of the start. */
+/** Field-session state transitions, scoping, and validation. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @Transactional
@@ -46,12 +43,10 @@ class InspectionFieldSessionServiceTest {
   private static final Instant PLANNED_START = Instant.parse("2026-11-01T09:00:00Z");
 
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionPreparationRepository preparations;
   @Autowired FieldSessionRepository sessions;
   @Autowired UserRepository users;
   @Autowired AssetRepository assets;
   @Autowired AssetCategoryRepository categories;
-  @Autowired ChecklistTemplateRepository templates;
   @Autowired DroneRepository drones;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired UserAccess userAccess;
@@ -64,15 +59,13 @@ class InspectionFieldSessionServiceTest {
   private UUID assetId;
   private UUID droneId;
   private UUID inspectionId;
-  private UUID preparationId;
   private long initialSessionCount;
-  private long initialPreparationCount;
   private InspectionFieldSessionService service;
 
   @BeforeEach
   void setUp() {
     AssetTestFixture.Data fixture =
-        new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
+        new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
     reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
@@ -96,25 +89,17 @@ class InspectionFieldSessionServiceTest {
     droneId =
         drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
     inspectionId = createReadyInspection();
-    preparationId = insertApprovedReadinessDecision();
     initialSessionCount =
         jdbcTemplate.queryForObject(
             "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
             Long.class,
             inspectionId);
-    initialPreparationCount =
-        jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM inspection_preparations WHERE inspection_id = ?",
-            Long.class,
-            inspectionId);
 
-    service =
-        new InspectionFieldSessionService(
-            inspections, preparations, sessions, userAccess, entityManager);
+    service = new InspectionFieldSessionService(inspections, sessions, userAccess, entityManager);
   }
 
   @Test
-  void theAssignedInspectorStartsASessionAgainstTheCurrentReadinessDecision() {
+  void theAssignedInspectorStartsASession() {
     FieldSession session =
         service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
@@ -130,81 +115,23 @@ class InspectionFieldSessionServiceTest {
   }
 
   @Test
-  void theSessionRecordsWhichReadinessDecisionItStartedAgainst() {
-    FieldSession session =
-        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-
-    assertThat(preparationIdOf(session.getId())).isEqualTo(preparationId);
-  }
-
-  @Test
-  void approvalForAPreviousPreparationCannotStartAfterANewerPreparationIsCurrent() {
-    InspectionPreparation oldPreparation =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElseThrow();
-    long versionCountBefore = preparationCountForInspection();
-    oldPreparation.markSuperseded();
-    preparations.saveAndFlush(oldPreparation);
-    InspectionPreparation current = oldPreparation.nextDraftVersion(2);
-    current.recordShotList("{\"shots\":[\"east face\"]}");
-    current.recordSafetyObservations("No hazards observed");
-    preparations.saveAndFlush(current);
-
-    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
-        .isInstanceOf(BusinessException.class)
-        .satisfies(
-            error ->
-                assertThat(((BusinessException) error).code()).isEqualTo("READINESS_NOT_APPROVED"));
-    assertNoSessionStarted();
-    assertThat(preparationCountForInspection()).isEqualTo(versionCountBefore + 1);
-  }
-
-  @Test
-  void aSessionCanStartAgainAfterTheAdditionalSessionHandoffIsApproved() {
-    jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
-    applyAdditionalSessionHandoff();
-    InspectionPreparation next =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElseThrow();
-    next.recordShotList("{\"shots\":[\"east face\"]}");
-    next.recordSafetyObservations("No hazards observed");
-    next.submit();
-    next = preparations.saveAndFlush(next);
-    next.approve(reviewerId);
-    preparations.saveAndFlush(next);
+  void anInspectionWithoutFlightPermitCannotStart() {
     jdbcTemplate.update(
-        "UPDATE inspections SET status = 'READY_FOR_FLIGHT' WHERE id = ?", inspectionId);
-
-    FieldSession session =
-        service.start(inspectorId, inspectionId, "Confirmed east face is accessible");
-
-    assertThat(session.getStatus()).isEqualTo("IN_PROGRESS");
-    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
-  }
-
-  @Test
-  void anInspectionWithoutAnApprovedReadinessDecisionCannotStart() {
-    jdbcTemplate.update(
-        "UPDATE inspection_preparations SET status = 'SUBMITTED', reviewed_by_user_id = NULL, reviewed_at = NULL WHERE inspection_id = ?",
-        inspectionId);
+        "UPDATE inspections SET flight_permit_file_key = NULL WHERE id = ?", inspectionId);
     entityManager.clear();
 
     assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
-                assertThat(((BusinessException) error).code()).isEqualTo("READINESS_NOT_APPROVED"));
+                assertThat(((BusinessException) error).code()).isEqualTo("FLIGHT_PERMIT_REQUIRED"));
     assertNoSessionStarted();
   }
 
   @Test
-  void aReturnedReadinessDecisionCannotStartASession() {
-    jdbcTemplate.update(
-        "UPDATE inspection_preparations SET status = 'RETURNED', review_reason = 'Needs rework' WHERE id = ?",
-        preparationId);
-    jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
+  void anInspectionThatIsNotReadyForFlightCannotStart() {
+    jdbcTemplate.update("UPDATE inspections SET status = 'ASSIGNED' WHERE id = ?", inspectionId);
+    entityManager.clear();
 
     assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
@@ -216,30 +143,14 @@ class InspectionFieldSessionServiceTest {
   }
 
   @Test
-  void anInvalidatedReadinessDecisionCannotStartASession() {
-    InspectionPreparation preparation = preparations.findById(preparationId).orElseThrow();
-    preparation.supersede("Permit withdrawn after approval");
-    preparations.saveAndFlush(preparation);
+  void aSessionCanStartAgainWhenInspectionIsFieldCompleted() {
+    FieldSession first = service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
+    service.complete(inspectorId, inspectionId, first.getId(), "First flight completed");
+    assertThat(statusOfInspection()).isEqualTo("FIELD_COMPLETED");
 
-    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
-        .isInstanceOf(BusinessException.class)
-        .satisfies(
-            error ->
-                assertThat(((BusinessException) error).code()).isEqualTo("READINESS_NOT_APPROVED"));
-    assertNoSessionStarted();
-  }
-
-  @Test
-  void anInspectionThatIsNoLongerReadyForFlightCannotStart() {
-    jdbcTemplate.update("UPDATE inspections SET status = 'PREPARING' WHERE id = ?", inspectionId);
-
-    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
-        .isInstanceOf(BusinessException.class)
-        .satisfies(
-            error ->
-                assertThat(((BusinessException) error).code())
-                    .isEqualTo("INSPECTION_NOT_READY_FOR_FLIGHT"));
-    assertNoSessionStarted();
+    FieldSession second = service.start(inspectorId, inspectionId, "Second flight planned");
+    assertThat(second.getStatus()).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
   }
 
   @Test
@@ -459,13 +370,6 @@ class InspectionFieldSessionServiceTest {
     return service.start(inspectorId, inspectionId, preFlightNote);
   }
 
-  private long preparationCountForInspection() {
-    return jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM inspection_preparations WHERE inspection_id = ?",
-        Long.class,
-        inspectionId);
-  }
-
   private void assertNoSessionStarted() {
     assertThat(
             jdbcTemplate.queryForObject(
@@ -473,7 +377,6 @@ class InspectionFieldSessionServiceTest {
                 Long.class,
                 inspectionId))
         .isEqualTo(initialSessionCount);
-    assertThat(statusOfInspection()).isIn("READY_FOR_FLIGHT", "PREPARING");
   }
 
   private UUID createUser(UUID organizationId, UserRole role, String label) {
@@ -493,9 +396,9 @@ class InspectionFieldSessionServiceTest {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, status, objective,
+        INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_uploaded_at, status,
           planned_start_at, planned_end_at)
-        VALUES (?, ?, ?, ?, ?, 'READY_FOR_FLIGHT', 'Inspect main span', ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'READY_FOR_FLIGHT', ?, ?)
         """,
         id,
         organizationId,
@@ -505,32 +408,6 @@ class InspectionFieldSessionServiceTest {
         Timestamp.from(PLANNED_START),
         Timestamp.from(PLANNED_START.plus(2, ChronoUnit.HOURS)));
     return id;
-  }
-
-  private UUID insertApprovedReadinessDecision() {
-    InspectionPreparation preparation = new InspectionPreparation(inspectionId, 1);
-    preparation.recordShotList("{\"shots\":[\"span\"]}");
-    preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit();
-    preparation = preparations.saveAndFlush(preparation);
-    preparation.approve(reviewerId);
-    return preparations.saveAndFlush(preparation).getId();
-  }
-
-  private void applyAdditionalSessionHandoff() {
-    InspectionPreparation preparation =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElseThrow();
-    preparation.supersede("Inspector requested an additional field session");
-    preparations.saveAndFlush(preparation);
-    preparations.saveAndFlush(
-        preparation.nextDraftVersion(preparation.getPreparationVersion() + 1));
-  }
-
-  private UUID preparationIdOf(UUID sessionId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT preparation_id FROM field_sessions WHERE id = ?", UUID.class, sessionId);
   }
 
   private String sessionStatus(UUID sessionId) {

@@ -87,48 +87,6 @@ CREATE TABLE asset_documents (
 
 
 --
--- Name: asset_pair_assignments; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE asset_pair_assignments (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organization_id uuid NOT NULL,
-    asset_id uuid NOT NULL,
-    inspector_user_id uuid NOT NULL,
-    drone_id uuid NOT NULL,
-    valid_from timestamp with time zone NOT NULL,
-    valid_until timestamp with time zone,
-    status character varying(24) NOT NULL,
-    reason character varying(2000),
-    assigned_by_user_id uuid NOT NULL,
-    assigned_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    assignment_response character varying(24),
-    responded_at timestamp with time zone,
-    CONSTRAINT ck_asset_pair_assignments_response CHECK ((((assignment_response IS NULL) AND (responded_at IS NULL)) OR ((assignment_response IS NOT NULL) AND (responded_at IS NOT NULL)))),
-    CONSTRAINT ck_asset_pair_assignments_response_vocabulary CHECK (((assignment_response IS NULL) OR ((assignment_response)::text = ANY ((ARRAY['ACCEPTED'::character varying, 'REJECTED'::character varying])::text[])))),
-    CONSTRAINT ck_asset_pair_assignments_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'ACTIVE'::character varying, 'SUPERSEDED'::character varying, 'SUSPENDED'::character varying])::text[]))),
-    CONSTRAINT ck_asset_pair_assignments_window CHECK (((valid_until IS NULL) OR (valid_until > valid_from)))
-);
-
-
---
--- Name: COLUMN asset_pair_assignments.assignment_response; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN asset_pair_assignments.assignment_response IS 'Inspector answer to the assignment: ACCEPTED or REJECTED (MF2-01). NULL until the assigned inspector responds. Independent of status, which tracks the pair''s own validity window rather than the answer.';
-
-
---
--- Name: COLUMN asset_pair_assignments.responded_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN asset_pair_assignments.responded_at IS 'Instant the assigned inspector answered. Records when the response arrived so a missed or late answer is distinguishable from no answer at all.';
-
-
---
 -- Name: assets; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -148,6 +106,7 @@ CREATE TABLE assets (
     asset_type character varying(96),
     location jsonb,
     technical_profile jsonb,
+    inspection_items jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT ck_assets_latitude CHECK (((latitude IS NULL) OR ((latitude >= ('-90'::integer)::numeric) AND (latitude <= (90)::numeric)))),
     CONSTRAINT ck_assets_longitude CHECK (((longitude IS NULL) OR ((longitude >= ('-180'::integer)::numeric) AND (longitude <= (180)::numeric)))),
     CONSTRAINT ck_assets_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'INACTIVE'::character varying, 'RETIRED'::character varying])::text[])))
@@ -194,97 +153,6 @@ CREATE TABLE auth_sessions (
 
 
 --
--- Name: checklist_items; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE checklist_items (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    template_id uuid NOT NULL,
-    item_code character varying(64) NOT NULL,
-    section_name character varying(160),
-    prompt character varying(1000) NOT NULL,
-    response_type character varying(24) NOT NULL,
-    required boolean DEFAULT true NOT NULL,
-    display_order integer NOT NULL,
-    guidance character varying(2000),
-    section_name_vi character varying(160),
-    prompt_vi character varying(1000),
-    guidance_vi character varying(2000),
-    validation_config jsonb,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT ck_checklist_item_code_normalized CHECK (((item_code)::text = upper(btrim((item_code)::text)))),
-    CONSTRAINT ck_checklist_item_display_order CHECK ((display_order >= 0)),
-    CONSTRAINT ck_checklist_item_response_type CHECK (((response_type)::text = ANY ((ARRAY['PASS_FAIL'::character varying, 'TEXT'::character varying, 'NUMBER'::character varying, 'BOOLEAN'::character varying, 'CHOICE'::character varying])::text[])))
-);
-
-
---
--- Name: checklist_responses; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE checklist_responses (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    inspection_id uuid NOT NULL,
-    checklist_item_id uuid NOT NULL,
-    response_value jsonb NOT NULL,
-    notes character varying(4000),
-    completed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-
-
---
--- Name: checklist_templates; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE checklist_templates (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    template_key character varying(64) NOT NULL,
-    version_number integer NOT NULL,
-    asset_category_id uuid,
-    name character varying(200) NOT NULL,
-    description character varying(2000),
-    name_vi character varying(200),
-    description_vi character varying(2000),
-    status character varying(24) NOT NULL,
-    created_by_user_id uuid NOT NULL,
-    published_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_checklist_template_key_normalized CHECK (((template_key)::text = upper(btrim((template_key)::text)))),
-    CONSTRAINT ck_checklist_template_publication CHECK (((((status)::text = 'DRAFT'::text) AND (published_at IS NULL)) OR (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'RETIRED'::character varying])::text[])) AND (published_at IS NOT NULL)))),
-    CONSTRAINT ck_checklist_template_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'ACTIVE'::character varying, 'RETIRED'::character varying])::text[]))),
-    CONSTRAINT ck_checklist_template_version CHECK ((version_number > 0))
-);
-
-
---
--- Name: drone_documents; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE drone_documents (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    drone_id uuid NOT NULL,
-    document_type character varying(48) NOT NULL,
-    issuer character varying(200),
-    document_reference character varying(200),
-    valid_from timestamp with time zone,
-    valid_until timestamp with time zone,
-    status character varying(24) NOT NULL,
-    object_key character varying(1000) NOT NULL,
-    checksum_sha256 character(64) NOT NULL,
-    uploaded_by_user_id uuid NOT NULL,
-    reviewed_by_user_id uuid,
-    reviewed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT ck_drone_documents_status CHECK (((status)::text = ANY ((ARRAY['PENDING_REVIEW'::character varying, 'ACTIVE'::character varying, 'EXPIRED'::character varying, 'REJECTED'::character varying, 'REVOKED'::character varying])::text[]))),
-    CONSTRAINT ck_drone_documents_validity CHECK (((valid_until IS NULL) OR (valid_from IS NULL) OR (valid_until > valid_from)))
-);
-
-
---
 -- Name: drones; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -299,6 +167,9 @@ CREATE TABLE drones (
     last_maintenance_at timestamp with time zone,
     next_maintenance_at timestamp with time zone,
     notes character varying(2000),
+    registration_number character varying(100),
+    registration_file_key character varying(1000),
+    registration_expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
@@ -357,7 +228,6 @@ CREATE TABLE evidence (
 CREATE TABLE field_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
-    preparation_id uuid,
     status character varying(24) NOT NULL,
     started_at timestamp with time zone,
     ended_at timestamp with time zone,
@@ -399,65 +269,6 @@ CREATE TABLE findings (
 );
 
 
---
--- Name: flight_permits; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE flight_permits (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organization_id uuid NOT NULL,
-    asset_id uuid,
-    area_reference character varying(200),
-    permit_type character varying(64) NOT NULL,
-    issuing_authority character varying(200),
-    permit_reference character varying(200),
-    geographic_scope jsonb,
-    valid_from timestamp with time zone,
-    valid_until timestamp with time zone,
-    conditions jsonb,
-    status character varying(24) NOT NULL,
-    source_evidence_id uuid,
-    reviewed_by_user_id uuid,
-    reviewed_at timestamp with time zone,
-    review_reason character varying(2000),
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_flight_permits_status CHECK (((status)::text = ANY ((ARRAY['APPLICATION'::character varying, 'ACTIVE'::character varying, 'EXPIRED'::character varying, 'REJECTED'::character varying, 'REVOKED'::character varying, 'NOT_APPLICABLE'::character varying])::text[]))),
-    CONSTRAINT ck_flight_permits_validity CHECK (((valid_until IS NULL) OR (valid_from IS NULL) OR (valid_until > valid_from)))
-);
-
-
---
--- Name: inspection_preparations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE inspection_preparations (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    inspection_id uuid NOT NULL,
-    preparation_version integer NOT NULL,
-    shot_list jsonb DEFAULT '[]'::jsonb NOT NULL,
-    evidence_types jsonb,
-    access_constraints jsonb,
-    safety_observations character varying(4000),
-    permit_document_references jsonb,
-    submitted_at timestamp with time zone,
-    reviewed_by_user_id uuid,
-    reviewed_at timestamp with time zone,
-    review_reason character varying(2000),
-    status character varying(24) NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_inspection_preparations_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'SUBMITTED'::character varying, 'RETURNED'::character varying, 'READY'::character varying, 'SUPERSEDED'::character varying])::text[]))),
-    CONSTRAINT ck_inspection_preparations_version CHECK ((preparation_version > 0))
-);
-
-
---
--- Name: inspection_reports; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE inspection_reports (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     inspection_id uuid NOT NULL,
@@ -496,18 +307,16 @@ CREATE TABLE inspections (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
     organization_id uuid NOT NULL,
-    objective character varying(1000),
-    scope jsonb,
-    component_scope jsonb,
-    acceptance_criteria jsonb,
     planned_start_at timestamp with time zone,
     planned_end_at timestamp with time zone,
-    asset_pair_assignment_id uuid,
     inspector_id uuid,
     drone_id uuid,
+    flight_permit_file_key character varying(1000),
+    flight_permit_file_name character varying(500),
+    flight_permit_uploaded_at timestamp with time zone,
     findings_confirmed_at timestamp with time zone,
     findings_snapshot_hash character varying(64),
-    CONSTRAINT ck_inspections_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'ASSIGNED'::character varying, 'PREPARING'::character varying, 'READY_FOR_FLIGHT'::character varying, 'IN_PROGRESS'::character varying, 'FIELD_COMPLETED'::character varying, 'REPORT_DRAFT'::character varying, 'REPORT_PUBLISHED'::character varying, 'REPAIR_PENDING'::character varying, 'COMPLETED'::character varying, 'CANCELLED'::character varying])::text[])))
+    CONSTRAINT ck_inspections_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'ASSIGNED'::character varying, 'READY_FOR_FLIGHT'::character varying, 'IN_PROGRESS'::character varying, 'FIELD_COMPLETED'::character varying, 'REPORT_DRAFT'::character varying, 'REPORT_PUBLISHED'::character varying, 'REPAIR_PENDING'::character varying, 'COMPLETED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
 
@@ -840,36 +649,15 @@ CREATE TABLE users (
     phone_number character varying(32),
     avatar_url character varying(500),
     roles character varying(255) DEFAULT ''::character varying NOT NULL,
+    pilot_license_number character varying(100),
+    pilot_license_class character varying(16),
+    pilot_license_expires_at timestamp with time zone,
+    pilot_license_file_key character varying(1000),
     CONSTRAINT ck_users_actor_zone CHECK (((actor_zone)::text = ANY ((ARRAY['PLATFORM'::character varying, 'CUSTOMER_ORGANIZATION'::character varying])::text[]))),
     CONSTRAINT ck_users_failed_login_count CHECK ((failed_login_count >= 0)),
     CONSTRAINT ck_users_roles CHECK ((((roles)::text = ''::text) OR ((roles)::text ~ '^(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER)(,(ADMIN|ORG_ADMIN|INSPECTOR|MAINTENANCE_ENGINEER))*$'::text))),
     CONSTRAINT ck_users_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'SUSPENDED'::character varying, 'DISABLED'::character varying])::text[]))),
     CONSTRAINT ck_users_zone_organization CHECK (((((actor_zone)::text = 'CUSTOMER_ORGANIZATION'::text) AND (organization_id IS NOT NULL)) OR (((actor_zone)::text <> 'CUSTOMER_ORGANIZATION'::text) AND (organization_id IS NULL))))
-);
-
-
---
--- Name: workforce_credentials; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE workforce_credentials (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    organization_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    credential_type character varying(64) NOT NULL,
-    issuer character varying(200),
-    credential_reference character varying(200),
-    issued_at timestamp with time zone,
-    expires_at timestamp with time zone,
-    status character varying(24) NOT NULL,
-    evidence_id uuid,
-    verified_by_user_id uuid,
-    verified_at timestamp with time zone,
-    verification_reason character varying(2000),
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_workforce_credentials_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'PENDING_REVIEW'::character varying, 'ACTIVE'::character varying, 'EXPIRING_SOON'::character varying, 'EXPIRED'::character varying, 'REJECTED'::character varying, 'SUSPENDED'::character varying])::text[])))
 );
 
 
@@ -887,14 +675,6 @@ ALTER TABLE ONLY asset_categories
 
 ALTER TABLE ONLY asset_documents
     ADD CONSTRAINT asset_documents_pkey PRIMARY KEY (id);
-
-
---
--- Name: asset_pair_assignments asset_pair_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_pkey PRIMARY KEY (id);
 
 
 --
@@ -919,38 +699,6 @@ ALTER TABLE ONLY audit_events
 
 ALTER TABLE ONLY auth_sessions
     ADD CONSTRAINT auth_sessions_pkey PRIMARY KEY (id);
-
-
---
--- Name: checklist_items checklist_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_items
-    ADD CONSTRAINT checklist_items_pkey PRIMARY KEY (id);
-
-
---
--- Name: checklist_responses checklist_responses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_responses
-    ADD CONSTRAINT checklist_responses_pkey PRIMARY KEY (id);
-
-
---
--- Name: checklist_templates checklist_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_templates
-    ADD CONSTRAINT checklist_templates_pkey PRIMARY KEY (id);
-
-
---
--- Name: drone_documents drone_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY drone_documents
-    ADD CONSTRAINT drone_documents_pkey PRIMARY KEY (id);
 
 
 --
@@ -983,22 +731,6 @@ ALTER TABLE ONLY evidence
 
 ALTER TABLE ONLY field_sessions
     ADD CONSTRAINT field_sessions_pkey PRIMARY KEY (id);
-
-
---
--- Name: flight_permits flight_permits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY flight_permits
-    ADD CONSTRAINT flight_permits_pkey PRIMARY KEY (id);
-
-
---
--- Name: inspection_preparations inspection_preparations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_preparations
-    ADD CONSTRAINT inspection_preparations_pkey PRIMARY KEY (id);
 
 
 --
@@ -1144,46 +876,6 @@ ALTER TABLE ONLY asset_documents
 
 
 --
--- Name: checklist_items uq_checklist_item_code; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_items
-    ADD CONSTRAINT uq_checklist_item_code UNIQUE (template_id, item_code);
-
-
---
--- Name: checklist_items uq_checklist_item_order; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_items
-    ADD CONSTRAINT uq_checklist_item_order UNIQUE (template_id, display_order);
-
-
---
--- Name: checklist_responses uq_checklist_responses_item; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_responses
-    ADD CONSTRAINT uq_checklist_responses_item UNIQUE (inspection_id, checklist_item_id);
-
-
---
--- Name: checklist_templates uq_checklist_template_version; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_templates
-    ADD CONSTRAINT uq_checklist_template_version UNIQUE (template_key, version_number);
-
-
---
--- Name: drone_documents uq_drone_documents_object_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY drone_documents
-    ADD CONSTRAINT uq_drone_documents_object_key UNIQUE (object_key);
-
-
---
 -- Name: drones uq_drones_organization_serial; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1205,14 +897,6 @@ ALTER TABLE ONLY evidence
 
 ALTER TABLE ONLY findings
     ADD CONSTRAINT uq_findings_code UNIQUE (inspection_id, finding_code);
-
-
---
--- Name: inspection_preparations uq_inspection_preparations_version; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_preparations
-    ADD CONSTRAINT uq_inspection_preparations_version UNIQUE (inspection_id, preparation_version);
 
 
 --
@@ -1288,14 +972,6 @@ ALTER TABLE ONLY findings
 
 
 --
--- Name: workforce_credentials workforce_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY workforce_credentials
-    ADD CONSTRAINT workforce_credentials_pkey PRIMARY KEY (id);
-
-
---
 -- Name: event_publication_by_completion_date_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1314,13 +990,6 @@ CREATE INDEX event_publication_serialized_event_hash_idx ON event_publication US
 --
 
 CREATE INDEX ix_asset_documents_asset_time ON asset_documents USING btree (asset_id, created_at DESC);
-
-
---
--- Name: ix_asset_pair_assignments_asset_status_from; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_asset_pair_assignments_asset_status_from ON asset_pair_assignments USING btree (asset_id, status, valid_from);
 
 
 --
@@ -1359,41 +1028,6 @@ CREATE INDEX ix_auth_sessions_user ON auth_sessions USING btree (user_id);
 
 
 --
--- Name: ix_checklist_items_template; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_checklist_items_template ON checklist_items USING btree (template_id);
-
-
---
--- Name: ix_checklist_responses_inspection; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_checklist_responses_inspection ON checklist_responses USING btree (inspection_id, completed_at);
-
-
---
--- Name: ix_checklist_templates_category; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_checklist_templates_category ON checklist_templates USING btree (asset_category_id);
-
-
---
--- Name: ix_checklist_templates_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_checklist_templates_status ON checklist_templates USING btree (status);
-
-
---
--- Name: ix_drone_documents_drone_status_validity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_drone_documents_drone_status_validity ON drone_documents USING btree (drone_id, status, valid_until);
-
-
---
 -- Name: ix_drones_organization_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1426,20 +1060,6 @@ CREATE INDEX ix_findings_evidence ON findings USING btree (evidence_id);
 --
 
 CREATE INDEX ix_findings_inspection_status ON findings USING btree (inspection_id, status, severity);
-
-
---
--- Name: ix_flight_permits_org_status_validity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_flight_permits_org_status_validity ON flight_permits USING btree (organization_id, status, valid_from, valid_until);
-
-
---
--- Name: ix_inspection_preparations_inspection_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_inspection_preparations_inspection_status ON inspection_preparations USING btree (inspection_id, status);
 
 
 --
@@ -1565,27 +1185,6 @@ CREATE INDEX ix_users_status ON users USING btree (status);
 
 
 --
--- Name: ix_workforce_credentials_org_user_status_expiry; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_workforce_credentials_org_user_status_expiry ON workforce_credentials USING btree (organization_id, user_id, status, expires_at);
-
-
---
--- Name: uq_asset_pair_assignments_active_asset; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_asset_pair_assignments_active_asset ON asset_pair_assignments USING btree (asset_id) WHERE ((status)::text = 'ACTIVE'::text);
-
-
---
--- Name: uq_asset_pair_assignments_id_scope; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_asset_pair_assignments_id_scope ON asset_pair_assignments USING btree (id, organization_id, asset_id);
-
-
---
 -- Name: uq_assets_id_organization; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1673,46 +1272,6 @@ ALTER TABLE ONLY asset_documents
 
 
 --
--- Name: asset_pair_assignments asset_pair_assignments_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments asset_pair_assignments_assigned_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments asset_pair_assignments_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES drones(id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments asset_pair_assignments_inspector_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_inspector_user_id_fkey FOREIGN KEY (inspector_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments asset_pair_assignments_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT asset_pair_assignments_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
-
-
---
 -- Name: assets assets_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1753,70 +1312,6 @@ ALTER TABLE ONLY auth_sessions
 
 
 --
--- Name: checklist_items checklist_items_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_items
-    ADD CONSTRAINT checklist_items_template_id_fkey FOREIGN KEY (template_id) REFERENCES checklist_templates(id) ON DELETE CASCADE;
-
-
---
--- Name: checklist_responses checklist_responses_checklist_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_responses
-    ADD CONSTRAINT checklist_responses_checklist_item_id_fkey FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE RESTRICT;
-
-
---
--- Name: checklist_responses checklist_responses_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_responses
-    ADD CONSTRAINT checklist_responses_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE CASCADE;
-
-
---
--- Name: checklist_templates checklist_templates_asset_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_templates
-    ADD CONSTRAINT checklist_templates_asset_category_id_fkey FOREIGN KEY (asset_category_id) REFERENCES asset_categories(id) ON DELETE RESTRICT;
-
-
---
--- Name: checklist_templates checklist_templates_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY checklist_templates
-    ADD CONSTRAINT checklist_templates_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
--- Name: drone_documents drone_documents_drone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY drone_documents
-    ADD CONSTRAINT drone_documents_drone_id_fkey FOREIGN KEY (drone_id) REFERENCES drones(id) ON DELETE RESTRICT;
-
-
---
--- Name: drone_documents drone_documents_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY drone_documents
-    ADD CONSTRAINT drone_documents_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
--- Name: drone_documents drone_documents_uploaded_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY drone_documents
-    ADD CONSTRAINT drone_documents_uploaded_by_user_id_fkey FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
 -- Name: drones drones_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1841,51 +1336,11 @@ ALTER TABLE ONLY field_sessions
 
 
 --
--- Name: field_sessions field_sessions_preparation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY field_sessions
-    ADD CONSTRAINT field_sessions_preparation_id_fkey FOREIGN KEY (preparation_id) REFERENCES inspection_preparations(id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments fk_asset_pair_assignments_asset_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT fk_asset_pair_assignments_asset_tenant FOREIGN KEY (asset_id, organization_id) REFERENCES assets(id, organization_id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments fk_asset_pair_assignments_drone_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT fk_asset_pair_assignments_drone_tenant FOREIGN KEY (drone_id, organization_id) REFERENCES drones(id, organization_id) ON DELETE RESTRICT;
-
-
---
--- Name: asset_pair_assignments fk_asset_pair_assignments_inspector_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY asset_pair_assignments
-    ADD CONSTRAINT fk_asset_pair_assignments_inspector_tenant FOREIGN KEY (inspector_user_id, organization_id) REFERENCES users(id, organization_id) ON DELETE RESTRICT;
-
-
---
 -- Name: evidence fk_evidence_inspection; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY evidence
     ADD CONSTRAINT fk_evidence_inspection FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
-
-
---
--- Name: flight_permits fk_flight_permits_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY flight_permits
-    ADD CONSTRAINT fk_flight_permits_evidence FOREIGN KEY (source_evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
 
 
 --
@@ -1913,14 +1368,6 @@ ALTER TABLE ONLY inspections
 
 
 --
--- Name: inspections fk_inspections_pair_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspections
-    ADD CONSTRAINT fk_inspections_pair_tenant FOREIGN KEY (asset_pair_assignment_id, organization_id, asset_id) REFERENCES asset_pair_assignments(id, organization_id, asset_id) ON DELETE RESTRICT;
-
-
---
 -- Name: maintenance_work_logs fk_maintenance_work_logs_target_task; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1942,54 +1389,6 @@ ALTER TABLE ONLY maintenance_work_orders
 
 ALTER TABLE ONLY findings
     ADD CONSTRAINT fk_verified_finding_evidence FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
-
-
---
--- Name: workforce_credentials fk_workforce_credentials_evidence; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY workforce_credentials
-    ADD CONSTRAINT fk_workforce_credentials_evidence FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT;
-
-
---
--- Name: flight_permits flight_permits_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY flight_permits
-    ADD CONSTRAINT flight_permits_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
-
-
---
--- Name: flight_permits flight_permits_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY flight_permits
-    ADD CONSTRAINT flight_permits_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
-
-
---
--- Name: flight_permits flight_permits_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY flight_permits
-    ADD CONSTRAINT flight_permits_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
--- Name: inspection_preparations inspection_preparations_inspection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_preparations
-    ADD CONSTRAINT inspection_preparations_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
-
-
---
--- Name: inspection_preparations inspection_preparations_reviewed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspection_preparations
-    ADD CONSTRAINT inspection_preparations_reviewed_by_user_id_fkey FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --
@@ -2017,14 +1416,6 @@ ALTER TABLE ONLY inspection_reports
 
 ALTER TABLE ONLY inspections
     ADD CONSTRAINT inspections_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE RESTRICT;
-
-
---
--- Name: inspections inspections_asset_pair_assignment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY inspections
-    ADD CONSTRAINT inspections_asset_pair_assignment_id_fkey FOREIGN KEY (asset_pair_assignment_id) REFERENCES asset_pair_assignments(id) ON DELETE RESTRICT;
 
 
 --
@@ -2351,30 +1742,6 @@ ALTER TABLE ONLY users
 
 ALTER TABLE ONLY findings
     ADD CONSTRAINT verified_findings_inspection_id_fkey FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE RESTRICT;
-
-
---
--- Name: workforce_credentials workforce_credentials_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY workforce_credentials
-    ADD CONSTRAINT workforce_credentials_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
-
-
---
--- Name: workforce_credentials workforce_credentials_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY workforce_credentials
-    ADD CONSTRAINT workforce_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
-
-
---
--- Name: workforce_credentials workforce_credentials_verified_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY workforce_credentials
-    ADD CONSTRAINT workforce_credentials_verified_by_user_id_fkey FOREIGN KEY (verified_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 -- V43: Storage and vector index for RAG repair standards and specifications

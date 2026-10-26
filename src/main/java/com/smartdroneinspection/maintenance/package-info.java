@@ -6,7 +6,6 @@
       "shared::exception",
       "shared::storage",
       "users",
-      "workforce::credential",
       "maintenance::repository"
     })
 package com.smartdroneinspection.maintenance;

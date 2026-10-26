@@ -1,5 +1,6 @@
 package com.smartdroneinspection.assets.reportcontext;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,5 +16,32 @@ public interface ReportContextAccess {
       String assetCategory,
       String droneSerialNumber,
       String droneManufacturer,
-      String droneModel) {}
+      String droneModel,
+      List<String> inspectionItems) {
+
+    public Identity {
+      inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+    }
+
+    public Identity(
+        String organizationName,
+        String assetCode,
+        String assetName,
+        String assetLocation,
+        String assetCategory,
+        String droneSerialNumber,
+        String droneManufacturer,
+        String droneModel) {
+      this(
+          organizationName,
+          assetCode,
+          assetName,
+          assetLocation,
+          assetCategory,
+          droneSerialNumber,
+          droneManufacturer,
+          droneModel,
+          List.of());
+    }
+  }
 }

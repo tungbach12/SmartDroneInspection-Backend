@@ -19,6 +19,7 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowS
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
+import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
@@ -64,16 +65,51 @@ public class InspectionController {
   private final FindingService findingService;
   private final ReportService reportService;
   private final InspectionWorkflowService workflowService;
+  private final InspectionCreationService creationService;
 
   public InspectionController(
       EvidenceService evidenceService,
       FindingService findingService,
       ReportService reportService,
-      InspectionWorkflowService workflowService) {
+      InspectionWorkflowService workflowService,
+      InspectionCreationService creationService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
+    this.creationService = creationService;
+  }
+
+  @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      uploadFlightPermit(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @RequestParam("file") MultipartFile file)
+          throws java.io.IOException {
+    return ApiResponse.success(
+        creationService.uploadFlightPermit(
+            actorId(jwt),
+            inspectionId,
+            null,
+            file.getOriginalFilename(),
+            file.getBytes(),
+            file.getContentType()));
+  }
+
+  @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      uploadFlightPermitJson(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @Valid @RequestBody
+              com.smartdroneinspection.inspections.api.dto.request.UploadFlightPermitRequest
+                  request) {
+    return ApiResponse.success(
+        creationService.uploadFlightPermit(
+            actorId(jwt), inspectionId, request.fileKey(), request.fileName(), null, null));
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

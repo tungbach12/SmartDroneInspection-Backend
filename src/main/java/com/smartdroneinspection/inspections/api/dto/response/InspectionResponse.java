@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.api.dto.response;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record InspectionResponse(
@@ -9,73 +10,23 @@ public record InspectionResponse(
     UUID assetId,
     String assetName,
     String locationText,
-    UUID assetPairAssignmentId,
+    List<String> inspectionItems,
     UUID inspectorId,
     String inspectorName,
     UUID droneId,
     String droneSerialNumber,
     String droneModel,
     String droneServiceability,
-    String flightPermitReference,
-    String flightPermitAuthority,
-    Instant flightPermitValidFrom,
-    Instant flightPermitValidUntil,
-    String flightPermitStatus,
-    String objective,
-    String scope,
-    String componentScope,
-    String acceptanceCriteria,
+    String flightPermitFileKey,
+    String flightPermitFileName,
+    Instant flightPermitUploadedAt,
     Instant plannedStartAt,
     Instant plannedEndAt,
     String status,
     Instant createdAt,
     Instant updatedAt) {
 
-  public InspectionResponse(
-      UUID id,
-      UUID organizationId,
-      UUID assetId,
-      String assetName,
-      UUID assetPairAssignmentId,
-      UUID inspectorId,
-      String inspectorName,
-      UUID droneId,
-      String droneSerialNumber,
-      String objective,
-      String scope,
-      String componentScope,
-      String acceptanceCriteria,
-      Instant plannedStartAt,
-      Instant plannedEndAt,
-      String status,
-      Instant createdAt,
-      Instant updatedAt) {
-    this(
-        id,
-        organizationId,
-        assetId,
-        assetName,
-        null,
-        assetPairAssignmentId,
-        inspectorId,
-        inspectorName,
-        droneId,
-        droneSerialNumber,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        objective,
-        scope,
-        componentScope,
-        acceptanceCriteria,
-        plannedStartAt,
-        plannedEndAt,
-        status,
-        createdAt,
-        updatedAt);
+  public InspectionResponse {
+    inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
   }
 }

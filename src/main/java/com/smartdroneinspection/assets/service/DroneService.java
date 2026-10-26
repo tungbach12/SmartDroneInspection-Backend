@@ -63,7 +63,10 @@ public class DroneService {
                 DroneServiceability.ACTIVE,
                 null,
                 null,
-                request.notes())));
+                request.notes(),
+                request.registrationNumber(),
+                request.registrationFileKey(),
+                request.registrationExpiresAt())));
   }
 
   @Transactional(readOnly = true)
@@ -89,6 +92,20 @@ public class DroneService {
           HttpStatus.BAD_REQUEST, "INVALID_STATE", "Retired drones cannot change serviceability");
     }
     drone.changeServiceability(request.serviceability());
+    return DroneResponse.from(drones.saveAndFlush(drone));
+  }
+
+  @Transactional
+  public DroneResponse updateRegistration(
+      UUID actorId,
+      UUID droneId,
+      com.smartdroneinspection.assets.api.dto.request.UpdateDroneRegistrationRequest request) {
+    Drone drone = requireOwnedDrone(actorId, droneId);
+    requireEntitled(drone.getOrganizationId());
+    drone.updateRegistration(
+        request.registrationNumber(),
+        request.registrationFileKey(),
+        request.registrationExpiresAt());
     return DroneResponse.from(drones.saveAndFlush(drone));
   }
 

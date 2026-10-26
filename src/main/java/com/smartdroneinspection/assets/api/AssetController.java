@@ -1,9 +1,7 @@
 package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateAssetRequest;
-import com.smartdroneinspection.assets.api.dto.request.ReassignPairRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
-import com.smartdroneinspection.assets.api.dto.response.AssetDefaultPairResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
 import com.smartdroneinspection.assets.service.AssetService;
@@ -57,24 +55,6 @@ public class AssetController {
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
-  }
-
-  @GetMapping("/{assetId}/pair")
-  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER', 'INSPECTOR')")
-  public ApiResponse<AssetDefaultPairResponse> getActivePair(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
-    return ApiResponse.success(assets.getActivePair(subject(jwt), assetId));
-  }
-
-  @PutMapping("/{assetId}/pair")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
-  public ApiResponse<AssetDefaultPairResponse> reassignPair(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID assetId,
-      @Valid @RequestBody ReassignPairRequest request) {
-    return ApiResponse.success(
-        assets.reassignPair(
-            subject(jwt), assetId, request.inspectorId(), request.droneId(), request.reason()));
   }
 
   @PutMapping("/{assetId}")

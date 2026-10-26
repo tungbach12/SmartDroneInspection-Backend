@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record CreateAssetRequest(
@@ -15,8 +16,11 @@ public record CreateAssetRequest(
     BigDecimal latitude,
     BigDecimal longitude,
     @Size(max = 1000) String ownershipInformation,
-    UUID defaultInspectorId,
-    UUID defaultDroneId) {
+    List<String> inspectionItems) {
+
+  public CreateAssetRequest {
+    inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+  }
 
   public CreateAssetRequest(
       String code,
@@ -36,7 +40,6 @@ public record CreateAssetRequest(
         latitude,
         longitude,
         ownershipInformation,
-        null,
-        null);
+        List.of());
   }
 }

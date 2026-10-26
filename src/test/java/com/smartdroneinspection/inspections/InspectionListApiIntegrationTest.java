@@ -241,17 +241,7 @@ class InspectionListApiIntegrationTest {
     return inspections
         .saveAndFlush(
             new com.smartdroneinspection.inspections.domain.Inspection(
-                organizationId,
-                assetId,
-                null,
-                resolvedInspector,
-                null,
-                "Inspection created for list scope coverage",
-                "{\"method\":\"visual\"}",
-                "[\"main span\"]",
-                "{\"criteria\":\"no visible structural damage\"}",
-                null,
-                null))
+                organizationId, assetId, resolvedInspector, null, null, null))
         .getId();
   }
 

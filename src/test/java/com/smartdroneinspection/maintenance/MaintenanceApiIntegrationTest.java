@@ -277,31 +277,7 @@ class MaintenanceApiIntegrationTest {
   }
 
   @Test
-  void expiredCredentialBlocksTeamAssignment() throws Exception {
-    helper.grantCredential(
-        fixture.organizationId(),
-        fixture.engineerId(),
-        "ACTIVE",
-        java.time.Instant.now().minusSeconds(30));
-    UUID workOrderId = createWorkOrder(fixture.ownerId());
-
-    mockMvc
-        .perform(
-            post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "leadUserId", fixture.engineerId(),
-                            "reportAuthorUserId", fixture.reportAuthorId(),
-                            "acceptingReviewerUserId", fixture.reviewerId()))))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("WORK_ORDER_SCOPE_DENIED"));
-  }
-
-  @Test
-  void unrecordedCredentialDoesNotBlockAssignmentPerApprovedInterimRule() throws Exception {
+  void activeEngineerInSameOrganizationCanBeAssignedToTeam() throws Exception {
     UUID workOrderId = createWorkOrder(fixture.ownerId());
 
     mockMvc
