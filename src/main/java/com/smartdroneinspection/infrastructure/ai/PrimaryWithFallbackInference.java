@@ -10,11 +10,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Advisory detection with an optional second detector behind it.
  *
- * <p>MF3-05 keeps the self-hosted YOLO detector as the default and treats the compatible vision
- * endpoint as an option: when it is configured it answers only for images the primary detector
- * could not process, so a detector outage degrades the advisory step instead of removing it. An
- * image the primary detector processed with no detections is a result, not a failure, and is not
- * retried against the fallback.
+ * <p>MF3-05 keeps the self-hosted YOLO detector as the default and uses the compatible vision
+ * endpoint when it is configured and YOLO either cannot process an image or returns no detections.
+ * A human still reviews all results before they become findings.
  */
 class PrimaryWithFallbackInference implements AiInferencePort {
 
@@ -46,8 +44,9 @@ class PrimaryWithFallbackInference implements AiInferencePort {
   @Override
   public List<Detection> analyze(byte[] image, String contentType, boolean fallbackEnabled)
       throws IOException {
+    List<Detection> detections;
     try {
-      return primary.analyze(image, contentType);
+      detections = primary.analyze(image, contentType);
     } catch (IOException failure) {
       if (!fallbackEnabled || fallback.isEmpty()) {
         throw failure;
@@ -57,5 +56,12 @@ class PrimaryWithFallbackInference implements AiInferencePort {
           failure.getMessage());
       return fallback.get().analyze(image, contentType);
     }
+
+    if (detections.isEmpty() && fallbackEnabled && fallback.isPresent()) {
+      log.info(
+          "Primary detector returned no detections; checking with the configured vision fallback");
+      return fallback.get().analyze(image, contentType);
+    }
+    return detections;
   }
 }

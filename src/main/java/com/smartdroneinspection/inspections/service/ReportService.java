@@ -186,7 +186,7 @@ public class ReportService {
                       inspection.getPlannedEndAt() == null
                           ? null
                           : inspection.getPlannedEndAt().toString(),
-                      inspection.getDroneId() == null ? null : inspection.getDroneId().toString()),
+                      droneDisplayReference(reportIdentity, inspection.getDroneId())),
                   confirmedFindings.stream()
                       .map(
                           finding ->
@@ -247,9 +247,7 @@ public class ReportService {
                                   session.getPreFlightChecklistNote(),
                                   session.getPostponementReason(),
                                   session.getAbortReason(),
-                                  inspection.getDroneId() == null
-                                      ? null
-                                      : inspection.getDroneId().toString()))
+                                  droneDisplayReference(reportIdentity, inspection.getDroneId())))
                       .toList(),
                   locale));
     } catch (IOException ex) {
@@ -1250,5 +1248,20 @@ public class ReportService {
     }
     JsonNode value = content.get(field);
     return value == null || value.isNull() ? null : value.asString();
+  }
+
+  private static String droneDisplayReference(Identity identity, UUID droneId) {
+    if (identity != null && identity.droneModel() != null && !identity.droneModel().isBlank()) {
+      StringBuilder sb = new StringBuilder();
+      if (identity.droneManufacturer() != null && !identity.droneManufacturer().isBlank()) {
+        sb.append(identity.droneManufacturer().trim()).append(" ");
+      }
+      sb.append(identity.droneModel().trim());
+      if (identity.droneSerialNumber() != null && !identity.droneSerialNumber().isBlank()) {
+        sb.append(" (S/N: ").append(identity.droneSerialNumber().trim()).append(")");
+      }
+      return sb.toString();
+    }
+    return droneId == null ? null : droneId.toString();
   }
 }

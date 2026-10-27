@@ -34,11 +34,14 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
           + "order by f.createdAt desc")
   List<Finding> findRemovedByInspectionId(@Param("inspectionId") UUID inspectionId);
 
-  /** The next free code for this inspection, counting removed rows so a code is never reused. */
+  /** The highest numerical suffix of finding codes for this inspection, including removed rows. */
   @Query(
-      value = "SELECT count(*) FROM findings WHERE inspection_id = :inspectionId",
+      value =
+          "SELECT COALESCE(MAX(CASE WHEN finding_code ~ '^F-[0-9]+$' THEN"
+              + " SUBSTRING(finding_code FROM 3)::bigint ELSE 0 END), 0) FROM findings WHERE"
+              + " inspection_id = :inspectionId",
       nativeQuery = true)
-  long countIncludingRemovedByInspectionId(@Param("inspectionId") UUID inspectionId);
+  long findMaxFindingCodeNumberByInspectionId(@Param("inspectionId") UUID inspectionId);
 
   @Query(
       value =

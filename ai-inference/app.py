@@ -25,7 +25,7 @@ logger = logging.getLogger("ai-inference")
 MODEL_PATH = os.environ.get("MODEL_PATH", "/app/models/best.pt")
 MODEL_NAME = os.environ.get("MODEL_NAME", "yolo11s")
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "mbdd2025-v1")
-CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.15"))
+CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.20"))
 IMAGE_SIZE = int(os.environ.get("IMAGE_SIZE", "1024"))
 
 # Multimodal Vision API Enrichment
