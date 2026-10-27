@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/platform/subscriptions")
-@PreAuthorize("hasRole('" + Roles.ADMIN + "')")
 public class PlatformSubscriptionController {
 
   private final SubscriptionService subscriptionService;
@@ -32,24 +31,27 @@ public class PlatformSubscriptionController {
   }
 
   @GetMapping
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.PLATFORM_MANAGER + "')")
   public ApiResponse<List<SubscriptionResponse>> list(
       @RequestParam(required = false) Subscription.Status status) {
     return ApiResponse.success(subscriptionService.listAllSubscriptions(status));
   }
 
   @GetMapping("/{subscriptionId}")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.PLATFORM_MANAGER + "')")
   public ApiResponse<SubscriptionResponse> getDetails(@PathVariable UUID subscriptionId) {
     return ApiResponse.success(subscriptionService.getSubscriptionDetails(subscriptionId));
   }
 
   @PostMapping("/{subscriptionId}/confirm-payment")
+  @PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
   public ApiResponse<SubscriptionResponse> confirmPayment(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID subscriptionId,
       @Valid @RequestBody ConfirmPaymentRequest request) {
-    UUID adminUserId = UUID.fromString(jwt.getSubject());
+    UUID actorUserId = UUID.fromString(jwt.getSubject());
     SubscriptionResponse response =
-        subscriptionService.confirmPayment(adminUserId, subscriptionId, request);
+        subscriptionService.confirmPayment(actorUserId, subscriptionId, request);
     return ApiResponse.success("Payment confirmed and subscription activated", response);
   }
 }

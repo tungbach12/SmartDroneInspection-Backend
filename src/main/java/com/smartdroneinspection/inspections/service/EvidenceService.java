@@ -7,13 +7,13 @@ import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -61,7 +61,7 @@ public class EvidenceService {
 
   private final InspectionRepository inspections;
   private final EvidenceRepository evidence;
-  private final InspectionReportVersionRepository reports;
+  private final InspectionReportRepository reports;
   private final FindingRepository findings;
   private final FieldSessionRepository sessions;
   private final Optional<EvidenceObjectStore> objectStore;
@@ -70,7 +70,7 @@ public class EvidenceService {
   public EvidenceService(
       InspectionRepository inspections,
       EvidenceRepository evidence,
-      InspectionReportVersionRepository reports,
+      InspectionReportRepository reports,
       FindingRepository findings,
       FieldSessionRepository sessions,
       Optional<EvidenceObjectStore> objectStore,
@@ -97,11 +97,7 @@ public class EvidenceService {
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
     if (fieldSessionId != null) {
-      requireSessionInScope(actorId, inspection, fieldSessionId);
-    }
-    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
+      requireSessionInScope(inspection, fieldSessionId);
     }
     String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     if (!ALLOWED_TYPES.contains(contentType)) {
@@ -206,7 +202,9 @@ public class EvidenceService {
             longitude,
             null,
             Instant.now());
-    return toResponse(evidence.saveAndFlush(record));
+    Evidence savedRecord = evidence.saveAndFlush(record);
+    syncFindingsConfirmationAfterEvidenceEdit(inspection);
+    return toResponse(savedRecord);
   }
 
   @Transactional
@@ -225,10 +223,7 @@ public class EvidenceService {
     if (!java.util.Objects.equals(record.getLocationDescription(), normalized)) {
       record.setLocationDescription(normalized);
       evidence.saveAndFlush(record);
-      if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-        inspection.reopenFindings();
-        inspections.saveAndFlush(inspection);
-      }
+      syncFindingsConfirmationAfterEvidenceEdit(inspection);
     }
     return toResponse(record);
   }
@@ -262,11 +257,9 @@ public class EvidenceService {
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "EVIDENCE_RETIRE_INVALID", ex.getMessage());
     }
-    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
-    }
-    return toResponse(evidence.saveAndFlush(record));
+    Evidence savedRecord = evidence.saveAndFlush(record);
+    syncFindingsConfirmationAfterEvidenceEdit(inspection);
+    return toResponse(savedRecord);
   }
 
   /**
@@ -307,28 +300,29 @@ public class EvidenceService {
       target.retire();
     }
     List<Evidence> saved = evidence.saveAllAndFlush(targets);
+    syncFindingsConfirmationAfterEvidenceEdit(inspection);
+    return saved.stream().map(this::toResponse).toList();
+  }
+
+  private void syncFindingsConfirmationAfterEvidenceEdit(Inspection inspection) {
     if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
       inspection.reopenFindings();
       inspections.saveAndFlush(inspection);
     }
-    return saved.stream().map(this::toResponse).toList();
   }
 
-  private void requireSessionInScope(UUID actorId, Inspection inspection, UUID fieldSessionId) {
+  private void requireSessionInScope(Inspection inspection, UUID fieldSessionId) {
     FieldSession session =
         sessions
             .findByIdAndInspectionId(fieldSessionId, inspection.getId())
-            .filter(
-                candidate -> candidate.getOrganizationId().equals(inspection.getOrganizationId()))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.CONFLICT,
                         "FIELD_SESSION_NOT_FOUND",
                         "The field session was not found in this inspection."));
-    if (!session.getInspectorUserId().equals(actorId)
-        || (!"IN_PROGRESS".equals(session.getStatus())
-            && !"FIELD_COMPLETED".equals(session.getStatus()))) {
+    if (!"IN_PROGRESS".equals(session.getStatus())
+        && !"FIELD_COMPLETED".equals(session.getStatus())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FIELD_SESSION_NOT_CURRENT",
@@ -345,12 +339,13 @@ public class EvidenceService {
           "INSPECTION_STATE_CONFLICT",
           "Evidence is immutable after publication");
     }
-    InspectionReportVersion report =
+    InspectionReport report =
         reports.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (report == null) return;
     if (report.getStatus() == ReportStatus.SUBMITTED
         || report.getStatus() == ReportStatus.APPROVED
-        || report.getStatus() == ReportStatus.PUBLISHED) {
+        || report.getStatus() == ReportStatus.PUBLISHED
+        || report.getStatus() == ReportStatus.SUPERSEDED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "EVIDENCE_LOCKED",
@@ -393,6 +388,8 @@ public class EvidenceService {
             evidenceFilter(inspectionId, status, mediaType, search),
             PageRequest.of(safePage - 1, safePageSize, EVIDENCE_ORDER));
     EvidenceRepository.EvidenceSummary summary = evidence.summarizeInspectionEvidence(inspectionId);
+    Instant latestCreatedAt = summary != null ? summary.getLatestCreatedAt() : null;
+    Instant latestRetiredAt = summary != null ? summary.getLatestRetiredAt() : null;
     return new EvidencePageResponse(
         result.getContent().stream().map(this::toResponse).toList(),
         safePage,
@@ -401,8 +398,8 @@ public class EvidenceService {
         result.getTotalPages(),
         evidence.countByInspectionIdAndIsDeletedFalse(inspectionId),
         evidence.countByInspectionIdAndIsDeletedTrue(inspectionId),
-        summary.getLatestCreatedAt(),
-        summary.getLatestRetiredAt());
+        latestCreatedAt,
+        latestRetiredAt);
   }
 
   private static Specification<Evidence> evidenceFilter(
@@ -515,8 +512,8 @@ public class EvidenceService {
             .orElseThrow(this::inspectionNotFound);
     // A reviewer may read the report of an inspection they did not author; the assigned Inspector
     // and
-    // a qualified ORG_ADMIN both need access to the evidence behind it.
-    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("ORG_ADMIN")) {
+    // a qualified ORG_MANAGER both need access to the evidence behind it.
+    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("ORG_MANAGER")) {
       throw inspectionNotFound();
     }
     return inspection;

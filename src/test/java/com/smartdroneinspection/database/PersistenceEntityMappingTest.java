@@ -5,20 +5,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.AssetDocument;
-import com.smartdroneinspection.assets.domain.AssetPairAssignment;
-import com.smartdroneinspection.assets.domain.ChecklistItem;
-import com.smartdroneinspection.assets.domain.ChecklistTemplate;
 import com.smartdroneinspection.assets.domain.Drone;
-import com.smartdroneinspection.assets.domain.DroneDocument;
-import com.smartdroneinspection.assets.domain.FlightPermit;
-import com.smartdroneinspection.inspections.domain.ChecklistResponse;
+import com.smartdroneinspection.assets.domain.DroneLease;
+import com.smartdroneinspection.assets.domain.PlatformDrone;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.RecurringInspectionSchedule;
+import com.smartdroneinspection.inspections.domain.ScheduleOccurrence;
 import com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision;
 import com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder;
 import com.smartdroneinspection.maintenance.domain.MaintenanceCostLine;
@@ -35,7 +31,6 @@ import com.smartdroneinspection.subscriptions.domain.Subscription;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.workforce.domain.WorkforceCredential;
 import java.util.List;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
@@ -51,27 +46,22 @@ class PersistenceEntityMappingTest {
           Asset.class,
           AssetCategory.class,
           AssetDocument.class,
-          AssetPairAssignment.class,
-          ChecklistItem.class,
-          ChecklistTemplate.class,
           Drone.class,
-          DroneDocument.class,
-          FlightPermit.class,
+          PlatformDrone.class,
+          DroneLease.class,
           Inspection.class,
-          InspectionPreparation.class,
-          InspectionReadinessDecision.class,
+          RecurringInspectionSchedule.class,
+          ScheduleOccurrence.class,
           FieldSession.class,
-          ChecklistResponse.class,
           Evidence.class,
           Finding.class,
-          InspectionReportVersion.class,
+          InspectionReport.class,
           Notification.class,
           AuthSession.class,
           Organization.class,
           User.class,
           Subscription.class,
           PaymentTransaction.class,
-          WorkforceCredential.class,
           MaintenanceWorkOrder.class,
           MaintenanceTask.class,
           MaintenanceTeamMember.class,

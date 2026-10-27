@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +29,6 @@ class AssetCatalogApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired AssetCategoryRepository categories;
-  @Autowired ChecklistTemplateRepository templates;
   @Autowired AssetRepository assets;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -42,7 +40,7 @@ class AssetCatalogApiIntegrationTest {
   void setUp() {
     mockMvc =
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
-    fixture = new AssetTestFixture(categories, templates, assets, users, jdbcTemplate).create();
+    fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
   }
 
   @Test
@@ -122,6 +120,6 @@ class AssetCatalogApiIntegrationTest {
         .jwt(t -> t.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_ORG_ADMIN"));
+                "ROLE_ORG_MANAGER"));
   }
 }

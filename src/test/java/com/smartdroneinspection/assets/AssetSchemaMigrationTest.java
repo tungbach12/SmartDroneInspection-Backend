@@ -16,12 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class AssetSchemaMigrationTest {
 
   private static final Set<String> EXPECTED_TABLES =
-      Set.of(
-          "asset_categories",
-          "checklist_templates",
-          "checklist_items",
-          "assets",
-          "asset_documents");
+      Set.of("asset_categories", "assets", "asset_documents");
 
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -34,8 +29,7 @@ class AssetSchemaMigrationTest {
             FROM information_schema.tables
             WHERE table_schema = 'public'
               AND table_name IN (
-                'asset_categories', 'checklist_templates', 'checklist_items',
-                'assets', 'asset_documents'
+                'asset_categories', 'assets', 'asset_documents'
               )
             """,
             String.class);

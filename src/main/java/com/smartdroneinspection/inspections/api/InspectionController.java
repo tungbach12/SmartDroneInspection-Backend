@@ -5,6 +5,8 @@ import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingHandoffRequest;
+import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
+import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
@@ -13,12 +15,15 @@ import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
+import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
+import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
+import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
@@ -64,20 +69,55 @@ public class InspectionController {
   private final FindingService findingService;
   private final ReportService reportService;
   private final InspectionWorkflowService workflowService;
+  private final InspectionCreationService creationService;
 
   public InspectionController(
       EvidenceService evidenceService,
       FindingService findingService,
       ReportService reportService,
-      InspectionWorkflowService workflowService) {
+      InspectionWorkflowService workflowService,
+      InspectionCreationService creationService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
+    this.creationService = creationService;
+  }
+
+  @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      uploadFlightPermit(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @RequestParam("file") MultipartFile file)
+          throws java.io.IOException {
+    return ApiResponse.success(
+        creationService.uploadFlightPermit(
+            actorId(jwt),
+            inspectionId,
+            null,
+            file.getOriginalFilename(),
+            file.getBytes(),
+            file.getContentType()));
+  }
+
+  @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      uploadFlightPermitJson(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @Valid @RequestBody
+              com.smartdroneinspection.inspections.api.dto.request.UploadFlightPermitRequest
+                  request) {
+    return ApiResponse.success(
+        creationService.uploadFlightPermit(
+            actorId(jwt), inspectionId, request.fileKey(), request.fileName(), null, null));
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<EvidenceResponse> uploadEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -93,14 +133,14 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<List<EvidenceResponse>> listEvidence(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(evidenceService.list(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/evidence/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<EvidencePageResponse> queryEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -147,7 +187,7 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ResponseEntity<InputStreamResource> evidenceContent(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -217,7 +257,7 @@ public class InspectionController {
 
   /** Explicitly deleted Inspector findings remain available with deletion attribution. */
   @GetMapping("/findings/removed")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<List<FindingResponse>> listRemovedFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listRemovedFindings(actorId(jwt), inspectionId));
@@ -234,7 +274,7 @@ public class InspectionController {
   }
 
   @GetMapping("/workflow-state")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<InspectionWorkflowStateResponse> workflowState(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(workflowService.state(actorId(jwt), inspectionId));
@@ -259,15 +299,40 @@ public class InspectionController {
   }
 
   @GetMapping("/findings")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
   }
 
+  @GetMapping("/findings/query")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<FindingPageResponse> queryFindings(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(defaultValue = "ACTIVE") FindingStatusFilter status,
+      @RequestParam(required = false) FindingSeverity severity,
+      @RequestParam(defaultValue = "ALL") FindingSourceFilter source,
+      @RequestParam(required = false) String defectQuery,
+      @RequestParam(required = false) String evidenceQuery,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "50") int pageSize) {
+    return ApiResponse.success(
+        findingService.query(
+            actorId(jwt),
+            inspectionId,
+            status,
+            severity,
+            source,
+            defectQuery,
+            evidenceQuery,
+            page,
+            pageSize));
+  }
+
   @PostMapping("/report/draft")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> generateDraft(
+  public ApiResponse<InspectionReportResponse> generateDraft(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       HttpServletRequest request) {
@@ -280,14 +345,14 @@ public class InspectionController {
    */
   @PostMapping("/report/draft/manual")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> authorManualDraft(
+  public ApiResponse<InspectionReportResponse> authorManualDraft(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.authorManualDraft(actorId(jwt), inspectionId));
   }
 
   @PostMapping("/report/versions/{versionId}/verify")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> verifyVersion(
+  public ApiResponse<InspectionReportResponse> verifyVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
@@ -296,7 +361,7 @@ public class InspectionController {
 
   @PostMapping("/report/versions/{versionId}/submit")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> submitVersion(
+  public ApiResponse<InspectionReportResponse> submitVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
@@ -305,7 +370,7 @@ public class InspectionController {
 
   @PostMapping("/report/versions/{versionId}/withdraw")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> withdrawVersion(
+  public ApiResponse<InspectionReportResponse> withdrawVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
@@ -316,8 +381,8 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/review")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
-  public ApiResponse<InspectionReportVersionResponse> reviewVersion(
+  @PreAuthorize("hasRole('ORG_MANAGER')")
+  public ApiResponse<InspectionReportResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
@@ -328,7 +393,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/publish")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ReportPublishedResponse> publishVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -339,7 +404,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/corrective-handoff")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -351,7 +416,7 @@ public class InspectionController {
 
   @PutMapping("/report/versions/{versionId}/sections")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> saveSections(
+  public ApiResponse<InspectionReportResponse> saveSections(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
@@ -372,7 +437,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/document")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
   public ResponseEntity<byte[]> downloadReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -381,15 +446,15 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
-  public ApiResponse<List<InspectionReportVersionResponse>> listVersions(
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<List<InspectionReportResponse>> listVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.listVersions(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/report/versions/{versionId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_ADMIN')")
-  public ApiResponse<InspectionReportVersionResponse> getVersion(
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  public ApiResponse<InspectionReportResponse> getVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {

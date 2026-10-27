@@ -1,8 +1,11 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
+import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Finding;
@@ -12,7 +15,7 @@ import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -45,7 +48,7 @@ public class FindingService {
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
   private final EvidenceService evidenceService;
-  private final InspectionReportVersionRepository reportVersions;
+  private final InspectionReportRepository reportVersions;
   private final InspectionRepository inspections;
   private final Optional<AiInferencePort> inference;
   private final UserAccess userAccess;
@@ -54,7 +57,7 @@ public class FindingService {
       EvidenceRepository evidence,
       FindingRepository findings,
       EvidenceService evidenceService,
-      InspectionReportVersionRepository reportVersions,
+      InspectionReportRepository reportVersions,
       InspectionRepository inspections,
       Optional<AiInferencePort> inference,
       UserAccess userAccess) {
@@ -67,7 +70,10 @@ public class FindingService {
     this.userAccess = userAccess;
   }
 
-  /** MF3-06: explicitly confirm the resolved findings set before entering report drafting. */
+  /**
+   * MF3-06: explicitly confirm the resolved findings set before entering or refreshing report
+   * drafting.
+   */
   @Transactional
   public void confirmFindings(UUID actorId, UUID inspectionId, boolean noFindingsAcknowledged) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
@@ -137,7 +143,7 @@ public class FindingService {
   @Transactional
   public void reopenFindings(UUID actorId, UUID inspectionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    rejectLockedFindingEdits(inspectionId);
+    rejectFinalizedReportFindingEdits(inspectionId);
     if (inspection.getStatus()
         != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
       throw new BusinessException(
@@ -158,10 +164,15 @@ public class FindingService {
   public List<FindingResponse> analyze(
       UUID actorId, UUID inspectionId, UUID evidenceId, boolean replace) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    rejectLockedFindingEdits(inspectionId);
     if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
+            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
+        && inspection.getStatus()
+            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
       throw new BusinessException(
-          HttpStatus.CONFLICT, "FINDINGS_LOCKED", "Reopen Findings before running analysis");
+          HttpStatus.CONFLICT,
+          "FINDINGS_LOCKED",
+          "Analysis is only available during defect review or report drafting");
     }
 
     Evidence record = requireEvidence(inspectionId, evidenceId);
@@ -243,7 +254,8 @@ public class FindingService {
         findings.deleteAll(replaced);
       }
     }
-    List<Finding> stored = findings.saveAll(created);
+    List<Finding> stored = findings.saveAllAndFlush(created);
+    syncFindingsConfirmationAfterEdit(inspection);
     return Stream.concat(stored.stream(), reviewed.stream()).map(this::toFindingResponse).toList();
   }
 
@@ -270,6 +282,140 @@ public class FindingService {
         .toList();
   }
 
+  /** Filtered and paginated query of findings across active, removed, and candidate statuses. */
+  @Transactional(readOnly = true)
+  public FindingPageResponse query(
+      UUID actorId,
+      UUID inspectionId,
+      FindingStatusFilter statusFilter,
+      FindingSeverity severity,
+      FindingSourceFilter sourceFilter,
+      String defectQuery,
+      String evidenceQuery,
+      int page,
+      int pageSize) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+
+    int validPage = Math.max(1, page);
+    int validPageSize = Math.max(1, Math.min(pageSize, 200));
+
+    List<Finding> allFindings = findings.findAllByInspectionIdIncludingRemoved(inspectionId);
+    List<Evidence> allEvidence = evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    java.util.Map<UUID, Evidence> evidenceMap =
+        allEvidence.stream().collect(java.util.stream.Collectors.toMap(Evidence::getId, e -> e));
+
+    long activeCount = allFindings.stream().filter(f -> !f.isDeleted()).count();
+    long removedCount = allFindings.stream().filter(Finding::isDeleted).count();
+    long pendingCount =
+        allFindings.stream()
+            .filter(f -> !f.isDeleted() && f.getStatus() == FindingStatus.PENDING)
+            .count();
+    long confirmedCount =
+        allFindings.stream()
+            .filter(f -> !f.isDeleted() && f.getStatus() == FindingStatus.CONFIRMED)
+            .count();
+
+    FindingStatusFilter effectiveStatus =
+        statusFilter != null ? statusFilter : FindingStatusFilter.ACTIVE;
+    FindingSourceFilter effectiveSource =
+        sourceFilter != null ? sourceFilter : FindingSourceFilter.ALL;
+    String cleanDefect = defectQuery != null ? defectQuery.trim().toLowerCase() : "";
+    String cleanEvidence = evidenceQuery != null ? evidenceQuery.trim().toLowerCase() : "";
+
+    List<Finding> filtered =
+        allFindings.stream()
+            .filter(
+                f -> {
+                  // Status filter
+                  switch (effectiveStatus) {
+                    case ACTIVE:
+                      if (f.isDeleted()) return false;
+                      break;
+                    case PENDING:
+                      if (f.isDeleted() || f.getStatus() != FindingStatus.PENDING) return false;
+                      break;
+                    case CONFIRMED:
+                      if (f.isDeleted() || f.getStatus() != FindingStatus.CONFIRMED) return false;
+                      break;
+                    case REMOVED:
+                      if (!f.isDeleted()) return false;
+                      break;
+                    case ALL:
+                    default:
+                      break;
+                  }
+
+                  // Severity filter
+                  if (severity != null && f.getSeverity() != severity) {
+                    return false;
+                  }
+
+                  // Source filter
+                  if (effectiveSource == FindingSourceFilter.AI && f.getModelName() == null) {
+                    return false;
+                  }
+                  if (effectiveSource == FindingSourceFilter.MANUAL && f.getModelName() != null) {
+                    return false;
+                  }
+
+                  // Defect query
+                  if (!cleanDefect.isEmpty()) {
+                    boolean match =
+                        (f.getDefectLabel() != null
+                                && f.getDefectLabel().toLowerCase().contains(cleanDefect))
+                            || (f.getFindingCode() != null
+                                && f.getFindingCode().toLowerCase().contains(cleanDefect))
+                            || (f.getTechnicalNotes() != null
+                                && f.getTechnicalNotes().toLowerCase().contains(cleanDefect))
+                            || (f.getRecommendedAction() != null
+                                && f.getRecommendedAction().toLowerCase().contains(cleanDefect))
+                            || (f.getModelName() != null
+                                && f.getModelName().toLowerCase().contains(cleanDefect));
+                    if (!match) return false;
+                  }
+
+                  // Evidence query
+                  if (!cleanEvidence.isEmpty()) {
+                    Evidence ev =
+                        f.getEvidenceId() != null ? evidenceMap.get(f.getEvidenceId()) : null;
+                    if (ev == null) return false;
+                    boolean match =
+                        (ev.getFileName() != null
+                                && ev.getFileName().toLowerCase().contains(cleanEvidence))
+                            || (ev.getLocationDescription() != null
+                                && ev.getLocationDescription()
+                                    .toLowerCase()
+                                    .contains(cleanEvidence));
+                    if (!match) return false;
+                  }
+
+                  return true;
+                })
+            .toList();
+
+    long totalCount = filtered.size();
+    int totalPages = (int) Math.ceil((double) totalCount / validPageSize);
+    int fromIndex = (validPage - 1) * validPageSize;
+    List<FindingResponse> items;
+    if (fromIndex >= filtered.size()) {
+      items = List.of();
+    } else {
+      int toIndex = Math.min(fromIndex + validPageSize, filtered.size());
+      items = filtered.subList(fromIndex, toIndex).stream().map(this::toFindingResponse).toList();
+    }
+
+    return new FindingPageResponse(
+        items,
+        validPage,
+        validPageSize,
+        totalCount,
+        totalPages,
+        activeCount,
+        removedCount,
+        pendingCount,
+        confirmedCount);
+  }
+
   /**
    * MF3-06: the Inspector accepts a finding and states what it is.
    *
@@ -288,7 +434,6 @@ public class FindingService {
           "FINDING_ALREADY_CONFIRMED",
           "This finding has already been confirmed");
     }
-    reopenFindings(inspection);
 
     finding.revise(
         request.evidenceId() == null ? finding.getEvidenceId() : request.evidenceId(),
@@ -299,7 +444,9 @@ public class FindingService {
             ? finding.getRecommendedAction()
             : request.recommendedAction());
     finding.confirmByInspector();
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
   }
 
   /** MF3-06: a manual finding is available whenever detection is unavailable or missed a defect. */
@@ -308,7 +455,6 @@ public class FindingService {
       UUID actorId, UUID inspectionId, ManualFindingRequest request) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
-    reopenFindings(inspection);
 
     Evidence record = requireEvidence(inspectionId, request.evidenceId());
 
@@ -324,7 +470,9 @@ public class FindingService {
             null,
             null,
             null);
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
   }
 
   /** MF3-06: correct an Inspector's finding while the current report is editable. */
@@ -341,8 +489,9 @@ public class FindingService {
         request.severity(),
         request.technicalNotes(),
         request.recommendedAction());
-    reopenFindings(inspection);
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
   }
 
   /**
@@ -359,7 +508,7 @@ public class FindingService {
     if (finding.isPendingAiSuggestion()) {
       findings.deleteByIdAndInspectionId(findingId, inspectionId);
       findings.flush();
-      reopenFindings(inspection);
+      syncFindingsConfirmationAfterEdit(inspection);
       return;
     }
     try {
@@ -368,7 +517,7 @@ public class FindingService {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", ex.getMessage());
     }
     findings.saveAndFlush(finding);
-    reopenFindings(inspection);
+    syncFindingsConfirmationAfterEdit(inspection);
   }
 
   /** Puts a removed finding back into the working set. */
@@ -389,8 +538,17 @@ public class FindingService {
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_RESTORE_INVALID", ex.getMessage());
     }
-    reopenFindings(inspection);
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
+  }
+
+  private void syncFindingsConfirmationAfterEdit(Inspection inspection) {
+    if (inspection.getStatus()
+        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+      inspection.reopenFindings();
+      inspections.saveAndFlush(inspection);
+    }
   }
 
   String findingsSnapshotHash(UUID inspectionId) {
@@ -400,7 +558,7 @@ public class FindingService {
         currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
 
-  private void rejectLockedFindingEdits(UUID inspectionId) {
+  private void rejectFinalizedReportFindingEdits(UUID inspectionId) {
     var current =
         reportVersions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (current != null
@@ -411,18 +569,26 @@ public class FindingService {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",
-          "Findings are locked while a report is submitted or returned for text revision");
+          "Findings are locked while a report is submitted or after publication");
     }
   }
 
-  private void reopenFindings(Inspection inspection) {
-    if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
-      return;
+  private void rejectLockedFindingEdits(UUID inspectionId) {
+    Inspection inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection != null
+        && (inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus
+                    .REPORT_PUBLISHED
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPAIR_PENDING
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_LOCKED",
+          "Findings are immutable after report publication");
     }
-    rejectLockedFindingEdits(inspection.getId());
-    inspection.reopenFindings();
-    inspections.saveAndFlush(inspection);
+    rejectFinalizedReportFindingEdits(inspectionId);
   }
 
   private Finding requireFinding(UUID inspectionId, UUID findingId) {

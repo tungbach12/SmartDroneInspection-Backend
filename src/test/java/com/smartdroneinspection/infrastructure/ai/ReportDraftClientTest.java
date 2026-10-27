@@ -3,7 +3,6 @@ package com.smartdroneinspection.infrastructure.ai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.smartdroneinspection.inspections.spi.ReportDraftPort.ChecklistEntrySummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.FindingSummary;
@@ -89,12 +88,9 @@ class ReportDraftClientTest {
         .contains("Recorded start: 2026-10-12T10:00:00Z")
         .contains("Assigned drone reference (not proof used): drone-1")
         .contains("Surface Crack")
-        .contains("Inspect main-span coating")
-        .contains("North span")
         .contains("Main girder G4")
-        .contains("No blistering over 50mm")
+        .contains("Flight permit file: permit-1.pdf")
         .contains("Planned start (not actual inspection time)")
-        .contains("Expansion joint condition")
         .contains("Capture time: 2026-10-12T09:30:00Z")
         .contains("GPS: 10.7769, 106.7009")
         .contains("Field session: session-1")
@@ -148,7 +144,6 @@ class ReportDraftClientTest {
     DraftContext vietnamese =
         new DraftContext(
             english.inspection(),
-            english.checklistResponses(),
             english.findings(),
             english.evidence(),
             english.candidates(),
@@ -164,10 +159,7 @@ class ReportDraftClientTest {
         .contains("Write all narrative sections in Vietnamese.")
         .contains("Preserve supplied source values verbatim")
         .contains("Translate only system-generated narrative into the selected language.");
-    assertThat(userPrompt)
-        .contains("Inspect main-span coating")
-        .contains("Notes: Normal wear")
-        .contains("Normal wear");
+    assertThat(userPrompt).contains("Main girder G4").contains("permit-1.pdf");
     assertThat(systemPrompt).doesNotContain("Normal wear");
   }
 
@@ -241,14 +233,11 @@ class ReportDraftClientTest {
   private static DraftContext context() {
     return new DraftContext(
         new InspectionSummary(
-            "Inspect main-span coating",
-            "{\"summary\":\"North span\"}",
-            "[\"Main girder G4\"]",
-            "{\"criteria\":\"No blistering over 50mm\"}",
+            List.of("Main girder G4"),
+            "permit-1.pdf",
             "2026-10-12T09:00:00Z",
             "2026-10-12T17:00:00Z",
             null),
-        List.of(new ChecklistEntrySummary("Expansion joint condition", "PASS", "Normal wear")),
         List.of(
             new FindingSummary(
                 "Surface Crack", "MEDIUM", "Hairline crack observed", "Monitor and re-inspect")),
@@ -277,7 +266,6 @@ class ReportDraftClientTest {
                 "session-1",
                 "IN_PROGRESS",
                 "2026-10-12T10:00:00Z",
-                null,
                 null,
                 null,
                 null,

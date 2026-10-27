@@ -1,9 +1,7 @@
 package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateAssetRequest;
-import com.smartdroneinspection.assets.api.dto.request.ReassignPairRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
-import com.smartdroneinspection.assets.api.dto.response.AssetDefaultPairResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
 import com.smartdroneinspection.assets.service.AssetService;
@@ -35,7 +33,7 @@ public class AssetController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<AssetResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateAssetRequest request) {
@@ -43,7 +41,7 @@ public class AssetController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<AssetPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -53,37 +51,26 @@ public class AssetController {
   }
 
   @GetMapping("/{assetId}")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
   }
 
-  @GetMapping("/{assetId}/pair")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN', 'INSPECTOR')")
-  public ApiResponse<AssetDefaultPairResponse> getActivePair(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
-    return ApiResponse.success(assets.getActivePair(subject(jwt), assetId));
-  }
-
-  @PutMapping("/{assetId}/pair")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
-  public ApiResponse<AssetDefaultPairResponse> reassignPair(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID assetId,
-      @Valid @RequestBody ReassignPairRequest request) {
-    return ApiResponse.success(
-        assets.reassignPair(
-            subject(jwt), assetId, request.inspectorId(), request.droneId(), request.reason()));
-  }
-
   @PutMapping("/{assetId}")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<AssetResponse> update(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,
       @Valid @RequestBody UpdateAssetRequest request) {
     return ApiResponse.success(assets.update(subject(jwt), assetId, request));
+  }
+
+  @PostMapping("/{assetId}/retire")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
+  public ApiResponse<AssetResponse> retire(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
+    return ApiResponse.success(assets.retire(subject(jwt), assetId));
   }
 
   private static UUID subject(Jwt jwt) {

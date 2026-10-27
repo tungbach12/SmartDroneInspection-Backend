@@ -6,17 +6,14 @@ import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsReques
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.PreparationContext;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
@@ -25,9 +22,7 @@ import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
@@ -82,14 +77,12 @@ public class ReportService {
   private static final String PDF_MEDIA_TYPE = "application/pdf";
 
   private final InspectionRepository inspections;
-  private final InspectionPreparationRepository preparations;
-  private final InspectionReadinessDecisionRepository readinessDecisions;
   private final ReportContextAccess reportContextAccess;
   private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
   private final FieldSessionRepository fieldSessions;
-  private final InspectionReportVersionRepository versions;
+  private final InspectionReportRepository versions;
   private final EvidenceService evidenceService;
   private final Optional<ReportDraftPort> draftPort;
   private final ReportRenderPort renderPort;
@@ -100,14 +93,12 @@ public class ReportService {
 
   public ReportService(
       InspectionRepository inspections,
-      InspectionPreparationRepository preparations,
-      InspectionReadinessDecisionRepository readinessDecisions,
       ReportContextAccess reportContextAccess,
       org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
       EvidenceRepository evidence,
       FindingRepository findings,
       FieldSessionRepository fieldSessions,
-      InspectionReportVersionRepository versions,
+      InspectionReportRepository versions,
       EvidenceService evidenceService,
       Optional<ReportDraftPort> draftPort,
       ReportRenderPort renderPort,
@@ -116,8 +107,6 @@ public class ReportService {
       ApplicationEventPublisher events,
       ObjectMapper objectMapper) {
     this.inspections = inspections;
-    this.preparations = preparations;
-    this.readinessDecisions = readinessDecisions;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
     this.evidence = evidence;
@@ -137,18 +126,17 @@ public class ReportService {
    * MF3-07/08: generate a draft from authorized sources, then let the author edit and verify it.
    */
   @Transactional
-  public InspectionReportVersionResponse generateDraft(UUID actorId, UUID inspectionId) {
+  public InspectionReportResponse generateDraft(UUID actorId, UUID inspectionId) {
     return generateDraft(actorId, inspectionId, Locale.ENGLISH);
   }
 
   @Transactional
-  public InspectionReportVersionResponse generateDraft(
-      UUID actorId, UUID inspectionId, Locale locale) {
+  public InspectionReportResponse generateDraft(UUID actorId, UUID inspectionId, Locale locale) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
 
     requireCurrentFindingsConfirmation(inspection);
 
-    InspectionReportVersion latestExisting =
+    InspectionReport latestExisting =
         versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (latestExisting != null && !inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
@@ -162,12 +150,6 @@ public class ReportService {
     List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
     List<FieldSession> recordedSessions =
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
-    List<InspectionPreparation> recordedPreparations =
-        preparations.findByInspectionIdOrderByPreparationVersionDesc(inspectionId);
-    InspectionPreparation latestPreparation =
-        recordedPreparations.stream().findFirst().orElse(null);
-    InspectionReadinessDecision latestReadiness =
-        readinessDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
     Identity reportIdentity =
         reportContextAccess
             .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
@@ -196,10 +178,8 @@ public class ReportService {
           port.draftSections(
               new ReportDraftPort.DraftContext(
                   new InspectionSummary(
-                      inspection.getObjective(),
-                      inspection.getScope(),
-                      inspection.getComponentScope(),
-                      inspection.getAcceptanceCriteria(),
+                      reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
+                      inspection.getFlightPermitFileName(),
                       inspection.getPlannedStartAt() == null
                           ? null
                           : inspection.getPlannedStartAt().toString(),
@@ -207,7 +187,6 @@ public class ReportService {
                           ? null
                           : inspection.getPlannedEndAt().toString(),
                       inspection.getDroneId() == null ? null : inspection.getDroneId().toString()),
-                  buildChecklistSummaries(inspectionId, locale),
                   confirmedFindings.stream()
                       .map(
                           finding ->
@@ -268,10 +247,9 @@ public class ReportService {
                                   session.getPreFlightChecklistNote(),
                                   session.getPostponementReason(),
                                   session.getAbortReason(),
-                                  session.getLimitations(),
-                                  session.getDroneId() == null
+                                  inspection.getDroneId() == null
                                       ? null
-                                      : session.getDroneId().toString()))
+                                      : inspection.getDroneId().toString()))
                       .toList(),
                   locale));
     } catch (IOException ex) {
@@ -285,8 +263,8 @@ public class ReportService {
     }
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReportVersion version =
-        new InspectionReportVersion(
+    InspectionReport version =
+        new InspectionReport(
             inspectionId,
             versionNo,
             buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port));
@@ -299,10 +277,10 @@ public class ReportService {
    * same review gates and records that no automated drafting contributed to it.
    */
   @Transactional
-  public InspectionReportVersionResponse authorManualDraft(UUID actorId, UUID inspectionId) {
+  public InspectionReportResponse authorManualDraft(UUID actorId, UUID inspectionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     requireCurrentFindingsConfirmation(inspection);
-    InspectionReportVersion latestExisting =
+    InspectionReport latestExisting =
         versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (latestExisting != null && !inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
@@ -316,8 +294,8 @@ public class ReportService {
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReportVersion version =
-        new InspectionReportVersion(
+    InspectionReport version =
+        new InspectionReport(
             inspectionId,
             versionNo,
             buildManualContentSnapshot(inspection, confirmedEvidence, confirmedFindings));
@@ -345,9 +323,9 @@ public class ReportService {
    * findings, uncertainty and recommendations against sources; submit the reviewed version.
    */
   @Transactional
-  public InspectionReportVersionResponse saveSections(
+  public InspectionReportResponse saveSections(
       UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
     if (!inspection.getInspectorId().equals(actorId)) {
@@ -379,10 +357,9 @@ public class ReportService {
 
   /** MF3-08: the author verifies the draft against its sources. */
   @Transactional
-  public InspectionReportVersionResponse verifyVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse verifyVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
@@ -396,10 +373,9 @@ public class ReportService {
 
   /** MF3-08: submit the verified version for review. */
   @Transactional
-  public InspectionReportVersionResponse submitVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse submitVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
@@ -435,7 +411,7 @@ public class ReportService {
     }
   }
 
-  private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReportVersion version) {
+  private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReport version) {
     Inspection inspection = inspections.findById(inspectionId).orElse(null);
     if (inspection == null
         || inspection.getFindingsConfirmedAt() == null
@@ -447,19 +423,19 @@ public class ReportService {
     }
   }
 
-  private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReportVersion version) {
+  private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReport version) {
     requireFreshFindingsSnapshot(inspectionId, version);
   }
 
   /**
-   * MF3-09: the qualified reviewer decides. Only an in-organization ORG_ADMIN who is not the author
-   * may review, and returning a draft requires a reason.
+   * MF3-09: the qualified reviewer decides. Only an in-organization ORG_MANAGER who is not the
+   * author may review, and returning a draft requires a reason.
    */
   @Transactional
-  public InspectionReportVersionResponse reviewVersion(
+  public InspectionReportResponse reviewVersion(
       UUID actorId, UUID inspectionId, UUID versionId, boolean approve, String reason) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     if (!approve && (reason == null || reason.isBlank())) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
@@ -476,8 +452,7 @@ public class ReportService {
   }
 
   @Transactional
-  public InspectionReportVersionResponse withdrawVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse withdrawVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     return withdrawVersion(actorId, inspectionId, versionId, null);
   }
 
@@ -487,19 +462,20 @@ public class ReportService {
    * version change after they have acted on it.
    */
   @Transactional
-  public InspectionReportVersionResponse withdrawVersion(
+  public InspectionReportResponse withdrawVersion(
       UUID actorId, UUID inspectionId, UUID versionId, String reason) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     try {
       version.withdraw(actorId, inspection.getInspectorId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "REPORT_WITHDRAWAL_INVALID", ex.getMessage());
     }
+    versions.saveAndFlush(version);
     inspection.reopenFindings();
     inspections.saveAndFlush(inspection);
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+    return toResponse(version, inspection.getInspectorId());
   }
 
   /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
@@ -513,7 +489,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     UserAccess.ActiveUser publisher = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     try {
@@ -530,9 +506,9 @@ public class ReportService {
     versions.saveAndFlush(version);
 
     // MF3-11: a new published version supersedes any previously published version of this report.
-    List<InspectionReportVersion> previouslyPublished =
+    List<InspectionReport> previouslyPublished =
         versions.findByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED);
-    for (InspectionReportVersion prev : previouslyPublished) {
+    for (InspectionReport prev : previouslyPublished) {
       if (!prev.getId().equals(version.getId())) {
         prev.supersede();
         versions.save(prev);
@@ -568,7 +544,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, List<UUID> selectedFindingIds) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    InspectionReportVersion version =
+    InspectionReport version =
         versions
             .findFirstByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED)
             .orElseThrow(
@@ -703,8 +679,7 @@ public class ReportService {
    * overwrites the bytes stored for an already-published one. The checksum is taken from the bytes
    * that were stored, so it describes what a later reader would actually download.
    */
-  private void storePublishedArtefact(
-      UUID inspectionId, InspectionReportVersion version, Locale locale) {
+  private void storePublishedArtefact(UUID inspectionId, InspectionReport version, Locale locale) {
     byte[] pdf = renderArtefact(inspectionId, version, false, locale);
     String objectKey = reportObjectKey(version.getId());
     try (InputStream input = new ByteArrayInputStream(pdf)) {
@@ -741,7 +716,7 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the report author may preview this draft");
     }
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     return pdfResponse(
         renderArtefact(inspectionId, version, true, locale),
         "inline",
@@ -751,7 +726,7 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> downloadArtefact(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     String objectKey = version.getRenderedObjectKey();
     if (objectKey == null || objectKey.isBlank()) {
       throw new BusinessException(
@@ -772,7 +747,7 @@ public class ReportService {
   }
 
   private byte[] renderArtefact(
-      UUID inspectionId, InspectionReportVersion version, boolean preview, Locale locale) {
+      UUID inspectionId, InspectionReport version, boolean preview, Locale locale) {
     try {
       return renderPort.render(buildRenderContext(inspectionId, version, preview, locale));
     } catch (IOException ex) {
@@ -799,7 +774,7 @@ public class ReportService {
         .body(content);
   }
 
-  private static String documentReference(InspectionReportVersion version) {
+  private static String documentReference(InspectionReport version) {
     return "SDI-RPT-"
         + version.getId().toString().substring(0, 8).toUpperCase()
         + "-V"
@@ -826,18 +801,12 @@ public class ReportService {
    * bytes are loaded here so the PDF embeds the stored original rather than a reference to it.
    */
   private ReportRenderPort.RenderContext buildRenderContext(
-      UUID inspectionId, InspectionReportVersion version, boolean preview, Locale locale) {
+      UUID inspectionId, InspectionReport version, boolean preview, Locale locale) {
     Inspection inspection = inspections.findById(inspectionId).orElseThrow();
     Identity reportIdentity =
         reportContextAccess
             .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
-    var preparation =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspectionId)
-            .orElse(null);
-    var readiness =
-        readinessDecisions.findFirstByInspectionIdOrderByDecidedAtDesc(inspectionId).orElse(null);
     DroneContext assignedDrone =
         reportIdentity == null || reportIdentity.droneSerialNumber() == null
             ? null
@@ -849,21 +818,9 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     ReportRenderPort.ReportContext renderReportContext =
         buildRenderReportContext(
-            inspection,
-            reportIdentity,
-            assignedDrone,
-            preparation,
-            readiness,
-            recordedSessions,
-            locale);
+            inspection, reportIdentity, assignedDrone, recordedSessions, locale);
     ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
-    JsonNode snapshot;
-    try {
-      snapshot = objectMapper.readTree(version.getContentSnapshot());
-    } catch (JacksonException exception) {
-      snapshot = objectMapper.createObjectNode();
-    }
-    String purposeScopeCriteria = composePurposeScopeCriteria(inspection, snapshot, locale);
+    String purposeScopeCriteria = composePurposeScopeCriteria(inspection, reportIdentity, locale);
 
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
     Map<UUID, List<String>> componentLocationByEvidence = new LinkedHashMap<>();
@@ -917,7 +874,7 @@ public class ReportService {
         documentReference(version),
         version.getVersionNo(),
         version.getStatus().name(),
-        inspection.getObjective(),
+        reportIdentity == null ? null : reportIdentity.assetName(),
         reportIdentity == null || reportIdentity.assetName() == null
             ? null
             : reportIdentity.assetName(),
@@ -989,7 +946,7 @@ public class ReportService {
   }
 
   @Transactional(readOnly = true)
-  public List<InspectionReportVersionResponse> listVersions(UUID actorId, UUID inspectionId) {
+  public List<InspectionReportResponse> listVersions(UUID actorId, UUID inspectionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     // An inspection whose evidence is not yet accepted has no report at all. That is a normal
     // empty state for the reviewer, not a missing resource, so it is reported as an empty list.
@@ -999,8 +956,7 @@ public class ReportService {
   }
 
   @Transactional(readOnly = true)
-  public InspectionReportVersionResponse getVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse getVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     return toResponse(requireVersion(inspectionId, versionId));
   }
@@ -1012,9 +968,9 @@ public class ReportService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null || !actor.hasRole("ORG_ADMIN")) {
+    if (actor.organizationId() == null || !actor.hasRole("ORG_MANAGER")) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_ADMIN may review");
+          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_MANAGER may review");
     }
     Inspection inspection =
         inspections
@@ -1033,7 +989,7 @@ public class ReportService {
     return actor;
   }
 
-  private InspectionReportVersion requireVersion(UUID inspectionId, UUID versionId) {
+  private InspectionReport requireVersion(UUID inspectionId, UUID versionId) {
     return versions
         .findById(versionId)
         .filter(candidate -> candidate.getInspectionId().equals(inspectionId))
@@ -1064,7 +1020,6 @@ public class ReportService {
     snapshot.append("{\"model\":").append(quote(port.modelName()));
     snapshot.append(",\"assetId\":").append(quote(inspection.getAssetId().toString()));
     snapshot.append(",\"inspectionId\":").append(quote(inspection.getId().toString()));
-    snapshot.append(",\"objective\":").append(quote(inspection.getObjective()));
     snapshot.append(",\"evidenceCount\":").append(confirmedEvidence.size());
     snapshot.append(",\"findingsCount\":").append(confirmedFindings.size());
     appendSection(snapshot, "executiveSummary", proposal.executiveSummary());
@@ -1106,137 +1061,25 @@ public class ReportService {
   }
 
   private String composePurposeScopeCriteria(
-      Inspection inspection, JsonNode snapshot, Locale locale) {
+      Inspection inspection, Identity identity, Locale locale) {
     StringBuilder content = new StringBuilder();
-    appendStructuredValue(
-        content,
-        ReportHtmlTemplate.localized(locale, "Objective"),
-        objectMapper.getNodeFactory().textNode(inspection.getObjective()));
-    appendStructuredValue(
-        content,
-        ReportHtmlTemplate.localized(locale, "Scope"),
-        jsonField(inspection.getScope(), "summary"));
-    appendArrayValues(
-        content,
-        ReportHtmlTemplate.localized(locale, "Included components"),
-        inspection.getComponentScope(),
-        "items");
-    appendArrayValues(
-        content,
-        ReportHtmlTemplate.localized(locale, "Acceptance criteria"),
-        inspection.getAcceptanceCriteria(),
-        "criteria");
-    preparations
-        .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
-        .map(preparation -> parseJson(preparation.getShotList()))
-        .ifPresent(shotList -> appendShotList(content, shotList, locale));
-    return content.isEmpty() ? null : content.toString();
-  }
-
-  private JsonNode jsonField(String raw, String field) {
-    JsonNode node = parseJson(raw);
-    if (node == null) return null;
-    JsonNode value = node.get(field);
-    return value == null ? node : value;
-  }
-
-  private JsonNode parseJson(String raw) {
-    if (raw == null || raw.isBlank()) return null;
-    try {
-      return objectMapper.readTree(raw);
-    } catch (JacksonException exception) {
-      return objectMapper.getNodeFactory().textNode(raw);
+    if (inspection.getFlightPermitFileName() != null
+        && !inspection.getFlightPermitFileName().isBlank()) {
+      content
+          .append(ReportHtmlTemplate.localized(locale, "Flight permit"))
+          .append(": ")
+          .append(inspection.getFlightPermitFileName())
+          .append('\n');
     }
-  }
-
-  private void appendArrayValues(StringBuilder content, String label, String raw, String field) {
-    JsonNode node = jsonField(raw, field);
-    if (node == null || node.isNull()) return;
-    content.append(label).append(':');
-    if (node.isArray()) {
-      node.forEach(
-          item ->
-              content
-                  .append("\n• ")
-                  .append(item.isValueNode() ? item.asString("") : item.toString()));
-    } else {
-      content.append("\n• ").append(node.isValueNode() ? node.asString("") : node.toString());
-    }
-    content.append('\n');
-  }
-
-  private void appendShotList(StringBuilder content, JsonNode shotList, Locale locale) {
-    if (shotList == null || !shotList.isArray() || shotList.isEmpty()) return;
-    content.append(ReportHtmlTemplate.localized(locale, "Planned shot-list"));
-    content.append(':');
-    shotList.forEach(
-        item -> {
-          String code = item.path("code").asString("");
-          String angle = item.path("angle").asString("");
-          if (!code.isBlank() || !angle.isBlank()) {
-            content.append("\n• ").append(code);
-            if (!angle.isBlank()) content.append(" — ").append(angle);
-            if (item.path("required").asBoolean(false)) {
-              content.append(ReportHtmlTemplate.localized(locale, " (required)"));
-            }
-          }
-        });
-    content.append('\n');
-  }
-
-  private void appendStructuredValue(StringBuilder content, String label, JsonNode value) {
-    if (value == null || value.isNull() || value.isMissingNode()) return;
-    String text = value.isValueNode() ? value.asString("") : value.toString();
-    if (text.isBlank()) return;
-    content.append(label).append(": ").append(text).append('\n');
-  }
-
-  private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(UUID inspectionId) {
-    return buildChecklistSummaries(inspectionId, Locale.ENGLISH);
-  }
-
-  private List<ReportDraftPort.ChecklistEntrySummary> buildChecklistSummaries(
-      UUID inspectionId, Locale locale) {
-    return jdbcTemplate.query(
-        "SELECT item.prompt, item.prompt_vi, COALESCE(response.answer, response.response_value)::text AS answer, response.notes "
-            + "FROM checklist_responses response "
-            + "JOIN field_sessions session "
-            + "  ON session.id = response.field_session_id "
-            + " AND session.inspection_id = response.inspection_id "
-            + "JOIN checklist_items item "
-            + "  ON item.id = response.checklist_item_id "
-            + " AND item.template_id = session.checklist_template_id "
-            + "WHERE response.inspection_id = ? "
-            + "ORDER BY response.completed_at NULLS LAST, response.created_at",
-        (result, rowNum) -> {
-          String englishPrompt = result.getString("prompt");
-          String vietnamesePrompt = result.getString("prompt_vi");
-          String prompt =
-              locale != null
-                      && "vi".equalsIgnoreCase(locale.getLanguage())
-                      && vietnamesePrompt != null
-                      && !vietnamesePrompt.isBlank()
-                  ? vietnamesePrompt
-                  : englishPrompt;
-          return new ReportDraftPort.ChecklistEntrySummary(
-              prompt, responseLabel(result.getString("answer")), result.getString("notes"));
-        },
-        inspectionId);
-  }
-
-  private String responseLabel(String rawAnswer) {
-    if (rawAnswer == null || rawAnswer.isBlank()) return null;
-    try {
-      JsonNode answer = objectMapper.readTree(rawAnswer);
-      if (answer.isValueNode()) return answer.asString();
-      for (String key : List.of("value", "answer", "response", "selectedValue")) {
-        JsonNode value = answer.get(key);
-        if (value != null && value.isValueNode()) return value.asString();
+    if (identity != null
+        && identity.inspectionItems() != null
+        && !identity.inspectionItems().isEmpty()) {
+      content.append(ReportHtmlTemplate.localized(locale, "Included components")).append(":\n");
+      for (String item : identity.inspectionItems()) {
+        content.append(" - ").append(item).append('\n');
       }
-      return answer.toString();
-    } catch (JacksonException exception) {
-      return rawAnswer;
     }
+    return content.isEmpty() ? null : content.toString();
   }
 
   private String evidenceByFindingSession(Finding finding, List<Evidence> currentEvidence) {
@@ -1252,27 +1095,7 @@ public class ReportService {
   }
 
   private InspectionReportContextResponse buildReportContextResponse(
-      Inspection inspection,
-      Identity identity,
-      DroneContext drone,
-      InspectionPreparation preparation,
-      InspectionReadinessDecision readiness,
-      List<FieldSession> sessions) {
-    PreparationContext preparationContext =
-        preparation == null
-            ? null
-            : new PreparationContext(
-                preparation.getPreparationVersion(),
-                preparation.getStatus().name(),
-                preparation.getShotList(),
-                preparation.getEvidenceTypes(),
-                preparation.getAccessConstraints(),
-                preparation.getSafetyObservations(),
-                readiness == null ? null : readiness.getDecision().name(),
-                readiness == null ? null : readiness.getDecidedAt(),
-                readiness == null ? null : readiness.getReason(),
-                preparation.getPermitDocumentReferences(),
-                preparation.getSubmittedAt());
+      Inspection inspection, Identity identity, DroneContext drone, List<FieldSession> sessions) {
     return new InspectionReportContextResponse(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1280,7 +1103,6 @@ public class ReportService {
         identity == null ? null : identity.assetLocation(),
         identity == null ? null : identity.assetCategory(),
         drone,
-        preparationContext,
         sessions.stream()
             .map(
                 session ->
@@ -1293,7 +1115,6 @@ public class ReportService {
                         session.getPostponementReason(),
                         session.getAbortReason(),
                         session.getOutcomeNotes(),
-                        session.getLimitations(),
                         drone == null ? null : drone.serialNumber(),
                         drone == null ? null : drone.manufacturer(),
                         drone == null ? null : drone.model()))
@@ -1307,11 +1128,8 @@ public class ReportService {
       Inspection inspection,
       Identity identity,
       DroneContext drone,
-      InspectionPreparation preparation,
-      InspectionReadinessDecision readiness,
       List<FieldSession> sessions,
       Locale locale) {
-    InspectionPreparation prep = preparation;
     return new ReportRenderPort.ReportContext(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1321,33 +1139,8 @@ public class ReportService {
         drone == null ? null : drone.serialNumber(),
         drone == null ? null : drone.manufacturer(),
         drone == null ? null : drone.model(),
-        prep == null ? null : prep.getStatus().name(),
-        prep == null ? null : prep.getShotList(),
-        prep == null ? null : prep.getEvidenceTypes(),
-        prep == null ? null : prep.getAccessConstraints(),
-        prep == null ? null : prep.getSafetyObservations(),
-        prep == null ? null : prep.getPermitDocumentReferences(),
-        readiness == null ? null : readiness.getDecision().name(),
-        readiness == null || readiness.getDecidedAt() == null
-            ? null
-            : readiness.getDecidedAt().toString(),
-        readiness == null ? null : readiness.getReason(),
-        buildChecklistSummaries(inspection.getId(), locale).stream()
-            .map(
-                entry ->
-                    ReportHtmlTemplate.localized(locale, "Checklist response")
-                        + ": "
-                        + entry.prompt()
-                        + " — "
-                        + entry.responseValue()
-                        + (entry.notes() == null
-                            ? ""
-                            : " ("
-                                + ReportHtmlTemplate.localized(locale, "Notes")
-                                + ": "
-                                + entry.notes()
-                                + ")"))
-            .toList(),
+        inspection.getFlightPermitFileName(),
+        identity == null ? List.of() : identity.inspectionItems(),
         sessions.stream().map(session -> fieldSessionSummary(session, drone, locale)).toList(),
         ReportHtmlTemplate.localized(
             locale,
@@ -1364,7 +1157,6 @@ public class ReportService {
             contextField(locale, "Postponement reason", session.getPostponementReason()),
             contextField(locale, "Abort reason", session.getAbortReason()),
             contextField(locale, "Field-session outcome", session.getOutcomeNotes()),
-            contextField(locale, "Recorded limitations", session.getLimitations()),
             contextField(locale, "Assigned Drone", drone == null ? null : droneLabel(drone)))
         .filter(Objects::nonNull)
         .collect(java.util.stream.Collectors.joining(" · "));
@@ -1381,7 +1173,7 @@ public class ReportService {
         .collect(java.util.stream.Collectors.joining(" · "));
   }
 
-  private InspectionReportContextResponse reportContextForVersion(InspectionReportVersion version) {
+  private InspectionReportContextResponse reportContextForVersion(InspectionReport version) {
     Inspection inspection = inspections.findById(version.getInspectionId()).orElse(null);
     if (inspection == null) return null;
     var identity =
@@ -1393,16 +1185,8 @@ public class ReportService {
             ? null
             : new DroneContext(
                 identity.droneSerialNumber(), identity.droneManufacturer(), identity.droneModel());
-    var prep =
-        preparations
-            .findFirstByInspectionIdOrderByPreparationVersionDesc(inspection.getId())
-            .orElse(null);
-    var readiness =
-        readinessDecisions
-            .findFirstByInspectionIdOrderByDecidedAtDesc(inspection.getId())
-            .orElse(null);
     var sessions = fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
-    return buildReportContextResponse(inspection, identity, drone, prep, readiness, sessions);
+    return buildReportContextResponse(inspection, identity, drone, sessions);
   }
 
   private static String quote(String value) {
@@ -1412,7 +1196,7 @@ public class ReportService {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"";
   }
 
-  private InspectionReportVersionResponse toResponse(InspectionReportVersion version) {
+  private InspectionReportResponse toResponse(InspectionReport version) {
     UUID authorUserId =
         inspections
             .findById(version.getInspectionId())
@@ -1421,10 +1205,9 @@ public class ReportService {
     return toResponse(version, authorUserId);
   }
 
-  private InspectionReportVersionResponse toResponse(
-      InspectionReportVersion version, UUID authorUserId) {
+  private InspectionReportResponse toResponse(InspectionReport version, UUID authorUserId) {
     JsonNode content = readContentSnapshot(version.getContentSnapshot());
-    return new InspectionReportVersionResponse(
+    return new InspectionReportResponse(
         version.getId(),
         version.getInspectionReportId(),
         version.getVersionNo(),

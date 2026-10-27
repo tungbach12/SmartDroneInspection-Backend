@@ -32,17 +32,8 @@ class ReportHtmlTemplateLocalizationTest {
                 null,
                 null,
                 null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                List.of(
-                    "Phản hồi danh sách kiểm tra: Surface condition — PASS (Ghi chú: Normal wear)"),
+                "permit.pdf",
+                List.of("Mố cầu M1"),
                 List.of("Phiên 1 · Ghi chú danh sách kiểm tra trước chuyến bay: Normal wear"),
                 null),
             null,
@@ -58,7 +49,6 @@ class ReportHtmlTemplateLocalizationTest {
     assertThat(html)
         .contains("Báo cáo kiểm tra công trình hạ tầng")
         .contains("Tóm tắt")
-        .contains("Phản hồi danh sách kiểm tra")
         .contains("Ghi chú danh sách kiểm tra trước chuyến bay")
         .contains("Normal wear")
         .contains(authoredSummary)

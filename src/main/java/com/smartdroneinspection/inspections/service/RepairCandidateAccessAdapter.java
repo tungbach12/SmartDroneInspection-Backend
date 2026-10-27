@@ -2,10 +2,10 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.RepairCandidate;
 import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
@@ -24,12 +24,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
 
   private final InspectionRepository inspections;
-  private final InspectionReportVersionRepository reportVersions;
+  private final InspectionReportRepository reportVersions;
   private final FindingRepository findings;
 
   public RepairCandidateAccessAdapter(
       InspectionRepository inspections,
-      InspectionReportVersionRepository reportVersions,
+      InspectionReportRepository reportVersions,
       FindingRepository findings) {
     this.inspections = inspections;
     this.reportVersions = reportVersions;
@@ -67,7 +67,7 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
     if (inspection == null) {
       return java.util.Optional.empty();
     }
-    InspectionReportVersion version =
+    InspectionReport version =
         reportVersions
             .findFirstByInspectionIdAndStatus(inspection.getId(), ReportStatus.PUBLISHED)
             .orElse(null);

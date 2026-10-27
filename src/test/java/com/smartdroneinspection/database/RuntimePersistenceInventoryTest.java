@@ -24,32 +24,21 @@ class RuntimePersistenceInventoryTest {
           "assets",
           "asset_categories",
           "asset_documents",
-          "asset_pair_assignments",
           "auth_sessions",
-          "checklist_items",
-          "checklist_templates",
-          // MF2-11: the Inspector's recorded answers against the checklist items.
-          "checklist_responses",
+          "platform_drones",
+          "drone_leases",
           "drones",
-          "drone_documents",
-          "flight_permits",
-          "inspection_preparations",
-          "inspection_readiness_decisions",
           "inspections",
+          "recurring_inspection_schedules",
+          "schedule_occurrences",
           "notifications",
           "organizations",
-          // MF1 entitlement, workforce credential, Drone/document and permit runtime entities.
           "subscriptions",
           "users",
-          // Workforce credential records serve MF1 management and MF2/MF4 readiness.
-          "workforce_credentials",
-          // MF3 inspection slice: evidence, advisory detection, human findings and report versions.
           "field_sessions",
           "evidence",
           "findings",
           "inspection_reports",
-          // MF4 slice: work order aggregate with its team, task, estimate and cost line,
-          // then execution, change control, completion report and acceptance.
           "maintenance_work_orders",
           "maintenance_tasks",
           "maintenance_team_members",
@@ -68,21 +57,16 @@ class RuntimePersistenceInventoryTest {
           "subscriptions",
           "users",
           "auth_sessions",
-          "workforce_credentials",
+          "platform_drones",
+          "drone_leases",
           "drones",
-          "drone_documents",
-          "flight_permits",
           "asset_categories",
-          "checklist_templates",
-          "checklist_items",
           "assets",
           "asset_documents",
-          "asset_pair_assignments",
           "inspections",
-          "inspection_preparations",
-          "inspection_readiness_decisions",
+          "recurring_inspection_schedules",
+          "schedule_occurrences",
           "field_sessions",
-          "checklist_responses",
           "evidence",
           "findings",
           "inspection_reports",
@@ -130,7 +114,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(35);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(30);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

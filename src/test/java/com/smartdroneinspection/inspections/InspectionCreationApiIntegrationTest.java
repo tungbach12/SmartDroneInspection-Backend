@@ -9,10 +9,8 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
-import com.smartdroneinspection.assets.domain.AssetPairAssignment;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
-import com.smartdroneinspection.assets.repository.AssetPairAssignmentRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
@@ -23,6 +21,7 @@ import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,7 +30,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -44,7 +45,6 @@ class InspectionCreationApiIntegrationTest {
   @Autowired InspectionRepository inspections;
   @Autowired AssetRepository assets;
   @Autowired AssetCategoryRepository categories;
-  @Autowired AssetPairAssignmentRepository assetPairAssignments;
   @Autowired DroneRepository drones;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -56,7 +56,6 @@ class InspectionCreationApiIntegrationTest {
   private UUID inspectorId;
   private UUID droneId;
   private UUID assetId;
-  private UUID pairAssignmentId;
 
   @BeforeEach
   void setUp() {
@@ -84,6 +83,13 @@ class InspectionCreationApiIntegrationTest {
         "Other " + otherOrganizationId,
         "ORG-" + otherOrganizationId);
 
+    jdbcTemplate.update(
+        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
+        organizationId);
+    jdbcTemplate.update(
+        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
+        otherOrganizationId);
+
     User admin =
         new User(
             "admin-" + UUID.randomUUID() + "@example.test",
@@ -92,7 +98,7 @@ class InspectionCreationApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    admin.addRole(UserRole.ORG_ADMIN);
+    admin.addRole(UserRole.ORG_MANAGER);
     adminId = users.saveAndFlush(admin).getId();
 
     User inspector =
@@ -126,34 +132,24 @@ class InspectionCreationApiIntegrationTest {
                 null,
                 null,
                 null,
+                List.of("Mố cầu M1", "Trụ cầu P1"),
                 adminId));
     assetId = asset.getId();
-
-    AssetPairAssignment pairing =
-        new AssetPairAssignment(
-            organizationId,
-            assetId,
-            inspectorId,
-            droneId,
-            Instant.now().minusSeconds(3600),
-            adminId);
-    pairing.activate("Operational default", null);
-    pairAssignmentId = assetPairAssignments.saveAndFlush(pairing).getId();
   }
 
   @Test
-  void orgAdminCreatesInspectionInheritingAssetPair() throws Exception {
+  void orgAdminCreatesInspection() throws Exception {
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant end = start.plus(4, ChronoUnit.HOURS);
 
     String body =
         "{\"assetId\":\""
             + assetId
-            + "\",\"objective\":\"Periodic visual crack survey\","
-            + "\"scope\":\"{\\\"method\\\":\\\"visual\\\"}\","
-            + "\"componentScope\":\"[\\\"main span\\\", \\\"pier 1\\\"]\","
-            + "\"acceptanceCriteria\":\"{\\\"minResolution\\\":\\\"0.5mm\\\"}\","
-            + "\"plannedStartAt\":\""
+            + "\",\"inspectorId\":\""
+            + inspectorId
+            + "\",\"droneId\":\""
+            + droneId
+            + "\",\"plannedStartAt\":\""
             + start
             + "\",\"plannedEndAt\":\""
             + end
@@ -162,7 +158,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isCreated())
@@ -171,83 +167,7 @@ class InspectionCreationApiIntegrationTest {
         .andExpect(jsonPath("$.data.assetId").value(assetId.toString()))
         .andExpect(jsonPath("$.data.inspectorId").value(inspectorId.toString()))
         .andExpect(jsonPath("$.data.droneId").value(droneId.toString()))
-        .andExpect(jsonPath("$.data.assetPairAssignmentId").value(pairAssignmentId.toString()))
-        .andExpect(jsonPath("$.data.objective").value("Periodic visual crack survey"));
-  }
-
-  @Test
-  void orgAdminCreatesInspectionWithReassignedPair() throws Exception {
-    User inspector2 =
-        new User(
-            "inspector-2-" + UUID.randomUUID() + "@example.test",
-            "Inspector Two",
-            null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
-    inspector2.addRole(UserRole.INSPECTOR);
-    UUID inspector2Id = users.saveAndFlush(inspector2).getId();
-
-    Drone drone2 = drones.saveAndFlush(new Drone(organizationId, "DJI-M350-" + UUID.randomUUID()));
-    UUID drone2Id = drone2.getId();
-
-    Instant start = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
-    Instant end = start.plus(3, ChronoUnit.HOURS);
-
-    String body =
-        "{\"assetId\":\""
-            + assetId
-            + "\",\"objective\":\"Thermal inspection\","
-            + "\"inspectorId\":\""
-            + inspector2Id
-            + "\",\"droneId\":\""
-            + drone2Id
-            + "\",\"reassignmentReason\":\"Requires thermal sensor payload\","
-            + "\"plannedStartAt\":\""
-            + start
-            + "\",\"plannedEndAt\":\""
-            + end
-            + "\"}";
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.status").value("ASSIGNED"))
-        .andExpect(jsonPath("$.data.inspectorId").value(inspector2Id.toString()))
-        .andExpect(jsonPath("$.data.droneId").value(drone2Id.toString()));
-  }
-
-  @Test
-  void cannotCreateInspectionForAssetWithoutPair() throws Exception {
-    Asset assetWithoutPair =
-        assets.saveAndFlush(
-            new Asset(
-                organizationId,
-                categories.findAll().getFirst().getId(),
-                "BR-NOPAIR-" + UUID.randomUUID(),
-                "Unpaired Bridge",
-                null,
-                "{\"label\":\"District 2\"}",
-                null,
-                null,
-                null,
-                adminId));
-
-    String body =
-        "{\"assetId\":\"" + assetWithoutPair.getId() + "\",\"objective\":\"Visual check\"}";
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("PAIR_REQUIRED"));
+        .andExpect(jsonPath("$.data.inspectionItems[0]").value("Mố cầu M1"));
   }
 
   @Test
@@ -266,12 +186,25 @@ class InspectionCreationApiIntegrationTest {
                 null,
                 UUID.randomUUID()));
 
-    String body = "{\"assetId\":\"" + foreignAsset.getId() + "\",\"objective\":\"Visual check\"}";
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
+    Instant end = start.plus(2, ChronoUnit.HOURS);
+    String body =
+        "{\"assetId\":\""
+            + foreignAsset.getId()
+            + "\",\"inspectorId\":\""
+            + inspectorId
+            + "\",\"droneId\":\""
+            + droneId
+            + "\",\"plannedStartAt\":\""
+            + start
+            + "\",\"plannedEndAt\":\""
+            + end
+            + "\"}";
 
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isNotFound())
@@ -286,8 +219,11 @@ class InspectionCreationApiIntegrationTest {
     String firstBody =
         "{\"assetId\":\""
             + assetId
-            + "\",\"objective\":\"First inspection\","
-            + "\"plannedStartAt\":\""
+            + "\",\"inspectorId\":\""
+            + inspectorId
+            + "\",\"droneId\":\""
+            + droneId
+            + "\",\"plannedStartAt\":\""
             + start
             + "\",\"plannedEndAt\":\""
             + end
@@ -296,7 +232,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(firstBody))
         .andExpect(status().isCreated());
@@ -314,16 +250,6 @@ class InspectionCreationApiIntegrationTest {
                 null,
                 null,
                 adminId));
-    AssetPairAssignment pairing =
-        new AssetPairAssignment(
-            organizationId,
-            secondAsset.getId(),
-            inspectorId,
-            droneId,
-            Instant.now().minusSeconds(3600),
-            adminId);
-    pairing.activate("Default pair", null);
-    assetPairAssignments.saveAndFlush(pairing);
 
     Instant overlappingStart = start.plus(1, ChronoUnit.HOURS);
     Instant overlappingEnd = end.plus(1, ChronoUnit.HOURS);
@@ -331,8 +257,11 @@ class InspectionCreationApiIntegrationTest {
     String conflictingBody =
         "{\"assetId\":\""
             + secondAsset.getId()
-            + "\",\"objective\":\"Conflicting inspection\","
-            + "\"plannedStartAt\":\""
+            + "\",\"inspectorId\":\""
+            + inspectorId
+            + "\",\"droneId\":\""
+            + droneId
+            + "\",\"plannedStartAt\":\""
             + overlappingStart
             + "\",\"plannedEndAt\":\""
             + overlappingEnd
@@ -341,7 +270,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
+                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(conflictingBody))
         .andExpect(status().isConflict())
@@ -349,41 +278,175 @@ class InspectionCreationApiIntegrationTest {
   }
 
   @Test
-  void cannotCreateInspectionWithInvalidDates() throws Exception {
-    Instant start = Instant.now().plus(2, ChronoUnit.DAYS);
-    Instant end = start.minus(1, ChronoUnit.HOURS);
+  void uploadFlightPermitTransitionsInspectionToReadyForFlight() throws Exception {
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+    Instant end = start.plus(4, ChronoUnit.HOURS);
 
     String body =
         "{\"assetId\":\""
             + assetId
-            + "\",\"objective\":\"Visual check\","
-            + "\"plannedStartAt\":\""
+            + "\",\"inspectorId\":\""
+            + inspectorId
+            + "\",\"droneId\":\""
+            + droneId
+            + "\",\"plannedStartAt\":\""
             + start
             + "\",\"plannedEndAt\":\""
             + end
             + "\"}";
 
+    var result =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections")
+                    .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body))
+            .andExpect(status().isCreated())
+            .andReturn();
+
+    String responseJson = result.getResponse().getContentAsString();
+    String inspectionIdStr = com.jayway.jsonpath.JsonPath.read(responseJson, "$.data.id");
+    UUID inspectionId = UUID.fromString(inspectionIdStr);
+
+    // Attempt flight permit upload before pilot license declared -> fails with
+    // PILOT_LICENSE_REQUIRED
+    MockMultipartFile permitFile =
+        new MockMultipartFile("file", "permit.pdf", "application/pdf", "%PDF-sample".getBytes());
+
     mockMvc
         .perform(
-            post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_ADMIN"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("INVALID_DATES"));
+        .andExpect(jsonPath("$.code").value("PILOT_LICENSE_REQUIRED"));
+
+    // Inspector self-declares pilot license
+    User inspector = users.findById(inspectorId).orElseThrow();
+    inspector.updatePilotLicense(
+        "VN-UAV-12345", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
+    users.saveAndFlush(inspector);
+
+    // Inspector uploads flight permit -> transitions to READY_FOR_FLIGHT
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.status").value("READY_FOR_FLIGHT"))
+        .andExpect(jsonPath("$.data.flightPermitFileName").value("permit.pdf"));
   }
 
+  @Autowired
+  com.smartdroneinspection.inspections.repository.ScheduleOccurrenceRepository occurrences;
+
+  @Autowired com.smartdroneinspection.inspections.service.InspectionReminderJob reminderJob;
+
+  @Autowired
+  com.smartdroneinspection.notifications.service.InspectionNotificationService
+      inspectionNotifications;
+
   @Test
-  void inspectorCannotCreateInspection() throws Exception {
-    String body = "{\"assetId\":\"" + assetId + "\",\"objective\":\"Unauthorized attempt\"}";
+  void orgAdminCreatesRecurringScheduleWithPlainTextScopeAndCompatibleSelfServicePermitFlow()
+      throws Exception {
+    java.time.LocalDateTime anchor =
+        java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)
+            .plusDays(1)
+            .truncatedTo(ChronoUnit.SECONDS);
+
+    String scheduleBody =
+        "{\"assetId\":\""
+            + assetId
+            + "\",\"anchor\":\""
+            + anchor
+            + "\",\"timezone\":\"UTC\","
+            + "\"unit\":\"MONTH\","
+            + "\"interval\":1,"
+            + "\"durationSeconds\":7200,"
+            + "\"reminderDays\":3,"
+            + "\"inspectorId\":\""
+            + inspectorId
+            + "\",\"droneId\":\""
+            + droneId
+            + "\"}";
+
+    var scheduleResult =
+        mockMvc
+            .perform(
+                post("/api/v1/inspection-schedules")
+                    .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(scheduleBody))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.data.totalGeneratedOccurrences").value(1))
+            .andReturn();
+
+    UUID scheduleId =
+        UUID.fromString(
+            com.jayway.jsonpath.JsonPath.read(
+                scheduleResult.getResponse().getContentAsString(), "$.data.id"));
+
+    var occurrence = occurrences.findByScheduleIdOrderByOccurrenceIndexAsc(scheduleId).getFirst();
+    UUID inspectionId = occurrence.getInspectionId();
+    var generatedInspection = inspections.findById(inspectionId).orElseThrow();
+    org.assertj.core.api.Assertions.assertThat(generatedInspection.getStatus().name())
+        .isEqualTo("ASSIGNED");
+    org.assertj.core.api.Assertions.assertThat(generatedInspection.getRecurringScheduleId())
+        .isEqualTo(scheduleId);
+
+    inspectionNotifications.recordInspectionAssignment(
+        inspectionId, organizationId, inspectorId, generatedInspection.getPlannedStartAt());
+    mockMvc
+        .perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                    "/api/v1/notifications")
+                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items[0].eventType").value("INSPECTION_ASSIGNED"))
+        .andExpect(jsonPath("$.data.items[0].targetPath").value("/inspections/" + inspectionId));
+
+    User inspector = users.findById(inspectorId).orElseThrow();
+    inspector.updatePilotLicense(
+        "VN-UAV-99999", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/rec.pdf");
+    users.saveAndFlush(inspector);
+
+    Drone assignedDrone = drones.findById(droneId).orElseThrow();
+    assignedDrone.updateRegistration(
+        "VN-DRONE-REG-01", "drones/reg-01.pdf", Instant.now().plus(365, ChronoUnit.DAYS));
+    drones.saveAndFlush(assignedDrone);
+
+    MockMultipartFile permitFile =
+        new MockMultipartFile(
+            "file", "recurring-permit.pdf", "application/pdf", "%PDF-1.7".getBytes());
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("READY_FOR_FLIGHT"))
+        .andExpect(jsonPath("$.data.inspectionItems[0]").value("Mố cầu M1"));
+
+    org.assertj.core.api.Assertions.assertThat(
+            reminderJob.processSingleReminder(occurrence.getId(), Instant.now()))
+        .isTrue();
 
     mockMvc
         .perform(
-            post("/api/v1/inspections")
+            post("/api/v1/inspections/" + inspectionId + "/field-sessions")
                 .with(jwtUser(inspectorId, "ROLE_INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isForbidden());
+                .content("{\"preFlightChecklistNote\":\"Battery, GNSS, propellers checked\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor jwtUser(

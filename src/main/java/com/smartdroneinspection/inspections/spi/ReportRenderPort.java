@@ -88,21 +88,12 @@ public interface ReportRenderPort {
       String assignedDroneSerialNumber,
       String assignedDroneManufacturer,
       String assignedDroneModel,
-      String preparationStatus,
-      String shotList,
-      String evidenceTypes,
-      String accessConstraints,
-      String safetyObservations,
-      String permitDocumentReferences,
-      String readinessDecision,
-      String readinessDecisionDate,
-      String readinessReason,
-      List<String> checklistResponseSummaries,
+      String flightPermitFileName,
+      List<String> inspectionItems,
       List<String> fieldSessionSummaries,
       String reviewerQualificationDisclosure) {
     public ReportContext {
-      checklistResponseSummaries =
-          checklistResponseSummaries == null ? List.of() : List.copyOf(checklistResponseSummaries);
+      inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
       fieldSessionSummaries =
           fieldSessionSummaries == null ? List.of() : List.copyOf(fieldSessionSummaries);
     }

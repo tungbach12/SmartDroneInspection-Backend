@@ -133,15 +133,10 @@ public final class ReportHtmlTemplate {
     if (report != null) {
       body.append("<table class=\"kv\">");
       row(body, context, "Assigned Drone", droneLabel(report));
-      row(body, context, "Preparation status", report.preparationStatus());
-      row(body, context, "Planned shot list", report.shotList());
-      row(body, context, "Evidence types requested", report.evidenceTypes());
-      row(body, context, "Access constraints", report.accessConstraints());
-      row(body, context, "Safety observations", report.safetyObservations());
-      row(body, context, "Permit document references", report.permitDocumentReferences());
-      row(body, context, "Readiness decision", report.readinessDecision());
-      row(body, context, "Readiness decision date", report.readinessDecisionDate());
-      row(body, context, "Readiness reason", report.readinessReason());
+      row(body, context, "Flight permit", report.flightPermitFileName());
+      if (!report.inspectionItems().isEmpty()) {
+        row(body, context, "Inspection items", String.join(", ", report.inspectionItems()));
+      }
       if (!report.fieldSessionSummaries().isEmpty()) {
         row(
             body,
@@ -155,15 +150,6 @@ public final class ReportHtmlTemplate {
           "Reviewer qualification disclosure",
           report.reviewerQualificationDisclosure());
       body.append("</table>");
-      if (!report.checklistResponseSummaries().isEmpty()) {
-        body.append("<h3>")
-            .append(text(context, "Recorded checklist responses"))
-            .append("</h3><ul>");
-        for (String response : report.checklistResponseSummaries()) {
-          body.append("<li>").append(escape(response)).append("</li>");
-        }
-        body.append("</ul>");
-      }
       if (report.fieldSessionSummaries().stream()
           .anyMatch(
               summary -> summary.contains(text(context, "Pre-flight checklist note") + ":"))) {
@@ -556,6 +542,8 @@ public final class ReportHtmlTemplate {
       case "Scope" -> "Phạm vi";
       case "Included components" -> "Bộ phận bao gồm";
       case "Acceptance criteria" -> "Tiêu chí chấp nhận";
+      case "Flight permit" -> "Giấy phép bay";
+      case "Inspection items" -> "Hạng mục kiểm tra";
       case "Planned shot-list" -> "Danh sách ảnh dự kiến";
       case " (required)" -> " (bắt buộc)";
       case " by " -> " bởi ";

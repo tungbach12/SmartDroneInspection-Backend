@@ -177,7 +177,7 @@ public class SubscriptionService {
 
   public SubscriptionResponse confirmPayment(
       UUID adminUserId, UUID subscriptionId, ConfirmPaymentRequest request) {
-    requireAdmin(adminUserId);
+    requirePlatformManager(adminUserId);
 
     if (request.externalReference() == null || request.externalReference().isBlank()) {
       throw new BusinessException(
@@ -253,24 +253,26 @@ public class SubscriptionService {
                 () ->
                     new BusinessException(
                         HttpStatus.FORBIDDEN, "FORBIDDEN", "Active user session required"));
-    if (!user.hasRole(Roles.ORG_ADMIN) || user.organizationId() == null) {
+    if (!user.hasRole(Roles.ORG_MANAGER) || user.organizationId() == null) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Organization Admin authority required");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Organization Manager authority required");
     }
     return user;
   }
 
-  private UserAccess.ActiveUser requireAdmin(UUID userId) {
+  private UserAccess.ActiveUser requirePlatformManager(UUID userId) {
     UserAccess.ActiveUser user =
         userAccess
             .findActiveUser(userId)
             .orElseThrow(
                 () ->
                     new BusinessException(
-                        HttpStatus.FORBIDDEN, "FORBIDDEN", "Active admin session required"));
-    if (!user.hasRole(Roles.ADMIN)) {
+                        HttpStatus.FORBIDDEN,
+                        "FORBIDDEN",
+                        "Active platform manager session required"));
+    if (!user.hasRole(Roles.PLATFORM_MANAGER) || user.organizationId() != null) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform Admin authority required");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform Manager authority required");
     }
     return user;
   }

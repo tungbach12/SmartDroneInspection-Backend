@@ -33,21 +33,16 @@ class FullDatabaseSchemaMigrationTest {
             "subscriptions",
             "users",
             "auth_sessions",
-            "workforce_credentials",
+            "platform_drones",
+            "drone_leases",
             "drones",
-            "drone_documents",
-            "flight_permits",
             "asset_categories",
-            "checklist_templates",
-            "checklist_items",
             "assets",
             "asset_documents",
-            "asset_pair_assignments",
             "inspections",
-            "inspection_preparations",
-            "inspection_readiness_decisions",
+            "recurring_inspection_schedules",
+            "schedule_occurrences",
             "field_sessions",
-            "checklist_responses",
             "evidence",
             "findings",
             "inspection_reports",
@@ -67,7 +62,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(37);
+    assertThat(expected).hasSize(32);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -93,19 +88,11 @@ class FullDatabaseSchemaMigrationTest {
     assertThat(indexes)
         .contains(
             "uq_assets_organization_asset_code",
-            "uq_asset_pair_assignments_active_asset",
             "ix_notifications_recipient_status",
             "ix_notifications_delivery",
             "uq_users_id_organization",
-            "uq_assets_id_organization",
-            "uq_asset_pair_assignments_id_scope");
+            "uq_assets_id_organization");
     assertThat(constraints)
-        .contains(
-            "fk_asset_pair_assignments_asset_tenant",
-            "fk_asset_pair_assignments_inspector_tenant",
-            "fk_asset_pair_assignments_drone_tenant",
-            "fk_inspections_asset_tenant",
-            "fk_inspections_pair_tenant",
-            "fk_maintenance_work_orders_asset_tenant");
+        .contains("fk_inspections_asset_tenant", "fk_maintenance_work_orders_asset_tenant");
   }
 }

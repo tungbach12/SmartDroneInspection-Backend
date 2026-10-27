@@ -27,12 +27,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * ORG_ADMIN workforce provisioning and lifecycle. The tenant is taken from the authenticated
+ * ORG_MANAGER workforce provisioning and lifecycle. The tenant is taken from the authenticated
  * principal inside the service; no endpoint accepts an organization or actor zone.
  */
 @RestController
 @RequestMapping("/api/v1/workforce/users")
-@PreAuthorize("hasRole('" + Roles.ORG_ADMIN + "')")
+@PreAuthorize("hasRole('" + Roles.ORG_MANAGER + "')")
 public class WorkforceController {
 
   private final WorkforceService workforce;

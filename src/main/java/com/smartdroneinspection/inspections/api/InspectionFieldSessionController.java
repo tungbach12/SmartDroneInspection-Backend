@@ -5,10 +5,8 @@ import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionReque
 import com.smartdroneinspection.inspections.api.dto.request.PostponeFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionPreparationResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.service.InspectionFieldSessionService;
-import com.smartdroneinspection.inspections.service.InspectionPreparationService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -23,32 +21,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * MF2-09 to MF2-11: the assigned Inspector's field session, on site.
- *
- * <p>Only {@code INSPECTOR} reaches these routes. An {@code ORG_ADMIN} may approve readiness and
- * read the compliance gate, but the field session is the Inspector's own record of work they
- * performed, so the administrator cannot start or close one on their behalf. The service re-checks
- * that the inspection is assigned to the caller, so the route check is navigation policy only.
- *
- * <p>Starting a session is not Drone actuation. These routes record that the software agreed the
- * paperwork and the pre-flight checklist were in order; nothing here arms the aircraft, and no
- * {@code startedAt} is hardware flight time.
- */
 @RestController
 @RequestMapping("/api/v1/inspections/{inspectionId}/field-sessions")
 public class InspectionFieldSessionController {
 
   private final InspectionFieldSessionService fieldSessions;
-  private final InspectionPreparationService preparations;
 
-  public InspectionFieldSessionController(
-      InspectionFieldSessionService fieldSessions, InspectionPreparationService preparations) {
+  public InspectionFieldSessionController(InspectionFieldSessionService fieldSessions) {
     this.fieldSessions = fieldSessions;
-    this.preparations = preparations;
   }
 
-  /** The caller's own sessions for this inspection, oldest first. */
   @GetMapping
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<List<FieldSessionResponse>> list(
@@ -59,7 +41,6 @@ public class InspectionFieldSessionController {
             .toList());
   }
 
-  /** Starts the session after the MF2-10 readiness recheck. */
   @PostMapping
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FieldSessionResponse> start(
@@ -68,14 +49,9 @@ public class InspectionFieldSessionController {
       @Valid @RequestBody StartFieldSessionRequest request) {
     return ApiResponse.success(
         response(
-            fieldSessions.start(
-                subject(jwt),
-                inspectionId,
-                request.checklistTemplateId(),
-                request.preFlightChecklistNote())));
+            fieldSessions.start(subject(jwt), inspectionId, request.preFlightChecklistNote())));
   }
 
-  /** Weather or site safety stopped the session; the inspection stays startable (MF2-09). */
   @PostMapping("/{sessionId}/postponement")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FieldSessionResponse> postpone(
@@ -87,7 +63,6 @@ public class InspectionFieldSessionController {
         response(fieldSessions.postpone(subject(jwt), inspectionId, sessionId, request.reason())));
   }
 
-  /** Records the completed outcome and hands the inspection back to MF3 (MF2-12). */
   @PostMapping("/{sessionId}/completion")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FieldSessionResponse> complete(
@@ -100,18 +75,6 @@ public class InspectionFieldSessionController {
             fieldSessions.complete(subject(jwt), inspectionId, sessionId, request.outcomeNotes())));
   }
 
-  /** Requests a new preparation after the just-completed field session (MF2-12). */
-  @PostMapping("/additional-session")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionPreparationResponse> requestAdditionalSession(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @Valid @RequestBody PostponeFieldSessionRequest request) {
-    return ApiResponse.success(
-        preparations.requestAdditionalSession(subject(jwt), inspectionId, request.reason()));
-  }
-
-  /** The session cannot continue and will not resume under this record (MF2-11). */
   @PostMapping("/{sessionId}/abort")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FieldSessionResponse> abort(
@@ -127,12 +90,6 @@ public class InspectionFieldSessionController {
     return new FieldSessionResponse(
         session.getId(),
         session.getInspectionId(),
-        session.getOrganizationId(),
-        session.getInspectorUserId(),
-        session.getDroneId(),
-        session.getReadinessDecisionId(),
-        session.getChecklistTemplateId(),
-        session.getReadinessVersion(),
         session.getStatus(),
         session.getPreFlightChecklistNote(),
         session.getStartedAt(),
@@ -142,7 +99,7 @@ public class InspectionFieldSessionController {
         session.getOutcomeNotes());
   }
 
-  private UUID subject(Jwt jwt) {
+  private static UUID subject(Jwt jwt) {
     return UUID.fromString(jwt.getSubject());
   }
 }

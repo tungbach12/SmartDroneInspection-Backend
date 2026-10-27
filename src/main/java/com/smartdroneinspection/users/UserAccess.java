@@ -49,18 +49,31 @@ public interface UserAccess {
       String correlationId);
 
   record ActiveUser(
-      UUID id, Set<String> roles, UUID organizationId, String fullName, String email) {
+      UUID id,
+      Set<String> roles,
+      UUID organizationId,
+      String fullName,
+      String email,
+      String pilotLicenseNumber,
+      String pilotLicenseClass,
+      java.time.Instant pilotLicenseExpiresAt,
+      String pilotLicenseFileKey) {
+
+    public ActiveUser(
+        UUID id, Set<String> roles, UUID organizationId, String fullName, String email) {
+      this(id, roles, organizationId, fullName, email, null, null, null, null);
+    }
 
     public ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
-      this(id, roles, organizationId, fullName, null);
+      this(id, roles, organizationId, fullName, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null);
+      this(id, roles, null, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
-      this(id, roles, organizationId, null);
+      this(id, roles, organizationId, null, null, null, null, null, null);
     }
 
     public ActiveUser {
@@ -69,6 +82,13 @@ public interface UserAccess {
 
     public boolean hasRole(String role) {
       return roles.contains(role);
+    }
+
+    public boolean hasValidPilotLicense(java.time.Instant at) {
+      java.time.Instant checkTime = at != null ? at : java.time.Instant.now();
+      return pilotLicenseNumber != null
+          && !pilotLicenseNumber.isBlank()
+          && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
     }
   }
 

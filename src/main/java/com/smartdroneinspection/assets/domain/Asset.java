@@ -21,6 +21,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(
@@ -61,8 +63,12 @@ public class Asset {
   private BigDecimal longitude;
 
   @Column(name = "technical_profile", columnDefinition = "jsonb")
-  @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+  @JdbcTypeCode(SqlTypes.JSON)
   private String ownershipInformation;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "inspection_items", columnDefinition = "jsonb", nullable = false)
+  private List<String> inspectionItems = new ArrayList<>();
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
@@ -98,6 +104,7 @@ public class Asset {
       BigDecimal latitude,
       BigDecimal longitude,
       String ownershipInformation,
+      List<String> inspectionItems,
       UUID createdByUserId) {
     validateCoordinates(latitude, longitude);
     this.organizationId = organizationId;
@@ -109,9 +116,36 @@ public class Asset {
     this.latitude = latitude;
     this.longitude = longitude;
     this.ownershipInformation = ownershipInformation;
+    this.inspectionItems =
+        inspectionItems == null ? new ArrayList<>() : new ArrayList<>(inspectionItems);
     this.status = AssetStatus.ACTIVE;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
+  }
+
+  public Asset(
+      UUID organizationId,
+      UUID categoryId,
+      String code,
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      UUID createdByUserId) {
+    this(
+        organizationId,
+        categoryId,
+        code,
+        name,
+        description,
+        locationText,
+        latitude,
+        longitude,
+        ownershipInformation,
+        List.of(),
+        createdByUserId);
   }
 
   private static String toLocationJson(
@@ -183,7 +217,8 @@ public class Asset {
       String locationText,
       BigDecimal latitude,
       BigDecimal longitude,
-      String ownershipInformation) {
+      String ownershipInformation,
+      List<String> inspectionItems) {
     validateCoordinates(latitude, longitude);
     if (name != null) this.name = name;
     if (description != null) this.description = description;
@@ -191,6 +226,29 @@ public class Asset {
     if (latitude != null) this.latitude = latitude;
     if (longitude != null) this.longitude = longitude;
     if (ownershipInformation != null) this.ownershipInformation = ownershipInformation;
+    if (inspectionItems != null) {
+      this.inspectionItems = new ArrayList<>(inspectionItems);
+    }
+    updatedAt = Instant.now();
+  }
+
+  public void update(
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation) {
+    update(name, description, locationText, latitude, longitude, ownershipInformation, null);
+  }
+
+  public List<String> getInspectionItems() {
+    return inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+  }
+
+  public void setInspectionItems(List<String> inspectionItems) {
+    this.inspectionItems =
+        inspectionItems == null ? new ArrayList<>() : new ArrayList<>(inspectionItems);
     updatedAt = Instant.now();
   }
 

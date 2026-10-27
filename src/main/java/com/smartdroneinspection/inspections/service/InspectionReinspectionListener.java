@@ -2,7 +2,6 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
@@ -54,21 +53,11 @@ public class InspectionReinspectionListener {
         new Inspection(
             event.organizationId(),
             event.assetId(),
-            sourceInspection != null ? sourceInspection.getAssetPairAssignmentId() : null,
             sourceInspection != null ? sourceInspection.getInspectorId() : null,
             sourceInspection != null ? sourceInspection.getDroneId() : null,
-            objective,
-            sourceInspection != null ? sourceInspection.getScope() : "Re-inspection verification",
-            sourceInspection != null ? sourceInspection.getComponentScope() : null,
-            sourceInspection != null
-                ? sourceInspection.getAcceptanceCriteria()
-                : "Defect resolved verification",
             event.requestedAt() != null ? event.requestedAt() : Instant.now(),
             null);
 
-    if (reinspection.getInspectorId() != null) {
-      reinspection.moveTo(InspectionStatus.ASSIGNED);
-    }
     inspections.saveAndFlush(reinspection);
     log.info(
         "Created linked re-inspection {} in status {}",

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -33,7 +34,7 @@ public class DroneController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<DroneResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateDroneRequest request) {
@@ -41,32 +42,42 @@ public class DroneController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<List<DroneResponse>> list(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(drones.list(subject(jwt)));
   }
 
   /** Serviceable airframes of the caller's organization; no permit or readiness claim is made. */
   @GetMapping("/selection")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<List<DroneSelectionResponse>> selection(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(drones.selection(subject(jwt)));
   }
 
   @GetMapping("/{droneId}")
-  @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
   public ApiResponse<DroneResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID droneId) {
     return ApiResponse.success(drones.get(subject(jwt), droneId));
   }
 
   @PatchMapping("/{droneId}/serviceability")
-  @PreAuthorize("hasRole('ORG_ADMIN')")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
   public ApiResponse<DroneResponse> updateServiceability(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID droneId,
       @Valid @RequestBody UpdateDroneServiceabilityRequest request) {
     return ApiResponse.success(drones.updateServiceability(subject(jwt), droneId, request));
+  }
+
+  @PutMapping("/{droneId}/registration")
+  @PreAuthorize("hasRole('ORG_MANAGER')")
+  public ApiResponse<DroneResponse> updateRegistration(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID droneId,
+      @Valid @RequestBody
+          com.smartdroneinspection.assets.api.dto.request.UpdateDroneRegistrationRequest request) {
+    return ApiResponse.success(drones.updateRegistration(subject(jwt), droneId, request));
   }
 
   private static UUID subject(Jwt jwt) {

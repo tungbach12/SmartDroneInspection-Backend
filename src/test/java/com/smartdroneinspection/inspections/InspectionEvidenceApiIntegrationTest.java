@@ -11,13 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.domain.InspectionPreparation;
-import com.smartdroneinspection.inspections.domain.InspectionReadinessDecision;
-import com.smartdroneinspection.inspections.domain.enums.ReadinessDecisionType;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionPreparationRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReadinessDecisionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.security.MessageDigest;
@@ -65,8 +60,6 @@ class InspectionEvidenceApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionPreparationRepository preparations;
-  @Autowired InspectionReadinessDecisionRepository readinessDecisions;
   @Autowired EvidenceRepository evidence;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
@@ -160,7 +153,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
                     fixture.inspectionId(),
                     evidenceId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN"))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"locationDescription\":\"Girder G4 east face\"}"))
         .andExpect(status().isForbidden());
@@ -251,7 +244,7 @@ class InspectionEvidenceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
-                .with(principal(fixture.outsiderId(), "ORG_ADMIN")))
+                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
 
@@ -269,7 +262,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/evidence/{evidenceId}/content",
                     fixture.inspectionId(),
                     evidenceId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
   }
 
@@ -292,95 +285,8 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void additionalSessionUsesMf2PreparationAndRetainsThePriorDecision() throws Exception {
-    InspectionPreparation previous =
-        new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
-    previous.recordShotList("{\"shots\":[\"main span\"]}");
-    previous.recordSafetyObservations("No hazards observed");
-    previous.submit(fixture.inspectorId());
-    previous = preparations.saveAndFlush(previous);
-    previous.markReady();
-    previous = preparations.saveAndFlush(previous);
-    readinessDecisions.saveAndFlush(
-        new InspectionReadinessDecision(
-            fixture.inspectionId(),
-            previous.getId(),
-            previous.getPreparationVersion(),
-            ReadinessDecisionType.APPROVED,
-            fixture.reviewerId(),
-            null,
-            "{}",
-            "[]",
-            "[]",
-            "a".repeat(64)));
-    UUID completedSessionId = insertCompletedFieldSession();
-    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES, completedSessionId);
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/field-sessions/additional-session",
-                    fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(Map.of("reason", "East face needs access"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.preparationVersion").value(2))
-        .andExpect(jsonPath("$.data.status").value("DRAFT"));
-
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT status FROM inspections WHERE id = ?",
-                String.class,
-                fixture.inspectionId()))
-        .isEqualTo("PREPARING");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM inspection_readiness_decisions WHERE inspection_id = ? "
-                    + "AND decision = 'INVALIDATED' AND reason = 'East face needs access'",
-                Long.class,
-                fixture.inspectionId()))
-        .isEqualTo(1L);
-  }
-
-  @Test
   void evidenceUploadCanBeAssociatedWithACompletedSession() throws Exception {
-    InspectionPreparation preparation =
-        new InspectionPreparation(fixture.inspectionId(), fixture.inspectorId(), 1);
-    preparation.recordShotList("[{\"component\":\"main span\"}]");
-    preparation.recordSafetyObservations("No hazards observed");
-    preparation.submit(fixture.inspectorId());
-    preparation = preparations.saveAndFlush(preparation);
-    preparation.markReady();
-    preparation = preparations.saveAndFlush(preparation);
-    UUID readinessId =
-        readinessDecisions
-            .saveAndFlush(
-                new InspectionReadinessDecision(
-                    fixture.inspectionId(),
-                    preparation.getId(),
-                    preparation.getPreparationVersion(),
-                    ReadinessDecisionType.APPROVED,
-                    fixture.reviewerId(),
-                    null,
-                    "{}",
-                    "[]",
-                    "[]",
-                    "a".repeat(64)))
-            .getId();
-    UUID sessionId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, "
-            + "readiness_decision_id, status, started_at, ended_at, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
-            + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
-        sessionId,
-        fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId(),
-        readinessId);
-
+    UUID sessionId = insertCompletedFieldSession();
     MvcResult response =
         uploadResponse(
             fixture.inspectorId(), "INSPECTOR", "completed-session.png", PNG_BYTES, sessionId);
@@ -390,6 +296,45 @@ class InspectionEvidenceApiIntegrationTest {
                 .at("/data/fieldSessionId")
                 .asString())
         .isEqualTo(sessionId.toString());
+  }
+
+  @Test
+  void evidenceLocationCanBeEditedInReportDraftButNotWhileSubmitted() throws Exception {
+    UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
+    jdbcTemplate.update(
+        "UPDATE inspections SET findings_confirmed_at = CURRENT_TIMESTAMP, findings_snapshot_hash = ? WHERE id = ?",
+        "confirmed-hash",
+        fixture.inspectionId());
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Updated in draft\"}"))
+        .andExpect(status().isOk());
+
+    jdbcTemplate.update(
+        "INSERT INTO inspection_reports (id, inspection_id, version_no, status, content_snapshot, created_at, submitted_at) "
+            + "VALUES (?, ?, 1, 'SUBMITTED', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        UUID.randomUUID(),
+        fixture.inspectionId());
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Must remain locked\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_LOCKED"));
   }
 
   @Test
@@ -411,7 +356,7 @@ class InspectionEvidenceApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -419,7 +364,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_ADMIN")))
+                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
         .andExpect(status().isOk());
 
     mockMvc
@@ -474,7 +419,6 @@ class InspectionEvidenceApiIntegrationTest {
     return versionId;
   }
 
-  @Test
   private UUID createManualFinding(UUID evidenceId) throws Exception {
     MvcResult result =
         mockMvc
@@ -513,14 +457,12 @@ class InspectionEvidenceApiIntegrationTest {
   private UUID insertCompletedFieldSession() {
     UUID sessionId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO field_sessions (id, inspection_id, organization_id, inspector_user_id, "
+        "INSERT INTO field_sessions (id, inspection_id, "
             + "status, started_at, ended_at, created_at, updated_at, row_version) "
-            + "VALUES (?, ?, ?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+            + "VALUES (?, ?, 'FIELD_COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
             + "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         sessionId,
-        fixture.inspectionId(),
-        fixture.organizationId(),
-        fixture.inspectorId());
+        fixture.inspectionId());
     return sessionId;
   }
 

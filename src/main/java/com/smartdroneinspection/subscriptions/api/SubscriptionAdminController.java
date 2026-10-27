@@ -1,6 +1,7 @@
 package com.smartdroneinspection.subscriptions.api;
 
 import com.smartdroneinspection.shared.api.ApiResponse;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.subscriptions.api.dto.request.ActivateSubscriptionRequest;
 import com.smartdroneinspection.subscriptions.api.dto.response.SubscriptionResponse;
 import com.smartdroneinspection.subscriptions.service.SubscriptionActivationService;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** Platform administration of organization subscription entitlement. */
 @RestController
 @RequestMapping("/api/v1/platform/organizations/{organizationId}/subscriptions")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
 public class SubscriptionAdminController {
 
   private final SubscriptionActivationService subscriptions;

@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * MF3 fixtures: one organization with an assigned Inspector and a qualified ORG_ADMIN reviewer, a
+ * MF3 fixtures: one organization with an assigned Inspector and a qualified ORG_MANAGER reviewer, a
  * second organization for cross-tenant denial, and an inspection already past field work.
  */
 public final class InspectionTestFixture {
@@ -33,26 +33,15 @@ public final class InspectionTestFixture {
     UUID otherOrganizationId = createOrganization("MF3 other");
 
     User inspector = saveUser("mf3-inspector", organizationId, UserRole.INSPECTOR);
-    User reviewer = saveUser("mf3-reviewer", organizationId, UserRole.ORG_ADMIN);
+    User reviewer = saveUser("mf3-reviewer", organizationId, UserRole.ORG_MANAGER);
     // An INSPECTOR who is not the assignee, to prove assignment scope rather than role is enforced.
     User otherInspector = saveUser("mf3-other-inspector", organizationId, UserRole.INSPECTOR);
-    User outsider = saveUser("mf3-outsider", otherOrganizationId, UserRole.ORG_ADMIN);
+    User outsider = saveUser("mf3-outsider", otherOrganizationId, UserRole.ORG_MANAGER);
 
     UUID assetId = createAsset(organizationId);
     Inspection inspection =
         inspections.saveAndFlush(
-            new Inspection(
-                organizationId,
-                assetId,
-                null,
-                inspector.getId(),
-                null,
-                "Visual inspection of the main span",
-                "{\"method\":\"visual\"}",
-                "[\"main span\"]",
-                "{\"criteria\":\"no visible structural damage\"}",
-                null,
-                null));
+            new Inspection(organizationId, assetId, inspector.getId(), null, null, null));
     advanceToFieldCompleted(inspection);
     return new Data(
         organizationId,

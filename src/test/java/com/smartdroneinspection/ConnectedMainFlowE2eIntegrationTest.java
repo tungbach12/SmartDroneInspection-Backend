@@ -12,16 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
-import com.smartdroneinspection.assets.domain.ChecklistTemplate;
 import com.smartdroneinspection.assets.domain.Drone;
-import com.smartdroneinspection.assets.domain.FlightPermit;
-import com.smartdroneinspection.assets.domain.enums.ChecklistResponseType;
+import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
-import com.smartdroneinspection.assets.repository.AssetPairAssignmentRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
-import com.smartdroneinspection.assets.repository.FlightPermitRepository;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
@@ -83,11 +78,8 @@ class ConnectedMainFlowE2eIntegrationTest {
   @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired AssetCategoryRepository categories;
-  @Autowired ChecklistTemplateRepository templates;
   @Autowired AssetRepository assets;
-  @Autowired AssetPairAssignmentRepository assetPairAssignments;
   @Autowired DroneRepository drones;
-  @Autowired FlightPermitRepository permits;
   @Autowired InspectionRepository inspections;
   @Autowired FindingRepository findings;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -125,7 +117,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID orgAdminId =
         createUser(
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             ActorZone.CUSTOMER_ORGANIZATION,
             "org.admin." + UUID.randomUUID() + "@skyview.test",
             "John OrgAdmin");
@@ -133,7 +125,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID reviewerId =
         createUser(
             organizationId,
-            UserRole.ORG_ADMIN,
+            UserRole.ORG_MANAGER,
             ActorZone.CUSTOMER_ORGANIZATION,
             "reviewer." + UUID.randomUUID() + "@skyview.test",
             "Alice Reviewer");
@@ -143,7 +135,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{orgId}/subscriptions", organizationId)
-                .with(principal(platformAdminId, "ADMIN"))
+                .with(principal(platformAdminId, "PLATFORM_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -186,15 +178,27 @@ class ConnectedMainFlowE2eIntegrationTest {
             "Charlie ReportAuthor");
 
     // =========================================================================
-    // STEP 1: MF1 - Resource Setup, Operational Pairing, Inspection Creation & Dispatch
+    // STEP 1: MF1 - Resource Setup, Inspection Creation & Dispatch
     // =========================================================================
     log.info("[MF1] Step 1.1: Registering Drone DJI Matrice 350 RTK...");
     Drone drone =
         drones.saveAndFlush(
-            new Drone(organizationId, "DJI-M350-" + UUID.randomUUID().toString().substring(0, 8)));
+            new Drone(
+                organizationId,
+                "DJI-M350-" + UUID.randomUUID().toString().substring(0, 8),
+                "Matrice 350 RTK",
+                "DJI",
+                "{}",
+                DroneServiceability.ACTIVE,
+                null,
+                null,
+                "Primary fleet drone",
+                "REG-VN-350",
+                "drones/registration.pdf",
+                Instant.now().plus(365, ChronoUnit.DAYS)));
     UUID droneId = drone.getId();
 
-    log.info("[MF1] Step 1.2: Registering Asset Category, Checklist Template, and Asset...");
+    log.info("[MF1] Step 1.2: Registering Asset Category and Asset with Inspection Items...");
     AssetCategory category =
         categories.saveAndFlush(
             new AssetCategory(
@@ -202,26 +206,6 @@ class ConnectedMainFlowE2eIntegrationTest {
                 "Bridges & Overpasses",
                 "Civil infrastructure bridge category",
                 true));
-
-    ChecklistTemplate template =
-        new ChecklistTemplate(
-            "bridge-inspection-" + organizationId,
-            1,
-            category.getId(),
-            "Bridge inspection",
-            "Bridge checklist",
-            orgAdminId);
-    template.addItem(
-        "surface-condition",
-        "Surface",
-        "Check the visible surface condition",
-        ChecklistResponseType.PASS_FAIL,
-        true,
-        0,
-        null,
-        null);
-    template.publish();
-    templates.saveAndFlush(template);
 
     Asset asset =
         assets.saveAndFlush(
@@ -235,44 +219,11 @@ class ConnectedMainFlowE2eIntegrationTest {
                 null,
                 null,
                 null,
+                List.of("Girder G4", "Pier 2", "Main stay cables"),
                 orgAdminId));
     UUID assetId = asset.getId();
 
-    log.info(
-        "[MF1] Step 1.3: Creating and Activating Default Operational Pair (Inspector + Drone)...");
-    String pairResponse =
-        mockMvc
-            .perform(
-                post("/api/v1/assets/{assetId}/pair-assignments", assetId)
-                    .with(principal(orgAdminId, "ORG_ADMIN"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(
-                        objectMapper.writeValueAsString(
-                            Map.of(
-                                "inspectorUserId", inspectorId.toString(),
-                                "droneId", droneId.toString(),
-                                "validFrom", Instant.now().minusSeconds(300).toString(),
-                                "reason", "Default primary operational team for bridge assets"))))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.data.status").value("DRAFT"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-    UUID pairId = UUID.fromString(objectMapper.readTree(pairResponse).at("/data/id").stringValue());
-
-    mockMvc
-        .perform(
-            post("/api/v1/assets/{assetId}/pair-assignments/{pairId}/activate", assetId, pairId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("reason", "Approved primary operational pairing"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("ACTIVE"));
-
-    log.info("[MF1] Step 1.4: Creating and Dispatching Inspection (status -> ASSIGNED)...");
+    log.info("[MF1] Step 1.3: Creating and Dispatching Inspection (status -> ASSIGNED)...");
     Instant plannedStart = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant plannedEnd = plannedStart.plus(4, ChronoUnit.HOURS);
 
@@ -280,23 +231,21 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/inspections")
-                    .with(principal(orgAdminId, "ORG_ADMIN"))
+                    .with(principal(orgAdminId, "ORG_MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
                             Map.of(
                                 "assetId", assetId.toString(),
-                                "objective", "Quarterly structural integrity and crack survey",
-                                "scope", "{\"method\":\"visual\",\"coverage\":\"full span\"}",
-                                "componentScope", "[\"main stay cables\",\"pier 2\",\"girder G4\"]",
-                                "acceptanceCriteria", "{\"minGsdMm\":0.8,\"overlap\":0.8}",
+                                "inspectorId", inspectorId.toString(),
+                                "droneId", droneId.toString(),
                                 "plannedStartAt", plannedStart.toString(),
                                 "plannedEndAt", plannedEnd.toString()))))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.data.status").value("ASSIGNED"))
             .andExpect(jsonPath("$.data.inspectorId").value(inspectorId.toString()))
             .andExpect(jsonPath("$.data.droneId").value(droneId.toString()))
-            .andExpect(jsonPath("$.data.assetPairAssignmentId").value(pairId.toString()))
+            .andExpect(jsonPath("$.data.inspectionItems[0]").value("Girder G4"))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -306,103 +255,42 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[MF1] SUCCESS: Inspection created with ID {} in status ASSIGNED", inspectionId);
 
     // =========================================================================
-    // STEP 2: MF2 - Preparation, Readiness Approval, Field Session Execution
+    // STEP 2: MF2 - Self-Service Pilot License & Flight Permit -> Field Session
     // =========================================================================
-    log.info("[MF2] Step 2.0: Inspector accepts the assigned operational pair...");
+    log.info("[MF2] Step 2.1: Inspector self-declares pilot license...");
     mockMvc
         .perform(
-            post("/api/v1/inspection-assignments/{id}/response", pairId)
-                .with(principal(inspectorId, "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("response", "ACCEPTED"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.assignmentResponse").value("ACCEPTED"));
-
-    log.info("[MF2] Step 2.1: Inspector drafts and submits Preparation with Shot-List...");
-    String preparationDraftResponse =
-        mockMvc
-            .perform(
-                put("/api/v1/inspections/{id}/preparation", inspectionId)
-                    .with(principal(inspectorId, "INSPECTOR"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(
-                        objectMapper.writeValueAsString(
-                            Map.of(
-                                "shotList",
-                                "[{\"component\":\"Girder G4\",\"modality\":\"RGB\",\"required\":true},{\"component\":\"Pier 2\",\"modality\":\"RGB\",\"required\":true}]",
-                                "evidenceTypes",
-                                "[\"RGB\",\"HIGH_RES_OPTICAL\"]",
-                                "safetyObservations",
-                                "Moderate water current beneath pier 2; safety vessel on standby"))))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.status").value("DRAFT"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-    UUID preparationId =
-        UUID.fromString(
-            objectMapper.readTree(preparationDraftResponse).at("/data/id").stringValue());
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/preparation/{prepId}/submission",
-                    inspectionId,
-                    preparationId)
+            put("/api/v1/auth/me/pilot-license")
                 .with(principal(inspectorId, "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of(
-                            "acknowledgment",
-                            "Safety assessment complete and flight corridor confirmed"))))
+                            "licenseNumber",
+                            "VN-UAV-PILOT-2026",
+                            "licenseClass",
+                            "CLASS_A",
+                            "expiresAt",
+                            plannedStart.plus(365, ChronoUnit.DAYS).toString(),
+                            "fileKey",
+                            "licenses/pilot-cert.pdf"))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+        .andExpect(jsonPath("$.data.pilotLicenseNumber").value("VN-UAV-PILOT-2026"));
 
-    log.info(
-        "[MF2] Step 2.2: Org Admin records Flight Permit & reviews Readiness -> READY_FOR_FLIGHT...");
-    FlightPermit permit =
-        new FlightPermit(
-            organizationId, assetId, "UAV_COMMERCIAL", "HCMC River Corridor", "Civil Aviation");
-    permit.grant(
-        "PERMIT-VCA-2026-" + UUID.randomUUID().toString().substring(0, 6),
-        "Civil Aviation Authority of Vietnam",
-        plannedStart.minus(2, ChronoUnit.DAYS),
-        plannedStart.plus(7, ChronoUnit.DAYS));
-    permits.saveAndFlush(permit);
-
-    UUID reviewerCredentialId =
-        insertCredential(
-            organizationId, reviewerId, inspectionId, "AERONAUTICAL_SAFETY_OFFICER", orgAdminId);
-    UUID inspectorCredentialId =
-        insertCredential(
-            organizationId, inspectorId, inspectionId, "REMOTE_PILOT_LICENSE", orgAdminId);
-    UUID droneDocId = insertDroneAirworthinessDocument(droneId, orgAdminId);
-
+    log.info("[MF2] Step 2.2: Inspector uploads Flight Permit -> READY_FOR_FLIGHT...");
     mockMvc
         .perform(
-            post(
-                    "/api/v1/inspections/{id}/readiness/{prepId}/approval",
-                    inspectionId,
-                    preparationId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+            post("/api/v1/inspections/{id}/flight-permit", inspectionId)
+                .with(principal(inspectorId, "INSPECTOR"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of(
-                            "reviewerCredentialId",
-                            reviewerCredentialId.toString(),
-                            "inspectorCredentialIds",
-                            List.of(inspectorCredentialId.toString()),
-                            "droneDocumentIds",
-                            List.of(droneDocId.toString()),
-                            "applicabilityComplete",
-                            true,
-                            "applicabilityBasisReference",
-                            "standard-bridge-inspection-protocol-v3"))))
+                            "fileKey", "permits/vca-2026-permit.pdf",
+                            "fileName", "vca-2026-permit.pdf"))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.decision").value("APPROVED"));
+        .andExpect(jsonPath("$.data.status").value("READY_FOR_FLIGHT"))
+        .andExpect(jsonPath("$.data.flightPermitFileName").value("vca-2026-permit.pdf"));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
         .isEqualTo(InspectionStatus.READY_FOR_FLIGHT);
@@ -417,8 +305,6 @@ class ConnectedMainFlowE2eIntegrationTest {
                     .content(
                         objectMapper.writeValueAsString(
                             Map.of(
-                                "checklistTemplateId",
-                                template.getId().toString(),
                                 "preFlightChecklistNote",
                                 "Drone identified; bridge accessible and telemetry nominal"))))
             .andExpect(status().isOk())
@@ -563,7 +449,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .param("approve", "true")
-                .with(principal(reviewerId, "ORG_ADMIN")))
+                .with(principal(reviewerId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -573,7 +459,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{vId}/publish",
                     inspectionId,
                     reportVersionId)
-                .with(principal(reviewerId, "ORG_ADMIN")))
+                .with(principal(reviewerId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
 
@@ -584,7 +470,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", inspectionId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("findingIds", List.of(findingId)))))
         .andExpect(status().isOk())
@@ -602,7 +488,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[MF4] Step 4.1: Checking Repair Candidates Intake...");
     mockMvc
         .perform(
-            get("/api/v1/maintenance/repair-candidates").with(principal(orgAdminId, "ORG_ADMIN")))
+            get("/api/v1/maintenance/repair-candidates").with(principal(orgAdminId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data").isArray())
         .andExpect(jsonPath("$.data[?(@.findingId == '%s')]", findingId).exists());
@@ -612,7 +498,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/maintenance/work-orders")
-                    .with(principal(orgAdminId, "ORG_ADMIN"))
+                    .with(principal(orgAdminId, "ORG_MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -644,7 +530,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(orgAdminId, "ORG_ADMIN"))
+                .with(principal(orgAdminId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -727,7 +613,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(orgAdminId, "ORG_ADMIN")))
+                .with(principal(orgAdminId, "ORG_MANAGER")))
         .andExpect(status().isOk());
 
     log.info("[MF4] Step 4.6: Releasing and Starting Work Order...");
@@ -840,7 +726,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -880,7 +766,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(reviewerId, "ORG_ADMIN"))
+                .with(principal(reviewerId, "ORG_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -894,7 +780,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/close", workOrderId)
-                .with(principal(reviewerId, "ORG_ADMIN")))
+                .with(principal(reviewerId, "ORG_MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
 
@@ -916,7 +802,7 @@ class ConnectedMainFlowE2eIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    admin.addRole(UserRole.ADMIN);
+    admin.addRole(UserRole.PLATFORM_MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 
@@ -925,71 +811,6 @@ class ConnectedMainFlowE2eIntegrationTest {
     User user = new User(email, fullName, null, UserStatus.ACTIVE, zone, organizationId);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
-  }
-
-  private UUID insertCredential(
-      UUID organizationId, UUID userId, UUID inspectionId, String credentialType, UUID verifierId) {
-    UUID credentialId = UUID.randomUUID();
-    UUID evidenceId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO evidence (
-            id, inspection_id, file_name,
-            content_type, size_bytes, object_key
-        ) VALUES (
-            ?, ?, 'credential.pdf', 'application/pdf', 1024,
-            ?
-        )
-        """,
-        evidenceId,
-        inspectionId,
-        "credential-evidence/" + evidenceId);
-
-    jdbcTemplate.update(
-        """
-        INSERT INTO workforce_credentials (
-            id, organization_id, user_id, credential_type, issuer, credential_reference,
-            issued_at, expires_at, status, evidence_id, verified_by_user_id, verified_at,
-            verification_reason, created_at, updated_at
-        ) VALUES (
-            ?, ?, ?, ?, 'Civil Aviation Training Center', 'LIC-2026',
-            CURRENT_TIMESTAMP - INTERVAL '30 days',
-            CURRENT_TIMESTAMP + INTERVAL '365 days',
-            'ACTIVE', ?, ?, CURRENT_TIMESTAMP,
-            'Verified valid qualification', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        )
-        """,
-        credentialId,
-        organizationId,
-        userId,
-        credentialType,
-        evidenceId,
-        verifierId);
-    return credentialId;
-  }
-
-  private UUID insertDroneAirworthinessDocument(UUID droneId, UUID uploaderId) {
-    UUID documentId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO drone_documents (
-            id, drone_id, document_type, issuer, document_reference,
-            valid_from, valid_until, status, object_key, checksum_sha256,
-            uploaded_by_user_id, reviewed_by_user_id, reviewed_at
-        ) VALUES (
-            ?, ?, 'AIRWORTHINESS_CERTIFICATE', 'Civil Aviation Authority', 'DOC-AIRWORTHY-2026',
-            CURRENT_TIMESTAMP - INTERVAL '30 days',
-            CURRENT_TIMESTAMP + INTERVAL '365 days',
-            'ACTIVE', 'drone-documents/airworthiness.pdf',
-            '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-            ?, ?, CURRENT_TIMESTAMP
-        )
-        """,
-        documentId,
-        droneId,
-        uploaderId,
-        uploaderId);
-    return documentId;
   }
 
   private static RequestPostProcessor principal(UUID id, String role) {

@@ -197,10 +197,13 @@ public class ReportDraftClient implements ReportDraftPort {
 
     var inspection = context.inspection();
     builder.append("Inspection context:\n");
-    appendSourceValue(builder, "Objective", inspection.objective());
-    appendSourceValue(builder, "Scope", inspection.scope());
-    appendSourceValue(builder, "Component scope", inspection.componentScope());
-    appendSourceValue(builder, "Acceptance criteria", inspection.acceptanceCriteria());
+    if (!inspection.inspectionItems().isEmpty()) {
+      builder.append("\nInspection Items:\n");
+      for (String item : inspection.inspectionItems()) {
+        builder.append("- ").append(item).append("\n");
+      }
+    }
+    appendSourceValue(builder, "Flight permit file", inspection.flightPermitFileName());
     appendSourceValue(
         builder, "Planned start (not actual inspection time)", inspection.plannedStartAt());
     appendSourceValue(
@@ -209,16 +212,6 @@ public class ReportDraftClient implements ReportDraftPort {
         builder,
         "Assigned drone reference (not proof of equipment used)",
         inspection.assignedDroneId());
-
-    if (!context.checklistResponses().isEmpty())
-      builder.append("\nChecklist Responses (stored responses only):\n");
-    for (var item : context.checklistResponses()) {
-      builder.append("- ").append(item.prompt()).append(": ").append(item.responseValue());
-      if (item.notes() != null && !item.notes().isBlank()) {
-        builder.append(" (Notes: ").append(item.notes()).append(")");
-      }
-      builder.append("\n");
-    }
 
     builder.append(
         "\nInspector-confirmed Findings (official findings only; confirmation is not independent validation):\n");
@@ -276,8 +269,6 @@ public class ReportDraftClient implements ReportDraftPort {
         builder.append(" | Postponement reason: ").append(session.postponementReason());
       if (hasText(session.abortReason()))
         builder.append(" | Abort reason: ").append(session.abortReason());
-      if (hasText(session.limitations()))
-        builder.append(" | Recorded limitations: ").append(session.limitations());
       builder
           .append(" | Assigned drone reference (not proof used): ")
           .append(session.assignedDroneId());

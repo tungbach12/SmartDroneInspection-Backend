@@ -69,7 +69,11 @@ public class UserAccessService implements UserAccess {
                     Set.copyOf(user.roleValues()),
                     user.getOrganizationId(),
                     user.getFullName(),
-                    user.getEmail()));
+                    user.getEmail(),
+                    user.getPilotLicenseNumber(),
+                    user.getPilotLicenseClass(),
+                    user.getPilotLicenseExpiresAt(),
+                    user.getPilotLicenseFileKey()));
   }
 
   @Override
@@ -243,7 +247,7 @@ public class UserAccessService implements UserAccess {
         users.findDetailedById(actorId).orElseThrow(UserAccessService::workforceAccessDenied);
     if (!actor.active()
         || actor.getOrganizationId() == null
-        || !actor.roleValues().contains(Roles.ORG_ADMIN)) {
+        || !actor.roleValues().contains(Roles.ORG_MANAGER)) {
       throw workforceAccessDenied();
     }
     return actor;
