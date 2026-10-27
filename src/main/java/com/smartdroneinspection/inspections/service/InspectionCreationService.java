@@ -334,6 +334,8 @@ public class InspectionCreationService {
         inspection.getAssetId(),
         assetName,
         asset == null ? null : asset.getLocationText(),
+        asset == null ? null : asset.getLatitude(),
+        asset == null ? null : asset.getLongitude(),
         asset == null ? java.util.List.of() : asset.getInspectionItems(),
         inspection.getInspectorId(),
         inspectorName,
