@@ -30,7 +30,7 @@ class PrimaryWithFallbackInferenceTest {
   }
 
   @Test
-  void anEmptyResultIsAnAnswerAndDoesNotReachTheFallback() throws IOException {
+  void fallsBackToVisionWhenThePrimaryDetectorReturnsNoDetections() throws IOException {
     RecordingPort primary = new RecordingPort(List.of(), null);
     RecordingPort fallback = new RecordingPort(List.of(DETECTION), null);
 
@@ -38,7 +38,25 @@ class PrimaryWithFallbackInferenceTest {
         new PrimaryWithFallbackInference(primary, Optional.of(fallback))
             .analyze(new byte[] {1}, "image/jpeg");
 
-    assertThat(detections).isEmpty();
+    assertThat(detections).containsExactly(DETECTION);
+    assertThat(primary.calls).isEqualTo(1);
+    assertThat(fallback.calls).isEqualTo(1);
+  }
+
+  @Test
+  void keepsAnEmptyResultWhenFallbackIsDisabledOrNotConfigured() throws IOException {
+    RecordingPort primary = new RecordingPort(List.of(), null);
+    RecordingPort fallback = new RecordingPort(List.of(DETECTION), null);
+
+    List<AiInferencePort.Detection> disabledResult =
+        new PrimaryWithFallbackInference(primary, Optional.of(fallback))
+            .analyze(new byte[] {1}, "image/jpeg", false);
+    List<AiInferencePort.Detection> unconfiguredResult =
+        new PrimaryWithFallbackInference(primary, Optional.empty())
+            .analyze(new byte[] {1}, "image/jpeg");
+
+    assertThat(disabledResult).isEmpty();
+    assertThat(unconfiguredResult).isEmpty();
     assertThat(fallback.calls).isZero();
   }
 

@@ -58,6 +58,8 @@ public class ReportDraftClient implements ReportDraftPort {
         other sections.
       - Do not claim sessions, checklist responses, or source documents exist unless their records are supplied. Inspector confirmation is attributable, not an independent validation of a candidate.
       - Do not state that the asset is safe. The assessment covers only the observed scope.
+      - NEVER output raw database UUIDs or internal technical IDs (such as session UUIDs, drone UUIDs, candidate IDs, or evidence UUIDs) in the narrative text. When referring to sessions or equipment, use human-readable descriptions (e.g. "the recorded field session", "the assigned drone") or equipment model names.
+      - Maintain a professional, constructive engineering tone. Focus on observed facts and actionable findings without turning the narrative into a repetitive recitation of missing fields.
       """;
 
   private final RestClient client;

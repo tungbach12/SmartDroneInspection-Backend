@@ -22,7 +22,6 @@ import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -241,15 +240,14 @@ public class FindingService {
       }
     }
 
-    long baseFindingCount = findings.maxFindingCodeSequence(inspectionId);
-    List<Finding> created = new ArrayList<>();
-    for (int i = 0; i < detections.size(); i++) {
-      AiInferencePort.Detection detection = detections.get(i);
+    long nextSeq = findings.findMaxFindingCodeNumberByInspectionId(inspectionId) + 1;
+    List<Finding> created = new java.util.ArrayList<>();
+    for (AiInferencePort.Detection detection : detections) {
       created.add(
           new Finding(
               inspectionId,
               evidenceId,
-              "F-" + (baseFindingCount + i + 1),
+              "F-" + (nextSeq++),
               detection.predictedLabel(),
               FindingSeverity.MEDIUM,
               detection.predictedLabel(),
@@ -624,7 +622,7 @@ public class FindingService {
   }
 
   private String nextFindingCode(UUID inspectionId) {
-    return "F-" + (findings.maxFindingCodeSequence(inspectionId) + 1);
+    return "F-" + (findings.findMaxFindingCodeNumberByInspectionId(inspectionId) + 1);
   }
 
   private FindingResponse toFindingResponse(Finding finding) {
