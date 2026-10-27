@@ -22,6 +22,7 @@ import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -229,22 +230,6 @@ public class FindingService {
           "Automated analysis is temporarily unavailable");
     }
 
-    List<Finding> created =
-        detections.stream()
-            .map(
-                detection ->
-                    new Finding(
-                        inspectionId,
-                        evidenceId,
-                        nextFindingCode(inspectionId),
-                        detection.predictedLabel(),
-                        FindingSeverity.MEDIUM,
-                        detection.predictedLabel(),
-                        null,
-                        detection.boundingBox(),
-                        detection.modelName(),
-                        detection.confidence()))
-            .toList();
     if (replace) {
       // Only after the new detections exist, so a failed inference leaves the previous suggestions
       // in place rather than emptying the image.
@@ -252,7 +237,26 @@ public class FindingService {
           prior.stream().filter(finding -> finding.getStatus() == FindingStatus.PENDING).toList();
       if (!replaced.isEmpty()) {
         findings.deleteAll(replaced);
+        findings.flush();
       }
+    }
+
+    long baseFindingCount = findings.maxFindingCodeSequence(inspectionId);
+    List<Finding> created = new ArrayList<>();
+    for (int i = 0; i < detections.size(); i++) {
+      AiInferencePort.Detection detection = detections.get(i);
+      created.add(
+          new Finding(
+              inspectionId,
+              evidenceId,
+              "F-" + (baseFindingCount + i + 1),
+              detection.predictedLabel(),
+              FindingSeverity.MEDIUM,
+              detection.predictedLabel(),
+              null,
+              detection.boundingBox(),
+              detection.modelName(),
+              detection.confidence()));
     }
     List<Finding> stored = findings.saveAllAndFlush(created);
     syncFindingsConfirmationAfterEdit(inspection);
@@ -620,7 +624,7 @@ public class FindingService {
   }
 
   private String nextFindingCode(UUID inspectionId) {
-    return "F-" + (findings.countIncludingRemovedByInspectionId(inspectionId) + 1);
+    return "F-" + (findings.maxFindingCodeSequence(inspectionId) + 1);
   }
 
   private FindingResponse toFindingResponse(Finding finding) {

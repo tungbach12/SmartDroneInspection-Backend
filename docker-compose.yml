@@ -51,7 +51,13 @@ services:
       MODEL_PATH: /app/models/best.pt
       MODEL_NAME: ${AI_MODEL_NAME:-yolo11s}
       MODEL_VERSION: ${AI_MODEL_VERSION:-mbdd2025-v1}
-      CONFIDENCE_THRESHOLD: ${AI_CONFIDENCE_THRESHOLD:-0.25}
+      CONFIDENCE_THRESHOLD: ${AI_CONFIDENCE_THRESHOLD:-0.15}
+      IMAGE_SIZE: ${AI_IMAGE_SIZE:-1024}
+      VISION_API_ENABLED: ${COMPATIBLE_VISION_ENABLED:-true}
+      VISION_API_BASE_URL: ${COMPATIBLE_VISION_BASE_URL:-https://9routerhelios.duckdns.org}
+      VISION_API_KEY: ${COMPATIBLE_VISION_API_KEY:-sk-8b37564e8a318f47-csx5f5-0b89e9a7}
+      VISION_API_MODEL: ${COMPATIBLE_VISION_MODEL:-capstone}
+      VISION_API_TIMEOUT: ${COMPATIBLE_VISION_TIMEOUT_SECONDS:-45}
     volumes:
       # Mounted rather than baked in, so swapping weights needs no rebuild.
       - ./ai-inference/models:/app/models:ro

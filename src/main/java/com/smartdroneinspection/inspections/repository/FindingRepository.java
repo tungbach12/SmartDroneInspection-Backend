@@ -41,6 +41,13 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
   long countIncludingRemovedByInspectionId(@Param("inspectionId") UUID inspectionId);
 
   @Query(
+      value =
+          "SELECT COALESCE(MAX(NULLIF(regexp_replace(finding_code, '\\D', '', 'g'), '')::bigint), 0) "
+              + "FROM findings WHERE inspection_id = :inspectionId",
+      nativeQuery = true)
+  long maxFindingCodeSequence(@Param("inspectionId") UUID inspectionId);
+
+  @Query(
       value = "SELECT * FROM findings WHERE inspection_id = :inspectionId ORDER BY created_at ASC",
       nativeQuery = true)
   List<Finding> findAllByInspectionIdIncludingRemoved(@Param("inspectionId") UUID inspectionId);
