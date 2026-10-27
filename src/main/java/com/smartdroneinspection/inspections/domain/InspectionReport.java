@@ -16,7 +16,7 @@ import org.hibernate.type.SqlTypes;
 /** One immutable-at-publication version of an inspection report. */
 @Entity
 @Table(name = "inspection_reports")
-public class InspectionReportVersion {
+public class InspectionReport {
 
   @Id @GeneratedValue private UUID id;
 
@@ -59,9 +59,9 @@ public class InspectionReportVersion {
   @Column(name = "submitted_at")
   private Instant submittedAt;
 
-  protected InspectionReportVersion() {}
+  protected InspectionReport() {}
 
-  public InspectionReportVersion(UUID inspectionId, int versionNo, String contentSnapshot) {
+  public InspectionReport(UUID inspectionId, int versionNo, String contentSnapshot) {
     this.inspectionId = inspectionId;
     this.versionNo = versionNo;
     this.contentSnapshot = contentSnapshot;

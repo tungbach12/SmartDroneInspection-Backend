@@ -13,7 +13,7 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.UserAccess;
 import java.util.List;
@@ -27,7 +27,7 @@ class FindingServiceQueryTest {
   private EvidenceRepository evidenceRepository;
   private FindingRepository findingRepository;
   private EvidenceService evidenceService;
-  private InspectionReportVersionRepository reportVersions;
+  private InspectionReportRepository reportVersions;
   private InspectionRepository inspections;
   private UserAccess userAccess;
   private FindingService findingService;
@@ -42,7 +42,7 @@ class FindingServiceQueryTest {
     evidenceRepository = mock(EvidenceRepository.class);
     findingRepository = mock(FindingRepository.class);
     evidenceService = mock(EvidenceService.class);
-    reportVersions = mock(InspectionReportVersionRepository.class);
+    reportVersions = mock(InspectionReportRepository.class);
     inspections = mock(InspectionRepository.class);
     userAccess = mock(UserAccess.class);
 

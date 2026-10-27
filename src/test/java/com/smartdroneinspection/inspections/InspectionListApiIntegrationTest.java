@@ -8,8 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
@@ -40,7 +40,7 @@ class InspectionListApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionReportVersionRepository reports;
+  @Autowired InspectionReportRepository reports;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -282,8 +282,8 @@ class InspectionListApiIntegrationTest {
     return assetId;
   }
 
-  private InspectionReportVersion createReport(UUID inspectionId, UUID authorId) {
-    return reports.saveAndFlush(new InspectionReportVersion(inspectionId, 1, "{}"));
+  private InspectionReport createReport(UUID inspectionId, UUID authorId) {
+    return reports.saveAndFlush(new InspectionReport(inspectionId, 1, "{}"));
   }
 
   private UUID createPlatformAdmin() {

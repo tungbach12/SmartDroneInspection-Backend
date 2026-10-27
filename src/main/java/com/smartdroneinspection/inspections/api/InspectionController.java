@@ -17,7 +17,7 @@ import com.smartdroneinspection.inspections.api.dto.response.EvidencePageRespons
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
@@ -332,7 +332,7 @@ public class InspectionController {
 
   @PostMapping("/report/draft")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> generateDraft(
+  public ApiResponse<InspectionReportResponse> generateDraft(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       HttpServletRequest request) {
@@ -345,14 +345,14 @@ public class InspectionController {
    */
   @PostMapping("/report/draft/manual")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> authorManualDraft(
+  public ApiResponse<InspectionReportResponse> authorManualDraft(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.authorManualDraft(actorId(jwt), inspectionId));
   }
 
   @PostMapping("/report/versions/{versionId}/verify")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> verifyVersion(
+  public ApiResponse<InspectionReportResponse> verifyVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
@@ -361,7 +361,7 @@ public class InspectionController {
 
   @PostMapping("/report/versions/{versionId}/submit")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> submitVersion(
+  public ApiResponse<InspectionReportResponse> submitVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
@@ -370,7 +370,7 @@ public class InspectionController {
 
   @PostMapping("/report/versions/{versionId}/withdraw")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> withdrawVersion(
+  public ApiResponse<InspectionReportResponse> withdrawVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
@@ -382,7 +382,7 @@ public class InspectionController {
 
   @PostMapping("/report/versions/{versionId}/review")
   @PreAuthorize("hasRole('ORG_MANAGER')")
-  public ApiResponse<InspectionReportVersionResponse> reviewVersion(
+  public ApiResponse<InspectionReportResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
@@ -416,7 +416,7 @@ public class InspectionController {
 
   @PutMapping("/report/versions/{versionId}/sections")
   @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportVersionResponse> saveSections(
+  public ApiResponse<InspectionReportResponse> saveSections(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
@@ -447,14 +447,14 @@ public class InspectionController {
 
   @GetMapping("/report/versions")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
-  public ApiResponse<List<InspectionReportVersionResponse>> listVersions(
+  public ApiResponse<List<InspectionReportResponse>> listVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.listVersions(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/report/versions/{versionId}")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
-  public ApiResponse<InspectionReportVersionResponse> getVersion(
+  public ApiResponse<InspectionReportResponse> getVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {

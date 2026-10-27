@@ -4,10 +4,10 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionListItemR
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPageResponse;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -46,13 +46,13 @@ public class InspectionListService {
       Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
   private final InspectionRepository inspections;
-  private final InspectionReportVersionRepository reports;
+  private final InspectionReportRepository reports;
   private final FindingRepository findings;
   private final UserAccess userAccess;
 
   public InspectionListService(
       InspectionRepository inspections,
-      InspectionReportVersionRepository reports,
+      InspectionReportRepository reports,
       FindingRepository findings,
       UserAccess userAccess) {
     this.inspections = inspections;
@@ -84,7 +84,7 @@ public class InspectionListService {
   private InspectionPageResponse toPage(Page<Inspection> result, int page, int pageSize) {
     int safePage = Math.max(page, 1);
     int safePageSize = clampPageSize(pageSize);
-    Map<UUID, InspectionReportVersion> reportByInspection = reportsFor(result.getContent());
+    Map<UUID, InspectionReport> reportByInspection = reportsFor(result.getContent());
     return new InspectionPageResponse(
         result.getContent().stream()
             .map(
@@ -101,7 +101,7 @@ public class InspectionListService {
   }
 
   /** The one decision the organization administrator is being asked for on this inspection. */
-  private String pendingAction(Inspection inspection, InspectionReportVersion report) {
+  private String pendingAction(Inspection inspection, InspectionReport report) {
     if (report != null) {
       ReportStatus reportStatus = report.getStatus();
       if (reportStatus == ReportStatus.SUBMITTED) {
@@ -134,15 +134,15 @@ public class InspectionListService {
    * Report rows for one page of inspections only. Reading every report to decorate one page would
    * turn a bounded query into an N-plus-1 problem; this finds the latest version for each id.
    */
-  private Map<UUID, InspectionReportVersion> reportsFor(List<Inspection> pageRows) {
+  private Map<UUID, InspectionReport> reportsFor(List<Inspection> pageRows) {
     if (pageRows.isEmpty()) {
       return Map.of();
     }
     List<UUID> inspectionIds = pageRows.stream().map(Inspection::getId).toList();
-    List<InspectionReportVersion> allVersions =
+    List<InspectionReport> allVersions =
         reports.findByInspectionIdInOrderByVersionNoDesc(inspectionIds);
-    Map<UUID, InspectionReportVersion> latest = new HashMap<>();
-    for (InspectionReportVersion version : allVersions) {
+    Map<UUID, InspectionReport> latest = new HashMap<>();
+    for (InspectionReport version : allVersions) {
       latest.merge(
           version.getInspectionId(),
           version,
@@ -153,7 +153,7 @@ public class InspectionListService {
   }
 
   private InspectionListItemResponse toItem(
-      Inspection inspection, InspectionReportVersion report, String pendingAction) {
+      Inspection inspection, InspectionReport report, String pendingAction) {
     return new InspectionListItemResponse(
         inspection.getId(),
         inspection.getOrganizationId(),

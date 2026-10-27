@@ -6,14 +6,14 @@ import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsReques
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionReportVersionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
-import com.smartdroneinspection.inspections.domain.InspectionReportVersion;
+import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
@@ -22,7 +22,7 @@ import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
@@ -82,7 +82,7 @@ public class ReportService {
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
   private final FieldSessionRepository fieldSessions;
-  private final InspectionReportVersionRepository versions;
+  private final InspectionReportRepository versions;
   private final EvidenceService evidenceService;
   private final Optional<ReportDraftPort> draftPort;
   private final ReportRenderPort renderPort;
@@ -98,7 +98,7 @@ public class ReportService {
       EvidenceRepository evidence,
       FindingRepository findings,
       FieldSessionRepository fieldSessions,
-      InspectionReportVersionRepository versions,
+      InspectionReportRepository versions,
       EvidenceService evidenceService,
       Optional<ReportDraftPort> draftPort,
       ReportRenderPort renderPort,
@@ -126,18 +126,17 @@ public class ReportService {
    * MF3-07/08: generate a draft from authorized sources, then let the author edit and verify it.
    */
   @Transactional
-  public InspectionReportVersionResponse generateDraft(UUID actorId, UUID inspectionId) {
+  public InspectionReportResponse generateDraft(UUID actorId, UUID inspectionId) {
     return generateDraft(actorId, inspectionId, Locale.ENGLISH);
   }
 
   @Transactional
-  public InspectionReportVersionResponse generateDraft(
-      UUID actorId, UUID inspectionId, Locale locale) {
+  public InspectionReportResponse generateDraft(UUID actorId, UUID inspectionId, Locale locale) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
 
     requireCurrentFindingsConfirmation(inspection);
 
-    InspectionReportVersion latestExisting =
+    InspectionReport latestExisting =
         versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (latestExisting != null && !inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
@@ -264,8 +263,8 @@ public class ReportService {
     }
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReportVersion version =
-        new InspectionReportVersion(
+    InspectionReport version =
+        new InspectionReport(
             inspectionId,
             versionNo,
             buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port));
@@ -278,10 +277,10 @@ public class ReportService {
    * same review gates and records that no automated drafting contributed to it.
    */
   @Transactional
-  public InspectionReportVersionResponse authorManualDraft(UUID actorId, UUID inspectionId) {
+  public InspectionReportResponse authorManualDraft(UUID actorId, UUID inspectionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     requireCurrentFindingsConfirmation(inspection);
-    InspectionReportVersion latestExisting =
+    InspectionReport latestExisting =
         versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (latestExisting != null && !inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
@@ -295,8 +294,8 @@ public class ReportService {
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReportVersion version =
-        new InspectionReportVersion(
+    InspectionReport version =
+        new InspectionReport(
             inspectionId,
             versionNo,
             buildManualContentSnapshot(inspection, confirmedEvidence, confirmedFindings));
@@ -324,9 +323,9 @@ public class ReportService {
    * findings, uncertainty and recommendations against sources; submit the reviewed version.
    */
   @Transactional
-  public InspectionReportVersionResponse saveSections(
+  public InspectionReportResponse saveSections(
       UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
     if (!inspection.getInspectorId().equals(actorId)) {
@@ -358,10 +357,9 @@ public class ReportService {
 
   /** MF3-08: the author verifies the draft against its sources. */
   @Transactional
-  public InspectionReportVersionResponse verifyVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse verifyVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
@@ -375,10 +373,9 @@ public class ReportService {
 
   /** MF3-08: submit the verified version for review. */
   @Transactional
-  public InspectionReportVersionResponse submitVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse submitVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
@@ -414,7 +411,7 @@ public class ReportService {
     }
   }
 
-  private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReportVersion version) {
+  private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReport version) {
     Inspection inspection = inspections.findById(inspectionId).orElse(null);
     if (inspection == null
         || inspection.getFindingsConfirmedAt() == null
@@ -426,7 +423,7 @@ public class ReportService {
     }
   }
 
-  private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReportVersion version) {
+  private void requireFreshEvidenceSnapshot(UUID inspectionId, InspectionReport version) {
     requireFreshFindingsSnapshot(inspectionId, version);
   }
 
@@ -435,10 +432,10 @@ public class ReportService {
    * author may review, and returning a draft requires a reason.
    */
   @Transactional
-  public InspectionReportVersionResponse reviewVersion(
+  public InspectionReportResponse reviewVersion(
       UUID actorId, UUID inspectionId, UUID versionId, boolean approve, String reason) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     if (!approve && (reason == null || reason.isBlank())) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
@@ -455,8 +452,7 @@ public class ReportService {
   }
 
   @Transactional
-  public InspectionReportVersionResponse withdrawVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse withdrawVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     return withdrawVersion(actorId, inspectionId, versionId, null);
   }
 
@@ -466,19 +462,20 @@ public class ReportService {
    * version change after they have acted on it.
    */
   @Transactional
-  public InspectionReportVersionResponse withdrawVersion(
+  public InspectionReportResponse withdrawVersion(
       UUID actorId, UUID inspectionId, UUID versionId, String reason) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     try {
       version.withdraw(actorId, inspection.getInspectorId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "REPORT_WITHDRAWAL_INVALID", ex.getMessage());
     }
+    versions.saveAndFlush(version);
     inspection.reopenFindings();
     inspections.saveAndFlush(inspection);
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+    return toResponse(version, inspection.getInspectorId());
   }
 
   /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
@@ -492,7 +489,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     UserAccess.ActiveUser publisher = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
     try {
@@ -509,9 +506,9 @@ public class ReportService {
     versions.saveAndFlush(version);
 
     // MF3-11: a new published version supersedes any previously published version of this report.
-    List<InspectionReportVersion> previouslyPublished =
+    List<InspectionReport> previouslyPublished =
         versions.findByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED);
-    for (InspectionReportVersion prev : previouslyPublished) {
+    for (InspectionReport prev : previouslyPublished) {
       if (!prev.getId().equals(version.getId())) {
         prev.supersede();
         versions.save(prev);
@@ -547,7 +544,7 @@ public class ReportService {
       UUID actorId, UUID inspectionId, List<UUID> selectedFindingIds) {
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    InspectionReportVersion version =
+    InspectionReport version =
         versions
             .findFirstByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED)
             .orElseThrow(
@@ -682,8 +679,7 @@ public class ReportService {
    * overwrites the bytes stored for an already-published one. The checksum is taken from the bytes
    * that were stored, so it describes what a later reader would actually download.
    */
-  private void storePublishedArtefact(
-      UUID inspectionId, InspectionReportVersion version, Locale locale) {
+  private void storePublishedArtefact(UUID inspectionId, InspectionReport version, Locale locale) {
     byte[] pdf = renderArtefact(inspectionId, version, false, locale);
     String objectKey = reportObjectKey(version.getId());
     try (InputStream input = new ByteArrayInputStream(pdf)) {
@@ -720,7 +716,7 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the report author may preview this draft");
     }
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     return pdfResponse(
         renderArtefact(inspectionId, version, true, locale),
         "inline",
@@ -730,7 +726,7 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> downloadArtefact(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
-    InspectionReportVersion version = requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     String objectKey = version.getRenderedObjectKey();
     if (objectKey == null || objectKey.isBlank()) {
       throw new BusinessException(
@@ -751,7 +747,7 @@ public class ReportService {
   }
 
   private byte[] renderArtefact(
-      UUID inspectionId, InspectionReportVersion version, boolean preview, Locale locale) {
+      UUID inspectionId, InspectionReport version, boolean preview, Locale locale) {
     try {
       return renderPort.render(buildRenderContext(inspectionId, version, preview, locale));
     } catch (IOException ex) {
@@ -778,7 +774,7 @@ public class ReportService {
         .body(content);
   }
 
-  private static String documentReference(InspectionReportVersion version) {
+  private static String documentReference(InspectionReport version) {
     return "SDI-RPT-"
         + version.getId().toString().substring(0, 8).toUpperCase()
         + "-V"
@@ -805,7 +801,7 @@ public class ReportService {
    * bytes are loaded here so the PDF embeds the stored original rather than a reference to it.
    */
   private ReportRenderPort.RenderContext buildRenderContext(
-      UUID inspectionId, InspectionReportVersion version, boolean preview, Locale locale) {
+      UUID inspectionId, InspectionReport version, boolean preview, Locale locale) {
     Inspection inspection = inspections.findById(inspectionId).orElseThrow();
     Identity reportIdentity =
         reportContextAccess
@@ -950,7 +946,7 @@ public class ReportService {
   }
 
   @Transactional(readOnly = true)
-  public List<InspectionReportVersionResponse> listVersions(UUID actorId, UUID inspectionId) {
+  public List<InspectionReportResponse> listVersions(UUID actorId, UUID inspectionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     // An inspection whose evidence is not yet accepted has no report at all. That is a normal
     // empty state for the reviewer, not a missing resource, so it is reported as an empty list.
@@ -960,8 +956,7 @@ public class ReportService {
   }
 
   @Transactional(readOnly = true)
-  public InspectionReportVersionResponse getVersion(
-      UUID actorId, UUID inspectionId, UUID versionId) {
+  public InspectionReportResponse getVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     return toResponse(requireVersion(inspectionId, versionId));
   }
@@ -994,7 +989,7 @@ public class ReportService {
     return actor;
   }
 
-  private InspectionReportVersion requireVersion(UUID inspectionId, UUID versionId) {
+  private InspectionReport requireVersion(UUID inspectionId, UUID versionId) {
     return versions
         .findById(versionId)
         .filter(candidate -> candidate.getInspectionId().equals(inspectionId))
@@ -1108,7 +1103,6 @@ public class ReportService {
         identity == null ? null : identity.assetLocation(),
         identity == null ? null : identity.assetCategory(),
         drone,
-        null,
         sessions.stream()
             .map(
                 session ->
@@ -1179,7 +1173,7 @@ public class ReportService {
         .collect(java.util.stream.Collectors.joining(" · "));
   }
 
-  private InspectionReportContextResponse reportContextForVersion(InspectionReportVersion version) {
+  private InspectionReportContextResponse reportContextForVersion(InspectionReport version) {
     Inspection inspection = inspections.findById(version.getInspectionId()).orElse(null);
     if (inspection == null) return null;
     var identity =
@@ -1202,7 +1196,7 @@ public class ReportService {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"";
   }
 
-  private InspectionReportVersionResponse toResponse(InspectionReportVersion version) {
+  private InspectionReportResponse toResponse(InspectionReport version) {
     UUID authorUserId =
         inspections
             .findById(version.getInspectionId())
@@ -1211,10 +1205,9 @@ public class ReportService {
     return toResponse(version, authorUserId);
   }
 
-  private InspectionReportVersionResponse toResponse(
-      InspectionReportVersion version, UUID authorUserId) {
+  private InspectionReportResponse toResponse(InspectionReport version, UUID authorUserId) {
     JsonNode content = readContentSnapshot(version.getContentSnapshot());
-    return new InspectionReportVersionResponse(
+    return new InspectionReportResponse(
         version.getId(),
         version.getInspectionReportId(),
         version.getVersionNo(),

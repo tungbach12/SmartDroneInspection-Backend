@@ -299,6 +299,45 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
+  void evidenceLocationCanBeEditedInReportDraftButNotWhileSubmitted() throws Exception {
+    UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
+    jdbcTemplate.update(
+        "UPDATE inspections SET findings_confirmed_at = CURRENT_TIMESTAMP, findings_snapshot_hash = ? WHERE id = ?",
+        "confirmed-hash",
+        fixture.inspectionId());
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Updated in draft\"}"))
+        .andExpect(status().isOk());
+
+    jdbcTemplate.update(
+        "INSERT INTO inspection_reports (id, inspection_id, version_no, status, content_snapshot, created_at, submitted_at) "
+            + "VALUES (?, ?, 1, 'SUBMITTED', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        UUID.randomUUID(),
+        fixture.inspectionId());
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Must remain locked\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_LOCKED"));
+  }
+
+  @Test
   void evidenceUploadIsRejectedAfterReportPublication() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
     mockMvc
@@ -380,7 +419,6 @@ class InspectionEvidenceApiIntegrationTest {
     return versionId;
   }
 
-  @Test
   private UUID createManualFinding(UUID evidenceId) throws Exception {
     MvcResult result =
         mockMvc

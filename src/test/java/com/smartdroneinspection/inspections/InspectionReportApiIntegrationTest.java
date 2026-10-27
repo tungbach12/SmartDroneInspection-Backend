@@ -19,7 +19,7 @@ import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -68,7 +68,7 @@ class InspectionReportApiIntegrationTest {
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
   @Autowired InspectionRepository inspections;
-  @Autowired InspectionReportVersionRepository reportVersions;
+  @Autowired InspectionReportRepository reportVersions;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -830,6 +830,82 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void reportSourcesAreLockedOnlyWhileSubmittedThenEditableAfterReturn() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    UUID findingId = createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID versionId = createManualDraftVersion();
+    verifyAndSubmitVersion(versionId);
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Girder east face\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_LOCKED"));
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId",
+                            evidenceId,
+                            "defectLabel",
+                            "Surface crack revised",
+                            "severity",
+                            "HIGH",
+                            "technicalNotes",
+                            "Updated before return"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FINDINGS_LOCKED"));
+
+    postReportReturn(versionId, "Please revise the source findings");
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Girder east face\"}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId",
+                            evidenceId,
+                            "defectLabel",
+                            "Surface crack revised",
+                            "severity",
+                            "HIGH",
+                            "technicalNotes",
+                            "Updated after return"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.defectLabel").value("Surface crack revised"));
+
+    assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
+        .isEqualTo(
+            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
+  }
+
+  @Test
   void reviewerReturnKeepsInspectorConfirmationIntactForTextRevision() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();
@@ -1021,7 +1097,7 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void inspectorCanWithdrawAnUnreviewedSubmissionAndKeepItsEvidenceAndFindings() throws Exception {
+  void inspectorCanWithdrawUnreviewedSubmissionAndEditEvidenceAndFindings() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();
     UUID findingId = createManualFinding(evidenceId);
@@ -1049,7 +1125,39 @@ class InspectionReportApiIntegrationTest {
                 Integer.class,
                 fixture.inspectionId()))
         .isEqualTo(1);
+    assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().hasFindingsConfirmation())
+        .isFalse();
     assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId())).isPresent();
+
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"locationDescription\":\"Revised after withdrawal\"}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId",
+                            evidenceId,
+                            "defectLabel",
+                            "Revised finding",
+                            "severity",
+                            "HIGH",
+                            "technicalNotes",
+                            "Updated after withdrawal"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.defectLabel").value("Revised finding"));
     assertThat(
             reportVersions
                 .findByInspectionIdAndVersionNo(fixture.inspectionId(), 1)
