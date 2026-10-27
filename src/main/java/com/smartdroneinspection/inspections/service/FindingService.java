@@ -425,7 +425,6 @@ public class FindingService {
           "FINDING_ALREADY_CONFIRMED",
           "This finding has already been confirmed");
     }
-    reopenFindings(inspection);
 
     finding.revise(
         request.evidenceId() == null ? finding.getEvidenceId() : request.evidenceId(),
@@ -445,7 +444,6 @@ public class FindingService {
       UUID actorId, UUID inspectionId, ManualFindingRequest request) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
-    reopenFindings(inspection);
 
     Evidence record = requireEvidence(inspectionId, request.evidenceId());
 
@@ -478,7 +476,6 @@ public class FindingService {
         request.severity(),
         request.technicalNotes(),
         request.recommendedAction());
-    reopenFindings(inspection);
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -496,7 +493,6 @@ public class FindingService {
     if (finding.isPendingAiSuggestion()) {
       findings.deleteByIdAndInspectionId(findingId, inspectionId);
       findings.flush();
-      reopenFindings(inspection);
       return;
     }
     try {
@@ -505,7 +501,6 @@ public class FindingService {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", ex.getMessage());
     }
     findings.saveAndFlush(finding);
-    reopenFindings(inspection);
   }
 
   /** Puts a removed finding back into the working set. */
@@ -526,7 +521,6 @@ public class FindingService {
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_RESTORE_INVALID", ex.getMessage());
     }
-    reopenFindings(inspection);
     return toFindingResponse(findings.saveAndFlush(finding));
   }
 
@@ -538,6 +532,22 @@ public class FindingService {
   }
 
   private void rejectLockedFindingEdits(UUID inspectionId) {
+    Inspection inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection != null
+        && (inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus
+                    .REPORT_PUBLISHED
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPAIR_PENDING
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_LOCKED",
+          "Findings are locked for report drafting. Click Reopen Findings to make changes");
+    }
     var current =
         reportVersions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (current != null
@@ -550,16 +560,6 @@ public class FindingService {
           "FINDINGS_LOCKED",
           "Findings are locked while a report is submitted or returned for text revision");
     }
-  }
-
-  private void reopenFindings(Inspection inspection) {
-    if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
-      return;
-    }
-    rejectLockedFindingEdits(inspection.getId());
-    inspection.reopenFindings();
-    inspections.saveAndFlush(inspection);
   }
 
   private Finding requireFinding(UUID inspectionId, UUID findingId) {

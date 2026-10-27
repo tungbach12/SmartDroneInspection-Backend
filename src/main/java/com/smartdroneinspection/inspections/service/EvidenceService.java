@@ -99,10 +99,6 @@ public class EvidenceService {
     if (fieldSessionId != null) {
       requireSessionInScope(inspection, fieldSessionId);
     }
-    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
-    }
     String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     if (!ALLOWED_TYPES.contains(contentType)) {
       throw new BusinessException(
@@ -225,10 +221,6 @@ public class EvidenceService {
     if (!java.util.Objects.equals(record.getLocationDescription(), normalized)) {
       record.setLocationDescription(normalized);
       evidence.saveAndFlush(record);
-      if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-        inspection.reopenFindings();
-        inspections.saveAndFlush(inspection);
-      }
     }
     return toResponse(record);
   }
@@ -261,10 +253,6 @@ public class EvidenceService {
       record.retire();
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "EVIDENCE_RETIRE_INVALID", ex.getMessage());
-    }
-    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
     }
     return toResponse(evidence.saveAndFlush(record));
   }
@@ -307,10 +295,6 @@ public class EvidenceService {
       target.retire();
     }
     List<Evidence> saved = evidence.saveAllAndFlush(targets);
-    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
-    }
     return saved.stream().map(this::toResponse).toList();
   }
 
@@ -341,6 +325,12 @@ public class EvidenceService {
           HttpStatus.CONFLICT,
           "INSPECTION_STATE_CONFLICT",
           "Evidence is immutable after publication");
+    }
+    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_LOCKED",
+          "Findings are confirmed for report drafting. Reopen findings before uploading or modifying evidence");
     }
     InspectionReportVersion report =
         reports.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
