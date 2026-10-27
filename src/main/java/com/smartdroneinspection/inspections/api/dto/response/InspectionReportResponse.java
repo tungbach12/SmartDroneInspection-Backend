@@ -4,8 +4,8 @@ import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Version contract with the current submission and reviewer decision. */
-public record InspectionReportVersionResponse(
+/** Inspection report contract with the current submission and reviewer decision. */
+public record InspectionReportResponse(
     UUID id,
     UUID inspectionReportId,
     int versionNo,

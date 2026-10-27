@@ -15,7 +15,7 @@ import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
-import com.smartdroneinspection.inspections.repository.InspectionReportVersionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -48,7 +48,7 @@ public class FindingService {
   private final EvidenceRepository evidence;
   private final FindingRepository findings;
   private final EvidenceService evidenceService;
-  private final InspectionReportVersionRepository reportVersions;
+  private final InspectionReportRepository reportVersions;
   private final InspectionRepository inspections;
   private final Optional<AiInferencePort> inference;
   private final UserAccess userAccess;
@@ -57,7 +57,7 @@ public class FindingService {
       EvidenceRepository evidence,
       FindingRepository findings,
       EvidenceService evidenceService,
-      InspectionReportVersionRepository reportVersions,
+      InspectionReportRepository reportVersions,
       InspectionRepository inspections,
       Optional<AiInferencePort> inference,
       UserAccess userAccess) {
@@ -70,7 +70,10 @@ public class FindingService {
     this.userAccess = userAccess;
   }
 
-  /** MF3-06: explicitly confirm the resolved findings set before entering report drafting. */
+  /**
+   * MF3-06: explicitly confirm the resolved findings set before entering or refreshing report
+   * drafting.
+   */
   @Transactional
   public void confirmFindings(UUID actorId, UUID inspectionId, boolean noFindingsAcknowledged) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
@@ -140,7 +143,7 @@ public class FindingService {
   @Transactional
   public void reopenFindings(UUID actorId, UUID inspectionId) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    rejectLockedFindingEdits(inspectionId);
+    rejectFinalizedReportFindingEdits(inspectionId);
     if (inspection.getStatus()
         != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
       throw new BusinessException(
@@ -161,10 +164,15 @@ public class FindingService {
   public List<FindingResponse> analyze(
       UUID actorId, UUID inspectionId, UUID evidenceId, boolean replace) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    rejectLockedFindingEdits(inspectionId);
     if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
+            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
+        && inspection.getStatus()
+            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
       throw new BusinessException(
-          HttpStatus.CONFLICT, "FINDINGS_LOCKED", "Reopen Findings before running analysis");
+          HttpStatus.CONFLICT,
+          "FINDINGS_LOCKED",
+          "Analysis is only available during defect review or report drafting");
     }
 
     Evidence record = requireEvidence(inspectionId, evidenceId);
@@ -246,7 +254,8 @@ public class FindingService {
         findings.deleteAll(replaced);
       }
     }
-    List<Finding> stored = findings.saveAll(created);
+    List<Finding> stored = findings.saveAllAndFlush(created);
+    syncFindingsConfirmationAfterEdit(inspection);
     return Stream.concat(stored.stream(), reviewed.stream()).map(this::toFindingResponse).toList();
   }
 
@@ -435,7 +444,9 @@ public class FindingService {
             ? finding.getRecommendedAction()
             : request.recommendedAction());
     finding.confirmByInspector();
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
   }
 
   /** MF3-06: a manual finding is available whenever detection is unavailable or missed a defect. */
@@ -459,7 +470,9 @@ public class FindingService {
             null,
             null,
             null);
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
   }
 
   /** MF3-06: correct an Inspector's finding while the current report is editable. */
@@ -476,7 +489,9 @@ public class FindingService {
         request.severity(),
         request.technicalNotes(),
         request.recommendedAction());
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
   }
 
   /**
@@ -493,6 +508,7 @@ public class FindingService {
     if (finding.isPendingAiSuggestion()) {
       findings.deleteByIdAndInspectionId(findingId, inspectionId);
       findings.flush();
+      syncFindingsConfirmationAfterEdit(inspection);
       return;
     }
     try {
@@ -501,6 +517,7 @@ public class FindingService {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_DELETE_INVALID", ex.getMessage());
     }
     findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
   }
 
   /** Puts a removed finding back into the working set. */
@@ -521,7 +538,17 @@ public class FindingService {
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "FINDING_RESTORE_INVALID", ex.getMessage());
     }
-    return toFindingResponse(findings.saveAndFlush(finding));
+    Finding saved = findings.saveAndFlush(finding);
+    syncFindingsConfirmationAfterEdit(inspection);
+    return toFindingResponse(saved);
+  }
+
+  private void syncFindingsConfirmationAfterEdit(Inspection inspection) {
+    if (inspection.getStatus()
+        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+      inspection.reopenFindings();
+      inspections.saveAndFlush(inspection);
+    }
   }
 
   String findingsSnapshotHash(UUID inspectionId) {
@@ -531,23 +558,7 @@ public class FindingService {
         currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
 
-  private void rejectLockedFindingEdits(UUID inspectionId) {
-    Inspection inspection = inspections.findById(inspectionId).orElse(null);
-    if (inspection != null
-        && (inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT
-            || inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus
-                    .REPORT_PUBLISHED
-            || inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPAIR_PENDING
-            || inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FINDINGS_LOCKED",
-          "Findings are locked for report drafting. Click Reopen Findings to make changes");
-    }
+  private void rejectFinalizedReportFindingEdits(UUID inspectionId) {
     var current =
         reportVersions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (current != null
@@ -558,8 +569,26 @@ public class FindingService {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",
-          "Findings are locked while a report is submitted or returned for text revision");
+          "Findings are locked while a report is submitted or after publication");
     }
+  }
+
+  private void rejectLockedFindingEdits(UUID inspectionId) {
+    Inspection inspection = inspections.findById(inspectionId).orElse(null);
+    if (inspection != null
+        && (inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus
+                    .REPORT_PUBLISHED
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPAIR_PENDING
+            || inspection.getStatus()
+                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_LOCKED",
+          "Findings are immutable after report publication");
+    }
+    rejectFinalizedReportFindingEdits(inspectionId);
   }
 
   private Finding requireFinding(UUID inspectionId, UUID findingId) {

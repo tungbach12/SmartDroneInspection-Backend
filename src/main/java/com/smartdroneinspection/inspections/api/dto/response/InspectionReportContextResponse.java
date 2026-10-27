@@ -12,7 +12,6 @@ public record InspectionReportContextResponse(
     String assetLocation,
     String assetCategory,
     DroneContext assignedDrone,
-    PreparationContext preparation,
     List<FieldSessionContext> fieldSessions,
     String reviewerQualificationDisclosure,
     Instant findingsConfirmedAt,
@@ -23,19 +22,6 @@ public record InspectionReportContextResponse(
   }
 
   public record DroneContext(String serialNumber, String manufacturer, String model) {}
-
-  public record PreparationContext(
-      int version,
-      String status,
-      String shotList,
-      String evidenceTypes,
-      String accessConstraints,
-      String safetyObservations,
-      String readinessDecision,
-      Instant readinessDecisionAt,
-      String readinessReason,
-      String permitDocumentReferences,
-      Instant submittedAt) {}
 
   public record FieldSessionContext(
       UUID id,

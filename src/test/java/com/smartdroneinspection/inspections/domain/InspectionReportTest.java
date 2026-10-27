@@ -7,18 +7,18 @@ import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-/** The report version's human gates and published-artifact immutability. */
-class InspectionReportVersionTest {
+/** The inspection report's human gates and published-artifact immutability. */
+class InspectionReportTest {
 
   private final UUID reportId = UUID.randomUUID();
   private final UUID author = UUID.randomUUID();
   private final UUID reviewer = UUID.randomUUID();
 
-  private InspectionReportVersion draft() {
-    return new InspectionReportVersion(reportId, 1, "{}");
+  private InspectionReport draft() {
+    return new InspectionReport(reportId, 1, "{}");
   }
 
-  private void verifyAndSubmit(InspectionReportVersion version) {
+  private void verifyAndSubmit(InspectionReport version) {
     version.verifyAsAuthor(author, author);
     version.submit();
   }
@@ -30,7 +30,7 @@ class InspectionReportVersionTest {
 
   @Test
   void onlyTheParentReportAuthorMayVerifyThenSubmit() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
 
     assertThatThrownBy(() -> version.verifyAsAuthor(reviewer, author))
         .isInstanceOf(IllegalStateException.class)
@@ -49,7 +49,7 @@ class InspectionReportVersionTest {
 
   @Test
   void reviewRequiresAReviewer() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
     verifyAndSubmit(version);
 
     assertThatThrownBy(() -> version.reviewBy(null, true, null))
@@ -59,7 +59,7 @@ class InspectionReportVersionTest {
 
   @Test
   void reviewerApprovalMovesToApproved() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
     verifyAndSubmit(version);
 
     version.reviewBy(reviewer, true, null);
@@ -72,7 +72,7 @@ class InspectionReportVersionTest {
 
   @Test
   void returningADraftRequiresAReasonAndRecordsReturnReason() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
     verifyAndSubmit(version);
 
     assertThatThrownBy(() -> version.reviewBy(reviewer, false, null))
@@ -89,7 +89,7 @@ class InspectionReportVersionTest {
 
   @Test
   void renewedAuthorVerificationResetsThePreviousReviewDecision() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
     verifyAndSubmit(version);
     version.reviewBy(reviewer, false, "Missing limitations");
 
@@ -106,7 +106,7 @@ class InspectionReportVersionTest {
 
   @Test
   void authorCanWithdrawOnlyBeforeReviewerActs() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
     verifyAndSubmit(version);
 
     version.withdraw(author, author);
@@ -123,7 +123,7 @@ class InspectionReportVersionTest {
 
   @Test
   void publishedVersionKeepsItsPdfKeyAndChecksumWhenSuperseded() {
-    InspectionReportVersion version = draft();
+    InspectionReport version = draft();
     verifyAndSubmit(version);
     version.reviewBy(reviewer, true, null);
     version.publish(reviewer, author);

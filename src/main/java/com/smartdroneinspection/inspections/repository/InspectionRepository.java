@@ -49,10 +49,10 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       value =
           "select i from Inspection i where i.organizationId = :organizationId "
-              + "and exists (select v.id from InspectionReportVersion v where v.inspectionId = i.id)",
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)",
       countQuery =
           "select count(i) from Inspection i where i.organizationId = :organizationId "
-              + "and exists (select v.id from InspectionReportVersion v where v.inspectionId = i.id)")
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)")
   Page<Inspection> findWithReportByOrganizationId(
       @Param("organizationId") UUID organizationId, Pageable pageable);
 
@@ -60,11 +60,11 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
       value =
           "select i from Inspection i where i.organizationId = :organizationId "
               + "and i.inspectorId = :inspectorId "
-              + "and exists (select v.id from InspectionReportVersion v where v.inspectionId = i.id)",
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)",
       countQuery =
           "select count(i) from Inspection i where i.organizationId = :organizationId "
               + "and i.inspectorId = :inspectorId "
-              + "and exists (select v.id from InspectionReportVersion v where v.inspectionId = i.id)")
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)")
   Page<Inspection> findWithReportByOrganizationIdAndInspectorId(
       @Param("organizationId") UUID organizationId,
       @Param("inspectorId") UUID inspectorId,
@@ -73,10 +73,10 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       value =
           "select i from Inspection i where "
-              + "exists (select v.id from InspectionReportVersion v where v.inspectionId = i.id)",
+              + "exists (select v.id from InspectionReport v where v.inspectionId = i.id)",
       countQuery =
           "select count(i) from Inspection i where "
-              + "exists (select v.id from InspectionReportVersion v where v.inspectionId = i.id)")
+              + "exists (select v.id from InspectionReport v where v.inspectionId = i.id)")
   Page<Inspection> findWithReport(Pageable pageable);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
