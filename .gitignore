@@ -35,7 +35,7 @@ Thumbs.db
 
 # Advisory detection weights: large binaries rebuilt from the Kaggle kernel.
 # See ai-inference/README.md.
-ai-inference/models/*.pt
+# ai-inference/models/*.pt (committed for team dev execution)
 ai-inference/models/*.onnx
 ai-inference/models/*.old
 .claude/
