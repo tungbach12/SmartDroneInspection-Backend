@@ -156,6 +156,10 @@ public interface UserAccess {
           && !pilotLicenseNumber.isBlank()
           && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
     }
+
+    public boolean isInspectorPartner() {
+      return "INSPECTOR_PARTNER".equals(actorZone) && hasRole("INSPECTOR");
+    }
   }
 
   /** Organization-scoped projection of a workforce user, free of persistence types. */

@@ -3,8 +3,10 @@ package com.smartdroneinspection.contracts.service;
 import com.smartdroneinspection.shared.auth.Roles;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.stereotype.Component;
 
 /** MF2-only compatibility mapping for the legacy account roles. */
+@Component
 public class Mf2ActorPolicy {
 
   public ActorKind actorKind(Set<String> roles, UUID organizationId) {

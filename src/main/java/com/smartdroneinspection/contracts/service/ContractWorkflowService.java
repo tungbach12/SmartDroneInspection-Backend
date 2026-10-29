@@ -169,11 +169,11 @@ public class ContractWorkflowService {
           "INVALID_PARTNER_INSPECTOR",
           "Selected Inspector is not an eligible registered partner");
     }
-    if (!partners.isEligibleDrone(input.droneId())) {
+    if (!partners.isEligibleDrone(input.droneId(), input.inspectorId())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_DRONE",
-          "Selected drone is not an eligible registered partner resource");
+          "Selected drone must be approved for the selected active partner Inspector");
     }
     quotes.findWithLockByRequestId(requestId);
     requests.flush();
@@ -334,7 +334,7 @@ public class ContractWorkflowService {
           "Selected Inspector or drone has another assigned contract occurrence during this window");
     }
     partners.lockEligibleInspector(input.inspectorId(), input.plannedStartAt());
-    partners.lockEligibleDrone(input.droneId());
+    partners.lockEligibleDrone(input.droneId(), input.inspectorId());
     UUID inspectionId =
         assignment.assign(
             request.getOrganizationId(),

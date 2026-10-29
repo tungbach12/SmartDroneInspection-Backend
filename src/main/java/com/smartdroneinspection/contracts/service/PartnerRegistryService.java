@@ -20,6 +20,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PartnerRegistryService {
 
+  private static final String INVALID_PARTNER_INSPECTOR = "INVALID_PARTNER_INSPECTOR";
+  private static final String INVALID_PARTNER_DRONE = "INVALID_PARTNER_DRONE";
+  private static final String PARTNER_NOT_FOUND = "PARTNER_NOT_FOUND";
+
   private final ContractPartnerInspectorRepository inspectors;
   private final ContractPartnerDroneRepository partnerDrones;
   private final DroneRepository drones;
@@ -39,59 +43,52 @@ public class PartnerRegistryService {
   @Transactional
   public PartnerInspector registerInspector(UUID managerId, UUID inspectorUserId) {
     requireManager(managerId);
-    UserAccess.ActiveUser inspector = requireActiveInspector(inspectorUserId);
-    if (!inspector.hasValidPilotLicense(Instant.now())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "PARTNER_LICENSE_REQUIRED",
-          "Inspector requires a valid pilot license");
-    }
+    UserAccess.ActiveUser inspector = requireActivePartnerInspector(inspectorUserId);
     PartnerInspector current = inspectors.findWithLockByInspectorId(inspectorUserId).orElse(null);
     if (current != null) {
       current.changeStatus(true);
       return inspectors.saveAndFlush(current);
     }
-    return inspectors.saveAndFlush(
-        new PartnerInspector(inspector.id(), inspector.organizationId(), managerId));
+    return inspectors.saveAndFlush(new PartnerInspector(inspector.id(), managerId));
   }
 
   @Transactional
   public PartnerDrone registerDrone(UUID managerId, UUID droneId) {
     requireManager(managerId);
     Drone drone = drones.findWithLockById(droneId).orElseThrow(this::droneNotFound);
-    if (drone.getOwnershipType()
-            != com.smartdroneinspection.assets.domain.enums.DroneOwnershipType.OWNED
+    if (drone.getInspectorOwnerId() == null
         || drone.getServiceability() != DroneServiceability.ACTIVE
-        || drone.getRegistrationNumber() == null
-        || drone.getRegistrationNumber().isBlank()
-        || drone.getRegistrationFileKey() == null
-        || drone.getRegistrationFileKey().isBlank()
         || (drone.getRegistrationExpiresAt() != null
             && !drone.getRegistrationExpiresAt().isAfter(Instant.now()))) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "PARTNER_DRONE_INVALID",
-          "Partner drone must be active, owned, and have current registration");
+          "Drone must be approved for an active Inspector partner with current registration");
     }
+    requireActivePartnerInspector(drone.getInspectorOwnerId());
     PartnerDrone current = partnerDrones.findWithLockByDroneId(droneId).orElse(null);
     if (current != null) {
       current.changeStatus(true);
+      current.changeInspectorOwner(drone.getInspectorOwnerId());
       return partnerDrones.saveAndFlush(current);
     }
     return partnerDrones.saveAndFlush(
-        new PartnerDrone(drone.getId(), drone.getOrganizationId(), managerId));
+        new PartnerDrone(drone.getId(), drone.getInspectorOwnerId(), managerId));
   }
 
   @Transactional
   public void setInspectorActive(UUID managerId, UUID inspectorUserId, boolean active) {
     requireManager(managerId);
+    if (active) {
+      requireActivePartnerInspector(inspectorUserId);
+    }
     PartnerInspector partner =
         inspectors
             .findWithLockByInspectorId(inspectorUserId)
             .orElseThrow(
                 () ->
                     failure(
-                        HttpStatus.NOT_FOUND, "PARTNER_NOT_FOUND", "Partner Inspector not found"));
+                        HttpStatus.NOT_FOUND, PARTNER_NOT_FOUND, "Partner Inspector not found"));
     partner.changeStatus(active);
     inspectors.saveAndFlush(partner);
   }
@@ -103,8 +100,10 @@ public class PartnerRegistryService {
         partnerDrones
             .findWithLockByDroneId(droneId)
             .orElseThrow(
-                () ->
-                    failure(HttpStatus.NOT_FOUND, "PARTNER_NOT_FOUND", "Partner drone not found"));
+                () -> failure(HttpStatus.NOT_FOUND, PARTNER_NOT_FOUND, "Partner drone not found"));
+    if (active) {
+      requireActivePartnerInspector(partner.getInspectorOwnerId());
+    }
     partner.changeStatus(active);
     partnerDrones.saveAndFlush(partner);
   }
@@ -117,13 +116,12 @@ public class PartnerRegistryService {
             partner ->
                 users
                     .findActiveUser(partner.getInspectorUserId())
+                    .filter(UserAccess.ActiveUser::isInspectorPartner)
+                    .filter(user -> user.hasValidPilotLicense(Instant.now()))
                     .map(
                         user ->
                             new InspectorOption(
-                                user.id(),
-                                user.fullName(),
-                                partner.getOrganizationId(),
-                                user.pilotLicenseExpiresAt()))
+                                user.id(), user.fullName(), user.pilotLicenseExpiresAt()))
                     .orElse(null))
         .filter(java.util.Objects::nonNull)
         .toList();
@@ -136,15 +134,22 @@ public class PartnerRegistryService {
         .map(
             partner ->
                 drones
-                    .findByIdAndOrganizationId(partner.getDroneId(), partner.getOrganizationId())
+                    .findById(partner.getDroneId())
+                    .filter(
+                        drone ->
+                            partner.getInspectorOwnerId() != null
+                                && partner
+                                    .getInspectorOwnerId()
+                                    .equals(drone.getInspectorOwnerId()))
                     .filter(Drone::isEligibleForAssignment)
+                    .filter(
+                        drone ->
+                            drone.getRegistrationExpiresAt() == null
+                                || drone.getRegistrationExpiresAt().isAfter(Instant.now()))
                     .map(
                         drone ->
                             new DroneOption(
-                                drone.getId(),
-                                drone.getSerialNumber(),
-                                drone.getModel(),
-                                partner.getOrganizationId()))
+                                drone.getId(), drone.getSerialNumber(), drone.getModel()))
                     .orElse(null))
         .filter(java.util.Objects::nonNull)
         .toList();
@@ -160,40 +165,46 @@ public class PartnerRegistryService {
                 () ->
                     failure(
                         HttpStatus.BAD_REQUEST,
-                        "INVALID_PARTNER_INSPECTOR",
+                        INVALID_PARTNER_INSPECTOR,
                         "Inspector is not registered as an active partner"));
     return users
         .findActiveUser(partner.getInspectorUserId())
-        .filter(user -> user.hasRole(Roles.INSPECTOR) && user.hasValidPilotLicense(at))
+        .filter(UserAccess.ActiveUser::isInspectorPartner)
+        .filter(user -> user.hasValidPilotLicense(at))
         .orElseThrow(
             () ->
                 failure(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_PARTNER_INSPECTOR",
+                    INVALID_PARTNER_INSPECTOR,
                     "Partner Inspector is not active or has no valid pilot license"));
   }
 
   @Transactional
-  public void lockEligibleDrone(UUID droneId) {
+  public void lockEligibleDrone(UUID droneId, UUID inspectorUserId) {
     PartnerDrone partner =
         partnerDrones
             .findWithLockByDroneId(droneId)
             .filter(value -> "ACTIVE".equals(value.getStatus()))
+            .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
             .orElseThrow(
                 () ->
                     failure(
                         HttpStatus.BAD_REQUEST,
-                        "INVALID_PARTNER_DRONE",
-                        "Drone is not registered as an active partner resource"));
+                        INVALID_PARTNER_DRONE,
+                        "Drone is not registered for this active partner Inspector"));
     drones
         .findWithLockById(droneId)
-        .filter(value -> value.getOrganizationId().equals(partner.getOrganizationId()))
+        .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
         .filter(Drone::isEligibleForAssignment)
+        .filter(
+            value ->
+                value.getRegistrationExpiresAt() == null
+                    || value.getRegistrationExpiresAt().isAfter(Instant.now()))
         .orElseThrow(
             () ->
                 failure(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_PARTNER_DRONE",
+                    INVALID_PARTNER_DRONE,
                     "Partner drone is not eligible"));
   }
 
@@ -202,15 +213,19 @@ public class PartnerRegistryService {
     return inspectors.findActiveByInspectorId(inspectorUserId).isPresent()
         && users
             .findActiveUser(inspectorUserId)
-            .filter(user -> user.hasRole(Roles.INSPECTOR) && user.hasValidPilotLicense(at))
+            .filter(UserAccess.ActiveUser::isInspectorPartner)
+            .filter(user -> user.hasValidPilotLicense(at))
             .isPresent();
   }
 
   @Transactional(readOnly = true)
-  public boolean isEligibleDrone(UUID droneId) {
-    return partnerDrones.findActiveByDroneId(droneId).isPresent()
+  public boolean isEligibleDrone(UUID droneId, UUID inspectorUserId) {
+    return partnerDrones
+            .findActiveByDroneIdAndInspectorOwnerId(droneId, inspectorUserId)
+            .isPresent()
         && drones
             .findById(droneId)
+            .filter(drone -> inspectorUserId.equals(drone.getInspectorOwnerId()))
             .filter(Drone::isEligibleForAssignment)
             .filter(
                 drone ->
@@ -221,50 +236,55 @@ public class PartnerRegistryService {
 
   @Transactional(readOnly = true)
   public UserAccess.ActiveUser requireEligibleInspector(UUID inspectorUserId) {
-    PartnerInspector partner =
-        inspectors
-            .findActiveByInspectorId(inspectorUserId)
-            .orElseThrow(
-                () ->
-                    failure(
-                        HttpStatus.BAD_REQUEST,
-                        "INVALID_PARTNER_INSPECTOR",
-                        "Inspector is not registered as an active partner"));
-    return requireActiveInspector(partner.getInspectorUserId());
+    inspectors
+        .findActiveByInspectorId(inspectorUserId)
+        .orElseThrow(
+            () ->
+                failure(
+                    HttpStatus.BAD_REQUEST,
+                    INVALID_PARTNER_INSPECTOR,
+                    "Inspector is not registered as an active partner"));
+    return requireActivePartnerInspector(inspectorUserId);
   }
 
   @Transactional(readOnly = true)
-  public Drone requireEligibleDrone(UUID droneId) {
+  public Drone requireEligibleDrone(UUID droneId, UUID inspectorUserId) {
     PartnerDrone partner =
         partnerDrones
-            .findActiveByDroneId(droneId)
+            .findActiveByDroneIdAndInspectorOwnerId(droneId, inspectorUserId)
             .orElseThrow(
                 () ->
                     failure(
                         HttpStatus.BAD_REQUEST,
-                        "INVALID_PARTNER_DRONE",
-                        "Drone is not registered as an active partner resource"));
+                        INVALID_PARTNER_DRONE,
+                        "Drone is not registered for this active partner Inspector"));
     return drones
-        .findByIdAndOrganizationId(partner.getDroneId(), partner.getOrganizationId())
+        .findById(droneId)
+        .filter(drone -> inspectorUserId.equals(drone.getInspectorOwnerId()))
         .filter(Drone::isEligibleForAssignment)
+        .filter(
+            drone ->
+                drone.getRegistrationExpiresAt() == null
+                    || drone.getRegistrationExpiresAt().isAfter(Instant.now()))
         .orElseThrow(
             () ->
                 failure(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_PARTNER_DRONE",
+                    INVALID_PARTNER_DRONE,
                     "Partner drone is not eligible"));
   }
 
-  private UserAccess.ActiveUser requireActiveInspector(UUID inspectorUserId) {
+  private UserAccess.ActiveUser requireActivePartnerInspector(UUID inspectorUserId) {
     return users
         .findActiveUser(inspectorUserId)
-        .filter(user -> user.hasRole(Roles.INSPECTOR) && user.organizationId() != null)
+        .filter(UserAccess.ActiveUser::isInspectorPartner)
+        .filter(user -> user.hasValidPilotLicense(Instant.now()))
         .orElseThrow(
             () ->
                 failure(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_PARTNER_INSPECTOR",
-                    "User is not an active organization Inspector"));
+                    INVALID_PARTNER_INSPECTOR,
+                    "User is not an active Inspector partner with a valid license"));
   }
 
   private void requireManager(UUID managerId) {
@@ -288,9 +308,7 @@ public class PartnerRegistryService {
     return new BusinessException(status, code, detail);
   }
 
-  public record InspectorOption(
-      UUID id, String fullName, UUID partnerOrganizationId, Instant licenseExpiresAt) {}
+  public record InspectorOption(UUID id, String fullName, Instant licenseExpiresAt) {}
 
-  public record DroneOption(
-      UUID id, String serialNumber, String model, UUID partnerOrganizationId) {}
+  public record DroneOption(UUID id, String serialNumber, String model) {}
 }

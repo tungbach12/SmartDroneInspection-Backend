@@ -51,8 +51,7 @@ public class PartnerRegistryController {
       @Valid @RequestBody RegisterPartnerInspectorRequest request) {
     var inspector = partners.registerInspector(actorId(jwt), request.inspectorUserId());
     return ApiResponse.success(
-        new PartnerInspectorResponse(
-            inspector.getInspectorUserId(), null, inspector.getOrganizationId(), null));
+        new PartnerInspectorResponse(inspector.getInspectorUserId(), null, null));
   }
 
   @PatchMapping("/inspectors/{inspectorId}")

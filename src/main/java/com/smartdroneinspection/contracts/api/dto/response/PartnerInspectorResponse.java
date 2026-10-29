@@ -4,10 +4,8 @@ import com.smartdroneinspection.contracts.service.PartnerRegistryService;
 import java.time.Instant;
 import java.util.UUID;
 
-public record PartnerInspectorResponse(
-    UUID id, String fullName, UUID partnerOrganizationId, Instant licenseExpiresAt) {
+public record PartnerInspectorResponse(UUID id, String fullName, Instant licenseExpiresAt) {
   public static PartnerInspectorResponse from(PartnerRegistryService.InspectorOption option) {
-    return new PartnerInspectorResponse(
-        option.id(), option.fullName(), option.partnerOrganizationId(), option.licenseExpiresAt());
+    return new PartnerInspectorResponse(option.id(), option.fullName(), option.licenseExpiresAt());
   }
 }

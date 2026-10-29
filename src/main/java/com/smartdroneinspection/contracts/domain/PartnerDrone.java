@@ -16,8 +16,8 @@ public class PartnerDrone {
   @Column(name = "drone_id", nullable = false)
   private UUID droneId;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
+  @Column(name = "inspector_owner_id", nullable = false)
+  private UUID inspectorOwnerId;
 
   @Column(nullable = false, length = 16)
   private String status = "ACTIVE";
@@ -37,9 +37,9 @@ public class PartnerDrone {
 
   protected PartnerDrone() {}
 
-  public PartnerDrone(UUID droneId, UUID organizationId, UUID registeredByUserId) {
+  public PartnerDrone(UUID droneId, UUID inspectorOwnerId, UUID registeredByUserId) {
     this.droneId = droneId;
-    this.organizationId = organizationId;
+    this.inspectorOwnerId = inspectorOwnerId;
     this.registeredByUserId = registeredByUserId;
   }
 
@@ -47,8 +47,13 @@ public class PartnerDrone {
     return droneId;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
+  public UUID getInspectorOwnerId() {
+    return inspectorOwnerId;
+  }
+
+  public void changeInspectorOwner(UUID inspectorOwnerId) {
+    this.inspectorOwnerId = inspectorOwnerId;
+    updatedAt = Instant.now();
   }
 
   public String getStatus() {

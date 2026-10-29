@@ -20,6 +20,12 @@ public interface ContractPartnerDroneRepository extends JpaRepository<PartnerDro
           + "and partner.status = 'ACTIVE'")
   Optional<PartnerDrone> findActiveByDroneId(@Param("id") UUID droneId);
 
+  @Query(
+      "select partner from PartnerDrone partner where partner.droneId = :droneId "
+          + "and partner.inspectorOwnerId = :inspectorId and partner.status = 'ACTIVE'")
+  Optional<PartnerDrone> findActiveByDroneIdAndInspectorOwnerId(
+      @Param("droneId") UUID droneId, @Param("inspectorId") UUID inspectorId);
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select partner from PartnerDrone partner where partner.droneId = :id")
   Optional<PartnerDrone> findWithLockByDroneId(@Param("id") UUID droneId);

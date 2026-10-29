@@ -16,9 +16,6 @@ public class PartnerInspector {
   @Column(name = "inspector_user_id", nullable = false)
   private UUID inspectorUserId;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
-
   @Column(nullable = false, length = 16)
   private String status = "ACTIVE";
 
@@ -37,18 +34,13 @@ public class PartnerInspector {
 
   protected PartnerInspector() {}
 
-  public PartnerInspector(UUID inspectorUserId, UUID organizationId, UUID registeredByUserId) {
+  public PartnerInspector(UUID inspectorUserId, UUID registeredByUserId) {
     this.inspectorUserId = inspectorUserId;
-    this.organizationId = organizationId;
     this.registeredByUserId = registeredByUserId;
   }
 
   public UUID getInspectorUserId() {
     return inspectorUserId;
-  }
-
-  public UUID getOrganizationId() {
-    return organizationId;
   }
 
   public String getStatus() {
