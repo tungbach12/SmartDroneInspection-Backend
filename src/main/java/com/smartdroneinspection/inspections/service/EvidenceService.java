@@ -516,6 +516,9 @@ public class EvidenceService {
 
   Inspection requireInspectionInScope(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+      return inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    }
     if (actor.isInspectorPartner()) {
       return inspections
           .findAssignedInspectorInspection(inspectionId, null, actorId, true)

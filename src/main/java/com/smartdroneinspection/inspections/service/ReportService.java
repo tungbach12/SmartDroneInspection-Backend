@@ -29,6 +29,7 @@ import com.smartdroneinspection.inspections.spi.ReinspectionReportPublishedEvent
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportRenderPort;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -717,11 +718,14 @@ public class ReportService {
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
-    if (!inspection.getInspectorId().equals(actorId)) {
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isReviewer =
+        actor != null && (actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ADMIN));
+    if (!inspection.getInspectorId().equals(actorId) && !isReviewer) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
-          "Only the report author may preview this draft");
+          "Only the report author or reviewing manager may preview this draft");
     }
     InspectionReport version = requireVersion(inspectionId, versionId);
     return pdfResponse(
@@ -955,17 +959,48 @@ public class ReportService {
   @Transactional(readOnly = true)
   public List<InspectionReportResponse> listVersions(UUID actorId, UUID inspectionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
-    // An inspection whose evidence is not yet accepted has no report at all. That is a normal
-    // empty state for the reviewer, not a missing resource, so it is reported as an empty list.
-    return versions.findByInspectionIdOrderByVersionNoDesc(inspectionId).stream()
-        .map(this::toResponse)
-        .toList();
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isClientOnly =
+        actor != null
+            && actor.hasRole(Roles.CUSTOMER)
+            && !actor.hasRole(Roles.MANAGER)
+            && !actor.hasRole(Roles.ADMIN)
+            && !actor.hasRole(Roles.INSPECTOR);
+
+    List<InspectionReport> all = versions.findByInspectionIdOrderByVersionNoDesc(inspectionId);
+    if (isClientOnly) {
+      return all.stream()
+          .filter(
+              v ->
+                  v.getStatus() == ReportStatus.PUBLISHED
+                      || v.getStatus() == ReportStatus.SUPERSEDED)
+          .map(this::toResponse)
+          .toList();
+    }
+    return all.stream().map(this::toResponse).toList();
   }
 
   @Transactional(readOnly = true)
   public InspectionReportResponse getVersion(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
-    return toResponse(requireVersion(inspectionId, versionId));
+    InspectionReport version = requireVersion(inspectionId, versionId);
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isClientOnly =
+        actor != null
+            && actor.hasRole(Roles.CUSTOMER)
+            && !actor.hasRole(Roles.MANAGER)
+            && !actor.hasRole(Roles.ADMIN)
+            && !actor.hasRole(Roles.INSPECTOR);
+
+    if (isClientOnly
+        && version.getStatus() != ReportStatus.PUBLISHED
+        && version.getStatus() != ReportStatus.SUPERSEDED) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_NOT_PUBLISHED",
+          "Only published reports are available to customer");
+    }
+    return toResponse(version);
   }
 
   private UserAccess.ActiveUser requireQualifiedReviewer(UUID actorId, UUID inspectionId) {
@@ -975,19 +1010,22 @@ public class ReportService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null || !actor.hasRole("CUSTOMER")) {
+
+    Inspection inspection;
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+      inspection = inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    } else if (actor.hasRole(Roles.CUSTOMER) && actor.organizationId() != null) {
+      inspection =
+          inspections
+              .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+              .orElseThrow(this::inspectionNotFound);
+    } else {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_MANAGER may review");
+          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified Manager may review");
     }
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, actor.organizationId())
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found"));
+
     // Separation of duties: no report is self-reviewed.
-    if (inspection.getInspectorId().equals(actorId)) {
+    if (inspection.getInspectorId() != null && inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "REPORT_REVIEWER_INVALID",

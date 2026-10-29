@@ -91,7 +91,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermit(
           @AuthenticationPrincipal Jwt jwt,
@@ -109,7 +109,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermitJson(
           @AuthenticationPrincipal Jwt jwt,
@@ -387,7 +387,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/review")
-  @PreAuthorize("hasRole('CUSTOMER')")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<InspectionReportResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -399,7 +399,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/publish")
-  @PreAuthorize("hasRole('CUSTOMER')")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<ReportPublishedResponse> publishVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -410,7 +410,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/corrective-handoff")
-  @PreAuthorize("hasRole('CUSTOMER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -432,7 +432,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/preview")
-  @PreAuthorize("hasRole('INSPECTOR')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
   public ResponseEntity<byte[]> previewReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -443,7 +443,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/document")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<byte[]> downloadReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -452,14 +452,14 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<InspectionReportResponse>> listVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.listVersions(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/report/versions/{versionId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionReportResponse> getVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
