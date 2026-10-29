@@ -139,14 +139,14 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<EvidenceResponse>> listEvidence(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(evidenceService.list(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/evidence/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<EvidencePageResponse> queryEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -193,7 +193,7 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<InputStreamResource> evidenceContent(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -263,7 +263,7 @@ public class InspectionController {
 
   /** Explicitly deleted Inspector findings remain available with deletion attribution. */
   @GetMapping("/findings/removed")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<FindingResponse>> listRemovedFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listRemovedFindings(actorId(jwt), inspectionId));
@@ -280,7 +280,7 @@ public class InspectionController {
   }
 
   @GetMapping("/workflow-state")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionWorkflowStateResponse> workflowState(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(workflowService.state(actorId(jwt), inspectionId));
@@ -305,14 +305,14 @@ public class InspectionController {
   }
 
   @GetMapping("/findings")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/findings/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<FindingPageResponse> queryFindings(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,

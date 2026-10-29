@@ -1013,12 +1013,12 @@ public class ReportService {
 
     Inspection inspection;
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
-      inspection = inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+      inspection = inspections.findById(inspectionId).orElseThrow(this::reportNotFound);
     } else if (actor.hasRole(Roles.CUSTOMER) && actor.organizationId() != null) {
       inspection =
           inspections
               .findByIdAndOrganizationId(inspectionId, actor.organizationId())
-              .orElseThrow(this::inspectionNotFound);
+              .orElseThrow(this::reportNotFound);
     } else {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified Manager may review");
@@ -1042,6 +1042,11 @@ public class ReportService {
             () ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "REPORT_VERSION_NOT_FOUND", "Report version not found"));
+  }
+
+  private BusinessException reportNotFound() {
+    return new BusinessException(
+        HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found");
   }
 
   private BusinessException inspectionNotFound() {
