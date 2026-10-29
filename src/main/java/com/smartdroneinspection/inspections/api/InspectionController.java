@@ -123,7 +123,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<EvidenceResponse> uploadEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,

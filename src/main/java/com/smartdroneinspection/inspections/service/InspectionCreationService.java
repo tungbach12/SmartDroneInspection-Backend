@@ -220,17 +220,27 @@ public class InspectionCreationService {
   @Transactional(readOnly = true)
   public InspectionResponse get(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = actor.organizationId();
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, organizationId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    Inspection inspection;
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+      inspection =
+          inspections
+              .findById(inspectionId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else {
+      UUID organizationId = actor.organizationId();
+      inspection =
+          inspections
+              .findByIdAndOrganizationId(inspectionId, organizationId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    }
 
-    Asset asset =
-        assets.findByIdAndOrganizationId(inspection.getAssetId(), organizationId).orElse(null);
+    Asset asset = assets.findById(inspection.getAssetId()).orElse(null);
     return toResponse(inspection, asset);
   }
 
