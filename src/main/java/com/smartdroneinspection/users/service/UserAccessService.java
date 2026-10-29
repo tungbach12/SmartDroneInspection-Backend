@@ -26,16 +26,19 @@ public class UserAccessService implements UserAccess {
   private final com.smartdroneinspection.users.repository.OrganizationRepository organizations;
   private final AdminUserService adminUsers;
   private final RolePolicy rolePolicy;
+  private final SecurityAuditService securityAudit;
 
   public UserAccessService(
       UserRepository users,
       com.smartdroneinspection.users.repository.OrganizationRepository organizations,
       AdminUserService adminUsers,
-      RolePolicy rolePolicy) {
+      RolePolicy rolePolicy,
+      SecurityAuditService securityAudit) {
     this.users = users;
     this.organizations = organizations;
     this.adminUsers = adminUsers;
     this.rolePolicy = rolePolicy;
+    this.securityAudit = securityAudit;
   }
 
   @Override
@@ -200,6 +203,19 @@ public class UserAccessService implements UserAccess {
         Set.copyOf(response.roles()),
         subject.getStatus().name(),
         response.organizationId());
+  }
+
+  @Override
+  public void recordSecurityAudit(
+      UUID actorUserId,
+      UUID aggregateId,
+      String action,
+      String afterStatus,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    securityAudit.record(
+        actorUserId, aggregateId, action, afterStatus, ipAddress, userAgent, correlationId);
   }
 
   /**

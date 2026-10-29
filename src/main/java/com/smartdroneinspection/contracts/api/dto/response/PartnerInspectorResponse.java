@@ -1,0 +1,13 @@
+package com.smartdroneinspection.contracts.api.dto.response;
+
+import com.smartdroneinspection.contracts.service.PartnerRegistryService;
+import java.time.Instant;
+import java.util.UUID;
+
+public record PartnerInspectorResponse(
+    UUID id, String fullName, UUID partnerOrganizationId, Instant licenseExpiresAt) {
+  public static PartnerInspectorResponse from(PartnerRegistryService.InspectorOption option) {
+    return new PartnerInspectorResponse(
+        option.id(), option.fullName(), option.partnerOrganizationId(), option.licenseExpiresAt());
+  }
+}

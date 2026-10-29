@@ -25,6 +25,7 @@ class ModulithArchitectureTest {
     assertThat(modules.getModuleByName("users")).isPresent();
     assertThat(modules.getModuleByName("subscriptions")).isPresent();
     assertThat(modules.getModuleByName("workforce")).isPresent();
+    assertThat(modules.getModuleByName("contracts")).isPresent();
   }
 
   @Test
