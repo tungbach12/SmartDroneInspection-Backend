@@ -7,9 +7,13 @@ import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.ReinspectionDefectVerification;
+import com.smartdroneinspection.inspections.domain.enums.DefectResolutionStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import java.time.Instant;
 import java.util.Optional;
@@ -22,13 +26,23 @@ class InspectionReinspectionListenerTest {
 
   private InspectionRepository inspections;
   private FindingRepository findings;
+  private ReinspectionDefectVerificationRepository verifications;
   private InspectionReinspectionListener listener;
 
   @BeforeEach
   void setUp() {
     inspections = mock(InspectionRepository.class);
+    when(inspections.saveAndFlush(org.mockito.ArgumentMatchers.any(Inspection.class)))
+        .thenAnswer(
+            invocation -> {
+              Inspection saved = invocation.getArgument(0);
+              org.springframework.test.util.ReflectionTestUtils.setField(
+                  saved, "id", UUID.randomUUID());
+              return saved;
+            });
     findings = mock(FindingRepository.class);
-    listener = new InspectionReinspectionListener(inspections, findings);
+    verifications = mock(ReinspectionDefectVerificationRepository.class);
+    listener = new InspectionReinspectionListener(inspections, findings, verifications);
   }
 
   @Test
@@ -75,5 +89,15 @@ class InspectionReinspectionListenerTest {
     assertThat(saved.getInspectorId()).isEqualTo(inspectorId);
     assertThat(saved.getDroneId()).isEqualTo(droneId);
     assertThat(saved.getStatus()).isEqualTo(InspectionStatus.ASSIGNED);
+    assertThat(saved.getInspectionType()).isEqualTo(InspectionType.RE_INSPECTION);
+    assertThat(saved.getWorkOrderId()).isEqualTo(workOrderId);
+    assertThat(saved.getSourceReportVersionId()).isEqualTo(event.sourceReportVersionId());
+
+    ArgumentCaptor<ReinspectionDefectVerification> verifCaptor =
+        ArgumentCaptor.forClass(ReinspectionDefectVerification.class);
+    verify(verifications).saveAndFlush(verifCaptor.capture());
+    ReinspectionDefectVerification savedVerif = verifCaptor.getValue();
+    assertThat(savedVerif.getSourceFindingId()).isEqualTo(sourceFindingId);
+    assertThat(savedVerif.getResolutionStatus()).isEqualTo(DefectResolutionStatus.UNRESOLVED);
   }
 }

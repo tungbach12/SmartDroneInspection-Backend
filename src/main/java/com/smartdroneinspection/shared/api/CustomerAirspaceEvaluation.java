@@ -1,4 +1,4 @@
-package com.smartdroneinspection.shared;
+package com.smartdroneinspection.shared.api;
 
 public record CustomerAirspaceEvaluation(CustomerAirspaceStatus status, String message) {
   public CustomerAirspaceEvaluation {

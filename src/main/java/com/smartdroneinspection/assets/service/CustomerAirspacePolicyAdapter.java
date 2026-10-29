@@ -1,9 +1,9 @@
 package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.response.AirspaceEvaluationResponse;
-import com.smartdroneinspection.shared.CustomerAirspaceEvaluation;
-import com.smartdroneinspection.shared.CustomerAirspacePolicy;
-import com.smartdroneinspection.shared.CustomerAirspaceStatus;
+import com.smartdroneinspection.shared.api.CustomerAirspaceEvaluation;
+import com.smartdroneinspection.shared.api.CustomerAirspacePolicy;
+import com.smartdroneinspection.shared.api.CustomerAirspaceStatus;
 import java.math.BigDecimal;
 import org.springframework.stereotype.Component;
 

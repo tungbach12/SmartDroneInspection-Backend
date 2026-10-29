@@ -1,4 +1,4 @@
-package com.smartdroneinspection.shared;
+package com.smartdroneinspection.shared.api;
 
 public enum CustomerAirspaceStatus {
   CLEAR_ZONE,

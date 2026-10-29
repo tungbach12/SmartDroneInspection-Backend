@@ -50,6 +50,20 @@ public class Inspection {
   @Column(nullable = false, length = 32)
   private InspectionStatus status;
 
+  @Enumerated(EnumType.STRING)
+  @Column(name = "inspection_type", nullable = false, length = 32)
+  private com.smartdroneinspection.inspections.domain.enums.InspectionType inspectionType =
+      com.smartdroneinspection.inspections.domain.enums.InspectionType.INITIAL;
+
+  @Column(name = "work_order_id")
+  private UUID workOrderId;
+
+  @Column(name = "source_inspection_id")
+  private UUID sourceInspectionId;
+
+  @Column(name = "source_report_version_id")
+  private UUID sourceReportVersionId;
+
   @Column(name = "findings_confirmed_at")
   private Instant findingsConfirmedAt;
 
@@ -230,6 +244,46 @@ public class Inspection {
 
   public UUID getOrganizationId() {
     return organizationId;
+  }
+
+  public static Inspection createReinspection(
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      UUID workOrderId,
+      UUID sourceInspectionId,
+      UUID sourceReportVersionId) {
+    Inspection inspection =
+        new Inspection(organizationId, assetId, inspectorId, droneId, plannedStartAt, null);
+    inspection.inspectionType =
+        com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
+    inspection.workOrderId = workOrderId;
+    inspection.sourceInspectionId = sourceInspectionId;
+    inspection.sourceReportVersionId = sourceReportVersionId;
+    return inspection;
+  }
+
+  public com.smartdroneinspection.inspections.domain.enums.InspectionType getInspectionType() {
+    return inspectionType;
+  }
+
+  public UUID getWorkOrderId() {
+    return workOrderId;
+  }
+
+  public UUID getSourceInspectionId() {
+    return sourceInspectionId;
+  }
+
+  public UUID getSourceReportVersionId() {
+    return sourceReportVersionId;
+  }
+
+  public boolean isReinspection() {
+    return inspectionType
+        == com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
   }
 
   public UUID getAssetId() {

@@ -73,6 +73,12 @@ public class MaintenanceWorkOrder {
   @Column(name = "accepting_reviewer_user_id")
   private UUID acceptingReviewerUserId;
 
+  @Column(name = "reinspection_id")
+  private UUID reinspectionId;
+
+  @Column(name = "reinspection_report_version_id")
+  private UUID reinspectionReportVersionId;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -407,6 +413,24 @@ public class MaintenanceWorkOrder {
 
   public UUID getAcceptingReviewerUserId() {
     return acceptingReviewerUserId;
+  }
+
+  public UUID getReinspectionId() {
+    return reinspectionId;
+  }
+
+  public UUID getReinspectionReportVersionId() {
+    return reinspectionReportVersionId;
+  }
+
+  public void attachReinspection(UUID reinspectionId) {
+    this.reinspectionId = reinspectionId;
+    this.updatedAt = Instant.now();
+  }
+
+  public void attachReinspectionReport(UUID reinspectionReportVersionId) {
+    this.reinspectionReportVersionId = reinspectionReportVersionId;
+    this.updatedAt = Instant.now();
   }
 
   public Instant getCreatedAt() {

@@ -2,8 +2,10 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.ReinspectionDefectVerification;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import java.time.Instant;
 import java.util.Optional;
@@ -20,11 +22,15 @@ public class InspectionReinspectionListener {
 
   private final InspectionRepository inspections;
   private final FindingRepository findings;
+  private final ReinspectionDefectVerificationRepository verifications;
 
   public InspectionReinspectionListener(
-      InspectionRepository inspections, FindingRepository findings) {
+      InspectionRepository inspections,
+      FindingRepository findings,
+      ReinspectionDefectVerificationRepository verifications) {
     this.inspections = inspections;
     this.findings = findings;
+    this.verifications = verifications;
   }
 
   @ApplicationModuleListener
@@ -50,15 +56,20 @@ public class InspectionReinspectionListener {
         findingOpt.flatMap(f -> inspections.findById(f.getInspectionId())).orElse(null);
 
     Inspection reinspection =
-        new Inspection(
+        Inspection.createReinspection(
             event.organizationId(),
             event.assetId(),
             sourceInspection != null ? sourceInspection.getInspectorId() : null,
             sourceInspection != null ? sourceInspection.getDroneId() : null,
             event.requestedAt() != null ? event.requestedAt() : Instant.now(),
-            null);
+            event.workOrderId(),
+            sourceInspection != null ? sourceInspection.getId() : null,
+            event.sourceReportVersionId());
 
-    inspections.saveAndFlush(reinspection);
+    reinspection = inspections.saveAndFlush(reinspection);
+
+    verifications.saveAndFlush(
+        new ReinspectionDefectVerification(reinspection.getId(), event.sourceFindingId()));
     log.info(
         "Created linked re-inspection {} in status {}",
         reinspection.getId(),
