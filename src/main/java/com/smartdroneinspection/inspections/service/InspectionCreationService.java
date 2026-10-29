@@ -246,8 +246,11 @@ public class InspectionCreationService {
     UUID organizationId = actor.organizationId();
 
     Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, organizationId)
+        (actor.isInspectorPartner()
+                ? inspections
+                    .findAssignedInspectorInspection(inspectionId, null, actorId, true)
+                    .filter(Inspection::isPartnerAssignment)
+                : inspections.findByIdAndOrganizationId(inspectionId, organizationId))
             .orElseThrow(
                 () ->
                     new BusinessException(

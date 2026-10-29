@@ -168,7 +168,7 @@ class WorkflowBaselineTest {
   }
 
   private ActorZone zoneFor(UserRole role) {
-    return (role == UserRole.ADMIN || role == UserRole.PLATFORM_MANAGER)
+    return (role == UserRole.ADMIN || role == UserRole.MANAGER)
         ? ActorZone.PLATFORM
         : ActorZone.CUSTOMER_ORGANIZATION;
   }

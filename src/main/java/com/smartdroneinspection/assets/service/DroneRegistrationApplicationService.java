@@ -9,10 +9,7 @@ import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRe
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.AuthException;
-import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
-import com.smartdroneinspection.users.repository.UserRepository;
-import com.smartdroneinspection.users.service.SecurityAuditService;
+import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -24,18 +21,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class DroneRegistrationApplicationService {
   private final DroneRegistrationApplicationRepository applications;
   private final DroneRepository drones;
-  private final UserRepository users;
-  private final SecurityAuditService audit;
+  private final UserAccess userAccess;
 
   public DroneRegistrationApplicationService(
       DroneRegistrationApplicationRepository applications,
       DroneRepository drones,
-      UserRepository users,
-      SecurityAuditService audit) {
+      UserAccess userAccess) {
     this.applications = applications;
     this.drones = drones;
-    this.users = users;
-    this.audit = audit;
+    this.userAccess = userAccess;
   }
 
   @Transactional
@@ -72,7 +66,7 @@ public class DroneRegistrationApplicationService {
                 request.registrationExpiresAt(),
                 request.ownershipFileKey(),
                 request.inspectionFileKey()));
-    audit.record(
+    userAccess.recordSecurityAudit(
         inspectorId,
         application.getId(),
         "DRONE_REGISTRATION_SUBMITTED",
@@ -136,7 +130,7 @@ public class DroneRegistrationApplicationService {
                 application.getRegistrationExpiresAt()));
     application.approve(adminId, drone.getId());
     applications.saveAndFlush(application);
-    audit.record(
+    userAccess.recordSecurityAudit(
         adminId,
         application.getId(),
         "DRONE_REGISTRATION_APPROVED",
@@ -159,7 +153,7 @@ public class DroneRegistrationApplicationService {
     DroneRegistrationApplication application = requirePending(applicationId);
     application.reject(adminId, request.reviewNote().trim());
     applications.saveAndFlush(application);
-    audit.record(
+    userAccess.recordSecurityAudit(
         adminId,
         application.getId(),
         "DRONE_REGISTRATION_REJECTED",
@@ -174,14 +168,13 @@ public class DroneRegistrationApplicationService {
     return applications.findByIdAndStatus(id, "PENDING").orElseThrow(this::notFound);
   }
 
-  private User requireInspector(UUID id) {
-    return users
-        .findDetailedById(id)
-        .filter(User::active)
-        .filter(user -> user.getActorZone() == ActorZone.INSPECTOR_PARTNER)
-        .filter(user -> user.roleValues().contains(Roles.INSPECTOR))
-        .filter(user -> user.getPilotLicenseExpiresAt() != null)
-        .filter(user -> user.getPilotLicenseExpiresAt().isAfter(Instant.now()))
+  private UserAccess.ActiveUser requireInspector(UUID id) {
+    return userAccess
+        .findActiveUser(id)
+        .filter(user -> "INSPECTOR_PARTNER".equals(user.actorZone()))
+        .filter(user -> user.hasRole(Roles.INSPECTOR))
+        .filter(user -> user.pilotLicenseExpiresAt() != null)
+        .filter(user -> user.pilotLicenseExpiresAt().isAfter(Instant.now()))
         .orElseThrow(
             () ->
                 new AuthException(
@@ -191,8 +184,8 @@ public class DroneRegistrationApplicationService {
   }
 
   private void requireAdmin(UUID id) {
-    User admin = users.findDetailedById(id).filter(User::active).orElseThrow(this::notFound);
-    if (admin.getActorZone() != ActorZone.PLATFORM || !admin.roleValues().contains(Roles.ADMIN)) {
+    UserAccess.ActiveUser admin = userAccess.findActiveUser(id).orElseThrow(() -> notFound());
+    if (!"PLATFORM".equals(admin.actorZone()) || !admin.hasRole(Roles.ADMIN)) {
       throw new AuthException(
           HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "Platform Admin access is required.");
     }

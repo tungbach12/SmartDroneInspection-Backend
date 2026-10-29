@@ -78,23 +78,16 @@ class DronePersistenceTest {
   }
 
   @Test
-  void allowsTheSameSerialNumberInDifferentOrganizations() {
+  void rejectsTheSameSerialNumberAcrossOrganizations() {
     UUID firstOrganizationId = persistOrganization();
     UUID secondOrganizationId = persistOrganization();
     persistUser(firstOrganizationId);
     persistUser(secondOrganizationId);
 
     drones.saveAndFlush(newDrone(firstOrganizationId, "SN-SHARED"));
-    drones.saveAndFlush(newDrone(secondOrganizationId, "SN-SHARED"));
 
-    assertThat(
-            drones.findAllByOrganizationIdAndServiceability(
-                firstOrganizationId, DroneServiceability.ACTIVE))
-        .hasSize(1);
-    assertThat(
-            drones.findAllByOrganizationIdAndServiceability(
-                secondOrganizationId, DroneServiceability.ACTIVE))
-        .hasSize(1);
+    assertThatThrownBy(() -> drones.saveAndFlush(newDrone(secondOrganizationId, "SN-SHARED")))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test

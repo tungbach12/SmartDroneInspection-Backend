@@ -35,7 +35,7 @@ import org.springframework.web.context.WebApplicationContext;
  *
  * <p>The list is platform-wide on purpose: an ADMIN manages enterprise workspaces and the
  * administrator-managed accounts inside them, not one tenant's records. Workforce members of a
- * customer organization are administered by that organization's ORG_MANAGER through a different
+ * customer organization are administered by that organization's CUSTOMER through a different
  * contract.
  */
 @SpringBootTest
@@ -104,7 +104,7 @@ class PlatformUserListApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organization.getId());
-    orgAdmin.addRole(UserRole.ORG_MANAGER);
+    orgAdmin.addRole(UserRole.CUSTOMER);
     users.saveAndFlush(orgAdmin);
 
     mockMvc

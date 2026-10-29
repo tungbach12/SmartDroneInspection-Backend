@@ -52,7 +52,13 @@ class RuntimePersistenceInventoryTest {
           "maintenance_reports",
           "maintenance_acceptance_decisions",
           "payment_transactions",
-          "repair_knowledge_chunks");
+          "repair_knowledge_chunks",
+          "contract_partner_inspectors",
+          "contract_partner_drones",
+          "service_requests",
+          "service_request_messages",
+          "service_request_quotes",
+          "service_request_occurrences");
 
   private static final Set<String> TARGET_APPLICATION_TABLES =
       Set.of(
@@ -88,7 +94,13 @@ class RuntimePersistenceInventoryTest {
           "audit_events",
           "notifications",
           "payment_transactions",
-          "repair_knowledge_chunks");
+          "repair_knowledge_chunks",
+          "contract_partner_inspectors",
+          "contract_partner_drones",
+          "service_requests",
+          "service_request_messages",
+          "service_request_quotes",
+          "service_request_occurrences");
 
   @Autowired EntityManagerFactory entityManagerFactory;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -120,7 +132,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(33);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

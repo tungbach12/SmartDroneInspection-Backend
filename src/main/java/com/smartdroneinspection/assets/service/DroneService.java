@@ -48,7 +48,7 @@ public class DroneService {
     requireJsonDocument(
         request.payloadMetadata(), "Payload metadata must be a valid JSON document.");
     String serialNumber = request.serialNumber().trim();
-    if (drones.existsByOrganizationIdAndSerialNumber(organizationId, serialNumber)) {
+    if (drones.existsBySerialNumberIgnoreCase(serialNumber)) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Serial number already exists");
     }

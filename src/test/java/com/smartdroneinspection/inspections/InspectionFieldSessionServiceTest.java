@@ -68,7 +68,7 @@ class InspectionFieldSessionServiceTest {
         new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
-    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.CUSTOMER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =
@@ -161,7 +161,7 @@ class InspectionFieldSessionServiceTest {
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error ->
-                assertThat(((BusinessException) error).code()).isEqualTo("SESSION_SCOPE_DENIED"));
+                assertThat(((BusinessException) error).code()).isEqualTo("INSPECTION_NOT_FOUND"));
     assertNoSessionStarted();
   }
 
@@ -327,18 +327,21 @@ class InspectionFieldSessionServiceTest {
             () -> service.postpone(otherInspectorId, inspectionId, session.getId(), "Wind"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
-            error ->
-                assertThat(((BusinessException) error).code()).isEqualTo("SESSION_SCOPE_DENIED"));
+            error -> assertThat(((BusinessException) error).code()).isEqualTo("SESSION_NOT_FOUND"));
     assertThat(sessionStatus(session.getId())).isEqualTo("IN_PROGRESS");
   }
 
   @Test
-  void listingSessionsReturnsOnlyTheCallersOwnWork() {
+  void listingSessionsDoesNotExposeAnotherInspectorsInspection() {
     service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
     assertThat(service.listSessions(inspectorId, inspectionId)).hasSize(1);
-    assertThat(service.listSessions(otherInspectorId, inspectionId)).isEmpty();
+    assertThatThrownBy(() -> service.listSessions(otherInspectorId, inspectionId))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("INSPECTION_NOT_FOUND"));
   }
 
   @Test

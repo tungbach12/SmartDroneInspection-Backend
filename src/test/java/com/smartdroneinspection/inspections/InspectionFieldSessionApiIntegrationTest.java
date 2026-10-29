@@ -71,7 +71,7 @@ class InspectionFieldSessionApiIntegrationTest {
     AssetTestFixture.Data fixture =
         new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
-    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.CUSTOMER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =
@@ -219,8 +219,8 @@ class InspectionFieldSessionApiIntegrationTest {
                 .with(inspector(otherInspectorId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(Map.of("outcomeNotes", "Session completed"))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("SESSION_SCOPE_DENIED"));
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
 
     assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
@@ -289,7 +289,7 @@ class InspectionFieldSessionApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(Map.of("reason", "Wind"))))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("SESSION_SCOPE_DENIED"));
+        .andExpect(jsonPath("$.code").value("SESSION_NOT_FOUND"));
 
     assertThat(sessionStatus(sessionId)).isEqualTo("IN_PROGRESS");
   }
@@ -336,11 +336,15 @@ class InspectionFieldSessionApiIntegrationTest {
   }
 
   private UUID startSession() throws Exception {
+    return startSession(inspector());
+  }
+
+  private UUID startSession(RequestPostProcessor principal) throws Exception {
     String body =
         mockMvc
             .perform(
                 post("/api/v1/inspections/{i}/field-sessions", inspectionId)
-                    .with(inspector())
+                    .with(principal)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         json(

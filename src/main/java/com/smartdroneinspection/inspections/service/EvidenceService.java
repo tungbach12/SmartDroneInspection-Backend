@@ -15,6 +15,7 @@ import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -499,6 +500,15 @@ public class EvidenceService {
 
   Inspection requireAssignedInspection(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
+    if (actor.isInspectorPartner()) {
+      return inspections
+          .findAssignedInspectorInspection(inspectionId, null, actorId, true)
+          .filter(Inspection::isPartnerAssignment)
+          .orElseThrow(this::inspectionNotFound);
+    }
+    if (actor.organizationId() == null || !actor.hasRole(Roles.INSPECTOR)) {
+      throw inspectionNotFound();
+    }
     return inspections
         .findByIdAndOrganizationIdAndInspectorId(inspectionId, actor.organizationId(), actorId)
         .orElseThrow(this::inspectionNotFound);
@@ -506,30 +516,30 @@ public class EvidenceService {
 
   Inspection requireInspectionInScope(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
+    if (actor.isInspectorPartner()) {
+      return inspections
+          .findAssignedInspectorInspection(inspectionId, null, actorId, true)
+          .filter(Inspection::isPartnerAssignment)
+          .orElseThrow(this::inspectionNotFound);
+    }
+    if (actor.organizationId() == null) {
+      throw inspectionNotFound();
+    }
     Inspection inspection =
         inspections
             .findByIdAndOrganizationId(inspectionId, actor.organizationId())
             .orElseThrow(this::inspectionNotFound);
-    // A reviewer may read the report of an inspection they did not author; the assigned Inspector
-    // and
-    // a qualified ORG_MANAGER both need access to the evidence behind it.
-    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("CUSTOMER")) {
+    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole(Roles.CUSTOMER)) {
       throw inspectionNotFound();
     }
     return inspection;
   }
 
   private UserAccess.ActiveUser requireActiveUser(UUID actorId) {
-    UserAccess.ActiveUser actor =
-        userAccess
-            .findActiveUser(actorId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
-    }
-    return actor;
+    return userAccess
+        .findActiveUser(actorId)
+        .orElseThrow(
+            () -> new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
   }
 
   private BusinessException inspectionNotFound() {
