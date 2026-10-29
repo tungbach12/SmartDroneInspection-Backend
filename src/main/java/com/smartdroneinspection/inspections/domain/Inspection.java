@@ -22,9 +22,6 @@ public class Inspection {
   @Column(name = "organization_id", nullable = false)
   private UUID organizationId;
 
-  @Column(name = "partner_assignment", nullable = false)
-  private boolean partnerAssignment;
-
   @Column(name = "asset_id", nullable = false)
   private UUID assetId;
 

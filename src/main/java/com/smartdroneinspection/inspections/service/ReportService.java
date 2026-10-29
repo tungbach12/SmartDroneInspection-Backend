@@ -980,16 +980,12 @@ public class ReportService {
     }
     Inspection inspection =
         (platformManager
-                ? inspections.findByIdAndInspectorPartnerInspectionTrue(inspectionId)
+                ? inspections.findById(inspectionId).filter(Inspection::isPartnerAssignment)
                 : inspections.findByIdAndOrganizationId(inspectionId, actor.organizationId()))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found"));
-    if (platformManager && !inspection.isPartnerManager(actorId)) {
-      throw new BusinessException(
-          HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found");
-    }
     // Separation of duties: no report is self-reviewed.
     if (inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(
