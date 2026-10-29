@@ -163,7 +163,7 @@ public class WorkOrderService {
                         HttpStatus.BAD_REQUEST,
                         "WORK_ORDER_APPROVER_INVALID",
                         "The budget approver is not an active user"));
-    if (!budgetApprover.hasRole("ORG_MANAGER")
+    if (!budgetApprover.hasRole("CUSTOMER")
         || !actor.organizationId().equals(budgetApprover.organizationId())) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
@@ -207,7 +207,7 @@ public class WorkOrderService {
         PageRequest.of(
             Math.max(page, 0), Math.clamp(size, 1, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
     Page<MaintenanceWorkOrder> result;
-    if (actor.hasRole("ORG_MANAGER")) {
+    if (actor.hasRole("CUSTOMER")) {
       result = workOrders.findByOrganizationId(actor.organizationId(), pageable);
     } else if (actor.hasRole("MAINTENANCE_ENGINEER")) {
       result = workOrders.findAssignedToEngineer(actor.organizationId(), actor.id(), pageable);
@@ -239,7 +239,7 @@ public class WorkOrderService {
         userAccess
             .findActiveUser(request.acceptingReviewerUserId())
             .orElseThrow(() -> forbidden("The accepting reviewer is not an active user"));
-    if (!reviewer.hasRole("ORG_MANAGER")
+    if (!reviewer.hasRole("CUSTOMER")
         || !actor.organizationId().equals(reviewer.organizationId())
         || reviewer.id().equals(request.leadUserId())
         || reviewer.id().equals(request.reportAuthorUserId())
@@ -600,7 +600,7 @@ public class WorkOrderService {
     if (actor.organizationId() == null) {
       throw notFound();
     }
-    if (actor.hasRole("ORG_MANAGER")) {
+    if (actor.hasRole("CUSTOMER")) {
       return workOrders
           .findByIdAndOrganizationId(workOrderId, actor.organizationId())
           .orElseThrow(WorkOrderService::notFound);
@@ -619,7 +619,7 @@ public class WorkOrderService {
 
   private UserAccess.ActiveUser requireOrganizationAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
-    if (!actor.hasRole("ORG_MANAGER") || actor.organizationId() == null) {
+    if (!actor.hasRole("CUSTOMER") || actor.organizationId() == null) {
       throw forbidden("Only an ORG_MANAGER of this organization may perform this action");
     }
     return actor;

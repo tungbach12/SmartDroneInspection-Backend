@@ -12,9 +12,12 @@ public record AirspaceEvaluationResponse(
     String portalUrl,
     List<AirspaceZoneResponse> matchingZones,
     List<AirspaceZoneResponse> nearbyZones) {
-
   public AirspaceEvaluationResponse {
     matchingZones = matchingZones == null ? List.of() : List.copyOf(matchingZones);
     nearbyZones = nearbyZones == null ? List.of() : List.copyOf(nearbyZones);
+  }
+
+  public boolean isClearForCustomerOnboarding() {
+    return "CLEAR_ZONE".equals(classification);
   }
 }

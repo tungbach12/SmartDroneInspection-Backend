@@ -54,7 +54,7 @@ class InspectionScheduleControllerTest {
         Jwt.withTokenValue("mock-token")
             .header("alg", "none")
             .subject(actorId.toString())
-            .claim("roles", List.of("ORG_MANAGER"))
+            .claim("roles", List.of("CUSTOMER"))
             .build();
 
     HandlerMethodArgumentResolver jwtResolver =

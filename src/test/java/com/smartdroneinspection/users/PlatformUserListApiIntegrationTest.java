@@ -113,7 +113,7 @@ class PlatformUserListApiIntegrationTest {
                 .with(
                     jwt()
                         .jwt(token -> token.subject(orgAdmin.getId().toString()))
-                        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"))))
+                        .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"))))
         .andExpect(status().isForbidden());
   }
 

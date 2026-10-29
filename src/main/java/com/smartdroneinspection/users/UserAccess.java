@@ -52,6 +52,7 @@ public interface UserAccess {
       UUID id,
       Set<String> roles,
       UUID organizationId,
+      String actorZone,
       String fullName,
       String email,
       String pilotLicenseNumber,
@@ -60,20 +61,67 @@ public interface UserAccess {
       String pilotLicenseFileKey) {
 
     public ActiveUser(
+        UUID id,
+        Set<String> roles,
+        UUID organizationId,
+        String fullName,
+        String email,
+        String pilotLicenseNumber,
+        String pilotLicenseClass,
+        java.time.Instant pilotLicenseExpiresAt,
+        String pilotLicenseFileKey) {
+      this(
+          id,
+          roles,
+          organizationId,
+          null,
+          fullName,
+          email,
+          pilotLicenseNumber,
+          pilotLicenseClass,
+          pilotLicenseExpiresAt,
+          pilotLicenseFileKey);
+    }
+
+    public ActiveUser(
+        UUID id,
+        Set<String> roles,
+        UUID organizationId,
+        String actorZone,
+        String pilotLicenseNumber,
+        String pilotLicenseClass,
+        java.time.LocalDate pilotLicenseExpiresAt,
+        String pilotLicenseFileKey) {
+      this(
+          id,
+          roles,
+          organizationId,
+          actorZone,
+          null,
+          null,
+          pilotLicenseNumber,
+          pilotLicenseClass,
+          pilotLicenseExpiresAt == null
+              ? null
+              : pilotLicenseExpiresAt.atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
+          pilotLicenseFileKey);
+    }
+
+    public ActiveUser(
         UUID id, Set<String> roles, UUID organizationId, String fullName, String email) {
-      this(id, roles, organizationId, fullName, email, null, null, null, null);
+      this(id, roles, organizationId, null, fullName, email, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
-      this(id, roles, organizationId, fullName, null, null, null, null, null);
+      this(id, roles, organizationId, null, fullName, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null, null, null, null, null, null);
+      this(id, roles, null, null, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
-      this(id, roles, organizationId, null, null, null, null, null, null);
+      this(id, roles, organizationId, null, null, null, null, null, null, null);
     }
 
     public ActiveUser {
@@ -81,7 +129,16 @@ public interface UserAccess {
     }
 
     public boolean hasRole(String role) {
-      return roles.contains(role);
+      if (roles.contains(role)) {
+        return true;
+      }
+      if ("ORG_MANAGER".equals(role) || "ORG_ADMIN".equals(role)) {
+        return roles.contains("CUSTOMER");
+      }
+      if ("PLATFORM_MANAGER".equals(role)) {
+        return roles.contains("MANAGER");
+      }
+      return false;
     }
 
     public boolean hasValidPilotLicense(java.time.Instant at) {

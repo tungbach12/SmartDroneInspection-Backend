@@ -203,6 +203,20 @@ public class User {
     this.updatedAt = Instant.now();
   }
 
+  public void setPilotLicense(
+      String number, String licenseClass, java.time.LocalDate expiresAt, String fileKey) {
+    Instant instantExpiresAt =
+        expiresAt == null ? null : expiresAt.atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+    updatePilotLicense(number, licenseClass, instantExpiresAt, fileKey);
+  }
+
+  public void approveAsCustomer(UUID organizationId) {
+    updateAccessProfile(
+        ActorZone.CUSTOMER_ORGANIZATION, organizationId, List.of(UserRole.CUSTOMER));
+    this.status = UserStatus.ACTIVE;
+    this.updatedAt = Instant.now();
+  }
+
   public boolean hasValidPilotLicense(Instant at) {
     Instant checkTime = at != null ? at : Instant.now();
     return pilotLicenseNumber != null
@@ -254,7 +268,7 @@ public class User {
     return Arrays.stream(roles.split(","))
         .map(String::trim)
         .filter(value -> !value.isEmpty())
-        .map(UserRole::valueOf)
+        .map(UserRole::fromName)
         .distinct()
         .toList();
   }

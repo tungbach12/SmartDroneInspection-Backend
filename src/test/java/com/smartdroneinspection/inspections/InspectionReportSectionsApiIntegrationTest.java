@@ -238,7 +238,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -359,7 +359,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/preview",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isForbidden());
   }
 
@@ -390,7 +390,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/document",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
         .andExpect(
@@ -428,7 +428,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isConflict());
 
     assertThat(storedBytes(renderedKey(versionId))).isEqualTo(first);
@@ -619,7 +619,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/document",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
+                .with(principal(fixture.outsiderId(), "CUSTOMER")))
         .andExpect(status().is4xxClientError());
   }
 
@@ -682,7 +682,7 @@ class InspectionReportSectionsApiIntegrationTest {
                         "/api/v1/inspections/{id}/report/versions/{versionId}/document",
                         fixture.inspectionId(),
                         versionId)
-                    .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                    .with(principal(fixture.reviewerId(), "CUSTOMER")))
             .andExpect(status().isOk())
             .andReturn();
     return result.getResponse().getContentAsByteArray();
@@ -713,7 +713,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk());
   }
 
@@ -805,7 +805,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk());
     return versionId;
   }

@@ -85,7 +85,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermit(
           @AuthenticationPrincipal Jwt jwt,
@@ -103,7 +103,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermitJson(
           @AuthenticationPrincipal Jwt jwt,
@@ -117,7 +117,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<EvidenceResponse> uploadEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -133,14 +133,14 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<List<EvidenceResponse>> listEvidence(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(evidenceService.list(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/evidence/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<EvidencePageResponse> queryEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -187,7 +187,7 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ResponseEntity<InputStreamResource> evidenceContent(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -257,7 +257,7 @@ public class InspectionController {
 
   /** Explicitly deleted Inspector findings remain available with deletion attribution. */
   @GetMapping("/findings/removed")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<List<FindingResponse>> listRemovedFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listRemovedFindings(actorId(jwt), inspectionId));
@@ -274,7 +274,7 @@ public class InspectionController {
   }
 
   @GetMapping("/workflow-state")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<InspectionWorkflowStateResponse> workflowState(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(workflowService.state(actorId(jwt), inspectionId));
@@ -299,14 +299,14 @@ public class InspectionController {
   }
 
   @GetMapping("/findings")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/findings/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<FindingPageResponse> queryFindings(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -381,7 +381,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/review")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<InspectionReportResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -393,7 +393,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/publish")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<ReportPublishedResponse> publishVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -404,7 +404,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/corrective-handoff")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -437,7 +437,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/document")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ResponseEntity<byte[]> downloadReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -446,14 +446,14 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<List<InspectionReportResponse>> listVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.listVersions(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/report/versions/{versionId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<InspectionReportResponse> getVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,

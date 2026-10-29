@@ -55,4 +55,14 @@ public record UserResponse(
       boolean visionFallbackEnabled) {
     this(id, email, fullName, null, null, roles, actorZone, organizationId, visionFallbackEnabled);
   }
+
+  public UserResponse(
+      UUID id,
+      String email,
+      String fullName,
+      List<String> roles,
+      String actorZone,
+      UUID organizationId) {
+    this(id, email, fullName, roles, actorZone, organizationId, true);
+  }
 }

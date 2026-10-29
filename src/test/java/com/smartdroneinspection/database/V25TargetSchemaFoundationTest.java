@@ -471,8 +471,8 @@ class V25TargetSchemaFoundationTest {
 
     assertThat(roleCheck)
         .contains("ADMIN")
-        .contains("PLATFORM_MANAGER")
-        .contains("ORG_MANAGER")
+        .contains("MANAGER")
+        .contains("CUSTOMER")
         .contains("INSPECTOR")
         .contains("MAINTENANCE_ENGINEER");
     assertThat(userColumns)

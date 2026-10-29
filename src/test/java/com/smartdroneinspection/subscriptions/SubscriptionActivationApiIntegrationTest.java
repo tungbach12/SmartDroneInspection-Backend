@@ -108,7 +108,7 @@ class SubscriptionActivationApiIntegrationTest {
                 post(
                         "/api/v1/platform/organizations/{organizationId}/subscriptions",
                         organizationId)
-                    .with(principal(adminId, "PLATFORM_MANAGER"))
+                    .with(principal(adminId, "MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(request))
             .andExpect(status().isCreated())
@@ -157,7 +157,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{organizationId}/subscriptions", organizationId)
-                .with(principal(adminId, "PLATFORM_MANAGER"))
+                .with(principal(adminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
@@ -194,7 +194,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{organizationId}/subscriptions", organizationId)
-                .with(principal(adminId, "PLATFORM_MANAGER"))
+                .with(principal(adminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(request))
         .andExpect(status().isBadRequest());
@@ -211,7 +211,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{organizationId}/subscriptions", organizationId)
-                .with(principal(adminId, "PLATFORM_MANAGER"))
+                .with(principal(adminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(subscriptionRequest("second-activation")))
         .andExpect(status().isConflict())
@@ -248,7 +248,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{organizationId}/subscriptions", organizationId)
-                .with(principal(adminId, "PLATFORM_MANAGER"))
+                .with(principal(adminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(subscriptionRequest("renewed-term")))
         .andExpect(status().isCreated())
@@ -281,7 +281,7 @@ class SubscriptionActivationApiIntegrationTest {
             post(
                     "/api/v1/platform/organizations/{organizationId}/subscriptions",
                     unknownOrganizationId)
-                .with(principal(adminId, "PLATFORM_MANAGER"))
+                .with(principal(adminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(subscriptionRequest("unknown-organization")))
         .andExpect(status().isNotFound())
@@ -335,7 +335,7 @@ class SubscriptionActivationApiIntegrationTest {
             post(
                     "/api/v1/platform/organizations/{organizationId}/subscriptions",
                     registeredOrganizationId)
-                .with(principal(adminId, "PLATFORM_MANAGER"))
+                .with(principal(adminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(subscriptionRequest("registered-e2e-organization")))
         .andExpect(status().isCreated())
@@ -350,7 +350,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/drones")
-                .with(principal(orgAdminId, "ORG_MANAGER"))
+                .with(principal(orgAdminId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"serialNumber\":\"E2E-DRONE-BEFORE\"}"))
         .andExpect(status().isForbidden())
@@ -361,7 +361,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/drones")
-                .with(principal(orgAdminId, "ORG_MANAGER"))
+                .with(principal(orgAdminId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"serialNumber\":\"E2E-DRONE-AFTER\"}"))
         .andExpect(status().isCreated())
@@ -384,7 +384,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{organizationId}/subscriptions", organizationId)
-                .with(principal(inactiveAdminId, "PLATFORM_MANAGER"))
+                .with(principal(inactiveAdminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(subscriptionRequest("inactive-admin")))
         .andExpect(status().isForbidden());
@@ -400,7 +400,7 @@ class SubscriptionActivationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{organizationId}/subscriptions", organizationId)
-                .with(principal(orgAdminId, "ORG_MANAGER"))
+                .with(principal(orgAdminId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(subscriptionRequest("org-admin-must-be-refused")))
         .andExpect(status().isForbidden());
@@ -418,7 +418,7 @@ class SubscriptionActivationApiIntegrationTest {
                 post(
                         "/api/v1/platform/organizations/{organizationId}/subscriptions",
                         organizationId)
-                    .with(principal(adminId, "PLATFORM_MANAGER"))
+                    .with(principal(adminId, "MANAGER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(subscriptionRequest(externalReference)))
             .andExpect(status().isCreated())

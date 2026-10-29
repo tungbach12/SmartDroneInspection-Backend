@@ -153,7 +153,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/evidence/{evidenceId}/location",
                     fixture.inspectionId(),
                     evidenceId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"locationDescription\":\"Girder G4 east face\"}"))
         .andExpect(status().isForbidden());
@@ -244,7 +244,7 @@ class InspectionEvidenceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
-                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
+                .with(principal(fixture.outsiderId(), "CUSTOMER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("INSPECTION_NOT_FOUND"));
 
@@ -262,7 +262,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/evidence/{evidenceId}/content",
                     fixture.inspectionId(),
                     evidenceId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk());
   }
 
@@ -356,7 +356,7 @@ class InspectionEvidenceApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -364,7 +364,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk());
 
     mockMvc

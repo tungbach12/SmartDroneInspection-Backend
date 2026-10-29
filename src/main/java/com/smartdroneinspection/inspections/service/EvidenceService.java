@@ -513,7 +513,7 @@ public class EvidenceService {
     // A reviewer may read the report of an inspection they did not author; the assigned Inspector
     // and
     // a qualified ORG_MANAGER both need access to the evidence behind it.
-    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("ORG_MANAGER")) {
+    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("CUSTOMER")) {
       throw inspectionNotFound();
     }
     return inspection;

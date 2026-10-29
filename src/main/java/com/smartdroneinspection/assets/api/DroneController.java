@@ -34,7 +34,7 @@ public class DroneController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<DroneResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateDroneRequest request) {
@@ -42,27 +42,27 @@ public class DroneController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
   public ApiResponse<List<DroneResponse>> list(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(drones.list(subject(jwt)));
   }
 
   /** Serviceable airframes of the caller's organization; no permit or readiness claim is made. */
   @GetMapping("/selection")
-  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
   public ApiResponse<List<DroneSelectionResponse>> selection(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(drones.selection(subject(jwt)));
   }
 
   @GetMapping("/{droneId}")
-  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
   public ApiResponse<DroneResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID droneId) {
     return ApiResponse.success(drones.get(subject(jwt), droneId));
   }
 
   @PatchMapping("/{droneId}/serviceability")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<DroneResponse> updateServiceability(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID droneId,
@@ -71,7 +71,7 @@ public class DroneController {
   }
 
   @PutMapping("/{droneId}/registration")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<DroneResponse> updateRegistration(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID droneId,

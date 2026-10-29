@@ -111,7 +111,7 @@ class WorkforceApiIntegrationTest {
   @Test
   void rejectsPlatformAndOrganizationAdministratorRolesWithoutCreatingRows() throws Exception {
     assertRejectedWithoutRows("ADMIN");
-    assertRejectedWithoutRows("ORG_MANAGER");
+    assertRejectedWithoutRows("CUSTOMER");
   }
 
   @Test
@@ -271,7 +271,7 @@ class WorkforceApiIntegrationTest {
                     organizationA.getId(),
                     "facade-org-admin-" + UUID.randomUUID() + "@example.test",
                     "Escalated Admin",
-                    java.util.Set.of("ORG_MANAGER"),
+                    java.util.Set.of("CUSTOMER"),
                     "127.0.0.1",
                     "JUnit",
                     "facade-test"))
@@ -320,7 +320,7 @@ class WorkforceApiIntegrationTest {
                 userAccess.updateWorkforceRoles(
                     orgAdmin.getId(),
                     inspector.getId(),
-                    java.util.Set.of("ORG_MANAGER"),
+                    java.util.Set.of("CUSTOMER"),
                     "127.0.0.1",
                     "JUnit",
                     "facade-test"))
@@ -710,6 +710,6 @@ class WorkforceApiIntegrationTest {
   private RequestPostProcessor orgAdmin(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
+        .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
   }
 }

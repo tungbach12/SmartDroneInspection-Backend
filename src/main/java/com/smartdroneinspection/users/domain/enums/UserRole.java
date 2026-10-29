@@ -4,10 +4,14 @@ import com.smartdroneinspection.shared.auth.Roles;
 
 public enum UserRole {
   ADMIN(Roles.ADMIN),
-  PLATFORM_MANAGER(Roles.PLATFORM_MANAGER),
-  ORG_MANAGER(Roles.ORG_MANAGER),
+  MANAGER(Roles.MANAGER),
+  CUSTOMER(Roles.CUSTOMER),
   INSPECTOR(Roles.INSPECTOR),
   MAINTENANCE_ENGINEER(Roles.MAINTENANCE_ENGINEER);
+
+  public static final UserRole PLATFORM_MANAGER = MANAGER;
+  public static final UserRole ORG_MANAGER = CUSTOMER;
+  public static final UserRole ORG_ADMIN = CUSTOMER;
 
   private final String value;
 
@@ -17,5 +21,16 @@ public enum UserRole {
 
   public String value() {
     return value;
+  }
+
+  public static UserRole fromName(String raw) {
+    if (raw == null) {
+      throw new IllegalArgumentException("Role name is required");
+    }
+    return switch (raw.trim()) {
+      case "PLATFORM_MANAGER" -> MANAGER;
+      case "ORG_MANAGER", "ORG_ADMIN" -> CUSTOMER;
+      default -> UserRole.valueOf(raw.trim());
+    };
   }
 }

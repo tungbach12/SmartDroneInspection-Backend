@@ -33,7 +33,7 @@ public class AssetController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<AssetResponse> create(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateAssetRequest request) {
@@ -41,7 +41,7 @@ public class AssetController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
   public ApiResponse<AssetPageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -51,14 +51,14 @@ public class AssetController {
   }
 
   @GetMapping("/{assetId}")
-  @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ADMIN', 'PLATFORM_MANAGER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
   public ApiResponse<AssetResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.get(subject(jwt), assetId));
   }
 
   @PutMapping("/{assetId}")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<AssetResponse> update(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,
@@ -67,7 +67,7 @@ public class AssetController {
   }
 
   @PostMapping("/{assetId}/retire")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<AssetResponse> retire(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
     return ApiResponse.success(assets.retire(subject(jwt), assetId));

@@ -17,13 +17,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/**
- * An organization-scoped airframe registered in the Drone inventory (either owned or leased from
- * the platform).
- *
- * <p>Serviceability is a maintenance fact, not a permit or flight-readiness assertion. Only ACTIVE
- * drones are eligible for MF2 pairing; permit and readiness decisions belong to their own flows.
- */
+/** An organization-scoped or Inspector-partner-owned airframe registered in the Drone inventory. */
 @Entity
 @Table(
     name = "drones",
@@ -35,8 +29,11 @@ public class Drone {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id", nullable = false)
+  @Column(name = "organization_id")
   private UUID organizationId;
+
+  @Column(name = "inspector_owner_id")
+  private UUID inspectorOwnerId;
 
   @Column(name = "serial_number", nullable = false, length = 128)
   private String serialNumber;
@@ -174,6 +171,73 @@ public class Drone {
     this.updatedAt = createdAt;
   }
 
+  private Drone(
+      UUID organizationId,
+      UUID inspectorOwnerId,
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt) {
+    if ((organizationId == null) == (inspectorOwnerId == null)) {
+      throw new IllegalArgumentException("Exactly one Drone owner scope is required.");
+    }
+    if (serialNumber == null || serialNumber.isBlank()) {
+      throw new IllegalArgumentException("Drone serial number must not be blank.");
+    }
+    this.organizationId = organizationId;
+    this.inspectorOwnerId = inspectorOwnerId;
+    this.serialNumber = serialNumber.trim();
+    this.model = model;
+    this.manufacturer = manufacturer;
+    this.registrationNumber = registrationNumber;
+    this.registrationFileKey = registrationFileKey;
+    this.registrationExpiresAt = registrationExpiresAt;
+    this.serviceability = DroneServiceability.ACTIVE;
+    this.ownershipType = DroneOwnershipType.OWNED;
+    this.createdAt = Instant.now();
+    this.updatedAt = createdAt;
+  }
+
+  public static Drone createInspectorOwned(
+      UUID inspectorId,
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt) {
+    return new Drone(
+        null,
+        inspectorId,
+        serialNumber,
+        model,
+        manufacturer,
+        registrationNumber,
+        registrationFileKey,
+        registrationExpiresAt);
+  }
+
+  public static Drone createOrganizationOwned(
+      UUID organizationId,
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt) {
+    return new Drone(
+        organizationId,
+        null,
+        serialNumber,
+        model,
+        manufacturer,
+        registrationNumber,
+        registrationFileKey,
+        registrationExpiresAt);
+  }
+
   public static Drone createLeased(
       UUID organizationId,
       String serialNumber,
@@ -206,6 +270,10 @@ public class Drone {
 
   public UUID getOrganizationId() {
     return organizationId;
+  }
+
+  public UUID getInspectorOwnerId() {
+    return inspectorOwnerId;
   }
 
   public String getSerialNumber() {

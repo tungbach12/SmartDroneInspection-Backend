@@ -55,7 +55,7 @@ class MaintenanceScopeAdvisorServiceTest {
             userAccess);
 
     UserAccess.ActiveUser actor =
-        new UserAccess.ActiveUser(actorId, Set.of("ORG_MANAGER"), organizationId, "Org Admin");
+        new UserAccess.ActiveUser(actorId, Set.of("CUSTOMER"), organizationId, "Org Admin");
     when(userAccess.findActiveUser(actorId)).thenReturn(Optional.of(actor));
 
     RepairKnowledgeChunk chunk =
