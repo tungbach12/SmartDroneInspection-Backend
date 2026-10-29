@@ -110,8 +110,10 @@ public class InspectionReminderJob {
             .findActiveUser(inspection.getInspectorId())
             .filter(
                 u ->
-                    inspection.getOrganizationId().equals(u.organizationId())
-                        && u.hasRole(Roles.INSPECTOR))
+                    u.hasRole(Roles.INSPECTOR)
+                        && (inspection.isPartnerAssignment()
+                            ? u.organizationId() != null
+                            : inspection.getOrganizationId().equals(u.organizationId())))
             .isPresent();
     if (!inspectorActive) {
       return false;

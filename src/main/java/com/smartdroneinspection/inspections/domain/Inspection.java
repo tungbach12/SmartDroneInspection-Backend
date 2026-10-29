@@ -59,6 +59,9 @@ public class Inspection {
   @Column(name = "recurring_schedule_id")
   private UUID recurringScheduleId;
 
+  @Column(name = "partner_assignment", nullable = false)
+  private boolean partnerAssignment;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -98,6 +101,18 @@ public class Inspection {
 
   public Inspection(UUID organizationId, UUID assetId, Instant plannedStartAt) {
     this(organizationId, assetId, null, null, plannedStartAt, null);
+  }
+
+  /** Marks an inspection assigned by the MF2 partner registry path. */
+  public void markPartnerAssignment() {
+    if (inspectorId == null || droneId == null || status != InspectionStatus.ASSIGNED) {
+      throw new IllegalStateException("A partner inspection must be fully assigned");
+    }
+    partnerAssignment = true;
+  }
+
+  public boolean isPartnerAssignment() {
+    return partnerAssignment;
   }
 
   public void recordFlightPermit(String fileKey, String fileName, Instant uploadedAt) {

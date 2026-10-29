@@ -13,7 +13,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-/** Organization-scoped and Inspector-partner-owned Drone access. */
+/** Organization-scoped Drone access for MF1 inventory and MF2 pairing/readiness. */
 public interface DroneRepository extends JpaRepository<Drone, UUID> {
 
   Optional<Drone> findByIdAndOrganizationId(UUID id, UUID organizationId);
@@ -44,6 +44,10 @@ public interface DroneRepository extends JpaRepository<Drone, UUID> {
           + "and drone.serviceability = com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE "
           + "order by drone.serialNumber asc")
   List<Drone> findAssignableByOrganizationId(@Param("organizationId") UUID organizationId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select drone from Drone drone where drone.id = :id")
+  Optional<Drone> findWithLockById(@Param("id") UUID id);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
