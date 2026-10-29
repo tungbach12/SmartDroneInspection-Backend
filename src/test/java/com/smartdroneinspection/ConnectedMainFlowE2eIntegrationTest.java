@@ -135,7 +135,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/organizations/{orgId}/subscriptions", organizationId)
-                .with(principal(platformAdminId, "PLATFORM_MANAGER"))
+                .with(principal(platformAdminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -231,7 +231,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/inspections")
-                    .with(principal(orgAdminId, "ORG_MANAGER"))
+                    .with(principal(orgAdminId, "CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -449,7 +449,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .param("approve", "true")
-                .with(principal(reviewerId, "ORG_MANAGER")))
+                .with(principal(reviewerId, "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -459,7 +459,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{vId}/publish",
                     inspectionId,
                     reportVersionId)
-                .with(principal(reviewerId, "ORG_MANAGER")))
+                .with(principal(reviewerId, "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
 
@@ -470,7 +470,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/corrective-handoff", inspectionId)
-                .with(principal(reviewerId, "ORG_MANAGER"))
+                .with(principal(reviewerId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("findingIds", List.of(findingId)))))
         .andExpect(status().isOk())
@@ -488,7 +488,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[MF4] Step 4.1: Checking Repair Candidates Intake...");
     mockMvc
         .perform(
-            get("/api/v1/maintenance/repair-candidates").with(principal(orgAdminId, "ORG_MANAGER")))
+            get("/api/v1/maintenance/repair-candidates").with(principal(orgAdminId, "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data").isArray())
         .andExpect(jsonPath("$.data[?(@.findingId == '%s')]", findingId).exists());
@@ -498,7 +498,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/maintenance/work-orders")
-                    .with(principal(orgAdminId, "ORG_MANAGER"))
+                    .with(principal(orgAdminId, "CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -530,7 +530,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(orgAdminId, "ORG_MANAGER"))
+                .with(principal(orgAdminId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -613,7 +613,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(orgAdminId, "ORG_MANAGER")))
+                .with(principal(orgAdminId, "CUSTOMER")))
         .andExpect(status().isOk());
 
     log.info("[MF4] Step 4.6: Releasing and Starting Work Order...");
@@ -726,7 +726,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(reviewerId, "ORG_MANAGER"))
+                .with(principal(reviewerId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -766,7 +766,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(reviewerId, "ORG_MANAGER"))
+                .with(principal(reviewerId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -780,7 +780,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/close", workOrderId)
-                .with(principal(reviewerId, "ORG_MANAGER")))
+                .with(principal(reviewerId, "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
 

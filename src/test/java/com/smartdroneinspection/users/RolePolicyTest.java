@@ -15,22 +15,30 @@ class RolePolicyTest {
   private final RolePolicy policy = new RolePolicy();
 
   @Test
-  void permitsMultipleServiceRolesWithinAnOrganization() {
+  void customerOrganizationCannotCarryInspectorOrMultipleRoles() {
+    assertThatThrownBy(
+            () ->
+                policy.validate(
+                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.INSPECTOR)))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThatThrownBy(
+            () ->
+                policy.validate(
+                    ActorZone.CUSTOMER_ORGANIZATION,
+                    UUID.randomUUID(),
+                    Set.of(UserRole.CUSTOMER, UserRole.MAINTENANCE_ENGINEER)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void permitsMaintenanceEngineerAsAnIndividualOrganizationRole() {
     assertThatCode(
             () ->
                 policy.validate(
                     ActorZone.CUSTOMER_ORGANIZATION,
                     UUID.randomUUID(),
-                    Set.of(UserRole.INSPECTOR, UserRole.MAINTENANCE_ENGINEER)))
-        .doesNotThrowAnyException();
-  }
-
-  @Test
-  void permitsSinglePlatformRoleAdminOrPlatformManager() {
-    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN)))
-        .doesNotThrowAnyException();
-    assertThatCode(
-            () -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.PLATFORM_MANAGER)))
+                    Set.of(UserRole.MAINTENANCE_ENGINEER)))
         .doesNotThrowAnyException();
   }
 
@@ -41,27 +49,55 @@ class RolePolicyTest {
                 policy.validate(
                     ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.PLATFORM_MANAGER)))
-        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void requiresOrganizationForClient() {
+  void requiresOrganizationForCustomer() {
     assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.ORG_MANAGER)))
+            () -> policy.validate(ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.CUSTOMER)))
         .isInstanceOf(IllegalArgumentException.class);
 
     assertThatCode(
             () ->
                 policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION,
-                    UUID.randomUUID(),
-                    Set.of(UserRole.ORG_MANAGER)))
+                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.CUSTOMER)))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void permitsOnlyManagerOrAdminAsPlatformRoles() {
+    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER)))
+        .doesNotThrowAnyException();
+
+    assertThatThrownBy(
+            () ->
+                policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER, UserRole.ADMIN)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void inspectorPartnerMustBeOrganizationIndependentInspector() {
+    assertThatCode(
+            () -> policy.validate(ActorZone.INSPECTOR_PARTNER, null, Set.of(UserRole.INSPECTOR)))
+        .doesNotThrowAnyException();
+
+    assertThatThrownBy(
+            () ->
+                policy.validate(
+                    ActorZone.INSPECTOR_PARTNER, UUID.randomUUID(), Set.of(UserRole.INSPECTOR)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void prospectiveCustomerMustHaveNoOrganization() {
+    assertThatCode(
+            () -> policy.validate(ActorZone.PROSPECT_CUSTOMER, null, Set.of(UserRole.CUSTOMER)))
+        .doesNotThrowAnyException();
+
+    assertThatThrownBy(
+            () ->
+                policy.validate(
+                    ActorZone.PROSPECT_CUSTOMER, UUID.randomUUID(), Set.of(UserRole.CUSTOMER)))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }

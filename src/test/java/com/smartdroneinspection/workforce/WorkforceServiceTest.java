@@ -52,12 +52,21 @@ class WorkforceServiceTest {
             subjectId,
             "engineer@example.test",
             "Engineer",
-            Set.of("INSPECTOR"),
+            Set.of("MAINTENANCE_ENGINEER"),
             "ACTIVE",
             organizationId);
     when(users.findActiveUser(actorId))
         .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(actorId, Set.of("ORG_MANAGER"), organizationId)));
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    actorId,
+                    Set.of("CUSTOMER"),
+                    organizationId,
+                    "CUSTOMER_ORGANIZATION",
+                    null,
+                    null,
+                    null,
+                    null)));
   }
 
   @Test
@@ -69,7 +78,7 @@ class WorkforceServiceTest {
         service.provision(
             actorId,
             new ProvisionWorkforceUserRequest(
-                "engineer@example.test", "Engineer", Set.of("INSPECTOR")),
+                "engineer@example.test", "Engineer", Set.of("MAINTENANCE_ENGINEER")),
             "127.0.0.1",
             "JUnit",
             "test-correlation");
@@ -81,7 +90,7 @@ class WorkforceServiceTest {
             eq(organizationId),
             eq("engineer@example.test"),
             eq("Engineer"),
-            eq(Set.of("INSPECTOR")),
+            eq(Set.of("MAINTENANCE_ENGINEER")),
             eq("127.0.0.1"),
             eq("JUnit"),
             eq("test-correlation"));
@@ -110,7 +119,7 @@ class WorkforceServiceTest {
 
   @Test
   void rejectsOrganizationAdministratorRoleOnRoleUpdateBeforeLifecycleWrite() {
-    assertForbiddenRoleUpdate("ORG_MANAGER");
+    assertForbiddenRoleUpdate("CUSTOMER");
   }
 
   @Test
@@ -160,7 +169,7 @@ class WorkforceServiceTest {
                     subjectId,
                     subject.email(),
                     subject.fullName(),
-                    Set.of("ORG_MANAGER"),
+                    Set.of("CUSTOMER"),
                     subject.status(),
                     organizationId)));
 
@@ -169,7 +178,7 @@ class WorkforceServiceTest {
                 service.updateRoles(
                     actorId,
                     subjectId,
-                    new UpdateWorkforceRolesRequest(Set.of("INSPECTOR")),
+                    new UpdateWorkforceRolesRequest(Set.of("MAINTENANCE_ENGINEER")),
                     "127.0.0.1",
                     "JUnit",
                     "cid"))
@@ -188,7 +197,7 @@ class WorkforceServiceTest {
                     subjectId,
                     subject.email(),
                     subject.fullName(),
-                    Set.of("INSPECTOR", "ORG_MANAGER"),
+                    Set.of("MAINTENANCE_ENGINEER", "CUSTOMER"),
                     subject.status(),
                     organizationId)));
 
@@ -295,7 +304,7 @@ class WorkforceServiceTest {
                     otherAdminId,
                     "peer-admin@example.test",
                     "Peer Admin",
-                    Set.of("ORG_MANAGER"),
+                    Set.of("CUSTOMER"),
                     "ACTIVE",
                     organizationId)));
 
@@ -344,7 +353,7 @@ class WorkforceServiceTest {
                 service.provision(
                     actorId,
                     new ProvisionWorkforceUserRequest(
-                        "blocked@example.test", "Blocked", Set.of("INSPECTOR")),
+                        "blocked@example.test", "Blocked", Set.of("MAINTENANCE_ENGINEER")),
                     "127.0.0.1",
                     "JUnit",
                     "cid"))

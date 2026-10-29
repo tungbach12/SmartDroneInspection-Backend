@@ -413,6 +413,6 @@ class InspectionFieldSessionApiIntegrationTest {
   private RequestPostProcessor orgAdmin() {
     return jwt()
         .jwt(token -> token.subject(reviewerId.toString()))
-        .authorities(new SimpleGrantedAuthority("ROLE_ORG_MANAGER"));
+        .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
   }
 }

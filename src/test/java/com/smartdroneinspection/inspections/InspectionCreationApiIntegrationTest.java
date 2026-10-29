@@ -158,7 +158,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                .with(jwtUser(adminId, "ROLE_CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isCreated())
@@ -204,7 +204,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                .with(jwtUser(adminId, "ROLE_CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isNotFound())
@@ -232,7 +232,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                .with(jwtUser(adminId, "ROLE_CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(firstBody))
         .andExpect(status().isCreated());
@@ -270,7 +270,7 @@ class InspectionCreationApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/inspections")
-                .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                .with(jwtUser(adminId, "ROLE_CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(conflictingBody))
         .andExpect(status().isConflict())
@@ -299,7 +299,7 @@ class InspectionCreationApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/inspections")
-                    .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                    .with(jwtUser(adminId, "ROLE_CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(body))
             .andExpect(status().isCreated())
@@ -379,7 +379,7 @@ class InspectionCreationApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/inspection-schedules")
-                    .with(jwtUser(adminId, "ROLE_ORG_MANAGER"))
+                    .with(jwtUser(adminId, "ROLE_CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(scheduleBody))
             .andExpect(status().isCreated())

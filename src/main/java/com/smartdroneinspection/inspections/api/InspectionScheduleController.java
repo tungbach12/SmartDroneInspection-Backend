@@ -34,7 +34,7 @@ public class InspectionScheduleController {
   }
 
   @PostMapping
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<RecurringScheduleResponse> create(
       @AuthenticationPrincipal Jwt jwt,
@@ -43,7 +43,7 @@ public class InspectionScheduleController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_MANAGER', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'CUSTOMER', 'INSPECTOR')")
   public ApiResponse<RecurringSchedulePageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -55,14 +55,14 @@ public class InspectionScheduleController {
   }
 
   @GetMapping("/{scheduleId}")
-  @PreAuthorize("hasAnyRole('ADMIN', 'ORG_MANAGER', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'CUSTOMER', 'INSPECTOR')")
   public ApiResponse<RecurringScheduleDetailResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID scheduleId) {
     return ApiResponse.success(scheduleService.get(UUID.fromString(jwt.getSubject()), scheduleId));
   }
 
   @PostMapping("/{scheduleId}/pause")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<RecurringScheduleResponse> pause(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID scheduleId) {
     return ApiResponse.success(
@@ -70,7 +70,7 @@ public class InspectionScheduleController {
   }
 
   @PostMapping("/{scheduleId}/resume")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<RecurringScheduleResponse> resume(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID scheduleId) {
     return ApiResponse.success(
@@ -78,14 +78,14 @@ public class InspectionScheduleController {
   }
 
   @PostMapping("/{scheduleId}/end")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<RecurringScheduleResponse> end(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID scheduleId) {
     return ApiResponse.success(scheduleService.end(UUID.fromString(jwt.getSubject()), scheduleId));
   }
 
   @PostMapping("/{scheduleId}/occurrences/{occurrenceId}/retry")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<ScheduleOccurrenceResponse> retryOccurrence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID scheduleId,
@@ -96,7 +96,7 @@ public class InspectionScheduleController {
   }
 
   @PostMapping("/{scheduleId}/occurrences/{occurrenceId}/skip")
-  @PreAuthorize("hasRole('ORG_MANAGER')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<ScheduleOccurrenceResponse> skipOccurrence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID scheduleId,

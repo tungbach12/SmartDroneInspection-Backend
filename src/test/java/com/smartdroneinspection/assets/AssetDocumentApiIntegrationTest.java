@@ -180,6 +180,6 @@ class AssetDocumentApiIntegrationTest {
         .jwt(token -> token.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_ORG_MANAGER"));
+                "ROLE_CUSTOMER"));
   }
 }

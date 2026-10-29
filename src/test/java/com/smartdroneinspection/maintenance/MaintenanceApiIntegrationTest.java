@@ -57,7 +57,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/maintenance/work-orders/{id}", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.id").value(workOrderId.toString()))
         .andExpect(jsonPath("$.data.status").value("DRAFT"))
@@ -71,7 +71,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/maintenance/work-orders/{id}", workOrderId)
-                .with(principal(fixture.outsiderId(), "ORG_MANAGER")))
+                .with(principal(fixture.outsiderId(), "CUSTOMER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("WORK_ORDER_NOT_FOUND"));
   }
@@ -131,7 +131,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders")
-                .with(principal(fixture.outsiderId(), "ORG_MANAGER"))
+                .with(principal(fixture.outsiderId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createWorkOrderBody()))
         .andExpect(status().isBadRequest())
@@ -145,7 +145,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders")
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createWorkOrderBody()))
         .andExpect(status().isConflict())
@@ -157,7 +157,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/maintenance/repair-candidates")
-                .with(principal(fixture.ownerId(), "ORG_MANAGER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(1))
         .andExpect(jsonPath("$.data[0].findingId").value(fixture.findingId().toString()));
@@ -167,7 +167,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/maintenance/repair-candidates")
-                .with(principal(fixture.ownerId(), "ORG_MANAGER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(0));
   }
@@ -189,7 +189,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -209,7 +209,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -238,7 +238,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -264,7 +264,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -283,7 +283,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -394,7 +394,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("WORK_ORDER_SCOPE_DENIED"));
   }
@@ -441,7 +441,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/reject", workOrderId)
-                .with(principal(fixture.approverId(), "ORG_MANAGER"))
+                .with(principal(fixture.approverId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("reason", "Add labor estimate"))))
         .andExpect(status().isOk())
@@ -450,7 +450,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/maintenance/work-orders/{id}", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("REWORK_REQUIRED"));
   }
@@ -486,7 +486,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -510,7 +510,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -545,7 +545,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -591,14 +591,14 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/changes/1/approve", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("WORK_ORDER_SCOPE_DENIED"));
 
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/changes/1/approve", workOrderId)
-                .with(principal(fixture.approverId(), "ORG_MANAGER")))
+                .with(principal(fixture.approverId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
   }
@@ -630,7 +630,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/changes/1/reject", workOrderId)
-                .with(principal(fixture.approverId(), "ORG_MANAGER"))
+                .with(principal(fixture.approverId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("reason", "Not authorized"))))
         .andExpect(status().isOk())
@@ -638,7 +638,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/maintenance/work-orders/{id}/changes", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].proposedDelta").value(50000.0))
         .andExpect(jsonPath("$.data[0].status").value("REJECTED"));
@@ -770,7 +770,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(fixture.approverId(), "ORG_MANAGER")))
+                .with(principal(fixture.approverId(), "CUSTOMER")))
         .andExpect(status().isOk());
 
     mockMvc
@@ -863,7 +863,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -886,7 +886,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(Map.of("actualLines", List.of(actualLine)))))
@@ -899,14 +899,14 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/close", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
 
     mockMvc
         .perform(
             get("/api/v1/maintenance/work-orders/{id}/reports/1/pdf", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER")))
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(header().string("Content-Type", "application/pdf"));
 
@@ -924,7 +924,7 @@ class MaintenanceApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/maintenance/work-orders")
-                    .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                    .with(principal(fixture.ownerId(), "CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -1020,7 +1020,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(fixture.approverId(), "ORG_MANAGER")))
+                .with(principal(fixture.approverId(), "CUSTOMER")))
         .andExpect(status().isOk());
     mockMvc
         .perform(
@@ -1112,7 +1112,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(fixture.reviewerId(), "ORG_MANAGER"))
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1257,7 +1257,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/estimate-versions/1/approve", workOrderId)
-                .with(principal(fixture.approverId(), "ORG_MANAGER")))
+                .with(principal(fixture.approverId(), "CUSTOMER")))
         .andExpect(status().isOk());
   }
 
@@ -1265,7 +1265,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1281,7 +1281,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/team", workOrderId)
-                .with(principal(fixture.ownerId(), "ORG_MANAGER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -1301,7 +1301,7 @@ class MaintenanceApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/maintenance/work-orders")
-                    .with(principal(actorId, "ORG_MANAGER"))
+                    .with(principal(actorId, "CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(createWorkOrderBody(findingId)))
             .andExpect(status().isOk())

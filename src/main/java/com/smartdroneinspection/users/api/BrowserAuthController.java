@@ -9,7 +9,6 @@ import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeReque
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.PasswordChangeRequest;
-import com.smartdroneinspection.users.api.dto.request.UpdateAiFallbackPreferenceRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
@@ -30,7 +29,6 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,7 +60,11 @@ public class BrowserAuthController {
       @Valid @RequestBody OrganizationRegistrationRequest body, HttpServletRequest request) {
     var response =
         registration.register(body, clientIp(request), userAgent(request), correlationId(request));
-    return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+    var status =
+        "PENDING_AIRSPACE_REVIEW".equals(response.registrationStatus())
+            ? org.springframework.http.HttpStatus.ACCEPTED
+            : org.springframework.http.HttpStatus.CREATED;
+    return ResponseEntity.status(status)
         .cacheControl(CacheControl.noStore())
         .body(ApiResponse.success(response));
   }
@@ -132,30 +134,6 @@ public class BrowserAuthController {
         .header(HttpHeaders.SET_COOKIE, cookies.clear().toString())
         .cacheControl(CacheControl.noStore())
         .build();
-  }
-
-  @PutMapping("/me/ai-fallback-preference")
-  public ResponseEntity<ApiResponse<UserResponse>> updateAiFallbackPreference(
-      @AuthenticationPrincipal Jwt jwt,
-      @Valid @RequestBody UpdateAiFallbackPreferenceRequest request) {
-    return ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore())
-        .body(
-            ApiResponse.success(
-                auth.updateVisionFallbackPreference(
-                    UUID.fromString(jwt.getSubject()), request.visionFallbackEnabled())));
-  }
-
-  @PutMapping("/me/pilot-license")
-  public ResponseEntity<ApiResponse<UserResponse>> updatePilotLicense(
-      @AuthenticationPrincipal Jwt jwt,
-      @Valid @RequestBody
-          com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest request) {
-    return ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore())
-        .body(
-            ApiResponse.success(
-                auth.updatePilotLicense(UUID.fromString(jwt.getSubject()), request)));
   }
 
   @GetMapping("/me")

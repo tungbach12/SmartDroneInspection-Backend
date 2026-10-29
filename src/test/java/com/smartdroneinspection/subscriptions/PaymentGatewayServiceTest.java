@@ -68,7 +68,7 @@ class PaymentGatewayServiceTest {
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(
-                    actorId, Set.of("ORG_MANAGER"), organizationId, "Alice Admin", "a@x.test")));
+                    actorId, Set.of("CUSTOMER"), organizationId, "Alice Admin", "a@x.test")));
     when(subscriptions.findById(subscriptionId)).thenReturn(Optional.of(subscription));
     when(paymentTransactions.findByPaypalOrderId("ORDER-1"))
         .thenReturn(

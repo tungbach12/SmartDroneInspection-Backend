@@ -966,7 +966,7 @@ public class ReportService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null || !actor.hasRole("ORG_MANAGER")) {
+    if (actor.organizationId() == null || !actor.hasRole("CUSTOMER")) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_MANAGER may review");
     }

@@ -68,6 +68,7 @@ public class UserAccessService implements UserAccess {
                     user.getId(),
                     Set.copyOf(user.roleValues()),
                     user.getOrganizationId(),
+                    user.getActorZone().name(),
                     user.getFullName(),
                     user.getEmail(),
                     user.getPilotLicenseNumber(),
@@ -230,11 +231,7 @@ public class UserAccessService implements UserAccess {
   }
 
   private static boolean isWorkforceRoles(Set<String> roles) {
-    return roles != null
-        && !roles.isEmpty()
-        && roles.stream()
-            .allMatch(
-                role -> Roles.INSPECTOR.equals(role) || Roles.MAINTENANCE_ENGINEER.equals(role));
+    return roles != null && roles.size() == 1 && roles.contains(Roles.MAINTENANCE_ENGINEER);
   }
 
   /**
@@ -274,7 +271,7 @@ public class UserAccessService implements UserAccess {
 
   private static Set<UserRole> toEnumRoles(Set<String> roles) {
     return roles.stream()
-        .map(UserRole::valueOf)
+        .map(UserRole::fromName)
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 

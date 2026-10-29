@@ -189,7 +189,7 @@ public class InspectionListService {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "The user does not belong to an organization.");
     }
-    if (actor.hasRole("ORG_MANAGER")) {
+    if (actor.hasRole("CUSTOMER")) {
       return new Scope.OrganizationManager(organizationId, inspections);
     }
     if (actor.hasRole("INSPECTOR")) {

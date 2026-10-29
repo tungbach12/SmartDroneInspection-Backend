@@ -45,11 +45,15 @@ public class Organization {
   protected Organization() {}
 
   public Organization(String name, String code, String description) {
+    this(name, code, description, "ACTIVE");
+  }
+
+  public Organization(String name, String code, String description, String status) {
     this.legalName = name;
     this.displayName = name;
     this.registrationCode = normalizeCode(code);
     this.timezone = "Asia/Ho_Chi_Minh";
-    this.status = "ACTIVE";
+    this.status = status;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
@@ -74,7 +78,7 @@ public class Organization {
     return createdByUserId;
   }
 
-  /** Records the initial ORG_MANAGER as the organization creator, per database-design.md §6.1. */
+  /** Records the initial Customer as the organization creator, per database-design.md §6.1. */
   public void attributeToCreator(UUID creatorUserId) {
     this.createdByUserId = creatorUserId;
     this.updatedAt = Instant.now();
