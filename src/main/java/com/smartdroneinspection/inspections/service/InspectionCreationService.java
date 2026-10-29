@@ -353,7 +353,11 @@ public class InspectionCreationService {
         inspection.getPlannedEndAt(),
         inspection.getStatus().name(),
         inspection.getCreatedAt(),
-        inspection.getUpdatedAt());
+        inspection.getUpdatedAt(),
+        inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
+        inspection.getWorkOrderId(),
+        inspection.getSourceInspectionId(),
+        inspection.getSourceReportVersionId());
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {

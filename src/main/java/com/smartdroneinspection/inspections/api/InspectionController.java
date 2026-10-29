@@ -10,6 +10,7 @@ import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateDefectVerificationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
@@ -19,12 +20,14 @@ import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
+import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
+import com.smartdroneinspection.inspections.service.ReinspectionVerificationService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -70,18 +73,21 @@ public class InspectionController {
   private final ReportService reportService;
   private final InspectionWorkflowService workflowService;
   private final InspectionCreationService creationService;
+  private final ReinspectionVerificationService reinspectionVerificationService;
 
   public InspectionController(
       EvidenceService evidenceService,
       FindingService findingService,
       ReportService reportService,
       InspectionWorkflowService workflowService,
-      InspectionCreationService creationService) {
+      InspectionCreationService creationService,
+      ReinspectionVerificationService reinspectionVerificationService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
     this.creationService = creationService;
+    this.reinspectionVerificationService = reinspectionVerificationService;
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -459,6 +465,26 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.getVersion(actorId(jwt), inspectionId, versionId));
+  }
+
+  @GetMapping("/reinspection-verifications")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<List<ReinspectionVerificationResponse>> getReinspectionVerifications(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(
+        reinspectionVerificationService.getVerifications(actorId(jwt), inspectionId));
+  }
+
+  @PutMapping("/reinspection-verifications/{verificationId}")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<ReinspectionVerificationResponse> updateReinspectionVerification(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID verificationId,
+      @Valid @RequestBody UpdateDefectVerificationRequest request) {
+    return ApiResponse.success(
+        reinspectionVerificationService.updateVerification(
+            actorId(jwt), inspectionId, verificationId, request));
   }
 
   private static UUID actorId(Jwt jwt) {

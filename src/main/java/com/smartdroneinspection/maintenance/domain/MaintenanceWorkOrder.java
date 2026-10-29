@@ -433,6 +433,18 @@ public class MaintenanceWorkOrder {
     this.updatedAt = Instant.now();
   }
 
+  /**
+   * MF4-18: attaches the published re-inspection report and returns the order to
+   * SUBMITTED_FOR_ACCEPTANCE for reviewer determination.
+   */
+  public void recordReinspectionCompleted(UUID reinspectionReportVersionId) {
+    attachReinspectionReport(reinspectionReportVersionId);
+    if (this.status == WorkOrderStatus.REINSPECTION_REQUIRED) {
+      this.status = WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE;
+      this.updatedAt = Instant.now();
+    }
+  }
+
   public Instant getCreatedAt() {
     return createdAt;
   }

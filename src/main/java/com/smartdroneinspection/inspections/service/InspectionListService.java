@@ -167,7 +167,9 @@ public class InspectionListService {
         report == null ? null : report.getId(),
         report == null || report.getStatus() == null ? null : report.getStatus().name(),
         report == null ? null : report.getVersionNo(),
-        pendingAction);
+        pendingAction,
+        inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
+        inspection.getWorkOrderId());
   }
 
   private Scope requireScope(UUID actorId) {

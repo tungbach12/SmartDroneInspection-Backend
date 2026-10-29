@@ -16,6 +16,7 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
@@ -24,6 +25,7 @@ import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.spi.ReinspectionReportPublishedEvent;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportRenderPort;
@@ -527,6 +529,13 @@ public class ReportService {
       inspection.complete();
     }
     inspections.saveAndFlush(inspection);
+
+    if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
+        && inspection.getWorkOrderId() != null) {
+      events.publishEvent(
+          new ReinspectionReportPublishedEvent(
+              inspection.getWorkOrderId(), inspection.getId(), version.getId()));
+    }
 
     return new ReportPublishedResponse(
         version.getId(),
