@@ -28,13 +28,13 @@ public final class MaintenanceTestFixture {
     UUID organizationId = createOrganization("MF4 primary");
     UUID otherOrganizationId = createOrganization("MF4 other");
 
-    User owner = saveUser("mf4-owner", organizationId, UserRole.ORG_MANAGER);
-    User approver = saveUser("mf4-approver", organizationId, UserRole.ORG_MANAGER);
+    User owner = saveUser("mf4-owner", organizationId, UserRole.CUSTOMER);
+    User approver = saveUser("mf4-approver", organizationId, UserRole.CUSTOMER);
     User lead = saveUser("mf4-lead", organizationId, UserRole.MAINTENANCE_ENGINEER);
     User reportAuthor = saveUser("mf4-author", organizationId, UserRole.MAINTENANCE_ENGINEER);
-    User reviewer = saveUser("mf4-reviewer", organizationId, UserRole.ORG_MANAGER);
+    User reviewer = saveUser("mf4-reviewer", organizationId, UserRole.CUSTOMER);
     User engineer = saveUser("mf4-engineer", organizationId, UserRole.MAINTENANCE_ENGINEER);
-    User outsider = saveUser("mf4-outsider", otherOrganizationId, UserRole.ORG_MANAGER);
+    User outsider = saveUser("mf4-outsider", otherOrganizationId, UserRole.CUSTOMER);
 
     UUID assetId = createAsset(organizationId);
     SourceData source = createPublishedReportVersion(organizationId, assetId, owner.getId());

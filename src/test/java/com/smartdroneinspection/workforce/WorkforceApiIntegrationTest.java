@@ -65,8 +65,7 @@ class WorkforceApiIntegrationTest {
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
     organizationA = saveOrganization("Alpha");
     grantEntitlement(organizationA.getId());
-    orgAdmin =
-        saveUser("org-admin", organizationA.getId(), UserRole.ORG_MANAGER, UserStatus.ACTIVE);
+    orgAdmin = saveUser("org-admin", organizationA.getId(), UserRole.CUSTOMER, UserStatus.ACTIVE);
   }
 
   private void grantEntitlement(UUID organizationId) {
@@ -79,15 +78,8 @@ class WorkforceApiIntegrationTest {
   }
 
   @Test
-  void provisionsInspectorAndMaintenanceEngineerForActorOrganization() throws Exception {
+  void provisionsOnlyMaintenanceEngineerForActorOrganization() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
-    postProvision("inspector-" + unique + "@example.test", "INSPECTOR", null)
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.user.roles", hasItem("INSPECTOR")))
-        .andExpect(jsonPath("$.data.user.organizationId").value(organizationA.getId().toString()))
-        .andExpect(jsonPath("$.data.temporaryPassword").isNotEmpty());
-    assertThat(users.findByNormalizedEmail("inspector-" + unique + "@example.test")).isPresent();
-
     postProvision("engineer-" + unique + "@example.test", "MAINTENANCE_ENGINEER", null)
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.user.roles", hasItem("MAINTENANCE_ENGINEER")))
@@ -96,16 +88,12 @@ class WorkforceApiIntegrationTest {
   }
 
   @Test
-  void ignoresRequestOrganizationAndAlwaysUsesActorOrganization() throws Exception {
-    Organization organizationB = saveOrganization("Beta");
+  void inspectorCannotBeProvisionedThroughCustomerWorkforce() throws Exception {
     String email = "scoped-" + UUID.randomUUID() + "@example.test";
 
-    postProvision(email, "INSPECTOR", organizationB.getId().toString())
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.user.organizationId").value(organizationA.getId().toString()));
+    postProvision(email, "INSPECTOR", null).andExpect(status().isBadRequest());
 
-    User created = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
-    assertThat(created.getOrganizationId()).isEqualTo(organizationA.getId());
+    assertThat(users.findByNormalizedEmail(User.normalizeEmail(email))).isEmpty();
   }
 
   @Test
@@ -115,7 +103,7 @@ class WorkforceApiIntegrationTest {
   }
 
   @Test
-  void doesNotRevealThatAnEmailBelongsToAnotherOrganization() throws Exception {
+  void inspectorProvisioningIsRejectedRegardlessOfEmailOwnership() throws Exception {
     Organization organizationB = saveOrganization("Beta");
     User foreignUser =
         saveUser(
@@ -124,24 +112,20 @@ class WorkforceApiIntegrationTest {
             UserRole.INSPECTOR,
             UserStatus.ACTIVE);
 
-    // A 409 here would tell the actor the email is already registered somewhere in the
-    // platform. A 404 with the same body as a genuinely missing user reveals nothing.
-    postProvision(foreignUser.getEmail(), "INSPECTOR", null)
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"))
-        .andExpect(jsonPath("$.detail").value("User was not found."));
+    postProvision(foreignUser.getEmail(), "INSPECTOR", null).andExpect(status().isBadRequest());
+
+    String newEmail = "new-inspector-" + UUID.randomUUID() + "@example.test";
+    postProvision(newEmail, "INSPECTOR", null).andExpect(status().isBadRequest());
+    assertThat(users.findByNormalizedEmail(User.normalizeEmail(newEmail))).isEmpty();
   }
 
   @Test
-  void returnsConflictWhenEmailIsAlreadyUsedWithinTheActorOrganization() throws Exception {
+  void duplicateMaintenanceEngineerEmailIsRejectedWithinTheActorOrganization() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
     String email = "dup-" + unique + "@example.test";
 
-    postProvision(email, "INSPECTOR", null).andExpect(status().isCreated());
-
-    // Same-organization duplication is not an oracle: the actor already knows their own
-    // users. A clear 409 is more useful than a silent 404 here.
-    postProvision(email, "INSPECTOR", null)
+    postProvision(email, "MAINTENANCE_ENGINEER", null).andExpect(status().isCreated());
+    postProvision(email, "MAINTENANCE_ENGINEER", null)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
   }
@@ -341,7 +325,7 @@ class WorkforceApiIntegrationTest {
         saveUser(
             "facade-peer-admin-status",
             organizationA.getId(),
-            UserRole.ORG_MANAGER,
+            UserRole.CUSTOMER,
             UserStatus.ACTIVE);
     UUID sessionId = insertSession(peerAdmin.getId());
     long[] counts = lifecycleCounts();
@@ -371,10 +355,7 @@ class WorkforceApiIntegrationTest {
   void usersFacadeCannotChangePeerOrganizationAdministratorRoles() {
     User peerAdmin =
         saveUser(
-            "facade-peer-admin-roles",
-            organizationA.getId(),
-            UserRole.ORG_MANAGER,
-            UserStatus.ACTIVE);
+            "facade-peer-admin-roles", organizationA.getId(), UserRole.CUSTOMER, UserStatus.ACTIVE);
     var beforeRoles = users.findDetailedById(peerAdmin.getId()).orElseThrow().roleValues();
     UUID sessionId = insertSession(peerAdmin.getId());
     long[] counts = lifecycleCounts();
@@ -384,7 +365,7 @@ class WorkforceApiIntegrationTest {
                 userAccess.updateWorkforceRoles(
                     orgAdmin.getId(),
                     peerAdmin.getId(),
-                    java.util.Set.of("INSPECTOR"),
+                    java.util.Set.of("MAINTENANCE_ENGINEER"),
                     "127.0.0.1",
                     "JUnit",
                     "facade-test"))
@@ -472,14 +453,18 @@ class WorkforceApiIntegrationTest {
 
   @Test
   void statusChangeRecordsAuditAttributionAndRevokesSessions() throws Exception {
-    User inspector =
-        saveUser("audited-inspector", organizationA.getId(), UserRole.INSPECTOR, UserStatus.ACTIVE);
-    UUID sessionId = insertSession(inspector.getId());
+    User engineer =
+        saveUser(
+            "audited-engineer",
+            organizationA.getId(),
+            UserRole.MAINTENANCE_ENGINEER,
+            UserStatus.ACTIVE);
+    UUID sessionId = insertSession(engineer.getId());
     assertThat(revokedReason(sessionId)).isNull();
 
     mockMvc
         .perform(
-            patch("/api/v1/workforce/users/{userId}/status", inspector.getId())
+            patch("/api/v1/workforce/users/{userId}/status", engineer.getId())
                 .with(orgAdmin(orgAdmin.getId()))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -500,7 +485,7 @@ class WorkforceApiIntegrationTest {
             FROM audit_events
             WHERE action = 'USER_STATUS_CHANGED' AND aggregate_id = ?
             """,
-            inspector.getId());
+            engineer.getId());
     assertThat(audit).hasSize(1);
     assertThat(audit.getFirst().get("actor_user_id")).isEqualTo(orgAdmin.getId());
     assertThat(audit.getFirst().get("after_status")).isEqualTo("SUCCESS");
@@ -520,7 +505,7 @@ class WorkforceApiIntegrationTest {
                 .with(orgAdmin(orgAdmin.getId()))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"roles\":[\"ORG_MANAGER\"]}"))
+                .content("{\"roles\":[\"CUSTOMER\"]}"))
         .andExpect(status().isBadRequest());
 
     assertLifecycleCountsUnchanged(counts);
@@ -555,14 +540,17 @@ class WorkforceApiIntegrationTest {
 
   @Test
   void roleChangeRevokesSessionsAndKeepsSubjectOrganization() throws Exception {
-    User inspector =
+    User engineer =
         saveUser(
-            "reassigned-inspector", organizationA.getId(), UserRole.INSPECTOR, UserStatus.ACTIVE);
-    UUID sessionId = insertSession(inspector.getId());
+            "reassigned-engineer",
+            organizationA.getId(),
+            UserRole.MAINTENANCE_ENGINEER,
+            UserStatus.ACTIVE);
+    UUID sessionId = insertSession(engineer.getId());
 
     mockMvc
         .perform(
-            put("/api/v1/workforce/users/{userId}/roles", inspector.getId())
+            put("/api/v1/workforce/users/{userId}/roles", engineer.getId())
                 .with(orgAdmin(orgAdmin.getId()))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -577,7 +565,7 @@ class WorkforceApiIntegrationTest {
     assertThat(refreshRevokedAt(sessionId)).isNotNull();
     assertThat(refreshRevokeReason(sessionId)).isEqualTo("roles-changed");
 
-    User reloaded = users.findDetailedById(inspector.getId()).orElseThrow();
+    User reloaded = users.findDetailedById(engineer.getId()).orElseThrow();
     assertThat(reloaded.getOrganizationId()).isEqualTo(organizationA.getId());
     assertThat(reloaded.getActorZone()).isEqualTo(ActorZone.CUSTOMER_ORGANIZATION);
     assertThat(reloaded.roleValues()).containsExactly("MAINTENANCE_ENGINEER");
@@ -589,7 +577,7 @@ class WorkforceApiIntegrationTest {
             WHERE action = 'USER_ROLES_CHANGED' AND aggregate_id = ? AND actor_user_id = ?
             """,
             Integer.class,
-            inspector.getId(),
+            engineer.getId(),
             orgAdmin.getId());
     assertThat(auditRows).isEqualTo(1);
   }
@@ -597,7 +585,7 @@ class WorkforceApiIntegrationTest {
   @Test
   void cannotSuspendSameOrganizationAdministrator() throws Exception {
     User peerAdmin =
-        saveUser("peer-admin", organizationA.getId(), UserRole.ORG_MANAGER, UserStatus.ACTIVE);
+        saveUser("peer-admin", organizationA.getId(), UserRole.CUSTOMER, UserStatus.ACTIVE);
 
     mockMvc
         .perform(

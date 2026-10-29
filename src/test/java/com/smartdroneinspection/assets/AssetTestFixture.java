@@ -40,21 +40,21 @@ public final class AssetTestFixture {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId,
-            UserRole.ORG_MANAGER);
+            UserRole.CUSTOMER);
     User otherClient =
         saveUser(
             "other-client",
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             otherOrganizationId,
-            UserRole.ORG_MANAGER);
+            UserRole.CUSTOMER);
     User manager =
         saveUser(
             "manager",
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId,
-            UserRole.ORG_MANAGER);
+            UserRole.CUSTOMER);
     User admin = saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, null, UserRole.ADMIN);
 
     AssetCategory category =

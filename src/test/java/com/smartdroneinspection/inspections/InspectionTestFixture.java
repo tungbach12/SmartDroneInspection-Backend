@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * MF3 fixtures: one organization with an assigned Inspector and a qualified ORG_MANAGER reviewer, a
+ * MF3 fixtures: one organization with an assigned Inspector and a qualified CUSTOMER reviewer, a
  * second organization for cross-tenant denial, and an inspection already past field work.
  */
 public final class InspectionTestFixture {
@@ -33,10 +33,10 @@ public final class InspectionTestFixture {
     UUID otherOrganizationId = createOrganization("MF3 other");
 
     User inspector = saveUser("mf3-inspector", organizationId, UserRole.INSPECTOR);
-    User reviewer = saveUser("mf3-reviewer", organizationId, UserRole.ORG_MANAGER);
+    User reviewer = saveUser("mf3-reviewer", organizationId, UserRole.CUSTOMER);
     // An INSPECTOR who is not the assignee, to prove assignment scope rather than role is enforced.
     User otherInspector = saveUser("mf3-other-inspector", organizationId, UserRole.INSPECTOR);
-    User outsider = saveUser("mf3-outsider", otherOrganizationId, UserRole.ORG_MANAGER);
+    User outsider = saveUser("mf3-outsider", otherOrganizationId, UserRole.CUSTOMER);
 
     UUID assetId = createAsset(organizationId);
     Inspection inspection =

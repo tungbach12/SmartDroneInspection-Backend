@@ -35,6 +35,9 @@ class FullDatabaseSchemaMigrationTest {
             "auth_sessions",
             "platform_drones",
             "drone_leases",
+            "prospective_customer_registrations",
+            "inspector_partner_applications",
+            "drone_registration_applications",
             "drones",
             "asset_categories",
             "assets",
@@ -59,10 +62,16 @@ class FullDatabaseSchemaMigrationTest {
             "notifications",
             "payment_transactions",
             "repair_knowledge_chunks",
+            "contract_partner_inspectors",
+            "contract_partner_drones",
+            "service_requests",
+            "service_request_messages",
+            "service_request_quotes",
+            "service_request_occurrences",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(32);
+    assertThat(expected).hasSize(41);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 

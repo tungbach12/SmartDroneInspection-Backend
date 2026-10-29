@@ -231,7 +231,7 @@ class InspectionReportSectionsApiIntegrationTest {
     UUID versionId = insertDraftVersion();
 
     // Section authoring is the author's work. A qualified reviewer may read a draft but cannot
-    // rewrite it, and the route refuses the ORG_MANAGER role before the use-case scope check runs.
+    // rewrite it, and the route refuses the CUSTOMER role before the use-case scope check runs.
     mockMvc
         .perform(
             put(

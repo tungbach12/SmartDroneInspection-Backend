@@ -3,6 +3,9 @@ package com.smartdroneinspection.contracts.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,10 +13,14 @@ import static org.mockito.Mockito.when;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
+import com.smartdroneinspection.contracts.domain.ServiceRequest.ServiceRequestStatus;
+import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
+import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
@@ -24,6 +31,8 @@ import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -35,6 +44,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ContractWorkflowServiceTest {
 
@@ -91,6 +102,8 @@ class ContractWorkflowServiceTest {
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), null, "Manager")));
+    when(partners.isEligibleInspector(eq(inspectorId), any(Instant.class))).thenReturn(true);
+    when(partners.isEligibleDrone(droneId, inspectorId)).thenReturn(true);
   }
 
   @Test
@@ -128,37 +141,14 @@ class ContractWorkflowServiceTest {
 
   @Test
   void managerAppendsNewQuoteVersionWithoutMutatingPrevious() {
-    ServiceRequest request =
-        new ServiceRequest(
-            orgId,
-            assetId,
-            customerId,
-            "Bridge inspection",
-            LocalDate.of(2027, 2, 1),
-            LocalDate.of(2027, 2, 10),
-            "UTC",
-            LocalTime.of(8, 0),
-            LocalTime.of(17, 0),
-            RequestType.ONE_TIME,
-            null,
-            null,
-            null,
-            null);
-
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     when(requests.findWithLockById(any())).thenReturn(Optional.of(request));
-    when(partners.isEligibleInspector(any(), any())).thenReturn(true);
-    when(partners.isEligibleDrone(any())).thenReturn(true);
     when(quotes.findFirstByRequestIdOrderByVersionNoDesc(any())).thenReturn(Optional.empty());
-    when(quotes.findByRequestIdOrderByVersionNoDesc(any())).thenReturn(List.of());
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(any())).thenReturn(List.of());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(any())).thenReturn(List.of());
 
-    Instant start = Instant.parse("2027-02-01T09:00:00Z");
-    Instant end = Instant.parse("2027-02-01T11:00:00Z");
-
     IssueServiceQuoteRequest quoteInput =
-        new IssueServiceQuoteRequest(
-            "Visual inspection scope", start, end, inspectorId, droneId, new BigDecimal("150.00"));
+        quote(Instant.parse("2027-02-01T09:00:00Z"), Instant.parse("2027-02-01T11:00:00Z"));
 
     service.issueQuote(managerId, UUID.randomUUID(), quoteInput);
 
@@ -170,15 +160,327 @@ class ContractWorkflowServiceTest {
 
   @Test
   void customerCanAcceptOnlyTheLatestQuoteVersion() {
-    UUID reqId = UUID.randomUUID();
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    ServiceRequestQuote latestQuote = mock(ServiceRequestQuote.class);
+    when(latestQuote.getVersionNo()).thenReturn(2);
+    when(quotes.findFirstByRequestIdOrderByVersionNoDesc(requestId))
+        .thenReturn(Optional.of(latestQuote));
+
+    assertThatThrownBy(() -> service.acceptQuote(customerId, requestId, 1))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Only the latest quote version can be accepted");
+  }
+
+  @Test
+  void customerAndManagerCanViewOnlyTheirRequestScopes() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest customerRequest =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findByIdAndOrganizationId(requestId, orgId))
+        .thenReturn(Optional.of(customerRequest));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(any())).thenReturn(List.of());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(any())).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(any())).thenReturn(List.of());
+
+    assertThat(service.get(customerId, requestId).organizationId()).isEqualTo(orgId);
+
+    ServiceRequest managerRequest = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findById(requestId)).thenReturn(Optional.of(managerRequest));
+    assertThat(service.get(managerId, requestId).id()).isEqualTo(managerRequest.getId());
+
+    when(requests.findByOrganizationIdOrderByCreatedAtDesc(orgId))
+        .thenReturn(List.of(customerRequest));
+    when(requests.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(managerRequest));
+    assertThat(service.list(customerId)).hasSize(1);
+    assertThat(service.list(managerId)).hasSize(1);
+  }
+
+  @Test
+  void customerCanPostRequestMessage() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findByIdAndOrganizationId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(messages.saveAndFlush(any(ServiceRequestMessage.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    var response = service.postMessage(customerId, requestId, "Please inspect the supports.");
+
+    ArgumentCaptor<ServiceRequestMessage> captor =
+        ArgumentCaptor.forClass(ServiceRequestMessage.class);
+    verify(messages).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().getBody()).isEqualTo("Please inspect the supports.");
+    assertThat(response.messages()).isEmpty();
+  }
+
+  @Test
+  void recurringRequestCreatesCountBoundOccurrencesAfterSigning() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, 3, null);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.uploadSignedContract(managerId, requestId, pdf("signed.pdf"));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences, org.mockito.Mockito.times(3)).save(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getOccurrenceIndex)
+        .containsExactly(1, 2, 3);
+    assertThat(request.getStatus()).isEqualTo(ServiceRequestStatus.CONTRACT_SIGNED);
+  }
+
+  @Test
+  void recurringRequestEndDateCountsOnlyDatesAtOrAfterQuotedStart() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, null, LocalDate.of(2027, 2, 15));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-02-02T09:00:00Z"),
+            Instant.parse("2027-02-02T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.uploadSignedContract(managerId, requestId, pdf("signed.pdf"));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences, org.mockito.Mockito.times(2)).save(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getOccurrenceIndex)
+        .containsExactly(1, 2);
+  }
+
+  @Test
+  void rejectsUnsupportedEmptyOversizedAndUnreadableContractFiles() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = requestWithId(requestId, LocalDate.now(), LocalDate.now().plusDays(1));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, null))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Signed contract file is required");
+    assertThatThrownBy(
+            () ->
+                service.uploadSignedContract(
+                    managerId,
+                    requestId,
+                    new MockMultipartFile("file", "empty.pdf", "application/pdf", new byte[0])))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Signed contract file is required");
+    assertThatThrownBy(
+            () ->
+                service.uploadSignedContract(
+                    managerId,
+                    requestId,
+                    new MockMultipartFile("file", "contract.txt", "text/plain", "text".getBytes())))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Only PDF, JPEG, and PNG");
+    assertThatThrownBy(
+            () ->
+                service.uploadSignedContract(
+                    managerId,
+                    requestId,
+                    new MockMultipartFile(
+                        "file", "large.pdf", "application/pdf", new byte[10 * 1024 * 1024 + 1])))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Maximum signed contract size");
+
+    MockMultipartFile unreadable = mock(MockMultipartFile.class);
+    when(unreadable.isEmpty()).thenReturn(false);
+    when(unreadable.getContentType()).thenReturn("application/pdf");
+    when(unreadable.getSize()).thenReturn(8L);
+    doAnswer(
+            invocation -> {
+              throw new IOException("read failed");
+            })
+        .when(unreadable)
+        .getBytes();
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, unreadable))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("could not be read");
+  }
+
+  @Test
+  void rejectsContractWhenStorageIsMissingOrWriteFails() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = requestWithId(requestId, LocalDate.now(), LocalDate.now().plusDays(1));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    ContractWorkflowService noStorageService =
+        new ContractWorkflowService(
+            requests,
+            messages,
+            quotes,
+            occurrences,
+            assets,
+            users,
+            actorPolicy,
+            partners,
+            assignment,
+            Optional.empty());
+    assertThatThrownBy(
+            () -> noStorageService.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Contract storage is not configured");
+
+    doThrow(new IOException("write failed"))
+        .when(objectStore)
+        .put(any(String.class), eq("application/pdf"), eq(8L), any(InputStream.class));
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Failed to store signed contract");
+  }
+
+  @Test
+  void uploadRejectsUnacceptedRequestAndInvalidFileSignature() {
+    UUID requestId = UUID.randomUUID();
+    when(requests.findWithLockById(requestId))
+        .thenReturn(Optional.of(request(LocalDate.now(), LocalDate.now().plusDays(1))));
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Customer must accept a quote");
+
+    ServiceRequest accepted = request(LocalDate.now(), LocalDate.now().plusDays(1));
+    accepted.markQuoted();
+    accepted.acceptQuote(1, customerId);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(accepted));
+    assertThatThrownBy(
+            () ->
+                service.uploadSignedContract(
+                    managerId,
+                    requestId,
+                    new MockMultipartFile(
+                        "file", "bad.pdf", "application/pdf", "not a PDF".getBytes())))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("does not match its declared type");
+  }
+
+  @Test
+  void uploadsSignedPdfAndMaterializesOneTimeOccurrence() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.uploadSignedContract(managerId, requestId, pdf("signed/contract.pdf"));
+
+    verify(objectStore).put(any(String.class), eq("application/pdf"), eq(8L), any());
+    verify(occurrences).save(any(ServiceRequestOccurrence.class));
+    assertThat(request.getContractFileName()).isEqualTo("signed_contract.pdf");
+    assertThat(request.getContractChecksumSha256()).hasSize(64);
+  }
+
+  @Test
+  void deletesUploadedContractObjectWhenPersistenceFails() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    doThrow(new IllegalStateException("persist failed")).when(requests).saveAndFlush(request);
+
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
+        .isInstanceOf(IllegalStateException.class);
+    verify(objectStore).delete(any(String.class));
+  }
+
+  @Test
+  void assignsPendingOccurrenceAndUpdatesRequestWhenAllOccurrencesAssigned() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    request.recordSignedContract(
+        "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(false);
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(assignment.assign(any(), any(), any(), any(), any(), any(), any()))
+        .thenReturn(UUID.randomUUID());
+
+    AssignOccurrenceRequest input =
+        new AssignOccurrenceRequest(
+            occurrence.getPlannedStartAt(), occurrence.getPlannedEndAt(), inspectorId, droneId);
+    var response = service.assignOccurrence(managerId, requestId, occurrenceId, input);
+
+    assertThat(occurrence.getStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED);
+    assertThat(request.getStatus()).isEqualTo(ServiceRequestStatus.ASSIGNED);
+    assertThat(response.status()).isEqualTo(ServiceRequestStatus.ASSIGNED);
+  }
+
+  private ServiceRequest request(LocalDate from, LocalDate until) {
+    return requestWithId(UUID.randomUUID(), from, until);
+  }
+
+  private ServiceRequest requestWithId(UUID requestId, LocalDate from, LocalDate until) {
     ServiceRequest request =
         new ServiceRequest(
             orgId,
             assetId,
             customerId,
             "Bridge inspection",
-            LocalDate.of(2027, 2, 1),
-            LocalDate.of(2027, 2, 10),
+            from,
+            until,
             "UTC",
             LocalTime.of(8, 0),
             LocalTime.of(17, 0),
@@ -187,17 +489,54 @@ class ContractWorkflowServiceTest {
             null,
             null,
             null);
-    request.markQuoted();
+    setRequestId(request, requestId);
+    return request;
+  }
 
-    when(requests.findWithLockByIdAndOrganizationId(reqId, orgId)).thenReturn(Optional.of(request));
+  private ServiceRequest recurringRequest(UUID requestId, Integer count, LocalDate endDate) {
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            LocalDate.of(2027, 2, 1),
+            LocalDate.of(2027, 2, 28),
+            "UTC",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "WEEK",
+            1,
+            count,
+            endDate);
+    setRequestId(request, requestId);
+    return request;
+  }
 
-    ServiceRequestQuote latestQuote = mock(ServiceRequestQuote.class);
-    when(latestQuote.getVersionNo()).thenReturn(2);
-    when(quotes.findFirstByRequestIdOrderByVersionNoDesc(reqId))
-        .thenReturn(Optional.of(latestQuote));
+  private static void setRequestId(ServiceRequest request, UUID requestId) {
+    ReflectionTestUtils.setField(request, "id", requestId);
+  }
 
-    assertThatThrownBy(() -> service.acceptQuote(customerId, reqId, 1))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("Only the latest quote version can be accepted");
+  private IssueServiceQuoteRequest quote(Instant start, Instant end) {
+    return new IssueServiceQuoteRequest(
+        "Visual inspection scope", start, end, inspectorId, droneId, new BigDecimal("150.00"));
+  }
+
+  private ServiceRequestQuote quoteEntity(UUID requestId, int version, Instant start, Instant end) {
+    return new ServiceRequestQuote(
+        requestId,
+        version,
+        "Bridge scope",
+        start,
+        end,
+        inspectorId,
+        droneId,
+        new BigDecimal("150.00"),
+        managerId);
+  }
+
+  private MockMultipartFile pdf(String fileName) {
+    return new MockMultipartFile("file", fileName, "application/pdf", "%PDF-e2e".getBytes());
   }
 }

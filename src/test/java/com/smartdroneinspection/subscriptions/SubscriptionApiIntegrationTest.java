@@ -62,16 +62,12 @@ class SubscriptionApiIntegrationTest {
             .build();
 
     orgId = persistOrganization("Alpha Drone Services", "ALPHA");
-    orgAdminUserId = persistUser("org.admin@alpha.test", "Alice Manager", Roles.ORG_MANAGER, orgId);
+    orgAdminUserId = persistUser("org.admin@alpha.test", "Alice Manager", Roles.CUSTOMER, orgId);
     inspectorUserId = persistUser("inspector@alpha.test", "Bob Inspector", Roles.INSPECTOR, orgId);
     platformAdminUserId =
         persistUser("platform.admin@platform.test", "Charlie Platform", Roles.ADMIN, null);
     platformManagerUserId =
-        persistUser(
-            "platform.manager@platform.test",
-            "Diana PlatformManager",
-            Roles.PLATFORM_MANAGER,
-            null);
+        persistUser("platform.manager@platform.test", "Diana PlatformManager", Roles.MANAGER, null);
   }
 
   private static org.springframework.test.web.servlet.request.RequestPostProcessor jwtUser(
@@ -84,8 +80,7 @@ class SubscriptionApiIntegrationTest {
   @Test
   void orgAdminCanViewTermsAndCurrentStatus() throws Exception {
     mockMvc
-        .perform(
-            get("/api/v1/subscriptions/current").with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+        .perform(get("/api/v1/subscriptions/current").with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.termsPreview.version").value("2026.1"))
@@ -105,7 +100,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/subscriptions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
-                .with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.status").value("PENDING"))
@@ -133,7 +128,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/subscriptions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
-                .with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.status").value("PENDING"))
         .andExpect(jsonPath("$.data.billingPeriodMonths").value(9))
@@ -153,7 +148,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/subscriptions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(invalidPeriod))
-                .with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isBadRequest());
 
     CreateSubscriptionRequest noAgreement = new CreateSubscriptionRequest(6, false, "2026.1");
@@ -163,7 +158,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/subscriptions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(noAgreement))
-                .with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isBadRequest());
   }
 
@@ -195,13 +190,13 @@ class SubscriptionApiIntegrationTest {
                 .with(jwtUser(platformAdminUserId, Roles.ADMIN)))
         .andExpect(status().isForbidden());
 
-    // PLATFORM_MANAGER succeeds in confirming payment
+    // MANAGER succeeds in confirming payment
     mockMvc
         .perform(
             post("/api/v1/platform/subscriptions/" + savedPending.getId() + "/confirm-payment")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(confirmRequest))
-                .with(jwtUser(platformManagerUserId, Roles.PLATFORM_MANAGER)))
+                .with(jwtUser(platformManagerUserId, Roles.MANAGER)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("ACTIVE"))
         .andExpect(jsonPath("$.data.agreedAmountUsd").value(5500))
@@ -235,7 +230,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/platform/subscriptions/" + savedS2.getId() + "/confirm-payment")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(confirmRequest))
-                .with(jwtUser(platformManagerUserId, Roles.PLATFORM_MANAGER)))
+                .with(jwtUser(platformManagerUserId, Roles.MANAGER)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("ACTIVE"));
 
@@ -266,7 +261,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/subscriptions/paypal/capture-order")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(forgedCapture)
-                .with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().is4xxClientError());
 
     Subscription unchanged = subscriptionRepository.findById(savedPending.getId()).orElseThrow();
@@ -295,7 +290,7 @@ class SubscriptionApiIntegrationTest {
             post("/api/v1/subscriptions/paypal/create-order")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(new CreatePayPalOrderRequest(pendingId)))
-                .with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isServiceUnavailable());
 
     assertThat(subscriptionRepository.findById(pendingId).orElseThrow().getStatus())
@@ -310,10 +305,10 @@ class SubscriptionApiIntegrationTest {
             get("/api/v1/subscriptions/current").with(jwtUser(inspectorUserId, Roles.INSPECTOR)))
         .andExpect(status().isForbidden());
 
-    // ORG_MANAGER cannot access platform endpoints
+    // CUSTOMER cannot access platform endpoints
     mockMvc
         .perform(
-            get("/api/v1/platform/subscriptions").with(jwtUser(orgAdminUserId, Roles.ORG_MANAGER)))
+            get("/api/v1/platform/subscriptions").with(jwtUser(orgAdminUserId, Roles.CUSTOMER)))
         .andExpect(status().isForbidden());
   }
 

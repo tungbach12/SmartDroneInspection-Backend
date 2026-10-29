@@ -81,11 +81,7 @@ class RecurringInspectionScheduleServiceTest {
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(
-                    managerId,
-                    Set.of(Roles.ORG_MANAGER),
-                    orgId,
-                    "Manager User",
-                    "manager@test.com")));
+                    managerId, Set.of(Roles.CUSTOMER), orgId, "Manager User", "manager@test.com")));
 
     when(userAccess.findActiveUser(inspectorId))
         .thenReturn(
@@ -170,7 +166,7 @@ class RecurringInspectionScheduleServiceTest {
 
     assertThatThrownBy(() -> service.create(nonManagerId, request))
         .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("Only ORG_MANAGER can perform this action");
+        .hasMessageContaining("Only CUSTOMER can perform this action");
   }
 
   @Test
