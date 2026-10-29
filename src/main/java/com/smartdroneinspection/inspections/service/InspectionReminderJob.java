@@ -112,7 +112,7 @@ public class InspectionReminderJob {
                 u ->
                     u.hasRole(Roles.INSPECTOR)
                         && (inspection.isPartnerAssignment()
-                            ? u.organizationId() != null
+                            ? u.isInspectorPartner()
                             : inspection.getOrganizationId().equals(u.organizationId())))
             .isPresent();
     if (!inspectorActive) {

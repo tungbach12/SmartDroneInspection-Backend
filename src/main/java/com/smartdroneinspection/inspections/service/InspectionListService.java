@@ -184,6 +184,9 @@ public class InspectionListService {
     if (actor.hasRole("ADMIN")) {
       return new Scope.PlatformAdmin(inspections);
     }
+    if (actor.isInspectorPartner()) {
+      return new Scope.InspectorPartner(actor.id(), inspections);
+    }
     UUID organizationId = actor.organizationId();
     if (organizationId == null) {
       throw new BusinessException(
@@ -262,6 +265,19 @@ public class InspectionListService {
       public Page<Inspection> queryWithReport(Pageable pageable) {
         return repository.findWithReportByOrganizationIdAndInspectorId(
             organizationId, inspectorId, pageable);
+      }
+    }
+
+    record InspectorPartner(UUID inspectorId, InspectionRepository repository) implements Scope {
+      @Override
+      public Page<Inspection> query(Pageable pageable) {
+        return repository.findByInspectorIdAndPartnerAssignmentTrue(inspectorId, pageable);
+      }
+
+      @Override
+      public Page<Inspection> queryWithReport(Pageable pageable) {
+        return repository.findWithReportByInspectorIdAndPartnerAssignmentTrue(
+            inspectorId, pageable);
       }
     }
   }

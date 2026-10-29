@@ -87,7 +87,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
     UserAccess.ActiveUser inspector =
         users
             .findActiveUser(inspectorId)
-            .filter(user -> user.hasRole(Roles.INSPECTOR) && user.organizationId() != null)
+            .filter(UserAccess.ActiveUser::isInspectorPartner)
             .filter(user -> user.hasValidPilotLicense(plannedStartAt))
             .orElseThrow(
                 () ->
@@ -98,13 +98,18 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
     Drone drone =
         drones
             .findWithLockById(droneId)
+            .filter(value -> inspector.id().equals(value.getInspectorOwnerId()))
             .filter(value -> value.getServiceability() == DroneServiceability.ACTIVE)
+            .filter(
+                value ->
+                    value.getRegistrationExpiresAt() == null
+                        || value.getRegistrationExpiresAt().isAfter(plannedStartAt))
             .orElseThrow(
                 () ->
                     failure(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_DRONE",
-                        "Partner drone must be active and registered"));
+                        "Partner drone must be approved for the selected Inspector and currently registered"));
 
     if (inspections.hasPlatformPartnerScheduleConflict(
         inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)) {

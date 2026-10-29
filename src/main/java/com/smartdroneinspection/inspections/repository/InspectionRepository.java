@@ -25,21 +25,25 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       "select inspection from Inspection inspection where inspection.id = :id "
           + "and inspection.inspectorId = :inspectorId "
-          + "and (inspection.organizationId = :organizationId or inspection.partnerAssignment = true)")
+          + "and ((:organizationId is not null and inspection.organizationId = :organizationId) "
+          + "or (:partnerAssignment = true and inspection.partnerAssignment = true))")
   Optional<Inspection> findAssignedInspectorInspection(
       @Param("id") UUID id,
       @Param("organizationId") UUID organizationId,
-      @Param("inspectorId") UUID inspectorId);
+      @Param("inspectorId") UUID inspectorId,
+      @Param("partnerAssignment") boolean partnerAssignment);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
       "select inspection from Inspection inspection where inspection.id = :id "
           + "and inspection.inspectorId = :inspectorId "
-          + "and (inspection.organizationId = :organizationId or inspection.partnerAssignment = true)")
+          + "and ((:organizationId is not null and inspection.organizationId = :organizationId) "
+          + "or (:partnerAssignment = true and inspection.partnerAssignment = true))")
   Optional<Inspection> findAssignedInspectorInspectionWithLock(
       @Param("id") UUID id,
       @Param("organizationId") UUID organizationId,
-      @Param("inspectorId") UUID inspectorId);
+      @Param("inspectorId") UUID inspectorId,
+      @Param("partnerAssignment") boolean partnerAssignment);
 
   List<Inspection> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
@@ -65,6 +69,20 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
       @Param("organizationId") UUID organizationId,
       @Param("inspectorId") UUID inspectorId,
       Pageable pageable);
+
+  Page<Inspection> findByInspectorIdAndPartnerAssignmentTrue(UUID inspectorId, Pageable pageable);
+
+  @Query(
+      value =
+          "select i from Inspection i where i.inspectorId = :inspectorId "
+              + "and i.partnerAssignment = true "
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)",
+      countQuery =
+          "select count(i) from Inspection i where i.inspectorId = :inspectorId "
+              + "and i.partnerAssignment = true "
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)")
+  Page<Inspection> findWithReportByInspectorIdAndPartnerAssignmentTrue(
+      @Param("inspectorId") UUID inspectorId, Pageable pageable);
 
   /**
    * Report review scope. The {@code exists} subquery keeps this one paged query rather than loading
