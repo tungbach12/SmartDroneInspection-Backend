@@ -43,7 +43,7 @@ public class InspectionScheduleController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('ADMIN', 'CUSTOMER', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CUSTOMER', 'INSPECTOR')")
   public ApiResponse<RecurringSchedulePageResponse> list(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -55,7 +55,7 @@ public class InspectionScheduleController {
   }
 
   @GetMapping("/{scheduleId}")
-  @PreAuthorize("hasAnyRole('ADMIN', 'CUSTOMER', 'INSPECTOR')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CUSTOMER', 'INSPECTOR')")
   public ApiResponse<RecurringScheduleDetailResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID scheduleId) {
     return ApiResponse.success(scheduleService.get(UUID.fromString(jwt.getSubject()), scheduleId));

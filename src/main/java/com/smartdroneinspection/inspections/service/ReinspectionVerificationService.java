@@ -213,7 +213,7 @@ public class ReinspectionVerificationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.hasRole(Roles.ADMIN)) {
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       return inspection;
     }
 
@@ -240,9 +240,11 @@ public class ReinspectionVerificationService {
 
     boolean isAssignedInspector = inspection.isInspectedBy(actorId);
     boolean isManager =
-        (actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ORG_MANAGER))
-            && actor.organizationId() != null
-            && actor.organizationId().equals(inspection.getOrganizationId());
+        actor.hasRole(Roles.ADMIN)
+            || actor.hasRole(Roles.MANAGER)
+            || ((actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ORG_MANAGER))
+                && actor.organizationId() != null
+                && actor.organizationId().equals(inspection.getOrganizationId()));
     boolean isAdmin = actor.hasRole(Roles.ADMIN);
 
     if (!isAssignedInspector && !isManager && !isAdmin) {
