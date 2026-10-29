@@ -863,7 +863,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -886,7 +886,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(Map.of("actualLines", List.of(actualLine)))))
@@ -899,7 +899,7 @@ class MaintenanceApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/close", workOrderId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.ownerId(), "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
 
@@ -1111,29 +1111,26 @@ class MaintenanceApiIntegrationTest {
 
     mockMvc
         .perform(
-            post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
+            post("/api/v1/maintenance/work-orders/{id}/reinspection-requests", workOrderId)
+                .with(principal(fixture.ownerId(), "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of(
-                            "decision",
-                            "REINSPECTION_REQUIRED",
-                            "technicalComments",
-                            "Cần bay kiểm tra lại bề mặt sau 48h",
-                            "acceptanceChecklist",
-                            "Kiểm tra ngoại quan đạt",
-                            "testResult",
-                            "1.8 MPa"))))
+                            "maintenanceReportVersionNo",
+                            1,
+                            "findingIds",
+                            List.of(fixture.findingId()),
+                            "note",
+                            "Cần bay kiểm tra lại bề mặt sau 48h"))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.decision").value("REINSPECTION_REQUIRED"));
+        .andExpect(jsonPath("$.data.status").value("REQUESTED"));
 
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/resume-after-rework", workOrderId)
                 .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+        .andExpect(status().isConflict());
   }
 
   private UUID createTask(UUID workOrderId) throws Exception {

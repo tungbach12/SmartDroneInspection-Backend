@@ -98,7 +98,7 @@ class InspectionCreationApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    admin.addRole(UserRole.ORG_MANAGER);
+    admin.addRole(UserRole.CUSTOMER);
     adminId = users.saveAndFlush(admin).getId();
 
     User inspector =

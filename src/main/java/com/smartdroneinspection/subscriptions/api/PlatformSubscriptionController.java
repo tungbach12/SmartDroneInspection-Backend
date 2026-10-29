@@ -31,20 +31,20 @@ public class PlatformSubscriptionController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<List<SubscriptionResponse>> list(
       @RequestParam(required = false) Subscription.Status status) {
     return ApiResponse.success(subscriptionService.listAllSubscriptions(status));
   }
 
   @GetMapping("/{subscriptionId}")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<SubscriptionResponse> getDetails(@PathVariable UUID subscriptionId) {
     return ApiResponse.success(subscriptionService.getSubscriptionDetails(subscriptionId));
   }
 
   @PostMapping("/{subscriptionId}/confirm-payment")
-  @PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<SubscriptionResponse> confirmPayment(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID subscriptionId,

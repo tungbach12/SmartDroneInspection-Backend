@@ -65,8 +65,7 @@ class WorkforceApiIntegrationTest {
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
     organizationA = saveOrganization("Alpha");
     grantEntitlement(organizationA.getId());
-    orgAdmin =
-        saveUser("org-admin", organizationA.getId(), UserRole.ORG_MANAGER, UserStatus.ACTIVE);
+    orgAdmin = saveUser("org-admin", organizationA.getId(), UserRole.CUSTOMER, UserStatus.ACTIVE);
   }
 
   private void grantEntitlement(UUID organizationId) {
@@ -341,7 +340,7 @@ class WorkforceApiIntegrationTest {
         saveUser(
             "facade-peer-admin-status",
             organizationA.getId(),
-            UserRole.ORG_MANAGER,
+            UserRole.CUSTOMER,
             UserStatus.ACTIVE);
     UUID sessionId = insertSession(peerAdmin.getId());
     long[] counts = lifecycleCounts();
@@ -371,10 +370,7 @@ class WorkforceApiIntegrationTest {
   void usersFacadeCannotChangePeerOrganizationAdministratorRoles() {
     User peerAdmin =
         saveUser(
-            "facade-peer-admin-roles",
-            organizationA.getId(),
-            UserRole.ORG_MANAGER,
-            UserStatus.ACTIVE);
+            "facade-peer-admin-roles", organizationA.getId(), UserRole.CUSTOMER, UserStatus.ACTIVE);
     var beforeRoles = users.findDetailedById(peerAdmin.getId()).orElseThrow().roleValues();
     UUID sessionId = insertSession(peerAdmin.getId());
     long[] counts = lifecycleCounts();
@@ -520,7 +516,7 @@ class WorkforceApiIntegrationTest {
                 .with(orgAdmin(orgAdmin.getId()))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"roles\":[\"ORG_MANAGER\"]}"))
+                .content("{\"roles\":[\"CUSTOMER\"]}"))
         .andExpect(status().isBadRequest());
 
     assertLifecycleCountsUnchanged(counts);
@@ -597,7 +593,7 @@ class WorkforceApiIntegrationTest {
   @Test
   void cannotSuspendSameOrganizationAdministrator() throws Exception {
     User peerAdmin =
-        saveUser("peer-admin", organizationA.getId(), UserRole.ORG_MANAGER, UserStatus.ACTIVE);
+        saveUser("peer-admin", organizationA.getId(), UserRole.CUSTOMER, UserStatus.ACTIVE);
 
     mockMvc
         .perform(

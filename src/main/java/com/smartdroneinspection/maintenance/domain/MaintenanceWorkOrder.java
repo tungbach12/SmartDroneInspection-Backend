@@ -73,6 +73,14 @@ public class MaintenanceWorkOrder {
   @Column(name = "accepting_reviewer_user_id")
   private UUID acceptingReviewerUserId;
 
+  @Enumerated(EnumType.STRING)
+  @Column(name = "customer_decision", length = 32)
+  private com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision
+      customerDecision;
+
+  @Column(name = "customer_decision_note", length = 4000)
+  private String customerDecisionNote;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -177,12 +185,8 @@ public class MaintenanceWorkOrder {
   public void approveEstimate(UUID approvingUserId) {
     requireStatus(WorkOrderStatus.AWAITING_APPROVAL);
     UUID approver = require(approvingUserId, "approvingUserId");
-    if (!approver.equals(budgetApproverUserId)) {
-      throw new IllegalStateException(
-          "Only the designated budget approver may approve this work order");
-    }
-    if (approver.equals(teamLeadUserId) || approver.equals(reportAuthorUserId)) {
-      throw new IllegalStateException("The budget approver must not be part of the executing team");
+    if (!approver.equals(ownerUserId) && !approver.equals(budgetApproverUserId)) {
+      throw new IllegalStateException("Only the work-order customer may approve this estimate");
     }
     this.status = WorkOrderStatus.APPROVED;
     this.updatedAt = Instant.now();
@@ -199,13 +203,8 @@ public class MaintenanceWorkOrder {
   public void returnEstimateForRework(UUID decidingUserId, String reason) {
     requireStatus(WorkOrderStatus.AWAITING_APPROVAL);
     UUID approver = require(decidingUserId, "decidingUserId");
-    if (!approver.equals(budgetApproverUserId)) {
-      throw new IllegalStateException(
-          "Only the designated budget approver may return this estimate");
-    }
-    if (approver.equals(teamLeadUserId) || approver.equals(reportAuthorUserId)) {
-      throw new IllegalStateException(
-          "A member of the executing team cannot return its own estimate");
+    if (!approver.equals(ownerUserId) && !approver.equals(budgetApproverUserId)) {
+      throw new IllegalStateException("Only the work-order customer may return this estimate");
     }
     requireReason(reason, "A rework request requires a reason");
     this.status = WorkOrderStatus.REWORK_REQUIRED;
@@ -249,8 +248,71 @@ public class MaintenanceWorkOrder {
   /** MF4-17: the report author submits the completion report for review. */
   public void markSubmittedForAcceptance() {
     requireStatus(WorkOrderStatus.WORK_COMPLETED);
-    this.status = WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE;
+    this.status = WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE;
     this.updatedAt = Instant.now();
+  }
+
+  public void requestReinspection() {
+    requireStatus(
+        WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE, WorkOrderStatus.REPAIR_SUPPLEMENT_REQUIRED);
+    this.status = WorkOrderStatus.AWAITING_REINSPECTION;
+    this.updatedAt = Instant.now();
+  }
+
+  public void markReinspectionAssigned() {
+    requireStatus(WorkOrderStatus.AWAITING_REINSPECTION);
+    this.status = WorkOrderStatus.REINSPECTION_IN_PROGRESS;
+    this.updatedAt = Instant.now();
+  }
+
+  public void recordCustomerDecision(
+      com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision decision,
+      String note) {
+    requireStatus(WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
+    if (decision == null) throw new IllegalArgumentException("Customer decision is required");
+    if (decision
+            == com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision
+                .REPAIR_REQUIRED
+        && (note == null || note.isBlank())) {
+      throw new IllegalArgumentException("A repair decision requires a reason");
+    }
+    this.customerDecision = decision;
+    this.customerDecisionNote = note == null || note.isBlank() ? null : note.trim();
+    if (decision
+        == com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision
+            .REPAIR_REQUIRED) {
+      this.status = WorkOrderStatus.REPAIR_SUPPLEMENT_REQUIRED;
+    } else {
+      this.status = WorkOrderStatus.ACCEPTED;
+    }
+    this.updatedAt = Instant.now();
+  }
+
+  public void markAwaitingReinspectionResult() {
+    requireStatus(WorkOrderStatus.REINSPECTION_IN_PROGRESS);
+    this.status = WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE;
+    this.updatedAt = Instant.now();
+  }
+
+  public void resumeSupplementWork() {
+    requireStatus(WorkOrderStatus.REPAIR_SUPPLEMENT_REQUIRED);
+    this.status = WorkOrderStatus.IN_PROGRESS;
+    this.customerDecision = null;
+    this.customerDecisionNote = null;
+    this.updatedAt = Instant.now();
+  }
+
+  public void beginInitialCustomerAcceptance() {
+    requireStatus(WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
+  }
+
+  public com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision
+      getCustomerDecision() {
+    return customerDecision;
+  }
+
+  public String getCustomerDecisionNote() {
+    return customerDecisionNote;
   }
 
   /**
@@ -258,18 +320,25 @@ public class MaintenanceWorkOrder {
    * executing team. Separation of duties is a domain invariant, not only a service check.
    */
   public void accept(UUID reviewingUserId) {
-    requireStatus(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    requireStatus(WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
     UUID reviewer = require(reviewingUserId, "reviewingUserId");
-    requireIndependent(reviewer);
+    if (!reviewer.equals(ownerUserId)) {
+      throw new IllegalStateException("Only the work-order customer may accept this work");
+    }
     this.status = WorkOrderStatus.ACCEPTED;
+    this.customerDecision =
+        com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision.ACCEPTED;
     this.updatedAt = Instant.now();
   }
 
-  /** MF4-18: rework sends accepted work back into execution with the reviewer's reason. */
+  /** Historical reviewer rework transition; customer return flow uses recordCustomerDecision. */
   public void requireReworkAfterAcceptance(UUID reviewingUserId, String reason) {
-    requireStatus(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    requireStatus(
+        WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE, WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
     UUID reviewer = require(reviewingUserId, "reviewingUserId");
-    requireIndependent(reviewer);
+    if (acceptingReviewerUserId != null) {
+      requireIndependent(reviewer);
+    }
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("A rework decision requires a reason");
     }
@@ -278,13 +347,16 @@ public class MaintenanceWorkOrder {
   }
 
   /**
-   * MF4-18: the reviewer requires an independent re-inspection. This records the decision and makes
-   * the order resumable; dispatching the linked MF1 inspection is MF1's responsibility.
+   * Historical reviewer reinspection transition; active WF4 uses the Customer reinspection request
+   * flow.
    */
   public void requireReinspection(UUID reviewingUserId, String reason) {
-    requireStatus(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    requireStatus(
+        WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE, WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
     UUID reviewer = require(reviewingUserId, "reviewingUserId");
-    requireIndependent(reviewer);
+    if (acceptingReviewerUserId != null) {
+      requireIndependent(reviewer);
+    }
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("A re-inspection decision requires a reason");
     }
@@ -293,8 +365,11 @@ public class MaintenanceWorkOrder {
   }
 
   /** MF4-20: reconciliation is a separate recorded decision, not a side effect of acceptance. */
-  public void markCostsReconciled() {
+  public void markCostsReconciled(UUID customerId) {
     requireStatus(WorkOrderStatus.ACCEPTED);
+    if (!ownerUserId.equals(require(customerId, "customerId"))) {
+      throw new IllegalStateException("Only the work-order customer may reconcile costs");
+    }
     this.status = WorkOrderStatus.COST_RECONCILED;
     this.updatedAt = Instant.now();
   }

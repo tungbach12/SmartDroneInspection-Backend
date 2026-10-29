@@ -16,6 +16,8 @@ public interface MaintenanceWorkOrderRepository extends JpaRepository<Maintenanc
   /** Organization-scoped read: a work order outside the caller's tenant must not be reachable. */
   Optional<MaintenanceWorkOrder> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
+  Optional<MaintenanceWorkOrder> findByIdAndOwnerUserId(UUID id, UUID ownerUserId);
+
   List<MaintenanceWorkOrder> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
   Page<MaintenanceWorkOrder> findByOrganizationId(UUID organizationId, Pageable pageable);

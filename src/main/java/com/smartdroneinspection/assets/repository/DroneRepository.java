@@ -50,4 +50,8 @@ public interface DroneRepository extends JpaRepository<Drone, UUID> {
       "select drone from Drone drone where drone.id = :id and drone.organizationId = :organizationId")
   Optional<Drone> findWithLockByIdAndOrganizationId(
       @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select drone from Drone drone where drone.id = :id")
+  Optional<Drone> findWithLockById(@Param("id") UUID id);
 }

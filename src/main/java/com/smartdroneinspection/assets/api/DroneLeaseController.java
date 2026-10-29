@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/drone-leases")
-@PreAuthorize("hasRole('" + Roles.ORG_MANAGER + "')")
+@PreAuthorize("hasRole('" + Roles.CUSTOMER + "')")
 public class DroneLeaseController {
 
   private final DroneLeaseService droneLeases;

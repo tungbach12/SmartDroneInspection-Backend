@@ -786,7 +786,7 @@ class InspectionReportApiIntegrationTest {
   void reviewerCannotApproveTheAuthorsOwnReport() throws Exception {
     UUID versionId = createSubmittedManualVersion();
 
-    // The author is not an ORG_MANAGER, so the role gate refuses the review outright.
+    // The author is not an CUSTOMER, so the role gate refuses the review outright.
     mockMvc
         .perform(
             post(

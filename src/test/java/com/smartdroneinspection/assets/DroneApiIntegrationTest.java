@@ -336,7 +336,7 @@ class DroneApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    admin.addRole(UserRole.ORG_MANAGER);
+    admin.addRole(UserRole.CUSTOMER);
     return users.saveAndFlush(admin).getId();
   }
 

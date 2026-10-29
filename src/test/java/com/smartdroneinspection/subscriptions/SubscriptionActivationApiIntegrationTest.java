@@ -70,7 +70,7 @@ class SubscriptionActivationApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    admin.addRole(UserRole.PLATFORM_MANAGER);
+    admin.addRole(UserRole.MANAGER);
     adminId = users.saveAndFlush(admin).getId();
 
     User orgAdmin =
@@ -81,7 +81,7 @@ class SubscriptionActivationApiIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organizationId);
-    orgAdmin.addRole(UserRole.ORG_MANAGER);
+    orgAdmin.addRole(UserRole.CUSTOMER);
     orgAdminId = users.saveAndFlush(orgAdmin).getId();
   }
 
@@ -378,7 +378,7 @@ class SubscriptionActivationApiIntegrationTest {
             UserStatus.SUSPENDED,
             ActorZone.PLATFORM,
             null);
-    inactiveAdmin.addRole(UserRole.PLATFORM_MANAGER);
+    inactiveAdmin.addRole(UserRole.MANAGER);
     UUID inactiveAdminId = users.saveAndFlush(inactiveAdmin).getId();
 
     mockMvc

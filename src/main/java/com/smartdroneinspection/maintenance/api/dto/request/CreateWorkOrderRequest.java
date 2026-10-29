@@ -16,8 +16,28 @@ public record CreateWorkOrderRequest(
     @NotNull UUID assetId,
     @NotNull UUID sourceReportVersionId,
     @NotNull UUID sourceFindingId,
-    @NotNull UUID budgetApproverUserId,
+    UUID budgetApproverUserId,
     MaintenancePriority priority,
     Instant dueAt,
     @NotBlank String correctiveScope,
-    String acceptanceCriteria) {}
+    String acceptanceCriteria) {
+
+  public CreateWorkOrderRequest(
+      UUID assetId,
+      UUID sourceReportVersionId,
+      UUID sourceFindingId,
+      MaintenancePriority priority,
+      Instant dueAt,
+      String correctiveScope,
+      String acceptanceCriteria) {
+    this(
+        assetId,
+        sourceReportVersionId,
+        sourceFindingId,
+        null,
+        priority,
+        dueAt,
+        correctiveScope,
+        acceptanceCriteria);
+  }
+}

@@ -253,7 +253,7 @@ public class SubscriptionService {
                 () ->
                     new BusinessException(
                         HttpStatus.FORBIDDEN, "FORBIDDEN", "Active user session required"));
-    if (!user.hasRole(Roles.ORG_MANAGER) || user.organizationId() == null) {
+    if (!user.hasRole(Roles.CUSTOMER) || user.organizationId() == null) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Organization Manager authority required");
     }
@@ -270,7 +270,7 @@ public class SubscriptionService {
                         HttpStatus.FORBIDDEN,
                         "FORBIDDEN",
                         "Active platform manager session required"));
-    if (!user.hasRole(Roles.PLATFORM_MANAGER) || user.organizationId() != null) {
+    if (!user.hasRole(Roles.MANAGER) || user.organizationId() != null) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform Manager authority required");
     }

@@ -1,6 +1,5 @@
 package com.smartdroneinspection.maintenance.service;
 
-import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateChangeOrderRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateReportVersionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.ReconcileCostsRequest;
@@ -41,6 +40,7 @@ import com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository
 import com.smartdroneinspection.maintenance.repository.MaintenanceTeamMemberRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkLogRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkOrderRepository;
+import com.smartdroneinspection.maintenance.repository.ReinspectionRequestRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -93,6 +93,7 @@ public class MaintenanceExecutionService {
   private final ApplicationEventPublisher eventPublisher;
   private final Optional<EvidenceObjectStore> objectStore;
   private final MaintenanceReportRenderer reportRenderer;
+  private final ReinspectionRequestRepository reinspectionRequests;
 
   public MaintenanceExecutionService(
       MaintenanceWorkOrderRepository workOrders,
@@ -108,7 +109,8 @@ public class MaintenanceExecutionService {
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher,
       Optional<EvidenceObjectStore> objectStore,
-      MaintenanceReportRenderer reportRenderer) {
+      MaintenanceReportRenderer reportRenderer,
+      ReinspectionRequestRepository reinspectionRequests) {
     this.workOrders = workOrders;
     this.teamMembers = teamMembers;
     this.tasks = tasks;
@@ -123,6 +125,7 @@ public class MaintenanceExecutionService {
     this.eventPublisher = eventPublisher;
     this.objectStore = objectStore;
     this.reportRenderer = reportRenderer;
+    this.reinspectionRequests = reinspectionRequests;
   }
 
   /** MF4-09: an approved work order is released to the team. */
@@ -153,10 +156,12 @@ public class MaintenanceExecutionService {
           "ESTIMATE_NOT_APPROVED",
           "Cannot resume field execution before an estimate baseline has been approved");
     }
-    if (order.getStatus() == WorkOrderStatus.REINSPECTION_REQUIRED) {
-      transition(order::resumeAfterReinspection);
-    } else {
+    if (order.getStatus() == WorkOrderStatus.REPAIR_SUPPLEMENT_REQUIRED) {
+      transition(order::resumeSupplementWork);
+    } else if (order.getStatus() == WorkOrderStatus.REWORK_REQUIRED) {
       transition(order::resumeExecutionAfterRework);
+    } else {
+      throw conflict(new IllegalStateException("Only customer-returned repair work may resume"));
     }
     for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
       task.markInProgress();
@@ -328,8 +333,9 @@ public class MaintenanceExecutionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "WORK_ORDER_CLOSED", "Cannot decide changes on a closed work order");
     }
-    if (!order.getBudgetApproverUserId().equals(actorId)) {
-      throw denied("Only the designated budget approver may decide a change");
+    if (!order.getBudgetApproverUserId().equals(actorId)
+        && !order.getOwnerUserId().equals(actorId)) {
+      throw denied("Only the work-order customer may decide a change");
     }
     MaintenanceChangeOrder change =
         changeOrders
@@ -404,7 +410,7 @@ public class MaintenanceExecutionService {
     return ReportVersionResponse.from(report, order.getReportAuthorUserId());
   }
 
-  /** MF4-17: the author submits the report; the work order moves to acceptance review. */
+  /** MF4-06: author submits the completion report to Customer for review/reinspection. */
   @Transactional
   public ReportVersionResponse submitReport(UUID actorId, UUID workOrderId, int versionNo) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
@@ -441,6 +447,7 @@ public class MaintenanceExecutionService {
   public AcceptanceDecisionResponse recordAcceptance(
       UUID actorId, UUID workOrderId, RecordAcceptanceRequest request) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    requireCustomerOwner(order, actorId);
     MaintenanceReportVersion report =
         reportVersions
             .findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
@@ -452,6 +459,25 @@ public class MaintenanceExecutionService {
                         "REPORT_VERSION_NOT_FOUND",
                         "No submitted completion report to review"));
 
+    if (request.decision()
+        != com.smartdroneinspection.maintenance.domain.enums.AcceptanceDecisionKind.ACCEPTED) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "CUSTOMER_REINSPECTION_REQUEST_REQUIRED",
+          "Maintenance reports are returned for repair or forwarded through the explicit reinspection request flow");
+    }
+    if (reinspectionRequests.existsByWorkOrderIdAndStatusIn(
+        order.getId(),
+        List.of(
+            com.smartdroneinspection.maintenance.domain.enums.ReinspectionRequestStatus.REQUESTED,
+            com.smartdroneinspection.maintenance.domain.enums.ReinspectionRequestStatus.ASSIGNED,
+            com.smartdroneinspection.maintenance.domain.enums.ReinspectionRequestStatus
+                .INSPECTION_PUBLISHED))) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_IN_PROGRESS",
+          "Active reinspection requests must be decided by customer before final acceptance");
+    }
     MaintenanceAcceptanceDecision decision;
     try {
       switch (request.decision()) {
@@ -476,36 +502,16 @@ public class MaintenanceExecutionService {
           storePublishedArtefact(order, report);
         }
         case REWORK_REQUIRED -> {
-          order.requireReworkAfterAcceptance(actorId, request.technicalComments());
-          report.returnToAuthor(request.technicalComments());
-          for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
-            task.markReworkRequired();
-            tasks.save(task);
-          }
-          tasks.flush();
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "CUSTOMER_RETURN_ACTION_REQUIRED",
+              "Use the Customer return decision to request repair or supplementation");
         }
-        case REINSPECTION_REQUIRED -> {
-          order.requireReinspection(actorId, request.technicalComments());
-          report.returnToAuthor(request.technicalComments());
-          for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
-            task.markReworkRequired();
-            tasks.save(task);
-          }
-          tasks.flush();
-          if (eventPublisher != null) {
-            eventPublisher.publishEvent(
-                new ReinspectionRequestedEvent(
-                    order.getId(),
-                    report.getId(),
-                    order.getOrganizationId(),
-                    order.getAssetId(),
-                    order.getSourceReportVersionId(),
-                    order.getSourceFindingId(),
-                    actorId,
-                    request.technicalComments(),
-                    Instant.now()));
-          }
-        }
+        case REINSPECTION_REQUIRED ->
+            throw new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "CUSTOMER_REINSPECTION_REQUEST_REQUIRED",
+                "Customer must forward a versioned Maintenance Report through the reinspection request flow");
       }
       decision =
           new MaintenanceAcceptanceDecision(
@@ -559,7 +565,25 @@ public class MaintenanceExecutionService {
   public CostReconciliationResponse reconcile(
       UUID actorId, UUID workOrderId, ReconcileCostsRequest request) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
-    requireIndependentReviewer(order, actorId);
+    requireCustomerOwner(order, actorId);
+    if (order.getStatus() != WorkOrderStatus.ACCEPTED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "CUSTOMER_ACCEPTANCE_REQUIRED",
+          "Customer must record final acceptance before cost reconciliation");
+    }
+    if (reinspectionRequests.existsByWorkOrderIdAndStatusIn(
+        order.getId(),
+        List.of(
+            com.smartdroneinspection.maintenance.domain.enums.ReinspectionRequestStatus.REQUESTED,
+            com.smartdroneinspection.maintenance.domain.enums.ReinspectionRequestStatus.ASSIGNED,
+            com.smartdroneinspection.maintenance.domain.enums.ReinspectionRequestStatus
+                .INSPECTION_PUBLISHED))) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_IN_PROGRESS",
+          "Active reinspection requests must be decided before cost reconciliation");
+    }
 
     MaintenanceEstimateVersion approved =
         estimates
@@ -625,7 +649,7 @@ public class MaintenanceExecutionService {
                 .multiply(BigDecimal.valueOf(100))
                 .divide(authorized, 2, RoundingMode.HALF_UP);
 
-    transition(order::markCostsReconciled);
+    transition(() -> order.markCostsReconciled(actorId));
     workOrders.saveAndFlush(order);
 
     return new CostReconciliationResponse(
@@ -642,7 +666,13 @@ public class MaintenanceExecutionService {
   @Transactional
   public WorkOrderResponse close(UUID actorId, UUID workOrderId) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
-    requireIndependentReviewer(order, actorId);
+    requireCustomerOwner(order, actorId);
+    if (order.getStatus() != WorkOrderStatus.COST_RECONCILED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "COST_RECONCILIATION_REQUIRED",
+          "Reconcile costs before closing the work order");
+    }
     transition(order::close);
     workOrders.saveAndFlush(order);
     if (eventPublisher != null) {
@@ -1022,7 +1052,7 @@ public class MaintenanceExecutionService {
   }
 
   private void requireTeamLead(MaintenanceWorkOrder order, UUID actorId) {
-    if (!actorId.equals(order.getTeamLeadUserId())) {
+    if (!actorId.equals(order.getTeamLeadUserId()) && !actorId.equals(order.getOwnerUserId())) {
       throw denied("Only the designated team lead may perform this action");
     }
   }
@@ -1033,7 +1063,18 @@ public class MaintenanceExecutionService {
     }
   }
 
-  /** MF4-18/20: only the independent reviewer outside the executing team may act. */
+  private void requireCustomerOwner(MaintenanceWorkOrder order, UUID actorId) {
+    if (!actorId.equals(order.getOwnerUserId())) {
+      throw denied("Only the work-order customer may perform this action");
+    }
+    UserAccess.ActiveUser actor =
+        userAccess.findActiveUser(actorId).orElseThrow(() -> denied("User is not active"));
+    if (!actor.hasRole("CUSTOMER") || !order.getOrganizationId().equals(actor.organizationId())) {
+      throw denied("Only the owning CUSTOMER may perform this action");
+    }
+  }
+
+  /** Legacy separation-of-duties check retained for historical records only. */
   private void requireIndependentReviewer(MaintenanceWorkOrder order, UUID actorId) {
     if (!actorId.equals(order.getAcceptingReviewerUserId())) {
       throw denied("Only the designated independent reviewer may perform this action");

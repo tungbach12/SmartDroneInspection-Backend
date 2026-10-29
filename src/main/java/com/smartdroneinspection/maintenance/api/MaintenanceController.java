@@ -1,18 +1,23 @@
 package com.smartdroneinspection.maintenance.api;
 
+import com.smartdroneinspection.maintenance.api.dto.request.AssignReinspectionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.AssignTeamRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateEstimateVersionRequest;
+import com.smartdroneinspection.maintenance.api.dto.request.CreateReinspectionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateTaskRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateWorkOrderRequest;
+import com.smartdroneinspection.maintenance.api.dto.request.DecideReinspectionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.EstimateDecisionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.SuggestScopeRequest;
 import com.smartdroneinspection.maintenance.api.dto.response.EstimateVersionResponse;
+import com.smartdroneinspection.maintenance.api.dto.response.ReinspectionRequestResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.RepairCandidateResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.TaskResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.TeamMemberResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.WorkOrderPageResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.WorkOrderResponse;
+import com.smartdroneinspection.maintenance.service.MaintenanceReinspectionService;
 import com.smartdroneinspection.maintenance.service.MaintenanceScopeAdvisorService;
 import com.smartdroneinspection.maintenance.service.WorkOrderService;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -44,11 +49,15 @@ public class MaintenanceController {
 
   private final WorkOrderService workOrderService;
   private final MaintenanceScopeAdvisorService scopeAdvisorService;
+  private final MaintenanceReinspectionService reinspectionService;
 
   public MaintenanceController(
-      WorkOrderService workOrderService, MaintenanceScopeAdvisorService scopeAdvisorService) {
+      WorkOrderService workOrderService,
+      MaintenanceScopeAdvisorService scopeAdvisorService,
+      MaintenanceReinspectionService reinspectionService) {
     this.workOrderService = workOrderService;
     this.scopeAdvisorService = scopeAdvisorService;
+    this.reinspectionService = reinspectionService;
   }
 
   @PostMapping("/suggest-scope")
@@ -166,6 +175,49 @@ public class MaintenanceController {
       @Valid @RequestBody EstimateDecisionRequest request) {
     return ApiResponse.success(
         workOrderService.rejectEstimate(actorId(jwt), workOrderId, versionNo, request.reason()));
+  }
+
+  @PostMapping("/work-orders/{workOrderId}/reinspection-requests")
+  @PreAuthorize("hasRole('CUSTOMER')")
+  public ApiResponse<ReinspectionRequestResponse> requestReinspection(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID workOrderId,
+      @Valid @RequestBody CreateReinspectionRequest request) {
+    return ApiResponse.success(reinspectionService.request(actorId(jwt), workOrderId, request));
+  }
+
+  @GetMapping("/work-orders/{workOrderId}/reinspection-requests")
+  @PreAuthorize("hasRole('CUSTOMER')")
+  public ApiResponse<List<ReinspectionRequestResponse>> customerReinspectionRequests(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
+    return ApiResponse.success(reinspectionService.customerRequests(actorId(jwt), workOrderId));
+  }
+
+  @GetMapping("/manager/reinspection-requests")
+  @PreAuthorize("hasRole('MANAGER')")
+  public ApiResponse<List<ReinspectionRequestResponse>> managerReinspectionQueue(
+      @AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(reinspectionService.managerQueue(actorId(jwt)));
+  }
+
+  @PostMapping("/manager/reinspection-requests/{requestId}/assign")
+  @PreAuthorize("hasRole('MANAGER')")
+  public ApiResponse<ReinspectionRequestResponse> assignReinspection(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody AssignReinspectionRequest request) {
+    return ApiResponse.success(reinspectionService.assign(actorId(jwt), requestId, request));
+  }
+
+  @PostMapping("/work-orders/{workOrderId}/reinspection-requests/{requestId}/decision")
+  @PreAuthorize("hasRole('CUSTOMER')")
+  public ApiResponse<ReinspectionRequestResponse> decideReinspection(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID workOrderId,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody DecideReinspectionRequest request) {
+    return ApiResponse.success(
+        reinspectionService.decide(actorId(jwt), workOrderId, requestId, request));
   }
 
   private static UUID actorId(Jwt jwt) {

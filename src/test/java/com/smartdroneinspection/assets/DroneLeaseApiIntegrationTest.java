@@ -66,13 +66,10 @@ class DroneLeaseApiIntegrationTest {
     grantEntitlement(orgAId);
     grantEntitlement(orgBId);
 
-    orgManagerAId =
-        persistUser("manager.a@apex.test", "Alice OrgManager", Roles.ORG_MANAGER, orgAId);
-    orgManagerBId =
-        persistUser("manager.b@beacon.test", "Bob OrgManager", Roles.ORG_MANAGER, orgBId);
+    orgManagerAId = persistUser("manager.a@apex.test", "Alice OrgManager", Roles.CUSTOMER, orgAId);
+    orgManagerBId = persistUser("manager.b@beacon.test", "Bob OrgManager", Roles.CUSTOMER, orgBId);
     platformManagerId =
-        persistUser(
-            "platform.manager@sdi.test", "Diana PlatformManager", Roles.PLATFORM_MANAGER, null);
+        persistUser("platform.manager@sdi.test", "Diana PlatformManager", Roles.MANAGER, null);
     platformAdminId =
         persistUser("platform.admin@sdi.test", "Charlie PlatformAdmin", Roles.ADMIN, null);
   }
@@ -98,12 +95,12 @@ class DroneLeaseApiIntegrationTest {
                 .content(createPayload))
         .andExpect(status().isForbidden());
 
-    // PLATFORM_MANAGER succeeds in creating a platform drone in the pool
+    // MANAGER succeeds in creating a platform drone in the pool
     String createdBody =
         mockMvc
             .perform(
                 post("/api/v1/platform/drone-leases/pool")
-                    .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                    .with(jwtUser(platformManagerId, Roles.MANAGER))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(createPayload))
             .andExpect(status().isCreated())
@@ -143,20 +140,20 @@ class DroneLeaseApiIntegrationTest {
       throws Exception {
     UUID platformDroneId = createPoolDrone("SDI-LEASE-M350-01", BigDecimal.valueOf(1500));
 
-    // ORG_MANAGER lists available drones
+    // CUSTOMER lists available drones
     mockMvc
         .perform(
             get("/api/v1/drone-leases/available-drones")
-                .with(jwtUser(orgManagerAId, Roles.ORG_MANAGER)))
+                .with(jwtUser(orgManagerAId, Roles.CUSTOMER)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[?(@.id == '%s')]".formatted(platformDroneId)).exists());
 
-    // ORG_MANAGER requests a 6-month lease
+    // CUSTOMER requests a 6-month lease
     String leaseRes =
         mockMvc
             .perform(
                 post("/api/v1/drone-leases")
-                    .with(jwtUser(orgManagerAId, Roles.ORG_MANAGER))
+                    .with(jwtUser(orgManagerAId, Roles.CUSTOMER))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -189,12 +186,12 @@ class DroneLeaseApiIntegrationTest {
                 .content("{\"externalReference\":\"WIRE-APEX-001\"}"))
         .andExpect(status().isForbidden());
 
-    // PLATFORM_MANAGER confirms wire payment -> lease ACTIVE, pool drone LEASED, customer drone
+    // MANAGER confirms wire payment -> lease ACTIVE, pool drone LEASED, customer drone
     // provisioned
     mockMvc
         .perform(
             post("/api/v1/platform/drone-leases/{leaseId}/confirm-payment", leaseId)
-                .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                .with(jwtUser(platformManagerId, Roles.MANAGER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -213,7 +210,7 @@ class DroneLeaseApiIntegrationTest {
 
     // Customer's GET /api/v1/drones contains the provisioned LEASED drone
     mockMvc
-        .perform(get("/api/v1/drones").with(jwtUser(orgManagerAId, Roles.ORG_MANAGER)))
+        .perform(get("/api/v1/drones").with(jwtUser(orgManagerAId, Roles.CUSTOMER)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.length()").value(1))
         .andExpect(jsonPath("$.data[0].serialNumber").value("SDI-LEASE-M350-01"))
@@ -234,7 +231,7 @@ class DroneLeaseApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/drone-leases/{leaseId}/confirm-payment", leaseAId)
-                .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                .with(jwtUser(platformManagerId, Roles.MANAGER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"externalReference\":\"WIRE-A-001\"}"))
         .andExpect(status().isOk())
@@ -244,7 +241,7 @@ class DroneLeaseApiIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/platform/drone-leases/{leaseId}/confirm-payment", leaseBId)
-                .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                .with(jwtUser(platformManagerId, Roles.MANAGER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"externalReference\":\"WIRE-B-001\"}"))
         .andExpect(status().isConflict())
@@ -267,7 +264,7 @@ class DroneLeaseApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/platform/drone-leases/{leaseId}/confirm-payment", firstLeaseId)
-                    .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                    .with(jwtUser(platformManagerId, Roles.MANAGER))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"externalReference\":\"WIRE-CYCLE-1\"}"))
             .andExpect(status().isOk())
@@ -287,11 +284,11 @@ class DroneLeaseApiIntegrationTest {
                 .content("{\"notes\":\"Attempt by Admin\"}"))
         .andExpect(status().isForbidden());
 
-    // 3. PLATFORM_MANAGER reclaims the active lease
+    // 3. MANAGER reclaims the active lease
     mockMvc
         .perform(
             post("/api/v1/platform/drone-leases/{leaseId}/reclaim", firstLeaseId)
-                .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                .with(jwtUser(platformManagerId, Roles.MANAGER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"notes\":\"Lease term completed and airframe returned\"}"))
         .andExpect(status().isOk())
@@ -302,11 +299,11 @@ class DroneLeaseApiIntegrationTest {
     assertThat(platformDroneRepository.findById(platformDroneId).orElseThrow().getStatus())
         .isEqualTo(PlatformDroneStatus.AVAILABLE);
 
-    // Customer drone is RETIRED, and ORG_MANAGER cannot reactivate it manually
+    // Customer drone is RETIRED, and CUSTOMER cannot reactivate it manually
     mockMvc
         .perform(
             patch("/api/v1/drones/{droneId}/serviceability", customerDroneId1)
-                .with(jwtUser(orgManagerAId, Roles.ORG_MANAGER))
+                .with(jwtUser(orgManagerAId, Roles.CUSTOMER))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"serviceability\":\"ACTIVE\"}"))
         .andExpect(status().isBadRequest())
@@ -319,7 +316,7 @@ class DroneLeaseApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/platform/drone-leases/{leaseId}/confirm-payment", secondLeaseId)
-                    .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                    .with(jwtUser(platformManagerId, Roles.MANAGER))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"externalReference\":\"WIRE-CYCLE-2\"}"))
             .andExpect(status().isOk())
@@ -344,7 +341,7 @@ class DroneLeaseApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/platform/drone-leases/pool")
-                    .with(jwtUser(platformManagerId, Roles.PLATFORM_MANAGER))
+                    .with(jwtUser(platformManagerId, Roles.MANAGER))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
@@ -371,7 +368,7 @@ class DroneLeaseApiIntegrationTest {
         mockMvc
             .perform(
                 post("/api/v1/drone-leases")
-                    .with(jwtUser(orgManagerId, Roles.ORG_MANAGER))
+                    .with(jwtUser(orgManagerId, Roles.CUSTOMER))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(

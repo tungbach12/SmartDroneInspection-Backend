@@ -499,37 +499,65 @@ public class EvidenceService {
 
   Inspection requireAssignedInspection(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
+    if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
+      return inspections
+          .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actorId)
+          .orElseThrow(this::inspectionNotFound);
+    }
+    if (actor.organizationId() == null) {
+      throw inspectionNotFound();
+    }
     return inspections
         .findByIdAndOrganizationIdAndInspectorId(inspectionId, actor.organizationId(), actorId)
         .orElseThrow(this::inspectionNotFound);
   }
 
   Inspection requireInspectionInScope(UUID actorId, UUID inspectionId) {
-    UserAccess.ActiveUser actor = requireActiveUser(actorId);
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, actor.organizationId())
-            .orElseThrow(this::inspectionNotFound);
-    // A reviewer may read the report of an inspection they did not author; the assigned Inspector
-    // and
-    // a qualified ORG_MANAGER both need access to the evidence behind it.
-    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole("CUSTOMER")) {
-      throw inspectionNotFound();
-    }
-    return inspection;
-  }
-
-  private UserAccess.ActiveUser requireActiveUser(UUID actorId) {
     UserAccess.ActiveUser actor =
         userAccess
             .findActiveUser(actorId)
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
+    Inspection inspection;
+    boolean platformManager = actor.hasRole("MANAGER") && actor.organizationId() == null;
+    if (platformManager) {
+      inspection =
+          inspections
+              .findByIdAndInspectorPartnerInspectionTrue(inspectionId)
+              .orElseThrow(this::inspectionNotFound);
+    } else if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
+      inspection =
+          inspections
+              .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actorId)
+              .orElseThrow(this::inspectionNotFound);
+    } else {
+      if (actor.organizationId() == null) {
+        throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
+      }
+      inspection =
+          inspections
+              .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+              .orElseThrow(this::inspectionNotFound);
     }
-    return actor;
+    // Inspectors and the owning Customer can read. Partner Managers can review only the partner
+    // inspections they assigned.
+    if (!platformManager
+        && !inspection.getInspectorId().equals(actorId)
+        && !actor.hasRole("CUSTOMER")) {
+      throw inspectionNotFound();
+    }
+    if (platformManager && !inspection.isPartnerManager(actorId)) {
+      throw inspectionNotFound();
+    }
+    return inspection;
+  }
+
+  private UserAccess.ActiveUser requireActiveUser(UUID actorId) {
+    return userAccess
+        .findActiveUser(actorId)
+        .orElseThrow(
+            () -> new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
   }
 
   private BusinessException inspectionNotFound() {

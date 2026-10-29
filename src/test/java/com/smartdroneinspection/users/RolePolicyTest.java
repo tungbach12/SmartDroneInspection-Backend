@@ -15,13 +15,12 @@ class RolePolicyTest {
   private final RolePolicy policy = new RolePolicy();
 
   @Test
-  void customerOrganizationCannotCarryInspectorOrMultipleRoles() {
+  void customerOrganizationCannotCarryManagerOrMultipleRoles() {
     assertThatThrownBy(
             () ->
                 policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.INSPECTOR)))
+                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.MANAGER)))
         .isInstanceOf(IllegalArgumentException.class);
-
     assertThatThrownBy(
             () ->
                 policy.validate(
@@ -43,11 +42,23 @@ class RolePolicyTest {
   }
 
   @Test
+  void permitsSinglePlatformRoleAdminOrManager() {
+    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN)))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER)))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   void rejectsAdminCombinedWithAnotherRole() {
     assertThatThrownBy(
             () ->
                 policy.validate(
                     ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.MANAGER)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -56,7 +67,6 @@ class RolePolicyTest {
     assertThatThrownBy(
             () -> policy.validate(ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.CUSTOMER)))
         .isInstanceOf(IllegalArgumentException.class);
-
     assertThatCode(
             () ->
                 policy.validate(
@@ -68,7 +78,6 @@ class RolePolicyTest {
   void permitsOnlyManagerOrAdminAsPlatformRoles() {
     assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER)))
         .doesNotThrowAnyException();
-
     assertThatThrownBy(
             () ->
                 policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER, UserRole.ADMIN)))
@@ -80,7 +89,6 @@ class RolePolicyTest {
     assertThatCode(
             () -> policy.validate(ActorZone.INSPECTOR_PARTNER, null, Set.of(UserRole.INSPECTOR)))
         .doesNotThrowAnyException();
-
     assertThatThrownBy(
             () ->
                 policy.validate(
@@ -93,7 +101,6 @@ class RolePolicyTest {
     assertThatCode(
             () -> policy.validate(ActorZone.PROSPECT_CUSTOMER, null, Set.of(UserRole.CUSTOMER)))
         .doesNotThrowAnyException();
-
     assertThatThrownBy(
             () ->
                 policy.validate(

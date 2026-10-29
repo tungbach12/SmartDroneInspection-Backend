@@ -13,7 +13,7 @@ class MaintenanceChangeOrderTest {
 
   private static final UUID WORK_ORDER = UUID.randomUUID();
   private static final UUID LEAD = UUID.randomUUID();
-  private static final UUID ORG_MANAGER = UUID.randomUUID();
+  private static final UUID CUSTOMER = UUID.randomUUID();
 
   private static MaintenanceChangeOrder change(BigDecimal delta) {
     return new MaintenanceChangeOrder(WORK_ORDER, 1, "Hidden damage found", delta, LEAD);
@@ -47,10 +47,10 @@ class MaintenanceChangeOrderTest {
     c.submit();
     assertThat(c.getStatus()).isEqualTo(ChangeOrderStatus.AWAITING_APPROVAL);
 
-    c.approve(ORG_MANAGER, "Within contingency");
+    c.approve(CUSTOMER, "Within contingency");
 
     assertThat(c.getStatus()).isEqualTo(ChangeOrderStatus.APPROVED);
-    assertThat(c.getDecidedByUserId()).isEqualTo(ORG_MANAGER);
+    assertThat(c.getDecidedByUserId()).isEqualTo(CUSTOMER);
     assertThat(c.getDecidedAt()).isNotNull();
   }
 
@@ -59,10 +59,9 @@ class MaintenanceChangeOrderTest {
   void cannotDecideWithoutSubmitting() {
     MaintenanceChangeOrder c = change(new BigDecimal("150000"));
 
-    assertThatThrownBy(() -> c.approve(ORG_MANAGER, "Note"))
-        .isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> c.reject(ORG_MANAGER, "No")).isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> c.returnForClarification(ORG_MANAGER, "Explain"))
+    assertThatThrownBy(() -> c.approve(CUSTOMER, "Note")).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> c.reject(CUSTOMER, "No")).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> c.returnForClarification(CUSTOMER, "Explain"))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -71,15 +70,14 @@ class MaintenanceChangeOrderTest {
     MaintenanceChangeOrder c = change(BigDecimal.ONE);
     c.submit();
 
-    assertThatThrownBy(() -> c.reject(ORG_MANAGER, "  "))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> c.reject(CUSTOMER, "  ")).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void returnedChangeCanBeResubmitted() {
     MaintenanceChangeOrder c = change(BigDecimal.ONE);
     c.submit();
-    c.returnForClarification(ORG_MANAGER, "Quantify the additional hours");
+    c.returnForClarification(CUSTOMER, "Quantify the additional hours");
 
     assertThat(c.getStatus()).isEqualTo(ChangeOrderStatus.RETURNED);
 
@@ -91,11 +89,11 @@ class MaintenanceChangeOrderTest {
   void cannotDecideTwice() {
     MaintenanceChangeOrder c = change(BigDecimal.ONE);
     c.submit();
-    c.approve(ORG_MANAGER, "Approved");
+    c.approve(CUSTOMER, "Approved");
 
-    assertThatThrownBy(() -> c.reject(ORG_MANAGER, "Changed my mind"))
+    assertThatThrownBy(() -> c.reject(CUSTOMER, "Changed my mind"))
         .isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> c.approve(ORG_MANAGER, "Again"))
+    assertThatThrownBy(() -> c.approve(CUSTOMER, "Again"))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -106,7 +104,7 @@ class MaintenanceChangeOrderTest {
 
     MaintenanceChangeOrder approved = change(BigDecimal.ONE);
     approved.submit();
-    approved.approve(ORG_MANAGER, "Approved");
+    approved.approve(CUSTOMER, "Approved");
     approved.supersede();
 
     assertThat(approved.getStatus()).isEqualTo(ChangeOrderStatus.SUPERSEDED);

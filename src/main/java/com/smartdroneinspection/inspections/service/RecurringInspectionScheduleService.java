@@ -616,9 +616,9 @@ public class RecurringInspectionScheduleService {
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_MANAGER)) {
+    if (!actor.hasRole(Roles.CUSTOMER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ORG_MANAGER can perform this action.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only CUSTOMER can perform this action.");
     }
     if (actor.organizationId() == null) {
       throw new BusinessException(

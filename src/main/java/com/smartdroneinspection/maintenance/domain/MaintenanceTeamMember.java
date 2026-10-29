@@ -72,7 +72,7 @@ public class MaintenanceTeamMember {
     this.createdAt = Instant.now();
   }
 
-  /** Report 3 §3.8.1: replacement happens by ORG_MANAGER with a recorded handover reason. */
+  /** Report 3 §3.8.1: replacement happens by CUSTOMER with a recorded handover reason. */
   public void closeWithHandover(Instant until, String handoverReason) {
     if (!active) {
       throw new IllegalStateException("This assignment is already closed");

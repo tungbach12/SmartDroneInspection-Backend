@@ -128,7 +128,7 @@ public class DroneLeaseService {
   }
 
   // ===========================================================================
-  // Customer Lease Operations (ORG_MANAGER)
+  // Customer Lease Operations (CUSTOMER)
   // ===========================================================================
 
   @Transactional(readOnly = true)
@@ -547,7 +547,7 @@ public class DroneLeaseService {
                 () ->
                     new BusinessException(
                         HttpStatus.FORBIDDEN, "FORBIDDEN", "Active platform session required"));
-    if ((!user.hasRole(Roles.ADMIN) && !user.hasRole(Roles.PLATFORM_MANAGER))
+    if ((!user.hasRole(Roles.ADMIN) && !user.hasRole(Roles.MANAGER))
         || user.organizationId() != null) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform authority required");
     }
@@ -564,7 +564,7 @@ public class DroneLeaseService {
                         HttpStatus.FORBIDDEN,
                         "FORBIDDEN",
                         "Active platform manager session required"));
-    if (!user.hasRole(Roles.PLATFORM_MANAGER) || user.organizationId() != null) {
+    if (!user.hasRole(Roles.MANAGER) || user.organizationId() != null) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Platform Manager authority required");
     }
@@ -579,7 +579,7 @@ public class DroneLeaseService {
                 () ->
                     new BusinessException(
                         HttpStatus.FORBIDDEN, "FORBIDDEN", "Active user session required"));
-    if (!user.hasRole(Roles.ORG_MANAGER) || user.organizationId() == null) {
+    if (!user.hasRole(Roles.CUSTOMER) || user.organizationId() == null) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Organization Manager authority required");
     }

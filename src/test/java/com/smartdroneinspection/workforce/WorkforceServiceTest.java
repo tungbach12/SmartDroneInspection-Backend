@@ -197,7 +197,7 @@ class WorkforceServiceTest {
                     subjectId,
                     subject.email(),
                     subject.fullName(),
-                    Set.of("MAINTENANCE_ENGINEER", "CUSTOMER"),
+                    Set.of("INSPECTOR", "CUSTOMER"),
                     subject.status(),
                     organizationId)));
 

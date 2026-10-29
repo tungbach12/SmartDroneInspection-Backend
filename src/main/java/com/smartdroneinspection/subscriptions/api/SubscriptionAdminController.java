@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** Platform administration of organization subscription entitlement. */
 @RestController
 @RequestMapping("/api/v1/platform/organizations/{organizationId}/subscriptions")
-@PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
+@PreAuthorize("hasRole('" + Roles.MANAGER + "')")
 public class SubscriptionAdminController {
 
   private final SubscriptionActivationService subscriptions;

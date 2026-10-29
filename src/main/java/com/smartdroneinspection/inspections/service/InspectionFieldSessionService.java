@@ -38,17 +38,14 @@ public class InspectionFieldSessionService {
 
   @Transactional
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
-    UUID organizationId = requireInspector(inspectorId);
+    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
           "PREFLIGHT_CHECKLIST_REQUIRED",
           "Record the completed pre-flight checklist before starting the session.");
     }
-
-    Inspection inspection = lockInspection(inspectionId, organizationId);
-    if (!inspection.isInspectedBy(inspectorId)) {
-      throw sessionFailure("SESSION_SCOPE_DENIED", "This inspection is not assigned to you.");
-    }
+    Inspection inspection = lockAssignedInspection(inspectionId, inspector);
+    requireAssignedInspector(inspection, inspectorId);
     requireNoOpenSession(inspectionId);
     if (!inspection.hasFlightPermit()) {
       throw sessionFailure(
@@ -61,11 +58,9 @@ public class InspectionFieldSessionService {
           "INSPECTION_NOT_READY_FOR_FLIGHT",
           "The inspection is not ready for flight, so no session may start.");
     }
-
     FieldSession session = FieldSession.opening(inspectionId);
     session.recordPreFlightChecklistNote(preFlightChecklistNote);
     session.start(Instant.now());
-
     inspection.moveTo(InspectionStatus.IN_PROGRESS);
     inspections.save(inspection);
     return sessions.saveAndFlush(session);
@@ -73,26 +68,20 @@ public class InspectionFieldSessionService {
 
   @Transactional(readOnly = true)
   public List<FieldSession> listSessions(UUID inspectorId, UUID inspectionId) {
-    UUID organizationId = requireInspector(inspectorId);
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, organizationId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
-    if (!inspection.isInspectedBy(inspectorId)) {
-      return List.of();
-    }
+    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
+    Inspection inspection = findAssignedInspection(inspectionId, inspector);
+    if (inspection == null || !inspection.isInspectedBy(inspectorId)) return List.of();
     return sessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
   }
 
   @Transactional
   public FieldSession postpone(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
-    UUID organizationId = requireInspector(inspectorId);
+    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
+    Inspection inspection = findAssignedInspection(inspectionId, inspector);
+    if (inspection == null)
+      throw sessionFailure("SESSION_NOT_FOUND", "Field session was not found.");
     FieldSession session =
-        requireOwnedOpenSession(inspectionId, sessionId, organizationId, inspectorId);
-
+        requireOwnedOpenSession(inspectionId, sessionId, inspection, inspectorId);
     try {
       session.postpone(reason);
     } catch (IllegalArgumentException exception) {
@@ -101,15 +90,17 @@ public class InspectionFieldSessionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "SESSION_NOT_IN_PROGRESS", exception.getMessage());
     }
-    return reopenInspection(session, organizationId);
+    return reopenInspection(session, inspection);
   }
 
   @Transactional
   public FieldSession abort(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
-    UUID organizationId = requireInspector(inspectorId);
+    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
+    Inspection inspection = findAssignedInspection(inspectionId, inspector);
+    if (inspection == null)
+      throw sessionFailure("SESSION_NOT_FOUND", "Field session was not found.");
     FieldSession session =
-        requireOwnedOpenSession(inspectionId, sessionId, organizationId, inspectorId);
-
+        requireOwnedOpenSession(inspectionId, sessionId, inspection, inspectorId);
     try {
       session.abort(reason);
     } catch (IllegalArgumentException exception) {
@@ -128,21 +119,17 @@ public class InspectionFieldSessionService {
       throw sessionFailure(
           "SESSION_OUTCOME_REQUIRED", "Record the completed field-session outcome.");
     }
-    UUID organizationId = requireInspector(inspectorId);
-    Inspection inspection = lockInspection(inspectionId, organizationId);
-    if (!inspection.isInspectedBy(inspectorId)) {
-      throw sessionFailure("SESSION_SCOPE_DENIED", "This inspection is not assigned to you.");
-    }
+    UserAccess.ActiveUser inspector = requireInspector(inspectorId);
+    Inspection inspection = lockAssignedInspection(inspectionId, inspector);
+    requireAssignedInspector(inspection, inspectorId);
     FieldSession session =
         sessions
             .findByIdAndInspectionId(sessionId, inspectionId)
             .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
-    if (!session.isOpen() || !session.isInProgress()) {
+    if (!session.isOpen()
+        || !session.isInProgress()
+        || inspection.getStatus() != InspectionStatus.IN_PROGRESS) {
       throw sessionFailure("SESSION_NOT_IN_PROGRESS", "This session is not in progress.");
-    }
-    if (inspection.getStatus() != InspectionStatus.IN_PROGRESS) {
-      throw sessionFailure(
-          "SESSION_NOT_IN_PROGRESS", "The inspection has no active field session.");
     }
     try {
       session.complete(outcomeNotes);
@@ -156,72 +143,73 @@ public class InspectionFieldSessionService {
     return sessions.saveAndFlush(session);
   }
 
-  private FieldSession reopenInspection(FieldSession session, UUID organizationId) {
-    inspections
-        .findWithLockByIdAndOrganizationId(session.getInspectionId(), organizationId)
-        .ifPresent(
-            inspection -> {
-              if (inspection.getStatus() == InspectionStatus.IN_PROGRESS) {
-                inspection.moveTo(InspectionStatus.READY_FOR_FLIGHT);
-                inspections.save(inspection);
-              }
-            });
+  private FieldSession reopenInspection(FieldSession session, Inspection inspection) {
+    Inspection locked = lockInspection(inspection);
+    if (locked.getStatus() == InspectionStatus.IN_PROGRESS) {
+      locked.moveTo(InspectionStatus.READY_FOR_FLIGHT);
+      inspections.save(locked);
+    }
     return sessions.saveAndFlush(session);
   }
 
+  private FieldSession requireOwnedOpenSession(
+      UUID inspectionId, UUID sessionId, Inspection inspection, UUID inspectorId) {
+    requireAssignedInspector(inspection, inspectorId);
+    return sessions
+        .findByIdAndInspectionId(sessionId, inspectionId)
+        .filter(FieldSession::isOpen)
+        .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
+  }
+
+  private void requireAssignedInspector(Inspection inspection, UUID inspectorId) {
+    if (!inspection.isInspectedBy(inspectorId)) {
+      throw sessionFailure("SESSION_SCOPE_DENIED", "This inspection is not assigned to you.");
+    }
+  }
+
+  private Inspection lockAssignedInspection(UUID inspectionId, UserAccess.ActiveUser actor) {
+    Inspection inspection = findAssignedInspection(inspectionId, actor);
+    if (inspection == null) throw sessionFailure("SESSION_NOT_FOUND", "Inspection was not found.");
+    return lockInspection(inspection);
+  }
+
+  private Inspection findAssignedInspection(UUID inspectionId, UserAccess.ActiveUser actor) {
+    if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
+      return inspections
+          .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actor.id())
+          .orElse(null);
+    }
+    if (actor.organizationId() == null) return null;
+    return inspections.findByIdAndOrganizationId(inspectionId, actor.organizationId()).orElse(null);
+  }
+
+  private Inspection lockInspection(Inspection inspection) {
+    Inspection locked =
+        inspections
+            .findWithLockByIdAndOrganizationId(inspection.getId(), inspection.getOrganizationId())
+            .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Inspection was not found."));
+    entityManager.refresh(locked, LockModeType.PESSIMISTIC_WRITE);
+    return locked;
+  }
+
   private void requireNoOpenSession(UUID inspectionId) {
-    boolean open =
-        sessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .anyMatch(FieldSession::isOpen);
-    if (open) {
+    if (sessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+        .anyMatch(FieldSession::isOpen)) {
       throw sessionFailure(
           "SESSION_ALREADY_IN_PROGRESS", "This inspection already has an open field session.");
     }
   }
 
-  private FieldSession requireOwnedOpenSession(
-      UUID inspectionId, UUID sessionId, UUID organizationId, UUID inspectorId) {
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, organizationId)
-            .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
-    FieldSession session =
-        sessions
-            .findByIdAndInspectionId(sessionId, inspectionId)
-            .orElseThrow(() -> sessionFailure("SESSION_NOT_FOUND", "Field session was not found."));
-    if (!inspection.isInspectedBy(inspectorId)) {
-      throw sessionFailure("SESSION_SCOPE_DENIED", "This field session is not assigned to you.");
-    }
-    return session;
-  }
-
-  private Inspection lockInspection(UUID inspectionId, UUID organizationId) {
-    Inspection inspection =
-        inspections
-            .findWithLockByIdAndOrganizationId(inspectionId, organizationId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
-    entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
-    return inspection;
-  }
-
-  private UUID requireInspector(UUID inspectorId) {
-    UserAccess.ActiveUser user =
-        userAccess
-            .findActiveUser(inspectorId)
-            .filter(candidate -> candidate.hasRole(Roles.INSPECTOR))
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.FORBIDDEN,
-                        "SESSION_SCOPE_DENIED",
-                        "Only an active Inspector may manage a field session."));
-    if (user.organizationId() == null) {
-      throw sessionFailure("SESSION_SCOPE_DENIED", "This Inspector has no organization scope.");
-    }
-    return user.organizationId();
+  private UserAccess.ActiveUser requireInspector(UUID inspectorId) {
+    return userAccess
+        .findActiveUser(inspectorId)
+        .filter(candidate -> candidate.hasRole(Roles.INSPECTOR))
+        .orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "SESSION_SCOPE_DENIED",
+                    "Only an active Inspector may manage a field session."));
   }
 
   private static BusinessException sessionFailure(String code, String detail) {

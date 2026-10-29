@@ -5,12 +5,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * MF4-03/04: designates exactly one lead, one report author and one independent accepting reviewer.
- * The domain rejects a reviewer drawn from the executing team.
+ * MF4-02: designates the lead, report author and optional team members. The customer owner remains
+ * the independent accepting party outside the executing team.
  */
 public record AssignTeamRequest(
     @NotNull UUID leadUserId,
     @NotNull UUID reportAuthorUserId,
-    @NotNull UUID acceptingReviewerUserId,
+    UUID acceptingReviewerUserId,
     List<UUID> memberUserIds,
-    String reason) {}
+    String reason) {
+
+  public AssignTeamRequest(
+      UUID leadUserId, UUID reportAuthorUserId, List<UUID> memberUserIds, String reason) {
+    this(leadUserId, reportAuthorUserId, null, memberUserIds, reason);
+  }
+}

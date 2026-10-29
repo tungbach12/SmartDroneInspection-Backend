@@ -117,7 +117,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID orgAdminId =
         createUser(
             organizationId,
-            UserRole.ORG_MANAGER,
+            UserRole.CUSTOMER,
             ActorZone.CUSTOMER_ORGANIZATION,
             "org.admin." + UUID.randomUUID() + "@skyview.test",
             "John OrgAdmin");
@@ -125,7 +125,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     UUID reviewerId =
         createUser(
             organizationId,
-            UserRole.ORG_MANAGER,
+            UserRole.CUSTOMER,
             ActorZone.CUSTOMER_ORGANIZATION,
             "reviewer." + UUID.randomUUID() + "@skyview.test",
             "Alice Reviewer");
@@ -722,11 +722,11 @@ class ConnectedMainFlowE2eIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
 
-    log.info("[MF4] Step 4.10: Independent Acceptance Decision (ACCEPTED)...");
+    log.info("[MF4] Step 4.10: Customer Acceptance Decision (ACCEPTED)...");
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
-                .with(principal(reviewerId, "CUSTOMER"))
+                .with(principal(orgAdminId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -766,7 +766,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/cost-reconciliation", workOrderId)
-                .with(principal(reviewerId, "CUSTOMER"))
+                .with(principal(orgAdminId, "CUSTOMER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
@@ -780,7 +780,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/maintenance/work-orders/{id}/close", workOrderId)
-                .with(principal(reviewerId, "CUSTOMER")))
+                .with(principal(orgAdminId, "CUSTOMER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("CLOSED"));
 
@@ -802,7 +802,7 @@ class ConnectedMainFlowE2eIntegrationTest {
             UserStatus.ACTIVE,
             ActorZone.PLATFORM,
             null);
-    admin.addRole(UserRole.PLATFORM_MANAGER);
+    admin.addRole(UserRole.MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 

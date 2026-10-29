@@ -319,8 +319,8 @@ public class PaymentService {
                         "Subscription not found: " + subscriptionId));
 
     if (!actor.hasRole(Roles.ADMIN)
-        && !actor.hasRole(Roles.PLATFORM_MANAGER)
-        && (!actor.hasRole(Roles.ORG_MANAGER)
+        && !actor.hasRole(Roles.MANAGER)
+        && (!actor.hasRole(Roles.CUSTOMER)
             || !subscription.getOrganizationId().equals(actor.organizationId()))) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,

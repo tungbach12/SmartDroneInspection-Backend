@@ -30,8 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
  * may the caller see, and in which tenant.
  *
  * <p>Scope is decided from the caller, never from a query parameter. An Inspector sees only the
- * inspections assigned to them, an ORG_MANAGER sees their own organization, and a platform ADMIN
- * sees every organization read-only. Cross-tenant administrative reads stay a separate, explicitly
+ * inspections assigned to them, an CUSTOMER sees their own organization, and a platform ADMIN sees
+ * every organization read-only. Cross-tenant administrative reads stay a separate, explicitly
  * authorized capability, so ADMIN is given no write path on this resource.
  */
 @Service

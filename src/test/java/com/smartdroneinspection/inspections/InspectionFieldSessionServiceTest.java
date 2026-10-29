@@ -68,7 +68,7 @@ class InspectionFieldSessionServiceTest {
         new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
     otherOrganizationId = fixture.otherOrganizationId();
-    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.CUSTOMER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =

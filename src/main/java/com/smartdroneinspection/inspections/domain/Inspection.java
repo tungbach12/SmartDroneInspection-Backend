@@ -22,6 +22,9 @@ public class Inspection {
   @Column(name = "organization_id", nullable = false)
   private UUID organizationId;
 
+  @Column(name = "partner_assignment", nullable = false)
+  private boolean partnerAssignment;
+
   @Column(name = "asset_id", nullable = false)
   private UUID assetId;
 
@@ -98,6 +101,18 @@ public class Inspection {
 
   public Inspection(UUID organizationId, UUID assetId, Instant plannedStartAt) {
     this(organizationId, assetId, null, null, plannedStartAt, null);
+  }
+
+  /** Marks an inspection assigned by the partner registry or reinspection path. */
+  public void markPartnerAssignment() {
+    if (inspectorId == null || droneId == null || status != InspectionStatus.ASSIGNED) {
+      throw new IllegalStateException("A partner inspection must be fully assigned");
+    }
+    partnerAssignment = true;
+  }
+
+  public boolean isPartnerAssignment() {
+    return partnerAssignment;
   }
 
   public void recordFlightPermit(String fileKey, String fileName, Instant uploadedAt) {

@@ -24,6 +24,7 @@ import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.spi.InspectionReinspectionReportPublishedEvent;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportRenderPort;
@@ -426,8 +427,8 @@ public class ReportService {
   }
 
   /**
-   * MF3-09: the qualified reviewer decides. Only an in-organization ORG_MANAGER who is not the
-   * author may review, and returning a draft requires a reason.
+   * MF3-09: the qualified reviewer decides. Only an in-organization CUSTOMER who is not the author
+   * may review, and returning a draft requires a reason.
    */
   @Transactional
   public InspectionReportResponse reviewVersion(
@@ -519,6 +520,10 @@ public class ReportService {
     // planning data.
     inspection.markReportPublished();
     inspections.saveAndFlush(inspection);
+
+    events.publishEvent(
+        new InspectionReinspectionReportPublishedEvent(
+            inspection.getId(), version.getId(), inspection.getOrganizationId()));
 
     boolean hasConfirmedFindings =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
@@ -966,17 +971,25 @@ public class ReportService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    if (actor.organizationId() == null || !actor.hasRole("CUSTOMER")) {
+    boolean platformManager = actor.hasRole("MANAGER") && actor.organizationId() == null;
+    if (!platformManager && (actor.organizationId() == null || !actor.hasRole("CUSTOMER"))) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified ORG_MANAGER may review");
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only a platform Manager or qualified Customer may review");
     }
     Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+        (platformManager
+                ? inspections.findByIdAndInspectorPartnerInspectionTrue(inspectionId)
+                : inspections.findByIdAndOrganizationId(inspectionId, actor.organizationId()))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found"));
+    if (platformManager && !inspection.isPartnerManager(actorId)) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "Inspection report not found");
+    }
     // Separation of duties: no report is self-reviewed.
     if (inspection.getInspectorId().equals(actorId)) {
       throw new BusinessException(

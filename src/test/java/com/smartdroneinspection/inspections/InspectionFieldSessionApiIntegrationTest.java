@@ -71,7 +71,7 @@ class InspectionFieldSessionApiIntegrationTest {
     AssetTestFixture.Data fixture =
         new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
     organizationId = fixture.organizationId();
-    reviewerId = createUser(organizationId, UserRole.ORG_MANAGER, "reviewer");
+    reviewerId = createUser(organizationId, UserRole.CUSTOMER, "reviewer");
     inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
 
     assetId =

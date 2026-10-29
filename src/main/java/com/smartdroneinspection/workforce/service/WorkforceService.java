@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class WorkforceService {
 
-  /** Roles a Customer may grant. ADMIN and CUSTOMER are deliberately absent. */
+  /** Customer organizations may provision their own maintenance engineers. */
   static final Set<String> GRANTABLE_ROLES = Set.of(Roles.MAINTENANCE_ENGINEER);
 
   private static final String NOT_FOUND_MESSAGE = "User was not found.";

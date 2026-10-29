@@ -68,7 +68,11 @@ public class WorkOrderService {
           WorkOrderStatus.WORK_COMPLETED,
           WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE,
           WorkOrderStatus.REWORK_REQUIRED,
-          WorkOrderStatus.REINSPECTION_REQUIRED);
+          WorkOrderStatus.REINSPECTION_REQUIRED,
+          WorkOrderStatus.AWAITING_REINSPECTION,
+          WorkOrderStatus.REINSPECTION_IN_PROGRESS,
+          WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE,
+          WorkOrderStatus.REPAIR_SUPPLEMENT_REQUIRED);
 
   private final MaintenanceWorkOrderRepository workOrders;
   private final MaintenanceTeamMemberRepository teamMembers;
@@ -154,22 +158,7 @@ public class WorkOrderService {
           "An active work order already covers this finding");
     }
 
-    UserAccess.ActiveUser budgetApprover =
-        userAccess
-            .findActiveUser(request.budgetApproverUserId())
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.BAD_REQUEST,
-                        "WORK_ORDER_APPROVER_INVALID",
-                        "The budget approver is not an active user"));
-    if (!budgetApprover.hasRole("CUSTOMER")
-        || !actor.organizationId().equals(budgetApprover.organizationId())) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "WORK_ORDER_APPROVER_INVALID",
-          "The budget approver must be an active ORG_MANAGER in this organization");
-    }
+    UUID budgetApproverId = actor.id();
 
     MaintenanceWorkOrder order =
         new MaintenanceWorkOrder(
@@ -178,7 +167,7 @@ public class WorkOrderService {
             source.reportVersionId(),
             source.findingId(),
             actor.id(),
-            request.budgetApproverUserId());
+            budgetApproverId);
 
     try {
       order.triage(
@@ -212,7 +201,7 @@ public class WorkOrderService {
     } else if (actor.hasRole("MAINTENANCE_ENGINEER")) {
       result = workOrders.findAssignedToEngineer(actor.organizationId(), actor.id(), pageable);
     } else {
-      throw forbidden("Only an ORG_MANAGER or assigned MAINTENANCE_ENGINEER may list work orders");
+      throw forbidden("Only an CUSTOMER or assigned MAINTENANCE_ENGINEER may list work orders");
     }
     return new WorkOrderPageResponse(
         result.getContent().stream().map(this::toWorkOrderResponse).toList(),
@@ -235,9 +224,13 @@ public class WorkOrderService {
     MaintenanceWorkOrder order = requireWorkOrderInScope(actor.id(), workOrderId);
     requireEligibleEngineer(actor.organizationId(), request.leadUserId(), "team lead");
     requireEligibleEngineer(actor.organizationId(), request.reportAuthorUserId(), "report author");
+    UUID reviewerId =
+        request.acceptingReviewerUserId() != null
+            ? request.acceptingReviewerUserId()
+            : order.getOwnerUserId();
     UserAccess.ActiveUser reviewer =
         userAccess
-            .findActiveUser(request.acceptingReviewerUserId())
+            .findActiveUser(reviewerId)
             .orElseThrow(() -> forbidden("The accepting reviewer is not an active user"));
     if (!reviewer.hasRole("CUSTOMER")
         || !actor.organizationId().equals(reviewer.organizationId())
@@ -247,7 +240,7 @@ public class WorkOrderService {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "TEAM_REVIEWER_INVALID",
-          "The accepting reviewer must be an active ORG_MANAGER in this organization");
+          "The accepting reviewer must be an active CUSTOMER in this organization");
     }
     UUID budgetApproverId = order.getBudgetApproverUserId();
     if (budgetApproverId.equals(request.leadUserId())
@@ -261,8 +254,7 @@ public class WorkOrderService {
     }
 
     try {
-      order.assignTeam(
-          request.leadUserId(), request.reportAuthorUserId(), request.acceptingReviewerUserId());
+      order.assignTeam(request.leadUserId(), request.reportAuthorUserId(), reviewerId);
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw conflict(ex);
     }
@@ -293,7 +285,7 @@ public class WorkOrderService {
               order.getAssetId(),
               request.leadUserId(),
               request.reportAuthorUserId(),
-              request.acceptingReviewerUserId(),
+              reviewerId,
               request.memberUserIds() == null ? List.of() : request.memberUserIds(),
               actor.id(),
               Instant.now()));
@@ -620,7 +612,7 @@ public class WorkOrderService {
   private UserAccess.ActiveUser requireOrganizationAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
     if (!actor.hasRole("CUSTOMER") || actor.organizationId() == null) {
-      throw forbidden("Only an ORG_MANAGER of this organization may perform this action");
+      throw forbidden("Only a CUSTOMER of this organization may perform this action");
     }
     return actor;
   }

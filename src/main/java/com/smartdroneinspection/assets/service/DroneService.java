@@ -7,6 +7,7 @@ import com.smartdroneinspection.assets.api.dto.response.DroneSelectionResponse;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
@@ -115,7 +116,14 @@ public class DroneService {
    */
   @Transactional(readOnly = true)
   public List<DroneSelectionResponse> selection(UUID actorId) {
-    UUID organizationId = requireOrganization(requireActive(actorId));
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ADMIN)) {
+      return drones.findAll().stream()
+          .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+          .map(DroneSelectionResponse::from)
+          .toList();
+    }
+    UUID organizationId = requireOrganization(actor);
     return drones
         .findAllByOrganizationIdAndServiceability(organizationId, DroneServiceability.ACTIVE)
         .stream()

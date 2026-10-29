@@ -3,6 +3,7 @@ package com.smartdroneinspection.maintenance.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.smartdroneinspection.maintenance.domain.enums.CustomerMaintenanceDecision;
 import com.smartdroneinspection.maintenance.domain.enums.WorkOrderStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,7 @@ class MaintenanceWorkOrderLifecycleTest {
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.WORK_COMPLETED);
 
     order.markSubmittedForAcceptance();
-    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
   }
 
   @Test
@@ -90,88 +91,82 @@ class MaintenanceWorkOrderLifecycleTest {
   }
 
   @Test
-  void independentReviewerAccepts() {
+  void customerOwnerAcceptsCompletedWork() {
     MaintenanceWorkOrder order = awaitingAcceptance();
 
-    order.accept(REVIEWER);
+    order.accept(OWNER);
 
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.ACCEPTED);
   }
 
-  /**
-   * MF4-18: completion is not acceptance. Because designation already refuses a reviewer inside the
-   * team, only the designated reviewer reaches the acceptance guard at all.
-   */
   @Test
-  void executingTeamCannotAccept() {
+  void executingTeamCannotAcceptWork() {
     MaintenanceWorkOrder order = awaitingAcceptance();
 
     assertThatThrownBy(() -> order.accept(LEAD))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("designated independent reviewer");
+        .hasMessageContaining("work-order customer");
     assertThatThrownBy(() -> order.accept(AUTHOR)).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
-  void onlyTheDesignatedReviewerMayDecide() {
+  void onlyTheWorkOrderOwnerMayAccept() {
     MaintenanceWorkOrder order = awaitingAcceptance();
 
     assertThatThrownBy(() -> order.accept(UUID.randomUUID()))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("designated independent reviewer");
+        .hasMessageContaining("work-order customer");
   }
 
   @Test
-  void reviewerReturnsWorkForReworkWithAReason() {
-    MaintenanceWorkOrder order = awaitingAcceptance();
-
-    order.requireReworkAfterAcceptance(REVIEWER, "Torque not recorded");
-
-    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.REWORK_REQUIRED);
-  }
-
-  @Test
-  void reworkDecisionRequiresAReason() {
+  void legacyReviewerReworkDecisionRequiresReason() {
     MaintenanceWorkOrder order = awaitingAcceptance();
 
     assertThatThrownBy(() -> order.requireReworkAfterAcceptance(REVIEWER, "  "))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> order.requireReinspection(REVIEWER, null))
-        .isInstanceOf(IllegalArgumentException.class);
   }
 
-  /** Rework after acceptance resumes execution, not approval: scope was already approved. */
   @Test
-  void reworkResumesExecution() {
+  void customerReturnReopensRepairWithAReason() {
     MaintenanceWorkOrder order = awaitingAcceptance();
-    order.requireReworkAfterAcceptance(REVIEWER, "Torque not recorded");
+    order.recordCustomerDecision(
+        CustomerMaintenanceDecision.REPAIR_REQUIRED, "Torque not recorded");
 
-    order.resumeExecutionAfterRework();
+    order.resumeSupplementWork();
     order.markWorkCompleted(1, 1);
     order.markSubmittedForAcceptance();
-    order.accept(REVIEWER);
+    order.accept(OWNER);
 
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.ACCEPTED);
   }
 
   @Test
-  void reviewerRequestsReinspection() {
+  void customerRequestAndDecisionDriveReinspectionLifecycle() {
     MaintenanceWorkOrder order = awaitingAcceptance();
 
-    order.requireReinspection(REVIEWER, "Requires independent verification");
+    order.requestReinspection();
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.AWAITING_REINSPECTION);
 
-    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.REINSPECTION_REQUIRED);
+    order.markReinspectionAssigned();
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.REINSPECTION_IN_PROGRESS);
 
-    order.resumeAfterReinspection();
-    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.IN_PROGRESS);
+    order.markAwaitingReinspectionResult();
+    order.recordCustomerDecision(
+        CustomerMaintenanceDecision.REPAIR_REQUIRED, "The finding remains visible");
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.REPAIR_SUPPLEMENT_REQUIRED);
+
+    order.resumeSupplementWork();
+    order.markWorkCompleted(1, 1);
+    order.markSubmittedForAcceptance();
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.AWAITING_CUSTOMER_ACCEPTANCE);
   }
 
   @Test
   void reconcilesCostsThenCloses() {
     MaintenanceWorkOrder order = awaitingAcceptance();
-    order.accept(REVIEWER);
+    order.accept(OWNER);
 
-    order.markCostsReconciled();
+    order.markCostsReconciled(OWNER);
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.COST_RECONCILED);
 
     order.close();
@@ -182,7 +177,7 @@ class MaintenanceWorkOrderLifecycleTest {
   @Test
   void cannotCloseBeforeReconciliation() {
     MaintenanceWorkOrder order = awaitingAcceptance();
-    order.accept(REVIEWER);
+    order.accept(OWNER);
 
     assertThatThrownBy(order::close).isInstanceOf(IllegalStateException.class);
     assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.ACCEPTED);
@@ -192,18 +187,20 @@ class MaintenanceWorkOrderLifecycleTest {
   void cannotReconcileBeforeAcceptance() {
     MaintenanceWorkOrder order = awaitingAcceptance();
 
-    assertThatThrownBy(order::markCostsReconciled).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> order.markCostsReconciled(OWNER))
+        .isInstanceOf(IllegalStateException.class);
   }
 
   @Test
   void closedOrderAcceptsNoFurtherAction() {
     MaintenanceWorkOrder order = awaitingAcceptance();
-    order.accept(REVIEWER);
-    order.markCostsReconciled();
+    order.accept(OWNER);
+    order.markCostsReconciled(OWNER);
     order.close();
 
     assertThatThrownBy(order::close).isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(order::markCostsReconciled).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> order.markCostsReconciled(OWNER))
+        .isInstanceOf(IllegalStateException.class);
     assertThatThrownBy(order::markReady).isInstanceOf(IllegalStateException.class);
   }
 }

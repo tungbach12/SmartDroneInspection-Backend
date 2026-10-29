@@ -145,11 +145,56 @@ public class InspectionCreationService {
       Instant plannedStartAt,
       Instant plannedEndAt,
       UUID recurringScheduleId) {
+    return dispatchInspectionInternal(
+        organizationId,
+        assetId,
+        inspectorId,
+        droneId,
+        plannedStartAt,
+        plannedEndAt,
+        recurringScheduleId,
+        false,
+        null);
+  }
+
+  @Transactional
+  public Inspection dispatchReinspectionInternal(
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      UUID managerUserId,
+      Instant plannedStartAt,
+      Instant plannedEndAt) {
+    return dispatchInspectionInternal(
+        organizationId,
+        assetId,
+        inspectorId,
+        droneId,
+        plannedStartAt,
+        plannedEndAt,
+        null,
+        true,
+        managerUserId);
+  }
+
+  private Inspection dispatchInspectionInternal(
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID recurringScheduleId,
+      boolean allowPartnerInspector,
+      UUID managerUserId) {
     if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
     }
-    subscriptionEntitlement.requireActive(organizationId, plannedStartAt);
+    if (!allowPartnerInspector) {
+      subscriptionEntitlement.requireActive(organizationId, plannedStartAt);
+    }
 
     Asset asset =
         assets
@@ -165,27 +210,60 @@ public class InspectionCreationService {
     UserAccess.ActiveUser inspector =
         userAccess
             .findActiveUser(inspectorId)
-            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
+            .filter(u -> u.hasRole(Roles.INSPECTOR))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_INSPECTOR",
-                        "Assigned inspector must be active in the organization."));
+                        "Assigned inspector must be active with role INSPECTOR."));
+    boolean partnerInspector = "INSPECTOR_PARTNER".equals(inspector.actorZone());
+    if (allowPartnerInspector
+        && (managerUserId == null
+            || userAccess
+                .findActiveUser(managerUserId)
+                .filter(
+                    manager -> manager.hasRole(Roles.MANAGER) && manager.organizationId() == null)
+                .isEmpty())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_MANAGER",
+          "A platform manager must own partner dispatch.");
+    }
+    if (allowPartnerInspector != partnerInspector
+        || (!partnerInspector && !organizationId.equals(inspector.organizationId()))) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_INSPECTOR",
+          "Inspector must match the assignment's customer or partner scope.");
+    }
+    if (partnerInspector && !allowPartnerInspector) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_INSPECTOR",
+          "Partner Inspectors may only be assigned to explicit reinspection missions.");
+    }
 
     Drone drone =
-        drones
-            .findWithLockByIdAndOrganizationId(droneId, organizationId)
+        (partnerInspector
+                ? drones.findWithLockById(droneId)
+                : drones.findWithLockByIdAndOrganizationId(droneId, organizationId))
             .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+            .filter(d -> !partnerInspector || inspectorId.equals(d.getInspectorOwnerId()))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_DRONE",
-                        "Assigned drone must be active in the organization."));
+                        "Assigned drone must be active and owned by the assigned Inspector or organization."));
 
-    if (inspections.hasScheduleConflict(
-        organizationId, inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)) {
+    boolean scheduleConflict =
+        partnerInspector
+            ? inspections.hasPartnerScheduleConflict(
+                organizationId, inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)
+            : inspections.hasScheduleConflict(
+                organizationId, inspector.id(), drone.getId(), plannedStartAt, plannedEndAt);
+    if (scheduleConflict) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "SCHEDULE_CONFLICT",
@@ -204,6 +282,9 @@ public class InspectionCreationService {
     if (recurringScheduleId != null) {
       inspection.setRecurringScheduleId(recurringScheduleId);
     }
+    if (allowPartnerInspector) {
+      inspection.markPartnerAssignment();
+    }
 
     Inspection saved = inspections.saveAndFlush(inspection);
 
@@ -220,17 +301,33 @@ public class InspectionCreationService {
   @Transactional(readOnly = true)
   public InspectionResponse get(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = actor.organizationId();
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, organizationId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-
+    Inspection inspection;
+    if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
+      inspection =
+          inspections
+              .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actorId)
+              .orElseThrow(
+                  () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else if (actor.hasRole(Roles.MANAGER) && actor.organizationId() == null) {
+      inspection =
+          inspections
+              .findByIdAndInspectorPartnerInspectionTrue(inspectionId)
+              .filter(candidate -> candidate.isPartnerManager(actorId))
+              .orElseThrow(
+                  () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else {
+      UUID organizationId = actor.organizationId();
+      if (organizationId == null) {
+        throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found");
+      }
+      inspection =
+          inspections
+              .findByIdAndOrganizationId(inspectionId, organizationId)
+              .orElseThrow(
+                  () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    }
     Asset asset =
-        assets.findByIdAndOrganizationId(inspection.getAssetId(), organizationId).orElse(null);
+        assets.findByIdAndOrganizationId(inspection.getAssetId(), inspection.getOrganizationId()).orElse(null);
     return toResponse(inspection, asset);
   }
 
@@ -243,23 +340,44 @@ public class InspectionCreationService {
       byte[] content,
       String contentType) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = actor.organizationId();
+    Inspection inspection;
+    if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
+      inspection =
+          inspections
+              .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actorId)
+              .orElseThrow(
+                  () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else if (actor.hasRole(Roles.MANAGER) && actor.organizationId() == null) {
+      inspection =
+          inspections
+              .findByIdAndInspectorPartnerInspectionTrue(inspectionId)
+              .filter(candidate -> candidate.isPartnerManager(actorId))
+              .orElseThrow(
+                  () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else {
+      UUID organizationId = actor.organizationId();
+      if (organizationId == null) {
+        throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found");
+      }
+      inspection =
+          inspections
+              .findByIdAndOrganizationId(inspectionId, organizationId)
+              .orElseThrow(
+                  () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    }
 
-    Inspection inspection =
-        inspections
-            .findByIdAndOrganizationId(inspectionId, organizationId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-
-    if (!inspection.isInspectedBy(actorId) && !actor.hasRole(Roles.ORG_MANAGER)) {
+    if (!inspection.isInspectedBy(actorId)
+        && !actor.hasRole(Roles.CUSTOMER)
+        && !inspection.isPartnerManager(actorId)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
           "Only the assigned inspector or organization manager can upload the flight permit.");
     }
 
+    if (actor.hasRole(Roles.MANAGER) && !inspection.isPartnerManager(actorId)) {
+      throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found");
+    }
     UserAccess.ActiveUser assignedInspector =
         userAccess
             .findActiveUser(inspection.getInspectorId())
@@ -355,9 +473,9 @@ public class InspectionCreationService {
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_MANAGER)) {
+    if (!actor.hasRole(Roles.CUSTOMER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ORG_MANAGER can perform this action.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only CUSTOMER can perform this action.");
     }
     if (actor.organizationId() == null) {
       throw new BusinessException(

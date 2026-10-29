@@ -244,7 +244,7 @@ public class UserAccessService implements UserAccess {
         users.findDetailedById(actorId).orElseThrow(UserAccessService::workforceAccessDenied);
     if (!actor.active()
         || actor.getOrganizationId() == null
-        || !actor.roleValues().contains(Roles.ORG_MANAGER)) {
+        || !actor.roleValues().contains(Roles.CUSTOMER)) {
       throw workforceAccessDenied();
     }
     return actor;

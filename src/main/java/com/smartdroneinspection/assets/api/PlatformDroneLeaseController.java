@@ -38,13 +38,13 @@ public class PlatformDroneLeaseController {
   }
 
   @GetMapping("/pool")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<List<PlatformDroneResponse>> listPool(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(droneLeases.listPool(subject(jwt)));
   }
 
   @PostMapping("/pool")
-  @PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<PlatformDroneResponse> createPlatformDrone(
       @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreatePlatformDroneRequest request) {
@@ -54,7 +54,7 @@ public class PlatformDroneLeaseController {
   }
 
   @PatchMapping("/pool/{platformDroneId}/status")
-  @PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<PlatformDroneResponse> updatePlatformDroneStatus(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID platformDroneId,
@@ -64,14 +64,14 @@ public class PlatformDroneLeaseController {
   }
 
   @GetMapping
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<List<DroneLeaseResponse>> listLeases(
       @AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) DroneLeaseStatus status) {
     return ApiResponse.success(droneLeases.listAllLeases(subject(jwt), status));
   }
 
   @PostMapping("/{leaseId}/confirm-payment")
-  @PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<DroneLeaseResponse> confirmLeasePayment(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID leaseId,
@@ -82,7 +82,7 @@ public class PlatformDroneLeaseController {
   }
 
   @PostMapping("/{leaseId}/reclaim")
-  @PreAuthorize("hasRole('" + Roles.PLATFORM_MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<DroneLeaseResponse> reclaimLease(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID leaseId,

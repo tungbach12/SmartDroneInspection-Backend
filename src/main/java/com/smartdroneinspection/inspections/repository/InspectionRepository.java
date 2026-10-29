@@ -19,6 +19,13 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   Optional<Inspection> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
+  Optional<Inspection> findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(
+      UUID id, UUID inspectorId);
+
+  Optional<Inspection> findByIdAndInspectorPartnerInspectionTrue(UUID id);
+
+  Optional<Inspection> findByIdAndInspectorId(UUID id, UUID inspectorId);
+
   Optional<Inspection> findByIdAndOrganizationIdAndInspectorId(
       UUID id, UUID organizationId, UUID inspectorId);
 
@@ -104,6 +111,20 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
   boolean hasScheduleConflict(
+      @Param("organizationId") UUID organizationId,
+      @Param("inspectorId") UUID inspectorId,
+      @Param("droneId") UUID droneId,
+      @Param("start") java.time.Instant start,
+      @Param("end") java.time.Instant end);
+
+  @Query(
+      "select count(i) > 0 from Inspection i where "
+          + "(i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
+          + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
+          + "and i.plannedStartAt < :end and i.plannedEndAt > :start "
+          + "and (i.organizationId <> :organizationId or i.inspectorPartnerInspection = true)")
+  boolean hasPartnerScheduleConflict(
       @Param("organizationId") UUID organizationId,
       @Param("inspectorId") UUID inspectorId,
       @Param("droneId") UUID droneId,
