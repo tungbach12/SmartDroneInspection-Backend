@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * MF4-18: Listens to ReinspectionReportPublishedEvent and attaches the re-inspection report to the
@@ -25,7 +24,6 @@ public class WorkOrderReinspectionListener {
   }
 
   @ApplicationModuleListener
-  @Transactional
   public void onReinspectionReportPublished(ReinspectionReportPublishedEvent event) {
     log.info(
         "Handling published re-inspection report {} for work order {}",
