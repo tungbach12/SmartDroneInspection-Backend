@@ -15,6 +15,7 @@ import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -499,12 +500,13 @@ public class EvidenceService {
 
   Inspection requireAssignedInspection(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
-    if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
+    if (actor.isInspectorPartner()) {
       return inspections
-          .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actorId)
+          .findAssignedInspectorInspection(inspectionId, null, actorId, true)
+          .filter(Inspection::isPartnerAssignment)
           .orElseThrow(this::inspectionNotFound);
     }
-    if (actor.organizationId() == null) {
+    if (actor.organizationId() == null || !actor.hasRole(Roles.INSPECTOR)) {
       throw inspectionNotFound();
     }
     return inspections
@@ -513,41 +515,21 @@ public class EvidenceService {
   }
 
   Inspection requireInspectionInScope(UUID actorId, UUID inspectionId) {
-    UserAccess.ActiveUser actor =
-        userAccess
-            .findActiveUser(actorId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
-    Inspection inspection;
-    boolean platformManager = actor.hasRole("MANAGER") && actor.organizationId() == null;
-    if (platformManager) {
-      inspection =
-          inspections
-              .findByIdAndInspectorPartnerInspectionTrue(inspectionId)
-              .orElseThrow(this::inspectionNotFound);
-    } else if ("INSPECTOR_PARTNER".equals(actor.actorZone())) {
-      inspection =
-          inspections
-              .findByIdAndInspectorIdAndInspectorPartnerInspectionTrue(inspectionId, actorId)
-              .orElseThrow(this::inspectionNotFound);
-    } else {
-      if (actor.organizationId() == null) {
-        throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
-      }
-      inspection =
-          inspections
-              .findByIdAndOrganizationId(inspectionId, actor.organizationId())
-              .orElseThrow(this::inspectionNotFound);
+    UserAccess.ActiveUser actor = requireActiveUser(actorId);
+    if (actor.isInspectorPartner()) {
+      return inspections
+          .findAssignedInspectorInspection(inspectionId, null, actorId, true)
+          .filter(Inspection::isPartnerAssignment)
+          .orElseThrow(this::inspectionNotFound);
     }
-    // Inspectors and the owning Customer can read. Partner Managers can review only the partner
-    // inspections they assigned.
-    if (!platformManager
-        && !inspection.getInspectorId().equals(actorId)
-        && !actor.hasRole("CUSTOMER")) {
+    if (actor.organizationId() == null) {
       throw inspectionNotFound();
     }
-    if (platformManager && !inspection.isPartnerManager(actorId)) {
+    Inspection inspection =
+        inspections
+            .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+            .orElseThrow(this::inspectionNotFound);
+    if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole(Roles.CUSTOMER)) {
       throw inspectionNotFound();
     }
     return inspection;

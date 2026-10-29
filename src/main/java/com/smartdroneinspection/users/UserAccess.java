@@ -48,6 +48,15 @@ public interface UserAccess {
       String userAgent,
       String correlationId);
 
+  void recordSecurityAudit(
+      UUID actorUserId,
+      UUID aggregateId,
+      String action,
+      String afterStatus,
+      String ipAddress,
+      String userAgent,
+      String correlationId);
+
   record ActiveUser(
       UUID id,
       Set<String> roles,
@@ -146,6 +155,10 @@ public interface UserAccess {
       return pilotLicenseNumber != null
           && !pilotLicenseNumber.isBlank()
           && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
+    }
+
+    public boolean isInspectorPartner() {
+      return "INSPECTOR_PARTNER".equals(actorZone) && hasRole("INSPECTOR");
     }
   }
 

@@ -148,14 +148,20 @@ class DroneApiIntegrationTest {
   }
 
   @Test
-  void sameSerialIsAcceptedInAnotherOrganization() throws Exception {
+  void sameSerialIsRejectedInAnotherOrganization() throws Exception {
     String serial = serial();
     long before = droneCount();
 
     createDrone(fixture.clientId(), serial).andExpect(status().isCreated());
-    createDrone(fixture.otherClientId(), serial).andExpect(status().isCreated());
+    mockMvc
+        .perform(
+            post("/api/v1/drones")
+                .with(orgAdmin(fixture.otherClientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumber\":\"%s\"}".formatted(serial)))
+        .andExpect(status().isConflict());
 
-    assertThat(droneCount()).isEqualTo(before + 2);
+    assertThat(droneCount()).isEqualTo(before + 1);
   }
 
   @Test

@@ -62,6 +62,9 @@ public class Inspection {
   @Column(name = "recurring_schedule_id")
   private UUID recurringScheduleId;
 
+  @Column(name = "partner_assignment", nullable = false)
+  private boolean partnerAssignment;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 

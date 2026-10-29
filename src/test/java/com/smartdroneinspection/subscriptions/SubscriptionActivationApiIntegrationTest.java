@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import com.smartdroneinspection.assets.domain.AssetCategory;
+import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.subscriptions.domain.Subscription;
 import com.smartdroneinspection.subscriptions.repository.SubscriptionRepository;
 import com.smartdroneinspection.users.domain.Organization;
@@ -36,6 +38,7 @@ import tools.jackson.databind.ObjectMapper;
 class SubscriptionActivationApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
+  @Autowired AssetCategoryRepository categories;
   @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired SubscriptionRepository subscriptions;
@@ -296,6 +299,10 @@ class SubscriptionActivationApiIntegrationTest {
   @Test
   void activatesSubscriptionForRegisteredE2eOrganization() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
+    UUID categoryId =
+        categories
+            .saveAndFlush(new AssetCategory("E2E-" + unique.substring(0, 12), "Bridge", null, true))
+            .getId();
     String email = "e2e-admin-" + unique + "@example.test";
     String code = "E2E-" + unique.substring(0, 16);
     String registrationBody =
@@ -305,10 +312,18 @@ class SubscriptionActivationApiIntegrationTest {
           "fullName": "E2E Organization Admin",
           "organizationName": "E2E Organization",
           "organizationCode": "%s",
-          "password": "a sufficiently long e2e passphrase"
+          "password": "a sufficiently long e2e passphrase",
+          "firstAsset": {
+            "code": "E2E-ASSET-%s",
+            "name": "E2E asset",
+            "categoryId": "%s",
+            "locationText": "District 1",
+            "latitude": 10.9,
+            "longitude": 106.8
+          }
         }
         """
-            .formatted(email, code);
+            .formatted(email, code, unique.substring(0, 16), categoryId);
     String registrationResponse =
         mockMvc
             .perform(

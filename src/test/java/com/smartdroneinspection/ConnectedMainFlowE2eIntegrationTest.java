@@ -6,17 +6,18 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.Drone;
-import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
+import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
+import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
@@ -80,6 +81,8 @@ class ConnectedMainFlowE2eIntegrationTest {
   @Autowired AssetCategoryRepository categories;
   @Autowired AssetRepository assets;
   @Autowired DroneRepository drones;
+  @Autowired ServiceRequestRepository serviceRequests;
+  @Autowired ServiceRequestOccurrenceRepository occurrences;
   @Autowired InspectionRepository inspections;
   @Autowired FindingRepository findings;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -155,11 +158,18 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[FOUNDATION] Step 0.3: Provisioning Inspector and Maintenance Engineer...");
     UUID inspectorId =
         createUser(
-            organizationId,
+            null,
             UserRole.INSPECTOR,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.INSPECTOR_PARTNER,
             "inspector." + UUID.randomUUID() + "@skyview.test",
             "David Inspector");
+    User inspector = users.findDetailedById(inspectorId).orElseThrow();
+    inspector.updatePilotLicense(
+        "VN-UAV-PILOT-2026",
+        "CLASS_A",
+        Instant.now().plus(365, ChronoUnit.DAYS),
+        "licenses/pilot-cert.pdf");
+    users.saveAndFlush(inspector);
 
     UUID leadEngineerId =
         createUser(
@@ -183,16 +193,11 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[MF1] Step 1.1: Registering Drone DJI Matrice 350 RTK...");
     Drone drone =
         drones.saveAndFlush(
-            new Drone(
-                organizationId,
+            Drone.createInspectorOwned(
+                inspectorId,
                 "DJI-M350-" + UUID.randomUUID().toString().substring(0, 8),
                 "Matrice 350 RTK",
                 "DJI",
-                "{}",
-                DroneServiceability.ACTIVE,
-                null,
-                null,
-                "Primary fleet drone",
                 "REG-VN-350",
                 "drones/registration.pdf",
                 Instant.now().plus(365, ChronoUnit.DAYS)));
@@ -223,61 +228,124 @@ class ConnectedMainFlowE2eIntegrationTest {
                 orgAdminId));
     UUID assetId = asset.getId();
 
-    log.info("[MF1] Step 1.3: Creating and Dispatching Inspection (status -> ASSIGNED)...");
-    Instant plannedStart = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
-    Instant plannedEnd = plannedStart.plus(4, ChronoUnit.HOURS);
+    log.info(
+        "[MF2] Step 1.3: Customer requests an inspection and Manager quotes the partner assignment...");
+    java.time.ZoneId customerZone = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+    Instant plannedStart =
+        java.time.LocalDate.now(customerZone)
+            .plusDays(1)
+            .atTime(9, 0)
+            .atZone(customerZone)
+            .toInstant();
+    Instant plannedEnd = plannedStart.plus(1, ChronoUnit.HOURS);
 
-    String inspectionResponse =
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/partners/inspectors")
+                .with(principal(platformAdminId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("inspectorUserId", inspectorId))))
+        .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
+        .andExpect(status().isCreated());
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/partners/drones")
+                .with(principal(platformAdminId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("droneId", droneId))))
+        .andExpect(status().isCreated());
+    String requestResponse =
         mockMvc
             .perform(
-                post("/api/v1/inspections")
+                post("/api/v1/contracts/requests")
                     .with(principal(orgAdminId, "CUSTOMER"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
                             Map.of(
-                                "assetId", assetId.toString(),
-                                "inspectorId", inspectorId.toString(),
-                                "droneId", droneId.toString(),
-                                "plannedStartAt", plannedStart.toString(),
-                                "plannedEndAt", plannedEnd.toString()))))
+                                "assetId",
+                                assetId,
+                                "description",
+                                "E2E bridge inspection",
+                                "requestedFrom",
+                                plannedStart.atZone(customerZone).toLocalDate(),
+                                "requestedUntil",
+                                plannedStart.atZone(customerZone).toLocalDate(),
+                                "timezone",
+                                "Asia/Ho_Chi_Minh",
+                                "requestType",
+                                "ONE_TIME"))))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.data.status").value("ASSIGNED"))
-            .andExpect(jsonPath("$.data.inspectorId").value(inspectorId.toString()))
-            .andExpect(jsonPath("$.data.droneId").value(droneId.toString()))
-            .andExpect(jsonPath("$.data.inspectionItems[0]").value("Girder G4"))
             .andReturn()
             .getResponse()
             .getContentAsString();
+    UUID requestId =
+        UUID.fromString(objectMapper.readTree(requestResponse).at("/data/id").stringValue());
 
-    UUID inspectionId =
-        UUID.fromString(objectMapper.readTree(inspectionResponse).at("/data/id").stringValue());
-    log.info("[MF1] SUCCESS: Inspection created with ID {} in status ASSIGNED", inspectionId);
-
-    // =========================================================================
-    // STEP 2: MF2 - Self-Service Pilot License & Flight Permit -> Field Session
-    // =========================================================================
-    log.info("[MF2] Step 2.1: Inspector self-declares pilot license...");
     mockMvc
         .perform(
-            put("/api/v1/auth/me/pilot-license")
-                .with(principal(inspectorId, "INSPECTOR"))
+            post("/api/v1/contracts/requests/{requestId}/quotes", requestId)
+                .with(principal(platformAdminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of(
-                            "licenseNumber",
-                            "VN-UAV-PILOT-2026",
-                            "licenseClass",
-                            "CLASS_A",
-                            "expiresAt",
-                            plannedStart.plus(365, ChronoUnit.DAYS).toString(),
-                            "fileKey",
-                            "licenses/pilot-cert.pdf"))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.pilotLicenseNumber").value("VN-UAV-PILOT-2026"));
+                            "scopeSnapshot", "Inspect listed bridge components",
+                            "firstOccurrenceStartAt", plannedStart,
+                            "firstOccurrenceEndAt", plannedEnd,
+                            "inspectorId", inspectorId,
+                            "droneId", droneId,
+                            "pricePerOccurrenceUsd", 150.00))))
+        .andExpect(status().isCreated());
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests/{requestId}/accept", requestId)
+                .with(principal(orgAdminId, "CUSTOMER"))
+                .param("versionNo", "1"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            multipart("/api/v1/contracts/requests/{requestId}/signed-contract", requestId)
+                .file(
+                    new MockMultipartFile(
+                        "file", "signed.pdf", "application/pdf", "%PDF-e2e".getBytes()))
+                .with(principal(platformAdminId, "MANAGER")))
+        .andExpect(status().isOk());
 
-    log.info("[MF2] Step 2.2: Inspector uploads Flight Permit -> READY_FOR_FLIGHT...");
+    ServiceRequestOccurrence occurrence =
+        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).getFirst();
+    String assignmentResponse =
+        mockMvc
+            .perform(
+                post(
+                        "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/assign",
+                        requestId,
+                        occurrence.getId())
+                    .with(principal(platformAdminId, "MANAGER"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "plannedStartAt", plannedStart,
+                                "plannedEndAt", plannedEnd,
+                                "inspectorId", inspectorId,
+                                "droneId", droneId))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID inspectionId =
+        UUID.fromString(
+            objectMapper
+                .readTree(assignmentResponse)
+                .at("/data/occurrences/0/inspectionId")
+                .stringValue());
+    log.info("[MF2] SUCCESS: Partner inspection assigned with ID {}", inspectionId);
+
+    // =========================================================================
+    // STEP 2: MF2 - Flight Permit -> Field Session
+    // =========================================================================
+    log.info("[MF2] Step 2.1: Inspector uploads Flight Permit -> READY_FOR_FLIGHT...");
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/flight-permit", inspectionId)

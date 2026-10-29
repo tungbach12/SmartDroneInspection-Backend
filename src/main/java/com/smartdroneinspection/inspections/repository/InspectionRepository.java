@@ -29,6 +29,29 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   Optional<Inspection> findByIdAndOrganizationIdAndInspectorId(
       UUID id, UUID organizationId, UUID inspectorId);
 
+  @Query(
+      "select inspection from Inspection inspection where inspection.id = :id "
+          + "and inspection.inspectorId = :inspectorId "
+          + "and ((:organizationId is not null and inspection.organizationId = :organizationId) "
+          + "or (:partnerAssignment = true and inspection.partnerAssignment = true))")
+  Optional<Inspection> findAssignedInspectorInspection(
+      @Param("id") UUID id,
+      @Param("organizationId") UUID organizationId,
+      @Param("inspectorId") UUID inspectorId,
+      @Param("partnerAssignment") boolean partnerAssignment);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "select inspection from Inspection inspection where inspection.id = :id "
+          + "and inspection.inspectorId = :inspectorId "
+          + "and ((:organizationId is not null and inspection.organizationId = :organizationId) "
+          + "or (:partnerAssignment = true and inspection.partnerAssignment = true))")
+  Optional<Inspection> findAssignedInspectorInspectionWithLock(
+      @Param("id") UUID id,
+      @Param("organizationId") UUID organizationId,
+      @Param("inspectorId") UUID inspectorId,
+      @Param("partnerAssignment") boolean partnerAssignment);
+
   List<Inspection> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
   @Query(
@@ -41,13 +64,32 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   Page<Inspection> findByOrganizationId(UUID organizationId, Pageable pageable);
 
-  /**
-   * Assignment scope for the Inspector list: their own inspections only, never the whole
-   * organization. This mirrors the per-inspection {@code findByIdAndOrganizationIdAndInspectorId}
-   * rule so the list cannot widen what the detail endpoint allows.
-   */
+  /** Assigned Inspectors retain their organization-scoped rows plus MF2 partner assignments. */
+  @Query(
+      value =
+          "select i from Inspection i where i.inspectorId = :inspectorId "
+              + "and (i.organizationId = :organizationId or i.partnerAssignment = true)",
+      countQuery =
+          "select count(i) from Inspection i where i.inspectorId = :inspectorId "
+              + "and (i.organizationId = :organizationId or i.partnerAssignment = true)")
   Page<Inspection> findByOrganizationIdAndInspectorId(
-      UUID organizationId, UUID inspectorId, Pageable pageable);
+      @Param("organizationId") UUID organizationId,
+      @Param("inspectorId") UUID inspectorId,
+      Pageable pageable);
+
+  Page<Inspection> findByInspectorIdAndPartnerAssignmentTrue(UUID inspectorId, Pageable pageable);
+
+  @Query(
+      value =
+          "select i from Inspection i where i.inspectorId = :inspectorId "
+              + "and i.partnerAssignment = true "
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)",
+      countQuery =
+          "select count(i) from Inspection i where i.inspectorId = :inspectorId "
+              + "and i.partnerAssignment = true "
+              + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)")
+  Page<Inspection> findWithReportByInspectorIdAndPartnerAssignmentTrue(
+      @Param("inspectorId") UUID inspectorId, Pageable pageable);
 
   /**
    * Report review scope. The {@code exists} subquery keeps this one paged query rather than loading
@@ -65,12 +107,12 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   @Query(
       value =
-          "select i from Inspection i where i.organizationId = :organizationId "
-              + "and i.inspectorId = :inspectorId "
+          "select i from Inspection i where i.inspectorId = :inspectorId "
+              + "and (i.organizationId = :organizationId or i.partnerAssignment = true) "
               + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)",
       countQuery =
-          "select count(i) from Inspection i where i.organizationId = :organizationId "
-              + "and i.inspectorId = :inspectorId "
+          "select count(i) from Inspection i where i.inspectorId = :inspectorId "
+              + "and (i.organizationId = :organizationId or i.partnerAssignment = true) "
               + "and exists (select v.id from InspectionReport v where v.inspectionId = i.id)")
   Page<Inspection> findWithReportByOrganizationIdAndInspectorId(
       @Param("organizationId") UUID organizationId,
@@ -120,14 +162,32 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       "select count(i) > 0 from Inspection i where "
           + "(i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.organizationId <> :organizationId "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
-          + "and i.plannedStartAt < :end and i.plannedEndAt > :start "
-          + "and (i.organizationId <> :organizationId or i.inspectorPartnerInspection = true)")
-  boolean hasPartnerScheduleConflict(
+          + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
+  boolean hasPartnerScheduleConflictOutsideOrganization(
       @Param("organizationId") UUID organizationId,
       @Param("inspectorId") UUID inspectorId,
       @Param("droneId") UUID droneId,
       @Param("start") java.time.Instant start,
       @Param("end") java.time.Instant end);
+
+  @Query(
+      "select count(i) > 0 from Inspection i where "
+          + "(i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
+          + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
+          + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
+  boolean hasPlatformPartnerScheduleConflict(
+      @Param("inspectorId") UUID inspectorId,
+      @Param("droneId") UUID droneId,
+      @Param("start") java.time.Instant start,
+      @Param("end") java.time.Instant end);
+
+  @Query(
+      "select count(i) > 0 from Inspection i where i.id = :inspectionId "
+          + "and i.partnerAssignment = true and i.inspectorId = :inspectorId")
+  boolean isPartnerInspectionAssignedTo(
+      @Param("inspectionId") UUID inspectionId, @Param("inspectorId") UUID inspectorId);
 }

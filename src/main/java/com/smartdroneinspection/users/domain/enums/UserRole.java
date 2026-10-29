@@ -12,6 +12,8 @@ public enum UserRole {
   public static final UserRole PLATFORM_MANAGER = MANAGER;
   public static final UserRole ORG_MANAGER = CUSTOMER;
   public static final UserRole ORG_ADMIN = CUSTOMER;
+  public static final UserRole SERVICE_MANAGER = MANAGER;
+  public static final UserRole CLIENT = CUSTOMER;
 
   private final String value;
 
@@ -28,8 +30,8 @@ public enum UserRole {
       throw new IllegalArgumentException("Role name is required");
     }
     return switch (raw.trim()) {
-      case "PLATFORM_MANAGER" -> MANAGER;
-      case "ORG_MANAGER", "ORG_ADMIN" -> CUSTOMER;
+      case "PLATFORM_MANAGER", "SERVICE_MANAGER" -> MANAGER;
+      case "ORG_MANAGER", "ORG_ADMIN", "CLIENT" -> CUSTOMER;
       default -> UserRole.valueOf(raw.trim());
     };
   }

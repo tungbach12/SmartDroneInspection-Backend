@@ -25,12 +25,10 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
-@Transactional
 class OrganizationRegistrationApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
@@ -61,7 +59,7 @@ class OrganizationRegistrationApiIntegrationTest {
         categories.saveAndFlush(
             new AssetCategory("REG-" + unique.substring(0, 12), "Bridge", null, true));
     String assetCode = "AST-" + unique.substring(0, 16);
-    String body = registrationBody(email, code, assetCode, category.getId(), 10.9, 106.8);
+    String body = registrationBody(email, code, assetCode, category.getId(), 10.5500, 106.8500);
 
     mockMvc
         .perform(
@@ -76,8 +74,13 @@ class OrganizationRegistrationApiIntegrationTest {
 
     User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(customer.roleValues()).containsExactly("CUSTOMER");
-    assertThat(assets.existsByOrganizationIdAndCode(customer.getOrganizationId(), assetCode))
-        .isTrue();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM assets WHERE organization_id = ? AND asset_code = ?",
+                Integer.class,
+                customer.getOrganizationId(),
+                assetCode.toUpperCase(java.util.Locale.ROOT)))
+        .isEqualTo(1);
     Organization organization = organizations.findById(customer.getOrganizationId()).orElseThrow();
     assertThat(organization.getStatus()).isEqualTo("ACTIVE");
     assertThat(organization.getCreatedByUserId()).isEqualTo(customer.getId());
@@ -156,7 +159,8 @@ class OrganizationRegistrationApiIntegrationTest {
           "organizationCode":"%s",
           "password":"a sufficiently long passphrase",
           "firstAsset":{"code":"%s","name":"First bridge","categoryId":"%s",
-            "locationText":"District 1","latitude":%s,"longitude":%s}
+            "locationText":"District 1","latitude":%s,"longitude":%s,
+            "ownershipInformation":"{\\"ownership\\":\\"Customer-owned bridge\\"}"}
         }
         """
         .formatted(email, organizationCode, assetCode, categoryId, lat, lon);
