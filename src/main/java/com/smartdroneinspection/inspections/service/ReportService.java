@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -167,13 +168,7 @@ public class ReportService {
             .filter(finding -> currentEvidenceIds.contains(finding.getEvidenceId()))
             .toList();
 
-    ReportDraftPort port =
-        draftPort.orElseThrow(
-            () ->
-                new BusinessException(
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "REPORT_DRAFT_UNAVAILABLE",
-                    "Automated drafting is not configured; author a structured draft manually"));
+    ReportDraftPort port = draftPort.orElseGet(this::createLocalDraftSynthesizer);
 
     ReportDraftPort.SectionDraft proposal;
     try {
@@ -1052,6 +1047,145 @@ public class ReportService {
   private BusinessException inspectionNotFound() {
     return new BusinessException(
         HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found");
+  }
+
+  private ReportDraftPort createLocalDraftSynthesizer() {
+    return new ReportDraftPort() {
+      @Override
+      public String modelName() {
+        return "local-synthesizer";
+      }
+
+      @Override
+      public SectionDraft draftSections(DraftContext context) {
+        boolean isVietnamese =
+            context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage());
+        List<ReportDraftPort.FindingSummary> findings = context.findings();
+
+        String overallCondition;
+        boolean hasCritical =
+            findings.stream().anyMatch(f -> "CRITICAL".equalsIgnoreCase(f.severity()));
+        boolean hasHigh = findings.stream().anyMatch(f -> "HIGH".equalsIgnoreCase(f.severity()));
+        boolean hasMedium =
+            findings.stream().anyMatch(f -> "MEDIUM".equalsIgnoreCase(f.severity()));
+
+        if (hasCritical) {
+          overallCondition = "CRITICAL";
+        } else if (hasHigh) {
+          overallCondition = "POOR";
+        } else if (hasMedium) {
+          overallCondition = "FAIR";
+        } else {
+          overallCondition = "GOOD";
+        }
+
+        String executiveSummary;
+        if (isVietnamese) {
+          if (findings.isEmpty()) {
+            executiveSummary =
+                "Khảo sát kiểm định trực quan bằng drone đã hoàn tất. Không phát hiện khiếm khuyết"
+                    + " kết cấu nào trong phạm vi khảo sát. Hiện trạng tổng thể của tài sản được"
+                    + " đánh giá ở mức Tốt.";
+          } else {
+            String defectSummary =
+                findings.stream()
+                    .map(f -> f.defectLabel() + " (" + f.severity() + ")")
+                    .collect(Collectors.joining(", "));
+            executiveSummary =
+                "Khảo sát kiểm định trực quan bằng drone đã hoàn tất với "
+                    + findings.size()
+                    + " khiếm khuyết được ghi nhận: "
+                    + defectSummary
+                    + ". Hiện trạng tổng thể của tài sản được đánh giá ở mức "
+                    + (overallCondition.equals("POOR")
+                        ? "Kém"
+                        : overallCondition.equals("FAIR") ? "Trung bình" : "Nghiêm trọng")
+                    + ". Đề xuất ưu tiên các biện pháp xử lý và sửa chữa.";
+          }
+        } else {
+          if (findings.isEmpty()) {
+            executiveSummary =
+                "Drone aerial visual inspection completed. No structural defects were observed"
+                    + " within the inspected scope. Overall asset condition is assessed as Good.";
+          } else {
+            String defectSummary =
+                findings.stream()
+                    .map(f -> f.defectLabel() + " (" + f.severity() + ")")
+                    .collect(Collectors.joining(", "));
+            executiveSummary =
+                "Drone aerial visual inspection completed with "
+                    + findings.size()
+                    + " confirmed defect(s): "
+                    + defectSummary
+                    + ". Overall asset condition is assessed as "
+                    + overallCondition
+                    + ". Priority remedial action is recommended.";
+          }
+        }
+
+        String omissionDisclosure =
+            isVietnamese
+                ? "Phạm vi kiểm tra giới hạn ở các bề mặt ngoài quan sát được từ quỹ đạo bay an"
+                    + " toàn của drone. Các cấu kiện ngầm, bên trong hộp kín và các khu vực khuất"
+                    + " tầm nhìn trực tiếp không thuộc phạm vi đánh giá này."
+                : "Inspection scope was limited to exterior surfaces accessible from drone safe"
+                    + " flight trajectories. Subsurface elements, internal enclosed spaces, and"
+                    + " areas obscured from direct line-of-sight were excluded.";
+
+        String conclusionsRecommendations;
+        if (isVietnamese) {
+          if (findings.isEmpty()) {
+            conclusionsRecommendations =
+                "Kết cấu tài sản đảm bảo an toàn vận hành trong phạm vi kiểm định. Khuyến nghị duy"
+                    + " trì lịch trình bay kiểm tra định kỳ theo quy định.";
+          } else {
+            String actions =
+                findings.stream()
+                    .map(
+                        f ->
+                            f.recommendedAction() != null && !f.recommendedAction().isBlank()
+                                ? f.recommendedAction()
+                                : f.defectLabel())
+                    .collect(Collectors.joining("; "));
+            conclusionsRecommendations =
+                "Hiện trạng kết cấu cần được can thiệp kỹ thuật để ngăn ngừa suy giảm chất lượng."
+                    + " Các biện pháp khắc phục đề xuất: "
+                    + actions
+                    + ". Đề xuất mở lệnh sửa chữa (Work Order) và tổ chức bay kiểm tra đối soát sau"
+                    + " bảo trì.";
+          }
+        } else {
+          if (findings.isEmpty()) {
+            conclusionsRecommendations =
+                "Asset structural condition satisfies operational requirements within the"
+                    + " inspected scope. Routine periodic drone inspection schedule is"
+                    + " recommended.";
+          } else {
+            String actions =
+                findings.stream()
+                    .map(
+                        f ->
+                            f.recommendedAction() != null && !f.recommendedAction().isBlank()
+                                ? f.recommendedAction()
+                                : f.defectLabel())
+                    .collect(Collectors.joining("; "));
+            conclusionsRecommendations =
+                "Structural condition requires timely maintenance intervention to prevent further"
+                    + " deterioration. Recommended actions: "
+                    + actions
+                    + ". Immediate work order handoff and post-maintenance re-inspection advised.";
+          }
+        }
+
+        return new SectionDraft(
+            executiveSummary,
+            null,
+            null,
+            conclusionsRecommendations,
+            overallCondition,
+            omissionDisclosure);
+      }
+    };
   }
 
   /**
