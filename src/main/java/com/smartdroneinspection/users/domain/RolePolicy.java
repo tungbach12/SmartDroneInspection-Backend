@@ -26,9 +26,9 @@ public class RolePolicy {
       case CUSTOMER_ORGANIZATION -> {
         if (organizationId == null
             || roles.size() != 1
-            || (roles.iterator().next() != UserRole.CUSTOMER
-                && roles.iterator().next() != UserRole.INSPECTOR
-                && roles.iterator().next() != UserRole.MAINTENANCE_ENGINEER)) {
+            || roles.iterator().next() == UserRole.ADMIN
+            || roles.iterator().next() == UserRole.MANAGER
+            || roles.iterator().next() == UserRole.INSPECTOR) {
           throw new IllegalArgumentException(
               "Customer users must belong to an organization and carry an org-scoped role.");
         }
