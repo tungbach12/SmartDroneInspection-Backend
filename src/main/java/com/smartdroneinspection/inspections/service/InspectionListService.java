@@ -9,6 +9,7 @@ import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.util.HashMap;
@@ -167,7 +168,9 @@ public class InspectionListService {
         report == null ? null : report.getId(),
         report == null || report.getStatus() == null ? null : report.getStatus().name(),
         report == null ? null : report.getVersionNo(),
-        pendingAction);
+        pendingAction,
+        inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
+        inspection.getWorkOrderId());
   }
 
   private Scope requireScope(UUID actorId) {
@@ -181,7 +184,7 @@ public class InspectionListService {
                         "ACCOUNT_INACTIVE",
                         "Authentication is required."));
 
-    if (actor.hasRole("ADMIN")) {
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       return new Scope.PlatformAdmin(inspections);
     }
     if (actor.isInspectorPartner()) {

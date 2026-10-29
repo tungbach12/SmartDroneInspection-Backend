@@ -20,4 +20,39 @@ public record InspectionListItemResponse(
     UUID reportId,
     String reportStatus,
     Integer reportVersionNo,
-    String pendingAction) {}
+    String pendingAction,
+    String inspectionType,
+    UUID workOrderId) {
+
+  public InspectionListItemResponse(
+      UUID id,
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      String status,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      Instant createdAt,
+      Instant updatedAt,
+      UUID reportId,
+      String reportStatus,
+      Integer reportVersionNo,
+      String pendingAction) {
+    this(
+        id,
+        organizationId,
+        assetId,
+        inspectorId,
+        status,
+        plannedStartAt,
+        plannedEndAt,
+        createdAt,
+        updatedAt,
+        reportId,
+        reportStatus,
+        reportVersionNo,
+        pendingAction,
+        "INITIAL",
+        null);
+  }
+}

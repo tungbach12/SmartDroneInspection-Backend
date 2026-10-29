@@ -107,6 +107,15 @@ public class MaintenanceReportVersion {
     this.status = ReportVersionStatus.RETURNED;
   }
 
+  /**
+   * MF4-18: When an independent re-inspection flight verifies the repaired work, the completion
+   * report is reinstated to SUBMITTED so the customer/reviewer can record final acceptance.
+   */
+  public void resubmitForReinspectionAcceptance() {
+    requireStatus(ReportVersionStatus.RETURNED);
+    this.status = ReportVersionStatus.SUBMITTED;
+  }
+
   public void supersede() {
     requireStatus(ReportVersionStatus.APPROVED);
     this.status = ReportVersionStatus.SUPERSEDED;

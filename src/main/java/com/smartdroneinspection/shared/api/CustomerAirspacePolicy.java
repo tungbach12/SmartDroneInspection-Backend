@@ -1,4 +1,4 @@
-package com.smartdroneinspection.shared;
+package com.smartdroneinspection.shared.api;
 
 import java.math.BigDecimal;
 

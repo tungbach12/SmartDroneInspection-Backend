@@ -1,8 +1,8 @@
 package com.smartdroneinspection.users.service;
 
-import com.smartdroneinspection.shared.CustomerAirspacePolicy;
-import com.smartdroneinspection.shared.CustomerAirspaceStatus;
-import com.smartdroneinspection.shared.CustomerRegistrationEvent;
+import com.smartdroneinspection.shared.api.CustomerAirspacePolicy;
+import com.smartdroneinspection.shared.api.CustomerAirspaceStatus;
+import com.smartdroneinspection.shared.api.CustomerRegistrationEvent;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.request.RejectProspectiveCustomerRequest;
 import com.smartdroneinspection.users.api.dto.response.ProspectiveCustomerResponse;

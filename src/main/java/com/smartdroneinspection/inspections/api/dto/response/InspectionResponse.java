@@ -27,7 +27,11 @@ public record InspectionResponse(
     Instant plannedEndAt,
     String status,
     Instant createdAt,
-    Instant updatedAt) {
+    Instant updatedAt,
+    String inspectionType,
+    UUID workOrderId,
+    UUID sourceInspectionId,
+    UUID sourceReportVersionId) {
 
   public InspectionResponse {
     inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
@@ -76,6 +80,10 @@ public record InspectionResponse(
         plannedEndAt,
         status,
         createdAt,
-        updatedAt);
+        updatedAt,
+        "INITIAL",
+        null,
+        null,
+        null);
   }
 }

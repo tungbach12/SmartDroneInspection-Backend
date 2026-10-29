@@ -10,6 +10,7 @@ import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateDefectVerificationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
@@ -19,12 +20,14 @@ import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
+import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
+import com.smartdroneinspection.inspections.service.ReinspectionVerificationService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -70,22 +73,25 @@ public class InspectionController {
   private final ReportService reportService;
   private final InspectionWorkflowService workflowService;
   private final InspectionCreationService creationService;
+  private final ReinspectionVerificationService reinspectionVerificationService;
 
   public InspectionController(
       EvidenceService evidenceService,
       FindingService findingService,
       ReportService reportService,
       InspectionWorkflowService workflowService,
-      InspectionCreationService creationService) {
+      InspectionCreationService creationService,
+      ReinspectionVerificationService reinspectionVerificationService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
     this.creationService = creationService;
+    this.reinspectionVerificationService = reinspectionVerificationService;
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermit(
           @AuthenticationPrincipal Jwt jwt,
@@ -103,7 +109,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermitJson(
           @AuthenticationPrincipal Jwt jwt,
@@ -133,14 +139,14 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<EvidenceResponse>> listEvidence(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(evidenceService.list(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/evidence/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<EvidencePageResponse> queryEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -187,7 +193,7 @@ public class InspectionController {
   }
 
   @GetMapping("/evidence/{evidenceId}/content")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<InputStreamResource> evidenceContent(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -257,7 +263,7 @@ public class InspectionController {
 
   /** Explicitly deleted Inspector findings remain available with deletion attribution. */
   @GetMapping("/findings/removed")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<FindingResponse>> listRemovedFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listRemovedFindings(actorId(jwt), inspectionId));
@@ -274,7 +280,7 @@ public class InspectionController {
   }
 
   @GetMapping("/workflow-state")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionWorkflowStateResponse> workflowState(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(workflowService.state(actorId(jwt), inspectionId));
@@ -299,14 +305,14 @@ public class InspectionController {
   }
 
   @GetMapping("/findings")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/findings/query")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<FindingPageResponse> queryFindings(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -381,7 +387,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/review")
-  @PreAuthorize("hasRole('CUSTOMER')")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<InspectionReportResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -393,7 +399,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/publish")
-  @PreAuthorize("hasRole('CUSTOMER')")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<ReportPublishedResponse> publishVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -404,7 +410,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/corrective-handoff")
-  @PreAuthorize("hasRole('CUSTOMER')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -426,7 +432,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/preview")
-  @PreAuthorize("hasRole('INSPECTOR')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
   public ResponseEntity<byte[]> previewReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -437,7 +443,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/document")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<byte[]> downloadReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -446,19 +452,39 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<List<InspectionReportResponse>> listVersions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(reportService.listVersions(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/report/versions/{versionId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionReportResponse> getVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.getVersion(actorId(jwt), inspectionId, versionId));
+  }
+
+  @GetMapping("/reinspection-verifications")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<List<ReinspectionVerificationResponse>> getReinspectionVerifications(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(
+        reinspectionVerificationService.getVerifications(actorId(jwt), inspectionId));
+  }
+
+  @PutMapping("/reinspection-verifications/{verificationId}")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<ReinspectionVerificationResponse> updateReinspectionVerification(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID verificationId,
+      @Valid @RequestBody UpdateDefectVerificationRequest request) {
+    return ApiResponse.success(
+        reinspectionVerificationService.updateVerification(
+            actorId(jwt), inspectionId, verificationId, request));
   }
 
   private static UUID actorId(Jwt jwt) {

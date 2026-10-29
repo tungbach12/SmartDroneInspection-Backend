@@ -31,7 +31,9 @@ public record WorkOrderResponse(
     String reportAuthorName,
     String acceptingReviewerName,
     Instant createdAt,
-    Instant updatedAt) {
+    Instant updatedAt,
+    java.util.UUID reinspectionId,
+    java.util.UUID reinspectionReportVersionId) {
 
   public static WorkOrderResponse from(MaintenanceWorkOrder order) {
     return from(order, id -> null);
@@ -61,6 +63,8 @@ public record WorkOrderResponse(
         resolve.apply(order.getReportAuthorUserId()),
         resolve.apply(order.getAcceptingReviewerUserId()),
         order.getCreatedAt(),
-        order.getUpdatedAt());
+        order.getUpdatedAt(),
+        order.getReinspectionId(),
+        order.getReinspectionReportVersionId());
   }
 }

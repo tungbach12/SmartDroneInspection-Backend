@@ -4,7 +4,7 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.shared.CustomerRegistrationEvent;
+import com.smartdroneinspection.shared.api.CustomerRegistrationEvent;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
