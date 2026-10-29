@@ -6,11 +6,13 @@ import com.smartdroneinspection.inspections.domain.ReinspectionDefectVerificatio
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
+import com.smartdroneinspection.inspections.spi.ReinspectionCreatedEvent;
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
 import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
@@ -23,14 +25,17 @@ public class InspectionReinspectionListener {
   private final InspectionRepository inspections;
   private final FindingRepository findings;
   private final ReinspectionDefectVerificationRepository verifications;
+  private final ApplicationEventPublisher events;
 
   public InspectionReinspectionListener(
       InspectionRepository inspections,
       FindingRepository findings,
-      ReinspectionDefectVerificationRepository verifications) {
+      ReinspectionDefectVerificationRepository verifications,
+      ApplicationEventPublisher events) {
     this.inspections = inspections;
     this.findings = findings;
     this.verifications = verifications;
+    this.events = events;
   }
 
   @ApplicationModuleListener
@@ -70,6 +75,9 @@ public class InspectionReinspectionListener {
 
     verifications.saveAndFlush(
         new ReinspectionDefectVerification(reinspection.getId(), event.sourceFindingId()));
+
+    events.publishEvent(new ReinspectionCreatedEvent(event.workOrderId(), reinspection.getId()));
+
     log.info(
         "Created linked re-inspection {} in status {}",
         reinspection.getId(),

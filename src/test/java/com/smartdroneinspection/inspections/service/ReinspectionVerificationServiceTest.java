@@ -40,6 +40,7 @@ class ReinspectionVerificationServiceTest {
   @Mock private InspectionRepository inspections;
   @Mock private FindingRepository findings;
   @Mock private EvidenceRepository evidences;
+  @Mock private com.smartdroneinspection.inspections.repository.InspectionReportRepository reports;
   @Mock private UserAccess userAccess;
 
   private ReinspectionVerificationService service;
@@ -54,7 +55,7 @@ class ReinspectionVerificationServiceTest {
   void setUp() {
     service =
         new ReinspectionVerificationService(
-            verifications, inspections, findings, evidences, userAccess);
+            verifications, inspections, findings, evidences, reports, userAccess);
   }
 
   @Test

@@ -27,6 +27,7 @@ class InspectionReinspectionListenerTest {
   private InspectionRepository inspections;
   private FindingRepository findings;
   private ReinspectionDefectVerificationRepository verifications;
+  private org.springframework.context.ApplicationEventPublisher events;
   private InspectionReinspectionListener listener;
 
   @BeforeEach
@@ -42,7 +43,8 @@ class InspectionReinspectionListenerTest {
             });
     findings = mock(FindingRepository.class);
     verifications = mock(ReinspectionDefectVerificationRepository.class);
-    listener = new InspectionReinspectionListener(inspections, findings, verifications);
+    events = mock(org.springframework.context.ApplicationEventPublisher.class);
+    listener = new InspectionReinspectionListener(inspections, findings, verifications, events);
   }
 
   @Test

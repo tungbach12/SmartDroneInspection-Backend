@@ -7,8 +7,10 @@ import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.ReinspectionDefectVerification;
 import com.smartdroneinspection.inspections.domain.enums.DefectResolutionStatus;
+import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
+import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -31,6 +33,7 @@ public class ReinspectionVerificationService {
   private final InspectionRepository inspections;
   private final FindingRepository findings;
   private final EvidenceRepository evidences;
+  private final InspectionReportRepository reports;
   private final UserAccess userAccess;
 
   public ReinspectionVerificationService(
@@ -38,11 +41,13 @@ public class ReinspectionVerificationService {
       InspectionRepository inspections,
       FindingRepository findings,
       EvidenceRepository evidences,
+      InspectionReportRepository reports,
       UserAccess userAccess) {
     this.verifications = verifications;
     this.inspections = inspections;
     this.findings = findings;
     this.evidences = evidences;
+    this.reports = reports;
     this.userAccess = userAccess;
   }
 
@@ -95,6 +100,20 @@ public class ReinspectionVerificationService {
       UpdateDefectVerificationRequest request) {
     Inspection inspection = requireInspection(actorId, inspectionId);
     requireCanEdit(actorId, inspection);
+
+    reports
+        .findFirstByInspectionIdOrderByVersionNoDesc(inspectionId)
+        .ifPresent(
+            report -> {
+              if (report.getStatus() == ReportStatus.SUBMITTED
+                  || report.getStatus() == ReportStatus.APPROVED
+                  || report.getStatus() == ReportStatus.PUBLISHED) {
+                throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "REPORT_LOCKED",
+                    "Defect verifications are locked while the report is submitted, approved, or published");
+              }
+            });
 
     ReinspectionDefectVerification verification =
         verifications
