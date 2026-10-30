@@ -64,8 +64,6 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(
                         HttpMethod.POST,
-                        "/api/v1/inspector-partner-applications",
-                        "/api/v1/inspector-partner-applications/license-document",
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
                         "/api/v1/auth/password/setup",
@@ -98,11 +96,6 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             requests ->
                 requests
-                    .requestMatchers(
-                        HttpMethod.POST,
-                        "/api/v1/inspector-partner-applications",
-                        "/api/v1/inspector-partner-applications/license-document")
-                    .permitAll()
                     .requestMatchers(
                         "/api/v1/mobile/auth/**",
                         "/api/v1/webhooks/paypal",
