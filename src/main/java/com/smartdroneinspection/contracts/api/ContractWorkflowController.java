@@ -95,6 +95,20 @@ public class ContractWorkflowController {
     return ApiResponse.success(workflow.uploadSignedContract(actorId(jwt), requestId, file));
   }
 
+  @GetMapping("/{requestId}/signed-contract")
+  public ResponseEntity<InputStreamResource> downloadSignedContract(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
+    ContractWorkflowService.SignedContractFile file =
+        workflow.openSignedContract(actorId(jwt), requestId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(file.contentType()))
+        .contentLength(file.sizeBytes())
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(file.fileName()).build().toString())
+        .body(new InputStreamResource(file.stream()));
+  }
+
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/signed-contract")
   public ApiResponse<ServiceRequestResponse> uploadOccurrenceSignedContract(
       @AuthenticationPrincipal Jwt jwt,

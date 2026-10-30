@@ -22,6 +22,7 @@ import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
+import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.Base64;
 import java.util.List;
@@ -73,12 +74,16 @@ class InspectionReportApiIntegrationTest {
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
   @MockitoBean AiInferencePort inferencePort;
+  @MockitoBean ReportDraftPort reportDraftPort;
 
   private InspectionTestFixture.Data fixture;
   private MockMvc mockMvc;
 
   @BeforeEach
-  void setUp() {
+  void setUp() throws Exception {
+    when(reportDraftPort.modelName()).thenReturn("test-report-draft");
+    when(reportDraftPort.draftSections(any(ReportDraftPort.DraftContext.class)))
+        .thenThrow(new java.io.IOException("stubbed drafting failure"));
     mockMvc =
         webAppContextSetup(webApplicationContext)
             .apply(
@@ -544,10 +549,9 @@ class InspectionReportApiIntegrationTest {
     uploadEvidence();
     acceptEvidence();
     ensureFindingsConfirmed();
+    when(reportDraftPort.draftSections(any(ReportDraftPort.DraftContext.class)))
+        .thenThrow(new java.io.IOException("stubbed drafting failure"));
 
-    // No ReportDraftPort bean is configured in this test context, so the automated path reports
-    // REPORT_DRAFT_UNAVAILABLE. Report 3 requires the author to still be able to complete a
-    // structured manual draft under the same review gates.
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())

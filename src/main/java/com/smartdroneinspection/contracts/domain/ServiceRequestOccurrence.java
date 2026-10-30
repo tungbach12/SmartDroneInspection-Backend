@@ -359,6 +359,22 @@ public class ServiceRequestOccurrence {
   }
 
   public void assign(UUID inspectorId, UUID droneId, UUID inspectionId, UUID assignedByUserId) {
+    assign(
+        inspectorId,
+        droneId,
+        inspectionId,
+        this.plannedStartAt,
+        this.plannedEndAt,
+        assignedByUserId);
+  }
+
+  public void assign(
+      UUID inspectorId,
+      UUID droneId,
+      UUID inspectionId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID assignedByUserId) {
     if (status != OccurrenceStatus.PENDING_ASSIGNMENT) {
       throw new IllegalStateException("Occurrence is not awaiting assignment");
     }
@@ -368,6 +384,7 @@ public class ServiceRequestOccurrence {
         || assignedByUserId == null) {
       throw new IllegalArgumentException("Occurrence assignment is incomplete");
     }
+    reschedule(plannedStartAt, plannedEndAt);
     this.inspectorId = inspectorId;
     this.droneId = droneId;
     this.inspectionId = inspectionId;

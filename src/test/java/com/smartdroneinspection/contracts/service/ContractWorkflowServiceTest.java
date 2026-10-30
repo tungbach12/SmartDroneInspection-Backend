@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -260,6 +261,12 @@ class ContractWorkflowServiceTest {
     assertThat(captor.getAllValues())
         .extracting(ServiceRequestOccurrence::getOccurrenceIndex)
         .containsExactly(1, 2, 3);
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getPlannedStartAt)
+        .containsExactly(
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-08T09:00:00Z"),
+            Instant.parse("2027-02-15T09:00:00Z"));
     assertThat(request.getStatus()).isEqualTo(ServiceRequestStatus.CONTRACT_SIGNED);
   }
 
@@ -291,6 +298,159 @@ class ContractWorkflowServiceTest {
     assertThat(captor.getAllValues())
         .extracting(ServiceRequestOccurrence::getOccurrenceIndex)
         .containsExactly(1, 2);
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getPlannedStartAt)
+        .containsExactly(
+            Instant.parse("2027-02-02T09:00:00Z"), Instant.parse("2027-02-09T09:00:00Z"));
+  }
+
+  @Test
+  void monthlyOccurrencesStayAnchoredToQuotedMonthEnd() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            LocalDate.of(2027, 1, 1),
+            LocalDate.of(2027, 4, 30),
+            "UTC",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "MONTH",
+            1,
+            4,
+            null);
+    setRequestId(request, requestId);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-01-31T09:00:00Z"),
+            Instant.parse("2027-01-31T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.uploadSignedContract(managerId, requestId, pdf("signed.pdf"));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences, org.mockito.Mockito.times(4)).save(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getPlannedStartAt)
+        .containsExactly(
+            Instant.parse("2027-01-31T09:00:00Z"),
+            Instant.parse("2027-02-28T09:00:00Z"),
+            Instant.parse("2027-03-31T09:00:00Z"),
+            Instant.parse("2027-04-30T09:00:00Z"));
+  }
+
+  @Test
+  void rejectsCountBoundOccurrencesPastTheRequestedUntilDate() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, 5, null);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-02-08T09:00:00Z"),
+            Instant.parse("2027-02-08T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("outside the requested recurrence range");
+    verify(occurrences, org.mockito.Mockito.times(3)).save(any(ServiceRequestOccurrence.class));
+  }
+
+  @Test
+  void estimatesOccurrencesWhenRecurrenceEndDateIsEarlierThanRequestUntil() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            LocalDate.of(2027, 2, 1),
+            LocalDate.of(2027, 3, 31),
+            "UTC",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "WEEK",
+            1,
+            null,
+            LocalDate.of(2027, 2, 15));
+    setRequestId(request, requestId);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.uploadSignedContract(managerId, requestId, pdf("signed.pdf"));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences, org.mockito.Mockito.times(3)).save(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getPlannedStartAt)
+        .containsExactly(
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-08T09:00:00Z"),
+            Instant.parse("2027-02-15T09:00:00Z"));
+  }
+
+  @Test
+  void rejectsRecurringQuoteStartBeforeTheRequestedFromDate() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, 2, null);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-01-25T09:00:00Z"),
+            Instant.parse("2027-01-25T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("outside the requested date or daily time window");
+    verify(occurrences, never()).save(any(ServiceRequestOccurrence.class));
   }
 
   @Test
@@ -448,7 +608,8 @@ class ContractWorkflowServiceTest {
   void assignsPendingOccurrenceAndUpdatesRequestWhenAllOccurrencesAssigned() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
-    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     request.markQuoted();
     request.acceptQuote(1, customerId);
     request.recordSignedContract(
@@ -469,15 +630,208 @@ class ContractWorkflowServiceTest {
     when(assignment.assign(any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(UUID.randomUUID());
 
+    Instant assignedStart = Instant.parse("2027-02-03T11:00:00Z");
+    Instant assignedEnd = Instant.parse("2027-02-03T12:00:00Z");
     AssignOccurrenceRequest input =
-        new AssignOccurrenceRequest(
-            occurrence.getPlannedStartAt(), occurrence.getPlannedEndAt(), inspectorId, droneId);
+        new AssignOccurrenceRequest(assignedStart, assignedEnd, inspectorId, droneId);
     var response = service.assignOccurrence(managerId, requestId, occurrenceId, input);
 
+    assertThat(occurrence.getPlannedStartAt()).isEqualTo(input.plannedStartAt());
+    assertThat(occurrence.getPlannedEndAt()).isEqualTo(input.plannedEndAt());
     assertThat(occurrence.getStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED);
     assertThat(request.getStatus()).isEqualTo(ServiceRequestStatus.ASSIGNED);
     assertThat(response.status()).isEqualTo(ServiceRequestStatus.ASSIGNED);
+    assertThat(response.occurrences())
+        .singleElement()
+        .satisfies(
+            value -> {
+              assertThat(value.plannedStartAt()).isEqualTo(assignedStart);
+              assertThat(value.plannedEndAt()).isEqualTo(assignedEnd);
+            });
+    verify(assignment)
+        .assign(orgId, assetId, inspectorId, droneId, assignedStart, assignedEnd, managerId);
+  }
+
+  @Test
+  void rejectsAnOutOfWindowFlexibleAssignmentWithoutChangingOccurrence() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    request.recordSignedContract(
+        "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+
+    assertThatThrownBy(
+            () ->
+                service.assignOccurrence(
+                    managerId,
+                    requestId,
+                    occurrenceId,
+                    new AssignOccurrenceRequest(
+                        Instant.parse("2027-02-03T18:00:00Z"),
+                        Instant.parse("2027-02-03T19:00:00Z"),
+                        inspectorId,
+                        droneId)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("requested daily time window");
+
+    assertThat(occurrence.getPlannedStartAt()).isEqualTo(Instant.parse("2027-02-01T09:00:00Z"));
+    assertThat(occurrence.getStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.PENDING_ASSIGNMENT);
+    verify(assignment, never()).assign(any(), any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void rejectsConflictingFlexibleAssignmentWithoutChangingOccurrence() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    request.recordSignedContract(
+        "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(true);
+
+    assertThatThrownBy(
+            () ->
+                service.assignOccurrence(
+                    managerId,
+                    requestId,
+                    occurrenceId,
+                    new AssignOccurrenceRequest(
+                        Instant.parse("2027-02-03T11:00:00Z"),
+                        Instant.parse("2027-02-03T12:00:00Z"),
+                        inspectorId,
+                        droneId)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("another assigned contract occurrence");
+
+    assertThat(occurrence.getPlannedStartAt()).isEqualTo(Instant.parse("2027-02-01T09:00:00Z"));
+    assertThat(occurrence.getStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.PENDING_ASSIGNMENT);
+    verify(assignment, never()).assign(any(), any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void rejectsPlatformAdminFromCommercialQuoteWorkflow() {
+    UUID adminId = UUID.randomUUID();
+    when(users.findActiveUser(adminId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(adminId, Set.of(Roles.ADMIN), null, "Platform Admin")));
+
+    assertThatThrownBy(
+            () ->
+                service.issueQuote(
+                    adminId,
+                    UUID.randomUUID(),
+                    quote(
+                        Instant.parse("2027-02-01T09:00:00Z"),
+                        Instant.parse("2027-02-01T10:00:00Z"))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("cannot access this MF2 action");
+  }
+
+  @Test
+  void opensSignedContractOnlyForAuthorizedRequestActors() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    request.recordSignedContract(
+        "contracts/requests/private-key",
+        "signed_contract.pdf",
+        "application/pdf",
+        8,
+        "a".repeat(64),
+        managerId);
+    when(requests.findByIdAndOrganizationId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(objectStore.open("contracts/requests/private-key"))
+        .thenAnswer(invocation -> new java.io.ByteArrayInputStream("%PDF-e2e".getBytes()));
+
+    var customerFile = service.openSignedContract(customerId, requestId);
+    assertThat(customerFile.fileName()).isEqualTo("signed_contract.pdf");
+    assertThat(customerFile.contentType()).isEqualTo("application/pdf");
+    assertThat(customerFile.sizeBytes()).isEqualTo(8);
+    assertThat(customerFile.stream().readAllBytes()).isEqualTo("%PDF-e2e".getBytes());
+
+    var managerFile = service.openSignedContract(managerId, requestId);
+    assertThat(managerFile.stream().readAllBytes()).isEqualTo("%PDF-e2e".getBytes());
+
+    UUID foreignCustomerId = UUID.randomUUID();
+    UUID foreignOrganizationId = UUID.randomUUID();
+    when(users.findActiveUser(foreignCustomerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    foreignCustomerId, Set.of(Roles.CUSTOMER), foreignOrganizationId, "Customer")));
+    when(requests.findByIdAndOrganizationId(requestId, foreignOrganizationId))
+        .thenReturn(Optional.empty());
+    assertThatThrownBy(() -> service.openSignedContract(foreignCustomerId, requestId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Service request not found");
+
+    UUID adminId = UUID.randomUUID();
+    when(users.findActiveUser(adminId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(adminId, Set.of(Roles.ADMIN), null, "Platform Admin")));
+    assertThatThrownBy(() -> service.openSignedContract(adminId, requestId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("cannot access this MF2 action");
+  }
+
+  @Test
+  void materializedRecurringOccurrencesPreserveTimeAndHaveDistinctDates() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, 3, null);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+    ServiceRequestQuote quote =
+        quoteEntity(
+            requestId,
+            1,
+            Instant.parse("2027-02-08T09:30:00Z"),
+            Instant.parse("2027-02-08T10:30:00Z"));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.uploadSignedContract(managerId, requestId, pdf("signed.pdf"));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences, org.mockito.Mockito.times(3)).save(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getPlannedStartAt)
+        .containsExactly(
+            Instant.parse("2027-02-08T09:30:00Z"),
+            Instant.parse("2027-02-15T09:30:00Z"),
+            Instant.parse("2027-02-22T09:30:00Z"));
   }
 
   @Test

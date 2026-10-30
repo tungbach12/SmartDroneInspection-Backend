@@ -340,6 +340,14 @@ class ConnectedMainFlowE2eIntegrationTest {
                 .readTree(assignmentResponse)
                 .at("/data/occurrences/0/inspectionId")
                 .stringValue());
+    assertThat(occurrences.findById(occurrence.getId()).orElseThrow().getPlannedStartAt())
+        .isEqualTo(plannedStart);
+    assertThat(occurrences.findById(occurrence.getId()).orElseThrow().getPlannedEndAt())
+        .isEqualTo(plannedEnd);
+    assertThat(inspections.findById(inspectionId).orElseThrow().getPlannedStartAt())
+        .isEqualTo(plannedStart);
+    assertThat(inspections.findById(inspectionId).orElseThrow().getPlannedEndAt())
+        .isEqualTo(plannedEnd);
     log.info("[MF2] SUCCESS: Partner inspection assigned with ID {}", inspectionId);
 
     // =========================================================================

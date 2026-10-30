@@ -110,6 +110,13 @@ services:
       COMPATIBLE_VISION_MODEL: ${COMPATIBLE_VISION_MODEL:-${REPORT_DRAFT_MODEL:-}}
       COMPATIBLE_VISION_API_KEY: ${COMPATIBLE_VISION_API_KEY:-${REPORT_DRAFT_API_KEY:-}}
       COMPATIBLE_VISION_TIMEOUT: ${COMPATIBLE_VISION_TIMEOUT:-${REPORT_DRAFT_TIMEOUT:-60s}}
+      PAYOS_ENABLED: ${PAYOS_ENABLED:-false}
+      PAYOS_BASE_URL: ${PAYOS_BASE_URL:-https://api-merchant.payos.vn}
+      PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-}
+      PAYOS_API_KEY: ${PAYOS_API_KEY:-}
+      PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
+      PAYOS_RETURN_URL: ${PAYOS_RETURN_URL:-http://localhost:5173/client/reports/{inspectionId}}
+      PAYOS_CANCEL_URL: ${PAYOS_CANCEL_URL:-http://localhost:5173/client/reports/{inspectionId}}
     depends_on:
       postgres:
         condition: service_healthy

@@ -57,6 +57,21 @@ class PartnerRegistryServiceTest {
     when(drones.findById(droneId)).thenReturn(Optional.of(drone));
 
     assertThat(service.listDrones(managerId)).isEmpty();
+
+    Drone partnerDrone = mock(Drone.class);
+    UUID inspectorId = UUID.randomUUID();
+    PartnerDrone registered = new PartnerDrone(droneId, inspectorId, managerId);
+    when(partnerDrones.findActive()).thenReturn(List.of(registered));
+    when(drones.findById(droneId)).thenReturn(Optional.of(partnerDrone));
+    when(partnerDrone.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(partnerDrone.isEligibleForAssignment()).thenReturn(true);
+    when(partnerDrone.getSerialNumber()).thenReturn("SDI-001");
+    when(partnerDrone.getModel()).thenReturn("M350");
+
+    when(partnerDrone.getRegistrationExpiresAt()).thenReturn(null);
+    assertThat(service.listDrones(managerId))
+        .singleElement()
+        .satisfies(option -> assertThat(option.inspectorOwnerId()).isEqualTo(inspectorId));
   }
 
   @Test

@@ -54,10 +54,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
       UUID assignedByUserId) {
     users
         .findActiveUser(assignedByUserId)
-        .filter(
-            user ->
-                (user.hasRole(Roles.MANAGER) || user.hasRole(Roles.ADMIN))
-                    && user.organizationId() == null)
+        .filter(user -> user.hasRole(Roles.MANAGER) && user.organizationId() == null)
         .orElseThrow(
             () ->
                 failure(
