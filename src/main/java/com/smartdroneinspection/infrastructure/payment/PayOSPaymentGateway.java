@@ -29,6 +29,32 @@ public class PayOSPaymentGateway implements PayOSGateway {
   }
 
   @Override
+  public String resolveReturnUrl(String inspectionId, long orderCode) {
+    String base = properties.returnUrl();
+    if (base == null || base.isBlank()) {
+      base = "http://localhost:5173/client/reports/{inspectionId}";
+    }
+    String resolved = base.replace("{inspectionId}", inspectionId != null ? inspectionId : "");
+    if (!resolved.contains("payment=")) {
+      resolved += (resolved.contains("?") ? "&" : "?") + "payment=success&orderCode=" + orderCode;
+    }
+    return resolved;
+  }
+
+  @Override
+  public String resolveCancelUrl(String inspectionId) {
+    String base = properties.cancelUrl();
+    if (base == null || base.isBlank()) {
+      base = "http://localhost:5173/client/reports/{inspectionId}";
+    }
+    String resolved = base.replace("{inspectionId}", inspectionId != null ? inspectionId : "");
+    if (!resolved.contains("payment=")) {
+      resolved += (resolved.contains("?") ? "&" : "?") + "payment=cancelled";
+    }
+    return resolved;
+  }
+
+  @Override
   public PayOSPaymentLink createPaymentLink(
       long orderCode, long amount, String description, String returnUrl, String cancelUrl) {
     String actualReturnUrl =

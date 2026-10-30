@@ -19,6 +19,20 @@ public interface PayOSGateway {
       long orderCode, long amount, String description, String returnUrl, String cancelUrl);
 
   /**
+   * Resolves the return URL for a specific inspection, substituting configured template variables.
+   */
+  default String resolveReturnUrl(String inspectionId, long orderCode) {
+    return null;
+  }
+
+  /**
+   * Resolves the cancel URL for a specific inspection, substituting configured template variables.
+   */
+  default String resolveCancelUrl(String inspectionId) {
+    return null;
+  }
+
+  /**
    * Verifies authenticity of an incoming PayOS webhook payload.
    *
    * @param data the data dictionary from webhook payload
