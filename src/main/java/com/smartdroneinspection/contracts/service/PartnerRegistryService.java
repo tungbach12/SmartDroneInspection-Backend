@@ -52,6 +52,22 @@ public class PartnerRegistryService {
     return inspectors.saveAndFlush(new PartnerInspector(inspector.id(), managerId));
   }
 
+  @Transactional(readOnly = true)
+  public InspectorOption getInspector(UUID managerId, UUID inspectorUserId) {
+    requireManager(managerId);
+    PartnerInspector partner =
+        inspectors
+            .findById(inspectorUserId)
+            .filter(value -> "ACTIVE".equals(value.getStatus()))
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND, PARTNER_NOT_FOUND, "Partner Inspector not found"));
+    UserAccess.ActiveUser inspector = requireActivePartnerInspector(partner.getInspectorUserId());
+    return new InspectorOption(
+        inspector.id(), inspector.fullName(), inspector.pilotLicenseExpiresAt());
+  }
+
   @Transactional
   public PartnerDrone registerDrone(UUID managerId, UUID droneId) {
     requireManager(managerId);
@@ -149,7 +165,10 @@ public class PartnerRegistryService {
                     .map(
                         drone ->
                             new DroneOption(
-                                drone.getId(), drone.getSerialNumber(), drone.getModel()))
+                                drone.getId(),
+                                drone.getInspectorOwnerId(),
+                                drone.getSerialNumber(),
+                                drone.getModel()))
                     .orElse(null))
         .filter(java.util.Objects::nonNull)
         .toList();
@@ -310,5 +329,5 @@ public class PartnerRegistryService {
 
   public record InspectorOption(UUID id, String fullName, Instant licenseExpiresAt) {}
 
-  public record DroneOption(UUID id, String serialNumber, String model) {}
+  public record DroneOption(UUID id, UUID inspectorOwnerId, String serialNumber, String model) {}
 }

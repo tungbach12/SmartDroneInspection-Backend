@@ -108,9 +108,6 @@ public class InspectionReport {
   }
 
   public void submit() {
-    if (status == ReportStatus.DRAFT || status == ReportStatus.RETURNED) {
-      status = ReportStatus.AUTHOR_VERIFIED;
-    }
     requireStatus(ReportStatus.AUTHOR_VERIFIED);
     submittedAt = Instant.now();
     status = ReportStatus.SUBMITTED;

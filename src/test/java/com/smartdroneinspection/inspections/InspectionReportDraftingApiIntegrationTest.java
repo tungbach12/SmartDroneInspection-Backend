@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
@@ -60,6 +61,16 @@ class InspectionReportDraftingApiIntegrationTest {
   @Autowired FieldSessionRepository fieldSessions;
   @Autowired FindingRepository findings;
   @Autowired UserRepository users;
+
+  @Autowired
+  com.smartdroneinspection.inspections.repository.InspectionReportRepository reportVersions;
+
+  @Autowired com.smartdroneinspection.inspections.service.EvidenceService evidenceService;
+  @Autowired com.smartdroneinspection.assets.reportcontext.ReportContextAccess reportContextAccess;
+  @Autowired com.smartdroneinspection.inspections.spi.ReportRenderPort renderPort;
+  @Autowired com.smartdroneinspection.shared.storage.EvidenceObjectStore objectStore;
+  @Autowired com.smartdroneinspection.users.UserAccess userAccess;
+  @Autowired org.springframework.context.ApplicationEventPublisher events;
   @Autowired JdbcTemplate jdbcTemplate;
   @MockitoBean AiInferencePort inferencePort;
 
@@ -152,6 +163,38 @@ class InspectionReportDraftingApiIntegrationTest {
         .andExpect(
             jsonPath("$.data.sections.omissionDisclosure")
                 .value("Submerged components were not observed."));
+  }
+
+  @Test
+  void reportDraftCanBeGeneratedWithoutAConfiguredExternalProvider() throws Exception {
+    confirmFindings(true);
+    Inspection inspection = inspections.findById(fixture.inspectionId()).orElseThrow();
+    InspectionTestFixture.Data authorFixture = fixture;
+    var localDraftService =
+        new com.smartdroneinspection.inspections.service.ReportService(
+            inspections,
+            reportContextAccess,
+            jdbcTemplate,
+            evidence,
+            findings,
+            fieldSessions,
+            reportVersions,
+            evidenceService,
+            java.util.Optional.empty(),
+            renderPort,
+            java.util.Optional.of(objectStore),
+            userAccess,
+            events,
+            objectMapper);
+
+    var fallbackDraft =
+        localDraftService.generateDraft(authorFixture.inspectorId(), inspection.getId());
+
+    assertThat(fallbackDraft.status())
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.ReportStatus.DRAFT);
+    assertThat(fallbackDraft.contentSnapshot()).contains("local-synthesizer");
+    assertThat(fallbackDraft.sections().executiveSummary()).isNotBlank();
+    assertThat(fallbackDraft.sections().omissionDisclosure()).isNotBlank();
   }
 
   @Test

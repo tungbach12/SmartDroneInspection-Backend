@@ -10,7 +10,12 @@ import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -82,6 +87,20 @@ public class ContractWorkflowController {
       @PathVariable UUID requestId,
       @RequestParam("file") MultipartFile file) {
     return ApiResponse.success(workflow.uploadSignedContract(actorId(jwt), requestId, file));
+  }
+
+  @GetMapping("/{requestId}/signed-contract")
+  public ResponseEntity<InputStreamResource> downloadSignedContract(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
+    ContractWorkflowService.SignedContractFile file =
+        workflow.openSignedContract(actorId(jwt), requestId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(file.contentType()))
+        .contentLength(file.sizeBytes())
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(file.fileName()).build().toString())
+        .body(new InputStreamResource(file.stream()));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/assign")

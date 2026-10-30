@@ -25,6 +25,7 @@ import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -46,6 +47,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ContractWorkflowService {
 
   static final long MAX_CONTRACT_SIZE_BYTES = 10L * 1024 * 1024;
+  private static final String STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE";
   private static final String REQUEST_NOT_FOUND = "REQUEST_NOT_FOUND";
   private static final String REQUEST_NOT_FOUND_DETAIL = "Service request not found";
   private static final Set<String> ALLOWED_CONTRACT_TYPES =
@@ -194,7 +196,7 @@ public class ContractWorkflowService {
               input.pricePerOccurrenceUsd(),
               manager.id());
       request.markQuoted();
-    } catch (IllegalArgumentException | IllegalStateException exception) {
+    } catch (IllegalArgumentException | IllegalStateException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "QUOTE_INVALID", exception.getMessage());
     }
     quotes.saveAndFlush(quote);
@@ -281,7 +283,7 @@ public class ContractWorkflowService {
             () ->
                 failure(
                     HttpStatus.BAD_GATEWAY,
-                    "STORAGE_UNAVAILABLE",
+                    STORAGE_UNAVAILABLE,
                     "Contract storage is not configured"));
     String fileName = sanitizeFileName(file.getOriginalFilename());
     String objectKey = "contracts/requests/" + requestId + "/" + UUID.randomUUID();
@@ -304,6 +306,34 @@ public class ContractWorkflowService {
       throw exception;
     }
     return toResponse(request);
+  }
+
+  @Transactional(readOnly = true)
+  public SignedContractFile openSignedContract(UUID actorId, UUID requestId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    String objectKey = request.getContractObjectKey();
+    if (objectKey == null || objectKey.isBlank()) {
+      throw failure(
+          HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Signed contract document was not found");
+    }
+    EvidenceObjectStore store =
+        objectStore.orElseThrow(
+            () ->
+                failure(
+                    HttpStatus.BAD_GATEWAY,
+                    STORAGE_UNAVAILABLE,
+                    "Contract storage is not configured"));
+    try {
+      InputStream stream = store.open(objectKey);
+      return new SignedContractFile(
+          request.getContractFileName(),
+          request.getContractContentType(),
+          request.getContractSizeBytes(),
+          stream);
+    } catch (IOException exception) {
+      throw failure(HttpStatus.BAD_GATEWAY, STORAGE_UNAVAILABLE, "Contract storage is unavailable");
+    }
   }
 
   @Transactional
@@ -344,7 +374,13 @@ public class ContractWorkflowService {
             input.plannedStartAt(),
             input.plannedEndAt(),
             manager.id());
-    occurrence.assign(input.inspectorId(), input.droneId(), inspectionId, manager.id());
+    occurrence.assign(
+        input.inspectorId(),
+        input.droneId(),
+        inspectionId,
+        input.plannedStartAt(),
+        input.plannedEndAt(),
+        manager.id());
     occurrences.saveAndFlush(occurrence);
     boolean anyPending =
         occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).stream()
@@ -370,34 +406,57 @@ public class ContractWorkflowService {
                 () ->
                     failure(
                         HttpStatus.CONFLICT, "QUOTE_NOT_FOUND", "Accepted quote was not found"));
-    int count = request.getRequestType() == RequestType.ONE_TIME ? 1 : 0;
-    if (request.getRequestType() == RequestType.RECURRING && request.getOccurrenceCount() != null) {
-      count = request.getOccurrenceCount();
-    } else if (request.getRequestType() == RequestType.RECURRING) {
-      count = estimateOccurrenceCount(request, quote);
-    }
+    int count =
+        request.getRequestType() == RequestType.ONE_TIME
+            ? 1
+            : request.getOccurrenceCount() != null
+                ? request.getOccurrenceCount()
+                : estimateOccurrenceCount(request, quote);
+    ZoneId zone = ZoneId.of(request.getTimezone());
+    LocalDate firstDate = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalDate();
+    LocalTime firstTime = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalTime();
+    Duration duration =
+        Duration.between(quote.getFirstOccurrenceStartAt(), quote.getFirstOccurrenceEndAt());
     for (int index = 0; index < count; index++) {
+      LocalDate date = index == 0 ? firstDate : recurrenceDate(request, firstDate, index);
+      if (date.isAfter(request.getRequestedUntil())
+          || (request.getRecurrenceEndDate() != null
+              && date.isAfter(request.getRecurrenceEndDate()))) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "Occurrence falls outside the requested recurrence range");
+      }
       Instant start =
-          index == 0 ? quote.getFirstOccurrenceStartAt() : occurrenceAt(request, quote, index);
-      Instant end =
-          start.plus(
-              Duration.between(quote.getFirstOccurrenceStartAt(), quote.getFirstOccurrenceEndAt()));
+          index == 0
+              ? quote.getFirstOccurrenceStartAt()
+              : date.atTime(firstTime).atZone(zone).toInstant();
+      Instant end = start.plus(duration);
+      if (date.isBefore(request.getRequestedFrom())
+          || start.atZone(zone).toLocalTime().isBefore(request.getWindowStart())
+          || end.atZone(zone).toLocalTime().isAfter(request.getWindowEnd())) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "Occurrence falls outside the requested date or daily time window");
+      }
       occurrences.save(new ServiceRequestOccurrence(request.getId(), index + 1, start, end));
     }
     occurrences.flush();
   }
 
   private int estimateOccurrenceCount(ServiceRequest request, ServiceRequestQuote quote) {
-    int count = 0;
-    LocalDate date = request.getRequestedFrom();
-    LocalDate until = request.getRecurrenceEndDate();
     ZoneId zone = ZoneId.of(request.getTimezone());
-    while (!date.isAfter(until) && count < 100) {
-      Instant candidate = date.atTime(request.getWindowStart()).atZone(zone).toInstant();
-      if (!candidate.isBefore(quote.getFirstOccurrenceStartAt())) {
-        count++;
-      }
-      date = advance(date, request.getRecurrenceUnit(), request.getRecurrenceInterval());
+    LocalDate firstDate = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalDate();
+    LocalDate lastDate =
+        request.getRecurrenceEndDate().isBefore(request.getRequestedUntil())
+            ? request.getRecurrenceEndDate()
+            : request.getRequestedUntil();
+    int count = 0;
+    LocalDate date = firstDate;
+    while (!date.isAfter(lastDate) && count < 100) {
+      count++;
+      date = recurrenceDate(request, firstDate, count);
     }
     if (count < 1) {
       throw failure(
@@ -406,32 +465,13 @@ public class ContractWorkflowService {
     return count;
   }
 
-  private Instant occurrenceAt(ServiceRequest request, ServiceRequestQuote quote, int index) {
-    ZoneId zone = ZoneId.of(request.getTimezone());
-    LocalDate date = request.getRequestedFrom();
-    int remaining = index;
-    while (remaining > 0) {
-      date = advance(date, request.getRecurrenceUnit(), request.getRecurrenceInterval());
-      remaining--;
-    }
-    Instant result = date.atTime(request.getWindowStart()).atZone(zone).toInstant();
-    if (request.getRecurrenceEndDate() != null && date.isAfter(request.getRecurrenceEndDate())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "Occurrence falls after recurrence end date");
-    }
-    if (result.isBefore(quote.getFirstOccurrenceStartAt())) {
-      return occurrenceAt(request, quote, index + 1);
-    }
-    return result;
-  }
-
-  private LocalDate advance(LocalDate date, String unit, int interval) {
-    return switch (unit) {
-      case "DAY" -> date.plusDays(interval);
-      case "WEEK" -> date.plusWeeks(interval);
-      case "MONTH" -> date.plusMonths(interval);
+  private LocalDate recurrenceDate(
+      ServiceRequest request, LocalDate firstDate, int occurrenceIndex) {
+    int offset = Math.multiplyExact(occurrenceIndex, request.getRecurrenceInterval());
+    return switch (request.getRecurrenceUnit()) {
+      case "DAY" -> firstDate.plusDays(offset);
+      case "WEEK" -> firstDate.plusWeeks(offset);
+      case "MONTH" -> firstDate.plusMonths(offset);
       default ->
           throw failure(
               HttpStatus.BAD_REQUEST, "RECURRENCE_INVALID", "Recurrence cadence is invalid");
@@ -580,4 +620,7 @@ public class ContractWorkflowService {
       throw new IllegalStateException("SHA-256 is not available", exception);
     }
   }
+
+  public record SignedContractFile(
+      String fileName, String contentType, Long sizeBytes, InputStream stream) {}
 }
