@@ -19,6 +19,27 @@ public interface ServiceRequestOccurrenceRepository
   @Query("select occurrence from ServiceRequestOccurrence occurrence where occurrence.id = :id")
   Optional<ServiceRequestOccurrence> findWithLockById(@Param("id") UUID id);
 
+  Optional<ServiceRequestOccurrence> findByInspectionId(UUID inspectionId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence where occurrence.inspectionId = :inspectionId")
+  Optional<ServiceRequestOccurrence> findWithLockByInspectionId(
+      @Param("inspectionId") UUID inspectionId);
+
+  Optional<ServiceRequestOccurrence> findByPayosOrderCode(Long payosOrderCode);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence where occurrence.payosOrderCode = :orderCode")
+  Optional<ServiceRequestOccurrence> findWithLockByPayosOrderCode(
+      @Param("orderCode") Long orderCode);
+
+  @Query(
+      value = "SELECT nextval('service_request_occurrences_payos_order_code_seq')",
+      nativeQuery = true)
+  Long getNextPayosOrderCode();
+
   @Query(
       "select count(occurrence) > 0 from ServiceRequestOccurrence occurrence "
           + "where (occurrence.inspectorId = :inspectorId or occurrence.droneId = :droneId) "

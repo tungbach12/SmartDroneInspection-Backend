@@ -215,6 +215,20 @@ public class ReportDraftClient implements ReportDraftPort {
         "Assigned drone reference (not proof of equipment used)",
         inspection.assignedDroneId());
 
+    if (context.defectVerifications() != null && !context.defectVerifications().isEmpty()) {
+      builder.append("\nTarget Defect Verifications (Post-maintenance re-inspection scope):\n");
+      for (var v : context.defectVerifications()) {
+        builder
+            .append("- Target Defect: ")
+            .append(v.defectLabel())
+            .append(" | Resolution Status: ")
+            .append(v.resolutionStatus())
+            .append(" | Inspector Verification Notes: ")
+            .append(v.inspectorNotes() != null ? v.inspectorNotes() : "None recorded")
+            .append("\n");
+      }
+    }
+
     builder.append(
         "\nInspector-confirmed Findings (official findings only; confirmation is not independent validation):\n");
     for (var finding : context.findings()) {

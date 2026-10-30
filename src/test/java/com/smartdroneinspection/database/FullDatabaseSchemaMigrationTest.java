@@ -69,10 +69,11 @@ class FullDatabaseSchemaMigrationTest {
             "service_request_messages",
             "service_request_quotes",
             "service_request_occurrences",
+            "inspection_finance_settings",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(42);
+    assertThat(expected).hasSize(43);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -104,5 +105,35 @@ class FullDatabaseSchemaMigrationTest {
             "uq_assets_id_organization");
     assertThat(constraints)
         .contains("fk_inspections_asset_tenant", "fk_maintenance_work_orders_asset_tenant");
+  }
+
+  @Test
+  void appliesAllMigrationsUpToV13AndCreatesPayOSSupport() {
+    List<String> versions =
+        jdbcTemplate.queryForList(
+            "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
+    assertThat(versions).hasSize(13);
+    assertThat(versions.getLast()).isEqualTo("13");
+
+    List<String> sequences =
+        jdbcTemplate.queryForList(
+            """
+            SELECT sequence_name
+            FROM information_schema.sequences
+            WHERE sequence_schema = current_schema()
+            """,
+            String.class);
+    assertThat(sequences).contains("service_request_occurrences_payos_order_code_seq");
+
+    List<String> columns =
+        jdbcTemplate.queryForList(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'service_request_occurrences'
+            """,
+            String.class);
+    assertThat(columns).contains("payos_order_code", "payos_payment_link_id", "payment_method");
   }
 }

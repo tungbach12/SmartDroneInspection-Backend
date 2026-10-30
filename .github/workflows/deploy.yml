@@ -27,15 +27,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H 100.120.66.114 >> ~/.ssh/known_hosts
 
-      - name: Deploy backend + web (docker compose)
+      - name: Deploy backend and infrastructure (docker compose)
         run: |
           ssh -i ~/.ssh/deploy_key -p 2222 -o StrictHostKeyChecking=no ubuntu@100.120.66.114 '
             set -e
-            # The Frontend workflow drives this same compose project from this same host on
-            # every push to main, and `web` waits on `condition: service_healthy` for `backend`.
-            # Without a lock the steps below can SIGTERM a backend the Frontend deploy is still
-            # waiting on, which shows up only as "container smartdroneinspection-backend exited
-            # (143)" and no other symptom. Hold one lock across every container mutation.
+            # Keep all container mutations serialised across independent frontend/backend deploys.
             command -v flock >/dev/null 2>&1 || { echo "flock(1) is required to serialise deploys"; exit 1; }
             exec 9>/tmp/sdi-deploy.lock
             flock -w 900 9 || { echo "Timed out waiting for the deploy lock"; exit 1; }
@@ -43,11 +39,6 @@ jobs:
             cd ~/repos/backend
             git fetch --depth 1 origin main
             git reset --hard origin/main
-            # Sync frontend repo that the BE compose build references (../SmartDroneInspection-frontend)
-            cd ~/repos/frontend
-            git fetch --depth 1 origin main || true
-            git reset --hard origin/main || true
-            cd ~/repos/backend
             # Dump before touching anything: migrations V24-V26 are a destructive schema reset
             # (legacy marketplace tables are dropped, roles are rewritten) and there is no
             # down-migration. If the deploy fails, this is the only way back.
@@ -57,24 +48,10 @@ jobs:
                 > ~/db_backups/pre-deploy-$(date -u +%Y%m%d-%H%M%S).sql \
                 && echo "Pre-deploy database backup written to ~/db_backups"
             fi
-            # A plain `compose down` leaves containers behind when they were created by a
-            # previous compose project (the project name is derived from the directory and
-            # can change), which then makes `compose up` fail with
-            # "container name is already in use". Remove the named containers and the
-            # project network explicitly so every deploy starts from a known state.
-            docker compose down --remove-orphans || true
-            docker rm -f smartdroneinspection-web smartdroneinspection-backend smartdroneinspection-postgres smartdroneinspection-minio 2>/dev/null || true
-            docker network rm backend_smartdroneinspection-network 2>/dev/null || true
-            if ! docker compose up -d --build; then
-              # `compose up` fails silently when the backend exits during its start window, so
-              # capture the container list and the backend log before the runner tears down.
-              echo "compose up failed - container state and backend log follow"
-              docker compose ps -a
-              docker compose logs --no-color --tail=200 backend || true
-              exit 1
-            fi
+            # Do not use --remove-orphans: the existing frontend is migrated by its own deploy.
+            docker compose up -d --build
             docker image prune -f
-            echo "Deployed at $(date -u +%FT%TZ)"
+            echo "Backend and infrastructure deployed at $(date -u +%FT%TZ)"
           '
 
       - name: Smoke check
@@ -82,13 +59,15 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p 2222 -o StrictHostKeyChecking=no ubuntu@100.120.66.114 '
             # The backend now runs Flyway V24-V26 on boot, which takes longer than a fixed
             # sleep on a cold container. Poll the health endpoint instead of guessing.
+            healthy=false
             for i in $(seq 1 60); do
               if curl -fsS http://127.0.0.1:18081/actuator/health >/dev/null 2>&1; then
                 echo "Backend healthy after ${i}0s"
+                healthy=true
                 break
               fi
               sleep 10
             done
-            curl -fsS -o /dev/null -w "web HTTP %{http_code}\n" http://127.0.0.1:18080/
+            test "$healthy" = true
             curl -fsS http://127.0.0.1:18081/actuator/health | head -c 200; echo
           '

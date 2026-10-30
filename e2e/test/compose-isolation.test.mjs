@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
@@ -9,6 +10,8 @@ const directory = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(directory, '../..');
 const composeFile = resolve(backendRoot, 'e2e/compose.e2e.yml');
 const currentCompose = resolve(backendRoot, 'docker-compose.yml');
+const frontendRoot = resolve(backendRoot, '../SmartDroneInspection-frontend');
+const frontendCompose = resolve(frontendRoot, 'docker-compose.yml');
 const expectedFrontendContext = resolve(backendRoot, '../sdi-mf1-mf4-frontend');
 const testRunId = 'sdi-e2e-isolation-test';
 const forbiddenPorts = new Set([80, 5432, 8000, 8080, 9000, 9001]);
@@ -19,7 +22,7 @@ function composeConfig(file, project, extraEnv = {}) {
   return JSON.parse(
     execFileSync(
       'docker',
-      ['compose', '-f', file, '-p', project, 'config', '--format', 'json'],
+      ['compose', '-f', file, '-p', project, '--env-file', '/dev/null', 'config', '--format', 'json'],
       {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -28,6 +31,27 @@ function composeConfig(file, project, extraEnv = {}) {
     ),
   );
 }
+
+test('frontend deploy is independent and shares only the stable backend network', () => {
+  const backend = composeConfig(currentCompose, 'backend');
+  const frontend = composeConfig(frontendCompose, 'smartdroneinspection-frontend', {
+    WEB_PORT: '40183',
+  });
+
+  assert.deepEqual(Object.keys(backend.services).sort(), ['ai-inference', 'backend', 'minio', 'postgres']);
+  assert.deepEqual(Object.keys(frontend.services), ['web']);
+  assert.equal(frontend.services.web.ports?.[0]?.published, '40183');
+  assert.equal(frontend.services.web.depends_on, undefined, 'frontend must not require backend startup to deploy');
+  assert.equal(frontend.services.web.build.context, frontendRoot);
+  assert.equal(backend.networks['smartdroneinspection-network'].name, 'backend_smartdroneinspection-network');
+  assert.equal(frontend.networks['smartdroneinspection-network'].external, true);
+  assert.equal(frontend.networks['smartdroneinspection-network'].name, 'backend_smartdroneinspection-network');
+  assert.match(
+    readFileSync(resolve(frontendRoot, 'nginx.conf'), 'utf8'),
+    /set \$backend http:\/\/backend:8080;[\s\S]*proxy_pass \$backend;/,
+    'Nginx must route API requests to the backend Compose service on the shared network',
+  );
+});
 
 test('MF1-MF4 E2E compose is isolated from the existing local stack', () => {
   const existing = composeConfig(currentCompose, 'smartdroneinspection-backend');
