@@ -6,21 +6,29 @@ Modular monolith built with Spring Boot 4.1, Java 21, Spring Modulith, PostgreSQ
 
 ### 1. Full Stack Deployment (Docker Compose)
 
-Deploy the entire stack (PostgreSQL, MinIO, Backend, and Web Nginx reverse proxy) with a single command:
+Deploy the backend and its infrastructure (PostgreSQL, MinIO, AI inference, and Backend) with Docker Compose. The frontend has its own Compose project and deploy lifecycle in `../SmartDroneInspection-frontend`.
 
 ```bash
 # 1. Configure environment variables (first time only)
 cp .env.example .env
 # Edit .env to set AUTH_JWT_SECRET and AUTH_REFRESH_TOKEN_PEPPER (Base64 >= 32 bytes)
+# Configure the public browser origin in AUTH_ALLOWED_ORIGINS when using a domain.
 
-# 2. Build and start all services
+# 2. Build and start backend and infrastructure
 docker compose up -d --build
 
-# 3. Check service health
+# 3. In another terminal, configure and start the independent frontend
+cd ../SmartDroneInspection-frontend
+cp .env.example .env
+docker compose up -d --build
+
+# 4. Check each Compose project
 docker compose ps
 ```
 
-The Web UI and API proxy will be available at `http://localhost/` (or port configured in `WEB_PORT`). Backend direct API (bound to loopback `127.0.0.1:8080`) is accessible for mobile emulators or debugging.
+The web UI and `/api` reverse proxy are served at `http://localhost/` (or the frontend `WEB_PORT`). The frontend uses the stable external Docker network created by the backend Compose project. Deploying frontend changes does not rebuild or restart the backend; deploying backend changes does not rebuild the frontend. The backend direct API (bound to loopback `127.0.0.1:8080`) remains accessible for mobile emulators or debugging.
+
+Stop each project from its own repository with `docker compose down` (do not use `down -v` unless you intentionally want to delete backend data volumes).
 
 ### 2. Local Development Workflow
 

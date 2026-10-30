@@ -109,6 +109,10 @@ class PersistenceEntityOwnershipTest {
             "maintenance_acceptance_decisions",
             "com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision"),
         Arguments.of(
+            "contracts",
+            "inspection_finance_settings",
+            "com.smartdroneinspection.contracts.domain.InspectionFinanceSettings"),
+        Arguments.of(
             "maintenance",
             "repair_knowledge_chunks",
             "com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk"));

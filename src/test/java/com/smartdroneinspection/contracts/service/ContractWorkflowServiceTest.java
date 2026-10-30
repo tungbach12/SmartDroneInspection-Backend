@@ -14,8 +14,11 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
+import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.ServiceRequestStatus;
@@ -26,6 +29,7 @@ import com.smartdroneinspection.contracts.repository.ServiceRequestMessageReposi
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
+import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -42,8 +46,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -59,6 +65,8 @@ class ContractWorkflowServiceTest {
   private PartnerRegistryService partners;
   private Mf2InspectionAssignment assignment;
   private EvidenceObjectStore objectStore;
+  private InspectionFinanceSettingsService financeSettingsService;
+  private InspectionReportAccess reportAccess;
   private ContractWorkflowService service;
 
   private final UUID customerId = UUID.randomUUID();
@@ -80,6 +88,8 @@ class ContractWorkflowServiceTest {
     partners = mock(PartnerRegistryService.class);
     assignment = mock(Mf2InspectionAssignment.class);
     objectStore = mock(EvidenceObjectStore.class);
+    financeSettingsService = mock(InspectionFinanceSettingsService.class);
+    reportAccess = mock(InspectionReportAccess.class);
 
     service =
         new ContractWorkflowService(
@@ -92,7 +102,9 @@ class ContractWorkflowServiceTest {
             actorPolicy,
             partners,
             assignment,
-            Optional.of(objectStore));
+            Optional.of(objectStore),
+            financeSettingsService,
+            Optional.of(reportAccess));
 
     when(users.findActiveUser(customerId))
         .thenReturn(
@@ -307,7 +319,7 @@ class ContractWorkflowServiceTest {
                     requestId,
                     new MockMultipartFile("file", "contract.txt", "text/plain", "text".getBytes())))
         .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("Only PDF, JPEG, and PNG");
+        .hasMessageContaining("Only PDF");
     assertThatThrownBy(
             () ->
                 service.uploadSignedContract(
@@ -466,6 +478,473 @@ class ContractWorkflowServiceTest {
         .isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED);
     assertThat(request.getStatus()).isEqualTo(ServiceRequestStatus.ASSIGNED);
     assertThat(response.status()).isEqualTo(ServiceRequestStatus.ASSIGNED);
+  }
+
+  @Test
+  @DisplayName(
+      "Per-occurrence signed contract gate blocks assignment when occurrence has no contract")
+  void assignOccurrenceBlockedWhenOccurrenceHasNoSignedContract() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, 2, null);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            2,
+            Instant.parse("2027-02-08T09:00:00Z"),
+            Instant.parse("2027-02-08T10:00:00Z"));
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+
+    AssignOccurrenceRequest input =
+        new AssignOccurrenceRequest(
+            occurrence.getPlannedStartAt(), occurrence.getPlannedEndAt(), inspectorId, droneId);
+
+    assertThatThrownBy(() -> service.assignOccurrence(managerId, requestId, occurrenceId, input))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(
+            "Occurrence must have its own signed contract attached before assignment");
+  }
+
+  @Test
+  @DisplayName("Recurring request occurrence 2 cannot be satisfied by occurrence 1 contract")
+  void recurringRequestOccurrencesIndependentlyGatedBySignedContract() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    UUID occ1Id = UUID.randomUUID();
+    UUID occ2Id = UUID.randomUUID();
+    ServiceRequest request = recurringRequest(requestId, 2, null);
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+
+    ServiceRequestOccurrence occ1 =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occ1.recordSignedContract(
+        "contracts/occ1", "signed-occ1.pdf", "application/pdf", 123L, "sha1".repeat(16), managerId);
+
+    ServiceRequestOccurrence occ2 =
+        new ServiceRequestOccurrence(
+            requestId,
+            2,
+            Instant.parse("2027-02-08T09:00:00Z"),
+            Instant.parse("2027-02-08T10:00:00Z"));
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occ1Id)).thenReturn(Optional.of(occ1));
+    when(occurrences.findWithLockById(occ2Id)).thenReturn(Optional.of(occ2));
+    when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(false);
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occ1, occ2));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(assignment.assign(any(), any(), any(), any(), any(), any(), any()))
+        .thenReturn(UUID.randomUUID());
+
+    // Occ 1 has its contract, can be assigned
+    AssignOccurrenceRequest input1 =
+        new AssignOccurrenceRequest(
+            occ1.getPlannedStartAt(), occ1.getPlannedEndAt(), inspectorId, droneId);
+    var resp1 = service.assignOccurrence(managerId, requestId, occ1Id, input1);
+    assertThat(occ1.getStatus()).isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED);
+
+    // Occ 2 does not have its own contract, assignment must be blocked!
+    AssignOccurrenceRequest input2 =
+        new AssignOccurrenceRequest(
+            occ2.getPlannedStartAt(), occ2.getPlannedEndAt(), inspectorId, droneId);
+    assertThatThrownBy(() -> service.assignOccurrence(managerId, requestId, occ2Id, input2))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(
+            "Occurrence must have its own signed contract attached before assignment");
+  }
+
+  @Test
+  @DisplayName("Manager can upload signed DOCX and PDF directly to an occurrence")
+  void managerCanUploadSignedDocxAndPdfForOccurrence() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+    request.acceptQuote(1, customerId);
+
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    // DOCX with valid PK magic bytes: 0x50, 0x4B, 0x03, 0x04
+    byte[] docxBytes = new byte[] {0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00};
+    MockMultipartFile docxFile =
+        new MockMultipartFile(
+            "file",
+            "signed-contract.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            docxBytes);
+
+    service.uploadOccurrenceSignedContract(managerId, requestId, occurrenceId, docxFile);
+
+    assertThat(occurrence.hasSignedContract()).isTrue();
+    assertThat(occurrence.getContractFileName()).isEqualTo("signed-contract.docx");
+    assertThat(occurrence.getContractContentType())
+        .isEqualTo("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    verify(objectStore)
+        .put(
+            any(String.class),
+            eq("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            eq((long) docxBytes.length),
+            any());
+  }
+
+  @Test
+  @DisplayName("Payable VND quote issuance is blocked when Admin settlement rates are unset")
+  void issueVndQuoteRequiresAdminFinanceSettingsConfigured() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+
+    // Admin rates unset
+    doThrow(
+            new BusinessException(
+                HttpStatus.CONFLICT,
+                "FINANCE_SETTINGS_REQUIRED",
+                "Admin must configure inspection commission, VAT, and TNCN rates before payable quotes can be issued"))
+        .when(financeSettingsService)
+        .requireConfiguredRates();
+
+    IssueServiceQuoteRequest vndQuote =
+        new IssueServiceQuoteRequest(
+            "Bridge inspection",
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T11:00:00Z"),
+            inspectorId,
+            droneId,
+            new BigDecimal("11000000.00"),
+            null);
+
+    assertThatThrownBy(() -> service.issueQuote(managerId, requestId, vndQuote))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Admin must configure inspection commission, VAT, and TNCN rates");
+  }
+
+  @Test
+  @DisplayName("Accepting VND quote snapshots inclusive VAT split, commission, and payout amounts")
+  void acceptVndQuoteSnapshotsFinanceAmountsPerOccurrence() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.markQuoted();
+
+    ServiceRequestQuote quote =
+        new ServiceRequestQuote(
+            requestId,
+            1,
+            "Bridge inspection",
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T11:00:00Z"),
+            inspectorId,
+            droneId,
+            "VND",
+            new BigDecimal("11000000.00"),
+            null,
+            managerId);
+
+    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(quotes.findFirstByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(Optional.of(quote));
+    when(quotes.findByRequestIdAndVersionNo(requestId, 1)).thenReturn(Optional.of(quote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of(quote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    InspectionFinanceSettings settings =
+        new InspectionFinanceSettings(
+            new BigDecimal("15.00"), new BigDecimal("10.00"), new BigDecimal("10.00"), managerId);
+    when(financeSettingsService.findCurrentSettings()).thenReturn(Optional.of(settings));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+
+    service.acceptQuote(customerId, requestId, 1);
+
+    verify(occurrences).save(captor.capture());
+    ServiceRequestOccurrence materialized = captor.getValue();
+
+    assertThat(materialized.getCurrency()).isEqualTo("VND");
+    assertThat(materialized.getTotalPrice()).isEqualByComparingTo("11000000.00");
+    assertThat(materialized.getServiceBaseAmount()).isEqualByComparingTo("10000000.00");
+    assertThat(materialized.getVatRate()).isEqualByComparingTo("10.00");
+    assertThat(materialized.getVatAmount()).isEqualByComparingTo("1000000.00");
+    assertThat(materialized.getCommissionRate()).isEqualByComparingTo("15.00");
+    assertThat(materialized.getCommissionAmount()).isEqualByComparingTo("1500000.00");
+    assertThat(materialized.getInspectorGrossPayout()).isEqualByComparingTo("8500000.00");
+    assertThat(materialized.getTncnRate()).isEqualByComparingTo("10.00");
+    assertThat(materialized.getTncnAmount()).isEqualByComparingTo("850000.00");
+    assertThat(materialized.getInspectorNetPayout()).isEqualByComparingTo("7650000.00");
+  }
+
+  @Test
+  @DisplayName("Subsequent Admin settings updates do not mutate existing occurrence snapshots")
+  void adminSettingsUpdateDoesNotMutateExistingOccurrenceSnapshots() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+
+    occurrence.snapshotFinance(
+        "VND",
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("1000000.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("1500000.00"),
+        new BigDecimal("8500000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("850000.00"),
+        new BigDecimal("7650000.00"));
+
+    // Attempting a second snapshot with new rates has no effect (immutable)
+    occurrence.snapshotFinance(
+        "VND",
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10000000.00"),
+        new BigDecimal("8.00"),
+        new BigDecimal("800000.00"),
+        new BigDecimal("25.00"),
+        new BigDecimal("2500000.00"),
+        new BigDecimal("7500000.00"),
+        new BigDecimal("20.00"),
+        new BigDecimal("1500000.00"),
+        new BigDecimal("6000000.00"));
+
+    assertThat(occurrence.getCommissionRate()).isEqualByComparingTo("15.00");
+    assertThat(occurrence.getCommissionAmount()).isEqualByComparingTo("1500000.00");
+    assertThat(occurrence.getVatRate()).isEqualByComparingTo("10.00");
+    assertThat(occurrence.getInspectorNetPayout()).isEqualByComparingTo("7650000.00");
+  }
+
+  @Test
+  @DisplayName(
+      "Customer accepting published report transitions payment status to PAYMENT_DUE not PAID")
+  void customerAcceptPublishedReportTransitionsToPaymentDueNotPaid() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+
+    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(reportAccess.isReportPublished(inspectionId, reportVersionId)).thenReturn(true);
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    service.customerAcceptReport(customerId, requestId, occurrenceId, reportVersionId);
+
+    assertThat(occurrence.getReportAcceptedAt()).isNotNull();
+    assertThat(occurrence.getReportAcceptedByUserId()).isEqualTo(customerId);
+    assertThat(occurrence.getAcceptedReportVersionId()).isEqualTo(reportVersionId);
+    assertThat(occurrence.getPaymentStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAYMENT_DUE);
+  }
+
+  @Test
+  @DisplayName("Customer cannot accept an unpublished report")
+  void customerCannotAcceptUnpublishedReport() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+
+    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(reportAccess.isReportPublished(inspectionId, reportVersionId)).thenReturn(false);
+
+    assertThatThrownBy(
+            () ->
+                service.customerAcceptReport(customerId, requestId, occurrenceId, reportVersionId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Only a published report version can be accepted");
+  }
+
+  @Test
+  @DisplayName("Manager confirms exact matching payment amount; mismatched amount is rejected")
+  void managerPaymentConfirmationRequiresMatchingAmount() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID versionId = UUID.randomUUID();
+
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.snapshotFinance(
+        "VND",
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("1000000.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("1500000.00"),
+        new BigDecimal("8500000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("850000.00"),
+        new BigDecimal("7650000.00"));
+    occurrence.acceptReport(versionId, customerId);
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    // Mismatched amount rejected
+    ConfirmOccurrencePaymentRequest wrongAmount =
+        new ConfirmOccurrencePaymentRequest(
+            "TXN-12345", new BigDecimal("10000000.00"), "Mismatched");
+    assertThatThrownBy(
+            () -> service.confirmOccurrencePayment(managerId, requestId, occurrenceId, wrongAmount))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Payment amount must exactly match agreed total");
+
+    // Exact matching amount confirms payment
+    ConfirmOccurrencePaymentRequest matching =
+        new ConfirmOccurrencePaymentRequest(
+            "TXN-12345", new BigDecimal("11000000.00"), "Verified receipt");
+    service.confirmOccurrencePayment(managerId, requestId, occurrenceId, matching);
+
+    assertThat(occurrence.getPaymentStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAID);
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(occurrence.getPaymentReference()).isEqualTo("TXN-12345");
+    assertThat(occurrence.getPaymentConfirmedByUserId()).isEqualTo(managerId);
+
+    // Duplicate exact confirmation is idempotent
+    service.confirmOccurrencePayment(managerId, requestId, occurrenceId, matching);
+    assertThat(occurrence.getPaymentStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAID);
+  }
+
+  @Test
+  @DisplayName("Inspector payout is gated on both report acceptance and confirmed payment")
+  void managerPayoutRecordingGatedOnBothAcceptedReportAndConfirmedPayment() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+    occurrence.snapshotFinance(
+        "VND",
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("1000000.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("1500000.00"),
+        new BigDecimal("8500000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("850000.00"),
+        new BigDecimal("7650000.00"));
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(quotes.findByRequestIdOrderByVersionNoDesc(requestId)).thenReturn(List.of());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    RecordOccurrencePayoutRequest payoutReq =
+        new RecordOccurrencePayoutRequest("PAYOUT-REF-999", "Transfer completed");
+
+    // Gate 1: Blocked before report acceptance
+    assertThatThrownBy(
+            () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(
+            "Inspector payout requires both customer report acceptance and confirmed customer payment");
+
+    // Customer accepts report
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+
+    // Gate 2: Still blocked before payment confirmation
+    assertThatThrownBy(
+            () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(
+            "Inspector payout requires both customer report acceptance and confirmed customer payment");
+
+    // Manager confirms payment
+    occurrence.confirmPayment("TXN-12345", new BigDecimal("11000000.00"), managerId);
+
+    // Both gates satisfied: payout succeeds!
+    service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
+
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+    assertThat(occurrence.getPayoutReference()).isEqualTo("PAYOUT-REF-999");
+    assertThat(occurrence.getPayoutRecordedByUserId()).isEqualTo(managerId);
+
+    // Duplicate payout recording is idempotent
+    service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
   }
 
   private ServiceRequest request(LocalDate from, LocalDate until) {

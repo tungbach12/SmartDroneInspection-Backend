@@ -25,6 +25,7 @@ import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
 import com.smartdroneinspection.inspections.spi.ReinspectionReportPublishedEvent;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
@@ -94,6 +95,8 @@ public class ReportService {
   private final UserAccess userAccess;
   private final ApplicationEventPublisher events;
   private final ObjectMapper objectMapper;
+  private final Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate;
+  private final Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo;
 
   public ReportService(
       InspectionRepository inspections,
@@ -110,6 +113,78 @@ public class ReportService {
       UserAccess userAccess,
       ApplicationEventPublisher events,
       ObjectMapper objectMapper) {
+    this(
+        inspections,
+        reportContextAccess,
+        jdbcTemplate,
+        evidence,
+        findings,
+        fieldSessions,
+        versions,
+        evidenceService,
+        draftPort,
+        renderPort,
+        objectStore,
+        userAccess,
+        events,
+        objectMapper,
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  public ReportService(
+      InspectionRepository inspections,
+      ReportContextAccess reportContextAccess,
+      org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      FieldSessionRepository fieldSessions,
+      InspectionReportRepository versions,
+      EvidenceService evidenceService,
+      Optional<ReportDraftPort> draftPort,
+      ReportRenderPort renderPort,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      ApplicationEventPublisher events,
+      ObjectMapper objectMapper,
+      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate) {
+    this(
+        inspections,
+        reportContextAccess,
+        jdbcTemplate,
+        evidence,
+        findings,
+        fieldSessions,
+        versions,
+        evidenceService,
+        draftPort,
+        renderPort,
+        objectStore,
+        userAccess,
+        events,
+        objectMapper,
+        paymentGate,
+        Optional.empty());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ReportService(
+      InspectionRepository inspections,
+      ReportContextAccess reportContextAccess,
+      org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      FieldSessionRepository fieldSessions,
+      InspectionReportRepository versions,
+      EvidenceService evidenceService,
+      Optional<ReportDraftPort> draftPort,
+      ReportRenderPort renderPort,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      ApplicationEventPublisher events,
+      ObjectMapper objectMapper,
+      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
+      Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo) {
     this.inspections = inspections;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
@@ -124,6 +199,8 @@ public class ReportService {
     this.objectMapper = objectMapper;
     this.userAccess = userAccess;
     this.events = events;
+    this.paymentGate = paymentGate;
+    this.defectVerificationsRepo = defectVerificationsRepo;
   }
 
   /**
@@ -168,6 +245,24 @@ public class ReportService {
             .filter(finding -> currentEvidenceIds.contains(finding.getEvidenceId()))
             .toList();
 
+    List<ReportDraftPort.DefectVerificationSummary> defectVerificationsList = List.of();
+    if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
+        && defectVerificationsRepo.isPresent()) {
+      defectVerificationsList =
+          defectVerificationsRepo.get().findByReinspectionId(inspectionId).stream()
+              .map(
+                  v -> {
+                    Finding srcFinding = findings.findById(v.getSourceFindingId()).orElse(null);
+                    String label =
+                        srcFinding != null ? srcFinding.getDefectLabel() : "Target defect";
+                    String severity =
+                        srcFinding != null ? srcFinding.getSeverity().name() : "MEDIUM";
+                    return new ReportDraftPort.DefectVerificationSummary(
+                        label, severity, v.getResolutionStatus().name(), v.getInspectorNotes());
+                  })
+              .toList();
+    }
+
     ReportDraftPort port = draftPort.orElseGet(this::createLocalDraftSynthesizer);
 
     ReportDraftPort.SectionDraft proposal;
@@ -184,7 +279,8 @@ public class ReportService {
                       inspection.getPlannedEndAt() == null
                           ? null
                           : inspection.getPlannedEndAt().toString(),
-                      droneDisplayReference(reportIdentity, inspection.getDroneId())),
+                      droneDisplayReference(reportIdentity, inspection.getDroneId()),
+                      inspection.getInspectionType().name()),
                   confirmedFindings.stream()
                       .map(
                           finding ->
@@ -247,7 +343,8 @@ public class ReportService {
                                   session.getAbortReason(),
                                   droneDisplayReference(reportIdentity, inspection.getDroneId())))
                       .toList(),
-                  locale));
+                  locale,
+                  defectVerificationsList));
     } catch (IOException ex) {
       // A failed generation permits a manual draft under the same review gates. No placeholder text
       // is written into a section: a section the author did not write and the model did not supply
@@ -377,6 +474,8 @@ public class ReportService {
     requireCurrentFindingsConfirmation(inspection);
     try {
       version.submit();
+      inspection.markUnderReview();
+      inspections.saveAndFlush(inspection);
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
@@ -444,6 +543,10 @@ public class ReportService {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
     }
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    if (!approve && inspection.getStatus() == InspectionStatus.UNDER_REVIEW) {
+      inspection.returnToDraft();
+      inspections.saveAndFlush(inspection);
+    }
     return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
@@ -470,6 +573,9 @@ public class ReportService {
     }
     versions.saveAndFlush(version);
     inspection.reopenFindings();
+    if (inspection.getStatus() == InspectionStatus.UNDER_REVIEW) {
+      inspection.returnToDraft();
+    }
     inspections.saveAndFlush(inspection);
     return toResponse(version, inspection.getInspectorId());
   }
@@ -732,6 +838,18 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> downloadArtefact(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isClientOnly =
+        actor != null
+            && actor.hasRole(Roles.CUSTOMER)
+            && !actor.hasRole(Roles.MANAGER)
+            && !actor.hasRole(Roles.ADMIN);
+    if (isClientOnly && paymentGate.isPresent() && paymentGate.get().isPaymentDue(inspectionId)) {
+      throw new BusinessException(
+          HttpStatus.PAYMENT_REQUIRED,
+          "PAYMENT_REQUIRED",
+          "Final downloadable inspection report deliverables are locked until customer payment is confirmed");
+    }
     InspectionReport version = requireVersion(inspectionId, versionId);
     String objectKey = version.getRenderedObjectKey();
     if (objectKey == null || objectKey.isBlank()) {
@@ -1061,6 +1179,90 @@ public class ReportService {
         boolean isVietnamese =
             context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage());
         List<ReportDraftPort.FindingSummary> findings = context.findings();
+        List<ReportDraftPort.DefectVerificationSummary> defectVerifications =
+            context.defectVerifications() != null ? context.defectVerifications() : List.of();
+        boolean isReinspection = !defectVerifications.isEmpty();
+
+        if (isReinspection) {
+          long resolvedCount =
+              defectVerifications.stream()
+                  .filter(v -> "RESOLVED".equalsIgnoreCase(v.resolutionStatus()))
+                  .count();
+          long unresolvedCount =
+              defectVerifications.stream()
+                  .filter(v -> "UNRESOLVED".equalsIgnoreCase(v.resolutionStatus()))
+                  .count();
+          boolean allResolved = resolvedCount == defectVerifications.size();
+          String overallCondition = allResolved ? "GOOD" : unresolvedCount > 0 ? "POOR" : "FAIR";
+
+          String executiveSummary;
+          if (isVietnamese) {
+            executiveSummary =
+                allResolved
+                    ? "Khảo sát bay lại đối soát sau bảo trì đã hoàn tất. Đã kiểm tra và xác nhận "
+                        + defectVerifications.size()
+                        + " khiếm khuyết mục tiêu đã được khắc phục hoàn toàn (RESOLVED). Hiện trạng"
+                        + " công trình đạt yêu cầu nghiệm thu bàn giao."
+                    : "Khảo sát bay lại đối soát sau bảo trì đã hoàn tất. Ghi nhận "
+                        + resolvedCount
+                        + " khiếm khuyết đã khắc phục và "
+                        + (defectVerifications.size() - resolvedCount)
+                        + " khiếm khuyết chưa đạt hoặc cần theo dõi thêm. Hiện trạng công trình"
+                        + " được đánh giá ở mức "
+                        + (overallCondition.equals("POOR") ? "Kém" : "Cần theo dõi")
+                        + ".";
+          } else {
+            executiveSummary =
+                allResolved
+                    ? "Post-maintenance aerial re-inspection completed. Confirmed "
+                        + defectVerifications.size()
+                        + " target defect(s) successfully resolved (RESOLVED). Asset condition"
+                        + " meets maintenance acceptance criteria."
+                    : "Post-maintenance aerial re-inspection completed. Recorded "
+                        + resolvedCount
+                        + " resolved defect(s) and "
+                        + (defectVerifications.size() - resolvedCount)
+                        + " defect(s) requiring follow-up. Overall condition is assessed as "
+                        + overallCondition
+                        + ".";
+          }
+
+          String omissionDisclosure =
+              isVietnamese
+                  ? "Phạm vi bay lại đối soát tập trung vào các vị trí khiếm khuyết đã chỉ định"
+                      + " trong Lệnh bảo trì. Các cấu kiện ngoài phạm vi sửa chữa không được đánh giá"
+                      + " lại trong phiên bay này."
+                  : "Re-inspection scope was focused on the specific repair target locations"
+                      + " designated in the maintenance work order. Unrelated structural elements"
+                      + " were not re-evaluated during this flight.";
+
+          String conclusionsRecommendations;
+          if (isVietnamese) {
+            conclusionsRecommendations =
+                allResolved
+                    ? "Toàn bộ các khiếm khuyết mục tiêu thuộc phạm vi bảo trì đã được sửa chữa đạt"
+                        + " yêu cầu kỹ thuật. Đề xuất hoàn tất nghiệm thu và đóng lệnh công việc"
+                        + " bảo trì."
+                    : "Các khiếm khuyết chưa đạt yêu cầu cần được đội ngũ kỹ sư bảo trì tiếp tục"
+                        + " xử lý khắc phục (rework) trước khi tiến hành nghiệm thu lại.";
+          } else {
+            conclusionsRecommendations =
+                allResolved
+                    ? "All target defects within the maintenance scope have been verified as"
+                        + " resolved. Work order meets acceptance criteria for completion and"
+                        + " sign-off."
+                    : "Unresolved defects require rework by the maintenance engineering team prior"
+                        + " to final acceptance and sign-off.";
+          }
+
+          return new SectionDraft(
+              executiveSummary,
+              null,
+              null,
+              conclusionsRecommendations,
+              overallCondition,
+              omissionDisclosure);
+        }
 
         String overallCondition;
         boolean hasCritical =

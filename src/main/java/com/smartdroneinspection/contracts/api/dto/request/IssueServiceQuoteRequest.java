@@ -14,4 +14,38 @@ public record IssueServiceQuoteRequest(
     @NotNull Instant firstOccurrenceEndAt,
     @NotNull UUID inspectorId,
     @NotNull UUID droneId,
-    @NotNull @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceUsd) {}
+    @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceVnd,
+    @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceUsd) {
+
+  public IssueServiceQuoteRequest(
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      UUID inspectorId,
+      UUID droneId,
+      BigDecimal pricePerOccurrenceUsd) {
+    this(
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        null,
+        pricePerOccurrenceUsd);
+  }
+
+  public IssueServiceQuoteRequest {
+    if ((pricePerOccurrenceVnd == null || pricePerOccurrenceVnd.signum() <= 0)
+        && (pricePerOccurrenceUsd == null || pricePerOccurrenceUsd.signum() <= 0)) {
+      throw new IllegalArgumentException("A valid positive price per occurrence must be provided");
+    }
+  }
+
+  public String resolvedCurrency() {
+    return pricePerOccurrenceVnd != null ? "VND" : "USD";
+  }
+
+  public BigDecimal resolvedPrice() {
+    return pricePerOccurrenceVnd != null ? pricePerOccurrenceVnd : pricePerOccurrenceUsd;
+  }
+}

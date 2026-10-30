@@ -36,7 +36,13 @@ public class ServiceRequestQuote {
   @Column(name = "drone_id", nullable = false)
   private UUID droneId;
 
-  @Column(name = "price_per_occurrence_usd", nullable = false, precision = 12, scale = 2)
+  @Column(name = "currency", nullable = false, length = 3)
+  private String currency = "VND";
+
+  @Column(name = "price_per_occurrence_vnd", precision = 15, scale = 2)
+  private BigDecimal pricePerOccurrenceVnd;
+
+  @Column(name = "price_per_occurrence_usd", precision = 12, scale = 2)
   private BigDecimal pricePerOccurrenceUsd;
 
   @Column(name = "issued_by_user_id", nullable = false)
@@ -57,6 +63,32 @@ public class ServiceRequestQuote {
       UUID droneId,
       BigDecimal pricePerOccurrenceUsd,
       UUID issuedByUserId) {
+    this(
+        requestId,
+        versionNo,
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        "USD",
+        null,
+        pricePerOccurrenceUsd,
+        issuedByUserId);
+  }
+
+  public ServiceRequestQuote(
+      UUID requestId,
+      int versionNo,
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      UUID inspectorId,
+      UUID droneId,
+      String currency,
+      BigDecimal pricePerOccurrenceVnd,
+      BigDecimal pricePerOccurrenceUsd,
+      UUID issuedByUserId) {
     if (requestId == null
         || versionNo < 1
         || scopeSnapshot == null
@@ -66,10 +98,28 @@ public class ServiceRequestQuote {
         || !firstOccurrenceEndAt.isAfter(firstOccurrenceStartAt)
         || inspectorId == null
         || droneId == null
-        || pricePerOccurrenceUsd == null
-        || pricePerOccurrenceUsd.signum() <= 0
         || issuedByUserId == null) {
       throw new IllegalArgumentException("Quote fields are invalid");
+    }
+    String resolvedCurrency =
+        (currency != null && !currency.isBlank()) ? currency.trim().toUpperCase() : "VND";
+    if (!"USD".equals(resolvedCurrency) && !"VND".equals(resolvedCurrency)) {
+      throw new IllegalArgumentException("Unsupported currency: " + currency);
+    }
+    if ("VND".equals(resolvedCurrency)) {
+      if (pricePerOccurrenceVnd == null || pricePerOccurrenceVnd.signum() <= 0) {
+        throw new IllegalArgumentException("VND quote price must be positive");
+      }
+      this.pricePerOccurrenceVnd =
+          pricePerOccurrenceVnd.setScale(2, java.math.RoundingMode.HALF_UP);
+      this.pricePerOccurrenceUsd = null;
+    } else {
+      if (pricePerOccurrenceUsd == null || pricePerOccurrenceUsd.signum() <= 0) {
+        throw new IllegalArgumentException("USD quote price must be positive");
+      }
+      this.pricePerOccurrenceUsd =
+          pricePerOccurrenceUsd.setScale(2, java.math.RoundingMode.HALF_UP);
+      this.pricePerOccurrenceVnd = null;
     }
     this.requestId = requestId;
     this.versionNo = versionNo;
@@ -78,9 +128,12 @@ public class ServiceRequestQuote {
     this.firstOccurrenceEndAt = firstOccurrenceEndAt;
     this.inspectorId = inspectorId;
     this.droneId = droneId;
-    this.pricePerOccurrenceUsd =
-        pricePerOccurrenceUsd.setScale(2, java.math.RoundingMode.UNNECESSARY);
+    this.currency = resolvedCurrency;
     this.issuedByUserId = issuedByUserId;
+  }
+
+  public BigDecimal getEffectivePrice() {
+    return "VND".equalsIgnoreCase(currency) ? pricePerOccurrenceVnd : pricePerOccurrenceUsd;
   }
 
   public UUID getId() {
@@ -113,6 +166,14 @@ public class ServiceRequestQuote {
 
   public UUID getDroneId() {
     return droneId;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
+  public BigDecimal getPricePerOccurrenceVnd() {
+    return pricePerOccurrenceVnd;
   }
 
   public BigDecimal getPricePerOccurrenceUsd() {

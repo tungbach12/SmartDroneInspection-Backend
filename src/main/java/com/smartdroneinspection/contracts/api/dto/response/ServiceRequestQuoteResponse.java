@@ -13,6 +13,8 @@ public record ServiceRequestQuoteResponse(
     Instant firstOccurrenceEndAt,
     UUID inspectorId,
     UUID droneId,
+    String currency,
+    BigDecimal pricePerOccurrenceVnd,
     BigDecimal pricePerOccurrenceUsd,
     UUID issuedByUserId,
     Instant createdAt) {
@@ -26,6 +28,8 @@ public record ServiceRequestQuoteResponse(
         quote.getFirstOccurrenceEndAt(),
         quote.getInspectorId(),
         quote.getDroneId(),
+        quote.getCurrency(),
+        quote.getPricePerOccurrenceVnd(),
         quote.getPricePerOccurrenceUsd(),
         quote.getIssuedByUserId(),
         quote.getCreatedAt());

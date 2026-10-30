@@ -23,6 +23,9 @@ public interface ReportDraftPort {
    */
   SectionDraft draftSections(DraftContext context) throws IOException;
 
+  record DefectVerificationSummary(
+      String defectLabel, String severity, String resolutionStatus, String inspectorNotes) {}
+
   record SectionDraft(
       String executiveSummary,
       String purposeScopeCriteria,
@@ -37,14 +40,25 @@ public interface ReportDraftPort {
       List<EvidenceSummary> evidence,
       List<CandidateSummary> candidates,
       List<FieldSessionSummary> fieldSessions,
-      Locale locale) {
+      Locale locale,
+      List<DefectVerificationSummary> defectVerifications) {
+    public DraftContext(
+        InspectionSummary inspection,
+        List<FindingSummary> findings,
+        List<EvidenceSummary> evidence,
+        List<CandidateSummary> candidates,
+        List<FieldSessionSummary> fieldSessions,
+        Locale locale) {
+      this(inspection, findings, evidence, candidates, fieldSessions, locale, List.of());
+    }
+
     public DraftContext(
         InspectionSummary inspection,
         List<FindingSummary> findings,
         List<EvidenceSummary> evidence,
         List<CandidateSummary> candidates,
         List<FieldSessionSummary> fieldSessions) {
-      this(inspection, findings, evidence, candidates, fieldSessions, Locale.ENGLISH);
+      this(inspection, findings, evidence, candidates, fieldSessions, Locale.ENGLISH, List.of());
     }
   }
 
@@ -74,7 +88,23 @@ public interface ReportDraftPort {
       String flightPermitFileName,
       String plannedStartAt,
       String plannedEndAt,
-      String assignedDroneId) {
+      String assignedDroneId,
+      String inspectionType) {
+
+    public InspectionSummary(
+        List<String> inspectionItems,
+        String flightPermitFileName,
+        String plannedStartAt,
+        String plannedEndAt,
+        String assignedDroneId) {
+      this(
+          inspectionItems,
+          flightPermitFileName,
+          plannedStartAt,
+          plannedEndAt,
+          assignedDroneId,
+          "INITIAL");
+    }
 
     public InspectionSummary {
       inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
