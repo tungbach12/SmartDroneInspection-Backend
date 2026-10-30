@@ -9,9 +9,15 @@ import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRe
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.AuthException;
+import com.smartdroneinspection.shared.exception.BusinessException;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
+import com.smartdroneinspection.shared.storage.EvidenceUploadValidator;
 import com.smartdroneinspection.users.UserAccess;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,14 +28,20 @@ public class DroneRegistrationApplicationService {
   private final DroneRegistrationApplicationRepository applications;
   private final DroneRepository drones;
   private final UserAccess userAccess;
+  private final Optional<EvidenceObjectStore> objectStore;
+  private final DroneEvidenceUploadService evidenceUploads;
 
   public DroneRegistrationApplicationService(
       DroneRegistrationApplicationRepository applications,
       DroneRepository drones,
-      UserAccess userAccess) {
+      UserAccess userAccess,
+      Optional<EvidenceObjectStore> objectStore,
+      DroneEvidenceUploadService evidenceUploads) {
     this.applications = applications;
     this.drones = drones;
     this.userAccess = userAccess;
+    this.objectStore = objectStore;
+    this.evidenceUploads = evidenceUploads;
   }
 
   @Transactional
@@ -40,6 +52,9 @@ public class DroneRegistrationApplicationService {
       String agent,
       String correlationId) {
     requireInspector(inspectorId);
+    evidenceUploads.validateReference(inspectorId, "REGISTRATION", request.registrationFileKey());
+    evidenceUploads.validateReference(inspectorId, "OWNERSHIP", request.ownershipFileKey());
+    evidenceUploads.validateReference(inspectorId, "INSPECTION", request.inspectionFileKey());
     if (!request.registrationExpiresAt().isAfter(Instant.now())) {
       throw new AuthException(
           HttpStatus.BAD_REQUEST,
@@ -75,6 +90,41 @@ public class DroneRegistrationApplicationService {
         agent,
         correlationId);
     return DroneRegistrationApplicationResponse.from(application);
+  }
+
+  @Transactional(readOnly = true)
+  public EvidenceContent openEvidence(UUID adminId, UUID applicationId, String type) {
+    requireAdmin(adminId);
+    DroneRegistrationApplication application =
+        applications.findById(applicationId).orElseThrow(this::notFound);
+    String fileKey =
+        switch (type == null ? "" : type) {
+          case "REGISTRATION" -> application.getRegistrationFileKey();
+          case "OWNERSHIP" -> application.getOwnershipFileKey();
+          case "INSPECTION" -> application.getInspectionFileKey();
+          default ->
+              throw new BusinessException(
+                  HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Unknown evidence type");
+        };
+    if (!DroneEvidenceUploadService.isEvidenceKey(fileKey)) {
+      throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Evidence document not found");
+    }
+    try {
+      String extension = fileKey.substring(fileKey.lastIndexOf('.') + 1);
+      return new EvidenceContent(
+          EvidenceUploadValidator.contentType(extension),
+          objectStore
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_GATEWAY,
+                          "STORAGE_UNAVAILABLE",
+                          "Object storage is unavailable"))
+              .open(fileKey));
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY, "STORAGE_UNAVAILABLE", "Object storage is unavailable");
+    }
   }
 
   @Transactional(readOnly = true)
@@ -164,6 +214,13 @@ public class DroneRegistrationApplicationService {
     return DroneRegistrationApplicationResponse.from(application);
   }
 
+  public record EvidenceContent(String contentType, InputStream stream) {}
+
+  private AuthException notFound() {
+    return new AuthException(
+        HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Pending application was not found.");
+  }
+
   private DroneRegistrationApplication requirePending(UUID id) {
     return applications.findByIdAndStatus(id, "PENDING").orElseThrow(this::notFound);
   }
@@ -189,10 +246,5 @@ public class DroneRegistrationApplicationService {
       throw new AuthException(
           HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "Platform Admin access is required.");
     }
-  }
-
-  private AuthException notFound() {
-    return new AuthException(
-        HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Pending application was not found.");
   }
 }
