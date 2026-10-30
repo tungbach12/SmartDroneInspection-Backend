@@ -4,7 +4,7 @@ spring:
   servlet:
     multipart:
       max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
-      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:20MB}
+      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:12MB}
   datasource:
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdroneinspection}
     username: ${POSTGRES_USER:postgres}

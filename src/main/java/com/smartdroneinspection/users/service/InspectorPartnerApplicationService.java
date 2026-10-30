@@ -28,16 +28,19 @@ public class InspectorPartnerApplicationService {
   private final UserRepository users;
   private final PasswordEncoder passwords;
   private final SecurityAuditService audit;
+  private final InspectorPartnerLicenseDocumentService licenseDocuments;
 
   public InspectorPartnerApplicationService(
       InspectorPartnerApplicationRepository applications,
       UserRepository users,
       PasswordEncoder passwords,
-      SecurityAuditService audit) {
+      SecurityAuditService audit,
+      InspectorPartnerLicenseDocumentService licenseDocuments) {
     this.applications = applications;
     this.users = users;
     this.passwords = passwords;
     this.audit = audit;
+    this.licenseDocuments = licenseDocuments;
   }
 
   @Transactional
@@ -46,6 +49,7 @@ public class InspectorPartnerApplicationService {
       String ip,
       String agent,
       String correlationId) {
+    licenseDocuments.validateReference(request.pilotLicenseFileKey());
     String email = User.normalizeEmail(request.email());
     if (request.pilotLicenseExpiresAt().isBefore(LocalDate.now())) {
       throw new AuthException(
@@ -75,6 +79,22 @@ public class InspectorPartnerApplicationService {
         agent,
         correlationId);
     return InspectorPartnerApplicationResponse.from(application);
+  }
+
+  @Transactional(readOnly = true)
+  public InspectorPartnerLicenseDocumentService.InputStreamContent openLicenseDocument(
+      UUID adminId, UUID applicationId) {
+    requireAdmin(adminId);
+    var application =
+        applications
+            .findById(applicationId)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.NOT_FOUND,
+                        "APPLICATION_NOT_FOUND",
+                        "Inspector partner application was not found."));
+    return licenseDocuments.open(application.getPilotLicenseFileKey());
   }
 
   @Transactional(readOnly = true)

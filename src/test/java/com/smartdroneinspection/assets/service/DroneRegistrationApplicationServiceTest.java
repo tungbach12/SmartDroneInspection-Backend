@@ -16,6 +16,7 @@ import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRe
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.AuthException;
+import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.List;
@@ -43,7 +44,13 @@ class DroneRegistrationApplicationServiceTest {
     applications = mock(DroneRegistrationApplicationRepository.class);
     drones = mock(DroneRepository.class);
     userAccess = mock(UserAccess.class);
-    service = new DroneRegistrationApplicationService(applications, drones, userAccess);
+    service =
+        new DroneRegistrationApplicationService(
+            applications,
+            drones,
+            userAccess,
+            Optional.of(mock(EvidenceObjectStore.class)),
+            mock(DroneEvidenceUploadService.class));
 
     when(userAccess.findActiveUser(inspectorId))
         .thenReturn(
@@ -87,6 +94,23 @@ class DroneRegistrationApplicationServiceTest {
             Instant.now().plusSeconds(86400),
             "owner-key",
             "insp-key");
+    DroneEvidenceUploadService evidenceUploads = mock(DroneEvidenceUploadService.class);
+    service =
+        new DroneRegistrationApplicationService(
+            applications,
+            drones,
+            userAccess,
+            Optional.of(mock(EvidenceObjectStore.class)),
+            evidenceUploads);
+    org.mockito.Mockito.doNothing()
+        .when(evidenceUploads)
+        .validateReference(inspectorId, "REGISTRATION", "reg-key");
+    org.mockito.Mockito.doNothing()
+        .when(evidenceUploads)
+        .validateReference(inspectorId, "OWNERSHIP", "owner-key");
+    org.mockito.Mockito.doNothing()
+        .when(evidenceUploads)
+        .validateReference(inspectorId, "INSPECTION", "insp-key");
 
     when(drones.existsBySerialNumberIgnoreCase("SN-001")).thenReturn(false);
     when(applications.existsBySerialNumberIgnoreCaseAndStatus("SN-001", "PENDING"))
