@@ -39,6 +39,12 @@ public class ReinspectionDefectVerification {
   @Column(name = "new_evidence_id")
   private UUID newEvidenceId;
 
+  @Column(name = "repair_proof_url", length = 1000)
+  private String repairProofUrl;
+
+  @Column(name = "repair_engineer_notes", length = 4000)
+  private String repairEngineerNotes;
+
   @Enumerated(EnumType.STRING)
   @Column(name = "resolution_status", nullable = false, length = 32)
   private DefectResolutionStatus resolutionStatus = DefectResolutionStatus.UNRESOLVED;
@@ -67,6 +73,20 @@ public class ReinspectionDefectVerification {
     this.resolutionStatus = Objects.requireNonNull(status, "resolutionStatus is required");
     this.newEvidenceId = newEvidenceId;
     this.inspectorNotes = inspectorNotes;
+    this.updatedAt = Instant.now();
+  }
+
+  public String getRepairProofUrl() {
+    return repairProofUrl;
+  }
+
+  public String getRepairEngineerNotes() {
+    return repairEngineerNotes;
+  }
+
+  public void setRepairProof(String repairProofUrl, String repairEngineerNotes) {
+    this.repairProofUrl = repairProofUrl;
+    this.repairEngineerNotes = repairEngineerNotes;
     this.updatedAt = Instant.now();
   }
 

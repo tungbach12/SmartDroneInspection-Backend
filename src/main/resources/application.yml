@@ -39,6 +39,16 @@ springdoc:
     path: /v3/api-docs
 app:
   payment:
+    payos:
+      enabled: ${PAYOS_ENABLED:false}
+      base-url: ${PAYOS_BASE_URL:https://api-merchant.payos.vn}
+      client-id: ${PAYOS_CLIENT_ID:}
+      api-key: ${PAYOS_API_KEY:}
+      checksum-key: ${PAYOS_CHECKSUM_KEY:}
+      return-url: ${PAYOS_RETURN_URL:http://localhost:5173/client/reports/{inspectionId}}
+      cancel-url: ${PAYOS_CANCEL_URL:http://localhost:5173/client/reports/{inspectionId}}
+      connect-timeout: ${PAYOS_CONNECT_TIMEOUT:5s}
+      read-timeout: ${PAYOS_READ_TIMEOUT:15s}
     paypal:
       enabled: ${PAYPAL_ENABLED:false}
       mode: ${PAYPAL_MODE:sandbox}

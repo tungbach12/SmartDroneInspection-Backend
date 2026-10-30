@@ -1,13 +1,19 @@
 package com.smartdroneinspection.contracts.api;
 
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.PostServiceRequestMessage;
+import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
 import com.smartdroneinspection.contracts.service.ContractWorkflowService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.core.io.InputStreamResource;
@@ -103,6 +109,35 @@ public class ContractWorkflowController {
         .body(new InputStreamResource(file.stream()));
   }
 
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/signed-contract")
+  public ApiResponse<ServiceRequestResponse> uploadOccurrenceSignedContract(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @RequestParam("file") MultipartFile file) {
+    return ApiResponse.success(
+        workflow.uploadOccurrenceSignedContract(actorId(jwt), requestId, occurrenceId, file));
+  }
+
+  @GetMapping("/{requestId}/occurrences/{occurrenceId}/contract-document")
+  public ResponseEntity<InputStreamResource> downloadOccurrenceContract(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId)
+      throws IOException {
+    ContractWorkflowService.DownloadedContract document =
+        workflow.openOccurrenceSignedContract(actorId(jwt), requestId, occurrenceId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(document.contentType()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment()
+                .filename(document.fileName(), StandardCharsets.UTF_8)
+                .build()
+                .toString())
+        .body(new InputStreamResource(document.stream()));
+  }
+
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/assign")
   public ApiResponse<ServiceRequestResponse> assignOccurrence(
       @AuthenticationPrincipal Jwt jwt,
@@ -111,6 +146,54 @@ public class ContractWorkflowController {
       @Valid @RequestBody AssignOccurrenceRequest request) {
     return ApiResponse.success(
         workflow.assignOccurrence(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/accept-report")
+  public ApiResponse<ServiceRequestResponse> customerAcceptReport(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @RequestParam UUID reportVersionId) {
+    return ApiResponse.success(
+        workflow.customerAcceptReport(actorId(jwt), requestId, occurrenceId, reportVersionId));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/confirm-payment")
+  public ApiResponse<ServiceRequestResponse> confirmOccurrencePayment(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @Valid @RequestBody ConfirmOccurrencePaymentRequest request) {
+    return ApiResponse.success(
+        workflow.confirmOccurrencePayment(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/record-payout")
+  public ApiResponse<ServiceRequestResponse> recordOccurrencePayout(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @Valid @RequestBody RecordOccurrencePayoutRequest request) {
+    return ApiResponse.success(
+        workflow.recordOccurrencePayout(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @GetMapping("/{requestId}/occurrences/{occurrenceId}/finance")
+  public ApiResponse<OccurrenceFinanceResponse> getOccurrenceFinance(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId) {
+    return ApiResponse.success(
+        workflow.getOccurrenceFinance(actorId(jwt), requestId, occurrenceId));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/payos/create-payment-link")
+  public ApiResponse<PayOSPaymentLinkResponse> createPayOSPaymentLink(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId) {
+    return ApiResponse.success(
+        workflow.createPayOSPaymentLink(actorId(jwt), requestId, occurrenceId));
   }
 
   private static UUID actorId(Jwt jwt) {

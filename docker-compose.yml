@@ -87,7 +87,7 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_REFRESH_TOKEN_PEPPER: ${AUTH_REFRESH_TOKEN_PEPPER:-}
       AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-false}
-      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:80}
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:80,http://127.0.0.1:18080,http://smartdroneinspection.duckdns.org,https://smartdroneinspection.duckdns.org}
       AUTH_BOOTSTRAP_ENABLED: ${AUTH_BOOTSTRAP_ENABLED:-false}
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-}
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-}
@@ -110,6 +110,13 @@ services:
       COMPATIBLE_VISION_MODEL: ${COMPATIBLE_VISION_MODEL:-${REPORT_DRAFT_MODEL:-}}
       COMPATIBLE_VISION_API_KEY: ${COMPATIBLE_VISION_API_KEY:-${REPORT_DRAFT_API_KEY:-}}
       COMPATIBLE_VISION_TIMEOUT: ${COMPATIBLE_VISION_TIMEOUT:-${REPORT_DRAFT_TIMEOUT:-60s}}
+      PAYOS_ENABLED: ${PAYOS_ENABLED:-false}
+      PAYOS_BASE_URL: ${PAYOS_BASE_URL:-https://api-merchant.payos.vn}
+      PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-}
+      PAYOS_API_KEY: ${PAYOS_API_KEY:-}
+      PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
+      PAYOS_RETURN_URL: ${PAYOS_RETURN_URL:-http://localhost:5173/client/reports/{inspectionId}}
+      PAYOS_CANCEL_URL: ${PAYOS_CANCEL_URL:-http://localhost:5173/client/reports/{inspectionId}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,23 +133,10 @@ services:
     networks:
       - smartdroneinspection-network
 
-  web:
-    build:
-      context: ../SmartDroneInspection-frontend
-      dockerfile: Dockerfile
-    image: smartdroneinspection-web:latest
-    container_name: smartdroneinspection-web
-    restart: unless-stopped
-    ports:
-      - "${WEB_PORT:-80}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - smartdroneinspection-network
-
 networks:
   smartdroneinspection-network:
+    # Keep the current deployment network name stable so frontend releases can upgrade independently.
+    name: backend_smartdroneinspection-network
     driver: bridge
 
 volumes:

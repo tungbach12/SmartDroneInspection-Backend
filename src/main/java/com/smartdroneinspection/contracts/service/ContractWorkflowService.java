@@ -4,22 +4,33 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
+import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestOccurrenceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestQuoteResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
+import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
 import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
+import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
+import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
+import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
+import com.smartdroneinspection.shared.api.InspectionPaymentGate;
+import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
+import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -44,14 +55,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
-public class ContractWorkflowService {
+public class ContractWorkflowService
+    implements InspectionPaymentGate, InspectionReportAcceptancePort {
 
   static final long MAX_CONTRACT_SIZE_BYTES = 10L * 1024 * 1024;
   private static final String STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE";
   private static final String REQUEST_NOT_FOUND = "REQUEST_NOT_FOUND";
   private static final String REQUEST_NOT_FOUND_DETAIL = "Service request not found";
   private static final Set<String> ALLOWED_CONTRACT_TYPES =
-      Set.of("application/pdf", "image/jpeg", "image/png");
+      Set.of(
+          "application/pdf",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "image/jpeg",
+          "image/png");
 
   private final ServiceRequestRepository requests;
   private final ServiceRequestMessageRepository messages;
@@ -63,6 +79,68 @@ public class ContractWorkflowService {
   private final PartnerRegistryService partners;
   private final Mf2InspectionAssignment assignment;
   private final Optional<EvidenceObjectStore> objectStore;
+  private final InspectionFinanceSettingsService financeSettingsService;
+  private final Optional<InspectionReportAccess> reportAccess;
+  private final PayOSGateway payOSGateway;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ContractWorkflowService(
+      ServiceRequestRepository requests,
+      ServiceRequestMessageRepository messages,
+      ServiceRequestQuoteRepository quotes,
+      ServiceRequestOccurrenceRepository occurrences,
+      AssetRepository assets,
+      UserAccess users,
+      Mf2ActorPolicy actorPolicy,
+      PartnerRegistryService partners,
+      Mf2InspectionAssignment assignment,
+      Optional<EvidenceObjectStore> objectStore,
+      InspectionFinanceSettingsService financeSettingsService,
+      Optional<InspectionReportAccess> reportAccess,
+      PayOSGateway payOSGateway) {
+    this.requests = requests;
+    this.messages = messages;
+    this.quotes = quotes;
+    this.occurrences = occurrences;
+    this.assets = assets;
+    this.users = users;
+    this.actorPolicy = actorPolicy;
+    this.partners = partners;
+    this.assignment = assignment;
+    this.objectStore = objectStore;
+    this.financeSettingsService = financeSettingsService;
+    this.reportAccess = reportAccess;
+    this.payOSGateway = payOSGateway;
+  }
+
+  public ContractWorkflowService(
+      ServiceRequestRepository requests,
+      ServiceRequestMessageRepository messages,
+      ServiceRequestQuoteRepository quotes,
+      ServiceRequestOccurrenceRepository occurrences,
+      AssetRepository assets,
+      UserAccess users,
+      Mf2ActorPolicy actorPolicy,
+      PartnerRegistryService partners,
+      Mf2InspectionAssignment assignment,
+      Optional<EvidenceObjectStore> objectStore,
+      InspectionFinanceSettingsService financeSettingsService,
+      Optional<InspectionReportAccess> reportAccess) {
+    this(
+        requests,
+        messages,
+        quotes,
+        occurrences,
+        assets,
+        users,
+        actorPolicy,
+        partners,
+        assignment,
+        objectStore,
+        financeSettingsService,
+        reportAccess,
+        new DisabledPayOSGatewayDummy());
+  }
 
   public ContractWorkflowService(
       ServiceRequestRepository requests,
@@ -75,16 +153,20 @@ public class ContractWorkflowService {
       PartnerRegistryService partners,
       Mf2InspectionAssignment assignment,
       Optional<EvidenceObjectStore> objectStore) {
-    this.requests = requests;
-    this.messages = messages;
-    this.quotes = quotes;
-    this.occurrences = occurrences;
-    this.assets = assets;
-    this.users = users;
-    this.actorPolicy = actorPolicy;
-    this.partners = partners;
-    this.assignment = assignment;
-    this.objectStore = objectStore;
+    this(
+        requests,
+        messages,
+        quotes,
+        occurrences,
+        assets,
+        users,
+        actorPolicy,
+        partners,
+        assignment,
+        objectStore,
+        new InspectionFinanceSettingsService(null, users),
+        Optional.empty(),
+        new DisabledPayOSGatewayDummy());
   }
 
   @Transactional
@@ -177,6 +259,13 @@ public class ContractWorkflowService {
           "INVALID_PARTNER_DRONE",
           "Selected drone must be approved for the selected active partner Inspector");
     }
+
+    // New inspection services use VND and require all 3 settlement rates to be configured
+    String currency = input.resolvedCurrency();
+    if ("VND".equalsIgnoreCase(currency)) {
+      financeSettingsService.requireConfiguredRates();
+    }
+
     quotes.findWithLockByRequestId(requestId);
     requests.flush();
     ServiceRequestQuote previous =
@@ -193,6 +282,8 @@ public class ContractWorkflowService {
               input.firstOccurrenceEndAt(),
               input.inspectorId(),
               input.droneId(),
+              currency,
+              input.pricePerOccurrenceVnd(),
               input.pricePerOccurrenceUsd(),
               manager.id());
       request.markQuoted();
@@ -221,6 +312,7 @@ public class ContractWorkflowService {
     }
     try {
       request.acceptQuote(latest.getVersionNo(), actor.id());
+      materializeOccurrences(request, latest);
     } catch (IllegalStateException exception) {
       throw failure(HttpStatus.CONFLICT, "QUOTE_ACCEPTANCE_INVALID", exception.getMessage());
     }
@@ -228,6 +320,100 @@ public class ContractWorkflowService {
     return toResponse(request);
   }
 
+  /**
+   * Upload signed contract for a specific occurrence.
+   *
+   * <p>Every occurrence (whether one-time or recurring) requires its own signed contract before
+   * assignment.
+   */
+  @Transactional
+  public ServiceRequestResponse uploadOccurrenceSignedContract(
+      UUID actorId, UUID requestId, UUID occurrenceId, MultipartFile file) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+
+    byte[] content = validateAndExtractFile(file);
+    String contentType = file.getContentType().toLowerCase(java.util.Locale.ROOT);
+    String fileName = sanitizeFileName(file.getOriginalFilename());
+    String objectKey =
+        "contracts/requests/"
+            + requestId
+            + "/occurrences/"
+            + occurrenceId
+            + "/"
+            + UUID.randomUUID();
+
+    EvidenceObjectStore store = requireStore();
+    try {
+      store.put(objectKey, contentType, content.length, new ByteArrayInputStream(content));
+    } catch (IOException exception) {
+      throw failure(HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Failed to store signed contract");
+    }
+
+    try {
+      occurrence.recordSignedContract(
+          objectKey, fileName, contentType, content.length, sha256(content), manager.id());
+      occurrences.saveAndFlush(occurrence);
+
+      // If this is a one-time request and parent request metadata is empty, synchronize parent
+      if (request.getRequestType() == RequestType.ONE_TIME
+          && request.getContractObjectKey() == null) {
+        request.recordSignedContract(
+            objectKey, fileName, contentType, content.length, sha256(content), manager.id());
+        requests.saveAndFlush(request);
+      }
+    } catch (RuntimeException exception) {
+      try {
+        store.delete(objectKey);
+      } catch (IOException ignored) {
+      }
+      throw exception;
+    }
+
+    return toResponse(request);
+  }
+
+  /** Scoped download of an occurrence's signed contract file. */
+  @Transactional(readOnly = true)
+  public DownloadedContract openOccurrenceSignedContract(
+      UUID actorId, UUID requestId, UUID occurrenceId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (!occurrence.hasSignedContract()) {
+      throw failure(
+          HttpStatus.NOT_FOUND,
+          "CONTRACT_NOT_FOUND",
+          "No signed contract attached to this occurrence");
+    }
+    EvidenceObjectStore store = requireStore();
+    try {
+      InputStream stream = store.open(occurrence.getContractObjectKey());
+      return new DownloadedContract(
+          occurrence.getContractFileName(),
+          occurrence.getContractContentType(),
+          occurrence.getContractSizeBytes(),
+          stream);
+    } catch (IOException ex) {
+      throw failure(
+          HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Stored contract could not be opened");
+    }
+  }
+
+  /** Legacy parent request contract upload: attaches to request and occurrence 1 for ONE_TIME. */
   @Transactional
   public ServiceRequestResponse uploadSignedContract(
       UUID actorId, UUID requestId, MultipartFile file) {
@@ -239,69 +425,51 @@ public class ContractWorkflowService {
           "CONTRACT_UPLOAD_INVALID",
           "Customer must accept a quote before the signed contract is uploaded");
     }
-    if (file == null || file.isEmpty()) {
-      throw failure(
-          HttpStatus.BAD_REQUEST, "CONTRACT_FILE_INVALID", "Signed contract file is required");
-    }
-    String contentType =
-        file.getContentType() == null
-            ? ""
-            : file.getContentType().toLowerCase(java.util.Locale.ROOT);
-    if (!ALLOWED_CONTRACT_TYPES.contains(contentType)) {
-      throw failure(
-          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-          "CONTRACT_FILE_INVALID",
-          "Only PDF, JPEG, and PNG files are allowed");
-    }
-    if (file.getSize() > MAX_CONTRACT_SIZE_BYTES) {
-      throw failure(
-          HttpStatus.PAYLOAD_TOO_LARGE,
-          "CONTRACT_TOO_LARGE",
-          "Maximum signed contract size is 10 MB");
-    }
-    byte[] content;
-    try {
-      content = file.getBytes();
-    } catch (IOException exception) {
-      throw failure(
-          HttpStatus.BAD_REQUEST, "CONTRACT_FILE_INVALID", "The signed contract could not be read");
-    }
-    if (content.length == 0 || content.length > MAX_CONTRACT_SIZE_BYTES) {
-      throw failure(
-          HttpStatus.PAYLOAD_TOO_LARGE,
-          "CONTRACT_FILE_INVALID",
-          "The signed contract size is invalid");
-    }
-    if (!hasExpectedSignature(content, contentType)) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "CONTRACT_FILE_INVALID",
-          "Uploaded file content does not match its declared type");
-    }
-    EvidenceObjectStore store =
-        objectStore.orElseThrow(
-            () ->
-                failure(
-                    HttpStatus.BAD_GATEWAY,
-                    STORAGE_UNAVAILABLE,
-                    "Contract storage is not configured"));
+    byte[] content = validateAndExtractFile(file);
+    String contentType = file.getContentType().toLowerCase(java.util.Locale.ROOT);
     String fileName = sanitizeFileName(file.getOriginalFilename());
     String objectKey = "contracts/requests/" + requestId + "/" + UUID.randomUUID();
+
+    EvidenceObjectStore store = requireStore();
     try {
       store.put(objectKey, contentType, content.length, new ByteArrayInputStream(content));
     } catch (IOException exception) {
       throw failure(HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Failed to store signed contract");
     }
+
     try {
       request.recordSignedContract(
           objectKey, fileName, contentType, content.length, sha256(content), manager.id());
       requests.saveAndFlush(request);
-      materializeOccurrences(request);
+
+      ServiceRequestQuote acceptedQuote =
+          quotes
+              .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
+              .orElse(null);
+      materializeOccurrences(request, acceptedQuote);
+
+      // For ONE_TIME request, attach to the single occurrence as well
+      if (request.getRequestType() == RequestType.ONE_TIME) {
+        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).stream()
+            .findFirst()
+            .ifPresent(
+                occ -> {
+                  if (!occ.hasSignedContract()) {
+                    occ.recordSignedContract(
+                        objectKey,
+                        fileName,
+                        contentType,
+                        content.length,
+                        sha256(content),
+                        manager.id());
+                    occurrences.saveAndFlush(occ);
+                  }
+                });
+      }
     } catch (RuntimeException exception) {
       try {
         store.delete(objectKey);
       } catch (IOException ignored) {
-        // Best-effort cleanup when the database transaction cannot commit metadata.
       }
       throw exception;
     }
@@ -341,7 +509,8 @@ public class ContractWorkflowService {
       UUID actorId, UUID requestId, UUID occurrenceId, AssignOccurrenceRequest input) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
-    if (request.getStatus() != ServiceRequest.ServiceRequestStatus.CONTRACT_SIGNED
+    if (request.getStatus() != ServiceRequest.ServiceRequestStatus.ACCEPTED
+        && request.getStatus() != ServiceRequest.ServiceRequestStatus.CONTRACT_SIGNED
         && request.getStatus() != ServiceRequest.ServiceRequestStatus.ASSIGNED) {
       throw failure(
           HttpStatus.CONFLICT,
@@ -355,6 +524,32 @@ public class ContractWorkflowService {
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+
+    // Check per-occurrence signed contract gate
+    if (!occurrence.hasSignedContract()) {
+      // Legacy compatibility: ONE_TIME occurrence index 1 may inherit from request if uploaded
+      // there
+      if (request.getRequestType() == RequestType.ONE_TIME
+          && occurrence.getOccurrenceIndex() == 1
+          && request.getContractObjectKey() != null) {
+        occurrence.recordSignedContract(
+            request.getContractObjectKey(),
+            request.getContractFileName(),
+            request.getContractContentType(),
+            request.getContractSizeBytes() != null ? request.getContractSizeBytes() : 0L,
+            request.getContractChecksumSha256(),
+            request.getContractUploadedByUserId() != null
+                ? request.getContractUploadedByUserId()
+                : manager.id());
+        occurrences.saveAndFlush(occurrence);
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "OCCURRENCE_CONTRACT_REQUIRED",
+            "Occurrence must have its own signed contract attached before assignment");
+      }
+    }
+
     requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
     if (occurrences.hasScheduleConflict(
         input.inspectorId(), input.droneId(), input.plannedStartAt(), input.plannedEndAt())) {
@@ -395,28 +590,358 @@ public class ContractWorkflowService {
     return toResponse(request);
   }
 
-  private void materializeOccurrences(ServiceRequest request) {
-    if (!occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).isEmpty()) {
-      return;
+  /** Customer reviews and explicitly accepts the published report version. */
+  @Transactional
+  public ServiceRequestResponse customerAcceptReport(
+      UUID actorId, UUID requestId, UUID occurrenceId, UUID versionId) {
+    UserAccess.ActiveUser customer = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
+    ServiceRequest request = requireCustomerRequestLocked(customer, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (occurrence.getInspectionId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INSPECTION_NOT_ASSIGNED",
+          "Occurrence has not been assigned an inspection");
     }
-    ServiceRequestQuote quote =
-        quotes
-            .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
+    if (versionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "REPORT_VERSION_REQUIRED", "Report version ID is required");
+    }
+
+    if (reportAccess.isPresent()
+        && !reportAccess.get().isReportPublished(occurrence.getInspectionId(), versionId)) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REPORT_NOT_PUBLISHED",
+          "Only a published report version can be accepted by the customer");
+    }
+
+    try {
+      occurrence.acceptReport(versionId, customer.id());
+    } catch (IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "REPORT_ACCEPTANCE_INVALID", ex.getMessage());
+    }
+    occurrences.saveAndFlush(occurrence);
+    return toResponse(request);
+  }
+
+  /** Manager manually confirms exact matching bank transfer receipt from Customer. */
+  @Transactional
+  public ServiceRequestResponse confirmOccurrencePayment(
+      UUID actorId, UUID requestId, UUID occurrenceId, ConfirmOccurrencePaymentRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() == OccurrencePaymentStatus.PENDING) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_NOT_DUE",
+          "Customer must accept the published report before payment can be confirmed");
+    }
+    if (occurrence.getTotalPrice() != null
+        && input.amount().compareTo(occurrence.getTotalPrice()) != 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_MISMATCH",
+          "Payment amount must exactly match agreed total: " + occurrence.getTotalPrice());
+    }
+    try {
+      occurrence.confirmPayment(input.paymentReference(), input.amount(), manager.id());
+    } catch (IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "PAYMENT_CONFIRMATION_INVALID", ex.getMessage());
+    }
+    occurrences.saveAndFlush(occurrence);
+    return toResponse(request);
+  }
+
+  /** Manager manually records external bank transfer payout to the assigned Inspector. */
+  @Transactional
+  public ServiceRequestResponse recordOccurrencePayout(
+      UUID actorId, UUID requestId, UUID occurrenceId, RecordOccurrencePayoutRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAID) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYOUT_NOT_ELIGIBLE",
+          "Inspector payout requires both customer report acceptance and confirmed customer payment");
+    }
+    if (occurrence.getInspectorId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
+    }
+    try {
+      occurrence.recordPayout(input.payoutReference(), manager.id());
+    } catch (IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "PAYOUT_RECORD_INVALID", ex.getMessage());
+    }
+    occurrences.saveAndFlush(occurrence);
+    return toResponse(request);
+  }
+
+  /** Retrieves role-scoped financial details for an occurrence. */
+  @Transactional(readOnly = true)
+  public OccurrenceFinanceResponse getOccurrenceFinance(
+      UUID actorId, UUID requestId, UUID occurrenceId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+      return OccurrenceFinanceResponse.forManager(occurrence);
+    }
+    if (actor.hasRole(Roles.CUSTOMER)
+        && actor.organizationId() != null
+        && actor.organizationId().equals(request.getOrganizationId())) {
+      return OccurrenceFinanceResponse.forCustomer(occurrence);
+    }
+    if (actor.hasRole(Roles.INSPECTOR) && actor.id().equals(occurrence.getInspectorId())) {
+      return OccurrenceFinanceResponse.forInspector(occurrence);
+    }
+    throw forbidden();
+  }
+
+  /** Customer creates a PayOS VietQR payment link for an occurrence awaiting payment. */
+  @Transactional
+  public PayOSPaymentLinkResponse createPayOSPaymentLink(
+      UUID actorId, UUID requestId, UUID occurrenceId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    if (!actor.hasRole(Roles.ADMIN) && !actor.hasRole(Roles.MANAGER)) {
+      if (!actor.hasRole(Roles.CUSTOMER)
+          || actor.organizationId() == null
+          || !actor.organizationId().equals(request.getOrganizationId())) {
+        throw forbidden();
+      }
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_NOT_DUE",
+          "Customer must accept the published report before payment link can be created");
+    }
+    if (occurrence.getCurrency() != null && !"VND".equalsIgnoreCase(occurrence.getCurrency())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "CURRENCY_UNSUPPORTED",
+          "PayOS online checkout is only supported for VND contracts. Currency is "
+              + occurrence.getCurrency());
+    }
+    if (occurrence.getTotalPrice() == null
+        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_INVALID",
+          "Occurrence total price must be greater than zero");
+    }
+
+    long orderCode;
+    if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
+      orderCode = occurrence.getPayosOrderCode();
+    } else {
+      Long nextCode = occurrences.getNextPayosOrderCode();
+      orderCode = (nextCode != null) ? nextCode : System.currentTimeMillis();
+    }
+
+    long amount = occurrence.getTotalPrice().longValue();
+    String description = "SDI OCC " + occurrence.getOccurrenceIndex();
+    if (description.length() > 25) {
+      description = description.substring(0, 25);
+    }
+
+    String returnUrl = null;
+    String cancelUrl = null;
+    if (occurrence.getInspectionId() != null) {
+      returnUrl =
+          "http://localhost:5173/client/reports/"
+              + occurrence.getInspectionId()
+              + "?payment=success&orderCode="
+              + orderCode;
+      cancelUrl =
+          "http://localhost:5173/client/reports/"
+              + occurrence.getInspectionId()
+              + "?payment=cancelled";
+    }
+
+    PayOSGateway.PayOSPaymentLink link =
+        payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+
+    occurrence.assignPayOSOrder(orderCode, link.paymentLinkId());
+    occurrences.saveAndFlush(occurrence);
+
+    return new PayOSPaymentLinkResponse(
+        orderCode, link.checkoutUrl(), link.qrCode(), amount, link.paymentLinkId());
+  }
+
+  /** Webhook applies verified PayOS online payment to an occurrence. */
+  @Transactional
+  public void applyPayOSWebhookPayment(long orderCode, long amount, String reference) {
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByPayosOrderCode(orderCode)
             .orElseThrow(
                 () ->
                     failure(
-                        HttpStatus.CONFLICT, "QUOTE_NOT_FOUND", "Accepted quote was not found"));
-    int count =
-        request.getRequestType() == RequestType.ONE_TIME
-            ? 1
-            : request.getOccurrenceCount() != null
-                ? request.getOccurrenceCount()
-                : estimateOccurrenceCount(request, quote);
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "Occurrence with orderCode " + orderCode + " not found"));
+
+    if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
+      return; // Idempotent no-op
+    }
+
+    if (occurrence.getTotalPrice() == null
+        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.valueOf(amount)) != 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_MISMATCH",
+          "Payment amount "
+              + amount
+              + " does not match agreed occurrence price "
+              + occurrence.getTotalPrice());
+    }
+
+    String paymentRef =
+        (reference != null && !reference.isBlank()) ? reference.trim() : ("PAYOS-" + orderCode);
+    occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "PAYOS");
+    occurrences.saveAndFlush(occurrence);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean isPaymentDue(UUID inspectionId) {
+    if (inspectionId == null) {
+      return false;
+    }
+    return occurrences
+        .findByInspectionId(inspectionId)
+        .map(occurrence -> occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAID)
+        .orElse(false);
+  }
+
+  @Override
+  @Transactional
+  public void acceptReport(UUID actorId, UUID inspectionId, UUID reportVersionId) {
+    if (actorId == null || inspectionId == null || reportVersionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "ARGUMENT_INVALID",
+          "Actor, inspection and version IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    ServiceRequest request =
+        requests
+            .findById(occurrence.getRequestId())
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+    customerAcceptReport(actorId, request.getId(), occurrence.getId(), reportVersionId);
+  }
+
+  @Override
+  @Transactional
+  public InspectionReportAcceptancePort.PayOSCheckoutDetails createPayOSPaymentLink(
+      UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    ServiceRequest request =
+        requests
+            .findById(occurrence.getRequestId())
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+
+    PayOSPaymentLinkResponse resp =
+        createPayOSPaymentLink(actorId, request.getId(), occurrence.getId());
+    return new InspectionReportAcceptancePort.PayOSCheckoutDetails(
+        resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
+  }
+
+  private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
+    if (!occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).isEmpty()) {
+      return;
+    }
+    if (quote == null) {
+      quote =
+          quotes
+              .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
+              .orElse(null);
+    }
+    if (quote == null) {
+      return;
+    }
+
+    int count = request.getRequestType() == RequestType.ONE_TIME ? 1 : 0;
+    if (request.getRequestType() == RequestType.RECURRING && request.getOccurrenceCount() != null) {
+      count = request.getOccurrenceCount();
+    } else if (request.getRequestType() == RequestType.RECURRING) {
+      count = estimateOccurrenceCount(request, quote);
+    }
+
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalDate();
     LocalTime firstTime = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalTime();
     Duration duration =
         Duration.between(quote.getFirstOccurrenceStartAt(), quote.getFirstOccurrenceEndAt());
+
+    Optional<InspectionFinanceSettings> currentSettings =
+        financeSettingsService != null
+            ? financeSettingsService.findCurrentSettings()
+            : Optional.empty();
+
     for (int index = 0; index < count; index++) {
       LocalDate date = index == 0 ? firstDate : recurrenceDate(request, firstDate, index);
       if (date.isAfter(request.getRequestedUntil())
@@ -440,7 +965,46 @@ public class ContractWorkflowService {
             "RECURRENCE_INVALID",
             "Occurrence falls outside the requested date or daily time window");
       }
-      occurrences.save(new ServiceRequestOccurrence(request.getId(), index + 1, start, end));
+      ServiceRequestOccurrence occurrence =
+          new ServiceRequestOccurrence(request.getId(), index + 1, start, end);
+
+      if (quote.getEffectivePrice() != null) {
+        if (currentSettings.isPresent() && currentSettings.get().isFullyConfigured()) {
+          InspectionFinanceSettings s = currentSettings.get();
+          InspectionFinanceCalculator.FinanceCalculation calc =
+              InspectionFinanceCalculator.calculate(
+                  quote.getEffectivePrice(),
+                  s.getVatRate(),
+                  s.getCommissionRate(),
+                  s.getTncnRate());
+          occurrence.snapshotFinance(
+              quote.getCurrency(),
+              calc.totalPrice(),
+              calc.serviceBaseAmount(),
+              calc.vatRate(),
+              calc.vatAmount(),
+              calc.commissionRate(),
+              calc.commissionAmount(),
+              calc.inspectorGrossPayout(),
+              calc.tncnRate(),
+              calc.tncnAmount(),
+              calc.inspectorNetPayout());
+        } else {
+          occurrence.snapshotFinance(
+              quote.getCurrency(),
+              quote.getEffectivePrice(),
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null);
+        }
+      }
+      occurrences.save(occurrence);
     }
     occurrences.flush();
   }
@@ -504,6 +1068,58 @@ public class ContractWorkflowService {
     }
   }
 
+  private byte[] validateAndExtractFile(MultipartFile file) {
+    if (file == null || file.isEmpty()) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "CONTRACT_FILE_INVALID", "Signed contract file is required");
+    }
+    String contentType =
+        file.getContentType() == null
+            ? ""
+            : file.getContentType().toLowerCase(java.util.Locale.ROOT);
+    if (!ALLOWED_CONTRACT_TYPES.contains(contentType)) {
+      throw failure(
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          "CONTRACT_FILE_INVALID",
+          "Only PDF, DOCX, JPEG, and PNG files are allowed");
+    }
+    if (file.getSize() > MAX_CONTRACT_SIZE_BYTES) {
+      throw failure(
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "CONTRACT_TOO_LARGE",
+          "Maximum signed contract size is 10 MB");
+    }
+    byte[] content;
+    try {
+      content = file.getBytes();
+    } catch (IOException exception) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "CONTRACT_FILE_INVALID", "The signed contract could not be read");
+    }
+    if (content.length == 0 || content.length > MAX_CONTRACT_SIZE_BYTES) {
+      throw failure(
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "CONTRACT_FILE_INVALID",
+          "The signed contract size is invalid");
+    }
+    if (!hasExpectedSignature(content, contentType)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "CONTRACT_FILE_INVALID",
+          "Uploaded file content does not match its declared type");
+    }
+    return content;
+  }
+
+  private EvidenceObjectStore requireStore() {
+    return objectStore.orElseThrow(
+        () ->
+            failure(
+                HttpStatus.BAD_GATEWAY,
+                "STORAGE_UNAVAILABLE",
+                "Contract storage is not configured"));
+  }
+
   private ServiceRequestResponse toResponse(ServiceRequest request) {
     return ServiceRequestResponse.from(
         request,
@@ -527,6 +1143,12 @@ public class ContractWorkflowService {
         == Mf2ActorPolicy.ActorKind.MANAGER) {
       return requireRequestForManager(actor, requestId);
     }
+    if (actor.hasRole(Roles.INSPECTOR)) {
+      return requests
+          .findById(requestId)
+          .orElseThrow(
+              () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+    }
     throw forbidden();
   }
 
@@ -546,10 +1168,6 @@ public class ContractWorkflowService {
   }
 
   private ServiceRequest requireRequestForManager(UserAccess.ActiveUser manager, UUID requestId) {
-    if (actorPolicy.actorKind(manager.roles(), manager.organizationId())
-        != Mf2ActorPolicy.ActorKind.MANAGER) {
-      throw forbidden();
-    }
     return requests
         .findById(requestId)
         .orElseThrow(
@@ -558,10 +1176,6 @@ public class ContractWorkflowService {
 
   private ServiceRequest requireRequestForManagerLocked(
       UserAccess.ActiveUser manager, UUID requestId) {
-    if (actorPolicy.actorKind(manager.roles(), manager.organizationId())
-        != Mf2ActorPolicy.ActorKind.MANAGER) {
-      throw forbidden();
-    }
     return requests
         .findWithLockById(requestId)
         .orElseThrow(
@@ -572,8 +1186,11 @@ public class ContractWorkflowService {
     UserAccess.ActiveUser actor = users.findActiveUser(actorId).orElseThrow(this::forbidden);
     if (actorPolicy.actorKind(actor.roles(), actor.organizationId())
             == Mf2ActorPolicy.ActorKind.NONE
-        || (expected != null
-            && actorPolicy.actorKind(actor.roles(), actor.organizationId()) != expected)) {
+        && !actor.hasRole(Roles.INSPECTOR)) {
+      throw forbidden();
+    }
+    if (expected != null
+        && actorPolicy.actorKind(actor.roles(), actor.organizationId()) != expected) {
       throw forbidden();
     }
     return actor;
@@ -602,6 +1219,14 @@ public class ContractWorkflowService {
           && bytes[3] == 'F'
           && bytes[4] == '-';
     }
+    if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        .equals(contentType)) {
+      return bytes.length >= 4
+          && bytes[0] == 0x50
+          && bytes[1] == 0x4B
+          && bytes[2] == 0x03
+          && bytes[3] == 0x04;
+    }
     if ("image/png".equals(contentType)) {
       byte[] signature = {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10};
       return bytes.length >= signature.length
@@ -623,4 +1248,24 @@ public class ContractWorkflowService {
 
   public record SignedContractFile(
       String fileName, String contentType, Long sizeBytes, InputStream stream) {}
+
+  public record DownloadedContract(
+      String fileName, String contentType, Long sizeBytes, InputStream stream) {}
+
+  private static final class DisabledPayOSGatewayDummy implements PayOSGateway {
+    @Override
+    public PayOSPaymentLink createPaymentLink(
+        long orderCode, long amount, String description, String returnUrl, String cancelUrl) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_DISABLED",
+          "Online payments via PayOS are not enabled. Use corporate wire transfer instead.");
+    }
+
+    @Override
+    public boolean verifyWebhookSignature(
+        java.util.Map<String, Object> data, String receivedSignature) {
+      return false;
+    }
+  }
 }

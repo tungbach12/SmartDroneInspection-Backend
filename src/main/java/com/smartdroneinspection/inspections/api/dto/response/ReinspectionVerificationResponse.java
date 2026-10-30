@@ -1,5 +1,6 @@
 package com.smartdroneinspection.inspections.api.dto.response;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,6 +14,11 @@ public record ReinspectionVerificationResponse(
     String sourceTechnicalNotes,
     UUID sourceEvidenceId,
     String sourceEvidenceFileKey,
+    String sourceLocationDescription,
+    BigDecimal sourceLatitude,
+    BigDecimal sourceLongitude,
+    String repairProofUrl,
+    String repairEngineerNotes,
     UUID newEvidenceId,
     String newEvidenceFileKey,
     String resolutionStatus,

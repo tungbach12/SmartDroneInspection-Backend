@@ -106,6 +106,7 @@ public class SecurityConfig {
                     .requestMatchers(
                         "/api/v1/mobile/auth/**",
                         "/api/v1/webhooks/paypal",
+                        "/api/v1/webhooks/payos",
                         "/actuator/health/**",
                         "/error")
                     .permitAll()

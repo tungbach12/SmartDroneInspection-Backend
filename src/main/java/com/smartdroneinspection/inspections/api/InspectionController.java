@@ -31,6 +31,8 @@ import com.smartdroneinspection.inspections.service.ReinspectionVerificationServ
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
+import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
+import com.smartdroneinspection.shared.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
@@ -41,6 +43,7 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -74,6 +77,9 @@ public class InspectionController {
   private final InspectionWorkflowService workflowService;
   private final InspectionCreationService creationService;
   private final ReinspectionVerificationService reinspectionVerificationService;
+  private final java.util.Optional<
+          com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+      reportAcceptancePort;
 
   public InspectionController(
       EvidenceService evidenceService,
@@ -82,12 +88,33 @@ public class InspectionController {
       InspectionWorkflowService workflowService,
       InspectionCreationService creationService,
       ReinspectionVerificationService reinspectionVerificationService) {
+    this(
+        evidenceService,
+        findingService,
+        reportService,
+        workflowService,
+        creationService,
+        reinspectionVerificationService,
+        java.util.Optional.empty());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public InspectionController(
+      EvidenceService evidenceService,
+      FindingService findingService,
+      ReportService reportService,
+      InspectionWorkflowService workflowService,
+      InspectionCreationService creationService,
+      ReinspectionVerificationService reinspectionVerificationService,
+      java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+          reportAcceptancePort) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
     this.creationService = creationService;
     this.reinspectionVerificationService = reinspectionVerificationService;
+    this.reportAcceptancePort = reportAcceptancePort;
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -407,6 +434,32 @@ public class InspectionController {
       HttpServletRequest request) {
     return ApiResponse.success(
         reportService.publish(actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
+  }
+
+  @PostMapping("/report/versions/{versionId}/accept")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<Void> acceptReport(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId) {
+    if (reportAcceptancePort.isPresent()) {
+      reportAcceptancePort.get().acceptReport(actorId(jwt), inspectionId, versionId);
+    }
+    return ApiResponse.success(null);
+  }
+
+  @PostMapping("/payos/create-payment-link")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<InspectionReportAcceptancePort.PayOSCheckoutDetails> createPayOSPaymentLink(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    return ApiResponse.success(
+        reportAcceptancePort.get().createPayOSPaymentLink(actorId(jwt), inspectionId));
   }
 
   @PostMapping("/report/corrective-handoff")

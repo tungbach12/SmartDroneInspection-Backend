@@ -203,14 +203,37 @@ public class Inspection {
     updatedAt = Instant.now();
   }
 
+  /** MF3-08: report submitted and awaiting reviewer decision. */
+  public void markUnderReview() {
+    if (status != InspectionStatus.FIELD_COMPLETED
+        && status != InspectionStatus.REPORT_DRAFT
+        && status != InspectionStatus.UNDER_REVIEW) {
+      throw new IllegalStateException(
+          "Inspection must be completed in the field or in report drafting but is " + status);
+    }
+    status = InspectionStatus.UNDER_REVIEW;
+    updatedAt = Instant.now();
+  }
+
+  /** Report returned by reviewer to author for revisions. */
+  public void returnToDraft() {
+    if (status != InspectionStatus.UNDER_REVIEW) {
+      throw new IllegalStateException("Only an inspection under review can be returned to draft");
+    }
+    status = InspectionStatus.REPORT_DRAFT;
+    updatedAt = Instant.now();
+  }
+
   /** MF3-11 publication. */
   public void markReportPublished() {
     if (status != InspectionStatus.REPORT_DRAFT
+        && status != InspectionStatus.UNDER_REVIEW
         && status != InspectionStatus.REPORT_PUBLISHED
         && status != InspectionStatus.REPAIR_PENDING
         && status != InspectionStatus.COMPLETED) {
       throw new IllegalStateException(
-          "Inspection must be in drafting, active report, or closed status but is " + status);
+          "Inspection must be in drafting, under review, active report, or closed status but is "
+              + status);
     }
     status = InspectionStatus.REPORT_PUBLISHED;
     updatedAt = Instant.now();
