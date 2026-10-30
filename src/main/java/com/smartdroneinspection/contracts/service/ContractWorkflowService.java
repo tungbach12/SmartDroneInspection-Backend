@@ -788,15 +788,8 @@ public class ContractWorkflowService
     String returnUrl = null;
     String cancelUrl = null;
     if (occurrence.getInspectionId() != null) {
-      returnUrl =
-          "http://localhost:5173/client/reports/"
-              + occurrence.getInspectionId()
-              + "?payment=success&orderCode="
-              + orderCode;
-      cancelUrl =
-          "http://localhost:5173/client/reports/"
-              + occurrence.getInspectionId()
-              + "?payment=cancelled";
+      returnUrl = payOSGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode);
+      cancelUrl = payOSGateway.resolveCancelUrl(occurrence.getInspectionId().toString());
     }
 
     PayOSGateway.PayOSPaymentLink link =
