@@ -30,8 +30,6 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     return !(path.endsWith("/auth/login")
         || path.endsWith("/auth/password/setup")
         || path.endsWith("/auth/register")
-        || path.endsWith("/inspector-partner-applications")
-        || path.endsWith("/inspector-partner-applications/license-document")
         || path.endsWith("/airspace/evaluate"));
   }
 
