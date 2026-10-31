@@ -108,12 +108,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToV13AndCreatesPayOSSupport() {
+  void appliesAllMigrationsUpToV15AndCreatesPayOSSupport() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(13);
-    assertThat(versions.getLast()).isEqualTo("13");
+    assertThat(versions).hasSize(15);
+    assertThat(versions.getLast()).isEqualTo("15");
 
     List<String> sequences =
         jdbcTemplate.queryForList(

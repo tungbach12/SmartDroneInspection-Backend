@@ -61,7 +61,7 @@ public class InspectionFieldSessionService {
           "FLIGHT_PERMIT_REQUIRED",
           "A flight permit must be uploaded before starting the field session.");
     }
-    if (inspection.getStatus() != InspectionStatus.READY_FOR_FLIGHT
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED
         && inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
       throw sessionFailure(
           "INSPECTION_NOT_READY_FOR_FLIGHT",
@@ -177,7 +177,7 @@ public class InspectionFieldSessionService {
         .ifPresent(
             inspection -> {
               if (inspection.getStatus() == InspectionStatus.IN_PROGRESS) {
-                inspection.moveTo(InspectionStatus.READY_FOR_FLIGHT);
+                inspection.moveTo(InspectionStatus.SCHEDULED);
                 inspections.save(inspection);
               }
             });

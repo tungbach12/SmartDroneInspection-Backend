@@ -108,6 +108,75 @@ public class AuthService {
   }
 
   @Transactional
+  public AuthResult processOAuthLogin(
+      String email,
+      String fullName,
+      String avatarUrl,
+      ClientType clientType,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    if (email == null || email.isBlank()) {
+      throw new AuthException(
+          HttpStatus.BAD_REQUEST, "INVALID_EMAIL", "Email is required from OAuth provider");
+    }
+    String normalized = User.normalizeEmail(email);
+    User user = users.findByNormalizedEmail(normalized).orElse(null);
+
+    if (user != null) {
+      if (!user.active()) {
+        audit.record(
+            null, user.getId(), "AUTH_OAUTH_LOGIN", "DENIED", ipAddress, userAgent, correlationId);
+        throw new AuthException(
+            HttpStatus.FORBIDDEN, "ACCOUNT_INACTIVE", "Account is inactive or locked.");
+      }
+      if ((user.getAvatarUrl() == null || user.getAvatarUrl().isBlank())
+          && avatarUrl != null
+          && !avatarUrl.isBlank()) {
+        user.setAvatarUrl(avatarUrl);
+      }
+      user.recordSuccessfulLogin(ipAddress);
+      users.save(user);
+      AuthResult result = createSession(user, clientType);
+      audit.record(
+          user.getId(),
+          user.getId(),
+          "AUTH_OAUTH_LOGIN",
+          "SUCCESS",
+          ipAddress,
+          userAgent,
+          correlationId);
+      return result;
+    }
+
+    // Auto-create user with CUSTOMER role if not existing
+    String name = (fullName != null && !fullName.isBlank()) ? fullName.trim() : email.split("@")[0];
+    User newUser =
+        new User(
+            email.trim(),
+            name,
+            null,
+            avatarUrl,
+            null,
+            com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE,
+            com.smartdroneinspection.users.domain.enums.ActorZone.CUSTOMER_ORGANIZATION,
+            null);
+    newUser.addRole(com.smartdroneinspection.users.domain.enums.UserRole.CUSTOMER);
+    newUser.recordSuccessfulLogin(ipAddress);
+    User saved = users.save(newUser);
+    AuthResult result = createSession(saved, clientType);
+    audit.record(
+        saved.getId(),
+        saved.getId(),
+        "AUTH_OAUTH_REGISTER",
+        "SUCCESS",
+        ipAddress,
+        userAgent,
+        correlationId);
+    return result;
+  }
+
+  @Transactional
   public AuthResult changeInitialPassword(
       String email,
       String currentPassword,

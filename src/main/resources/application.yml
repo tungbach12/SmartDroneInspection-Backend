@@ -113,7 +113,14 @@ app:
     jwt-secret: ${AUTH_JWT_SECRET:}
     refresh-token-pepper: ${AUTH_REFRESH_TOKEN_PEPPER:}
     secure-cookies: ${AUTH_SECURE_COOKIES:false}
-    allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:3000}
+    allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1}
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+      redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/oauth2/callback/google}
+      frontend-success-url: ${GOOGLE_FRONTEND_SUCCESS_URL:http://localhost:3000/auth/callback}
+      frontend-failure-url: ${GOOGLE_FRONTEND_FAILURE_URL:http://localhost:3000/login}
+      mobile-success-url: ${GOOGLE_MOBILE_SUCCESS_URL:smartdrone://auth/callback}
     bootstrap:
       enabled: ${AUTH_BOOTSTRAP_ENABLED:false}
       email: ${AUTH_BOOTSTRAP_EMAIL:}
