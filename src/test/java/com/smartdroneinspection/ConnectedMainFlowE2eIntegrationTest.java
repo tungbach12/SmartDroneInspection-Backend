@@ -56,9 +56,9 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <pre>
  * Foundation: Self-Registration & Platform Admin Subscription Activation
- *   -> MF1: Asset Inventory, Operational Default Pair, Inspection Creation & Dispatch (ASSIGNED)
- *   -> MF2: Preparation Shot-List, Readiness Approval (READY_FOR_FLIGHT), Field Session Execution (FIELD_COMPLETED)
- *   -> MF3: Evidence Upload, Findings Confirmation, PDF Publication, Per-Finding Handoff (REPAIR_PENDING)
+ *   -> MF1: Asset Inventory, Operational Default Pair, Inspection Creation (SCHEDULED)
+ *   -> MF2: Preparation Shot-List, Flight Permit on File, Field Session Execution (FIELD_COMPLETED)
+ *   -> MF3: Evidence Upload, Findings Confirmation, PDF Publication, Per-Finding Handoff (COMPLETED)
  *   -> MF4: Repair Candidate Intake, Work Order, Team Designation, Itemized Estimate, Work Logs, Completion Report, Independent Acceptance & Closure (CLOSED)
  * </pre>
  */
@@ -365,11 +365,11 @@ class ConnectedMainFlowE2eIntegrationTest {
                             "fileKey", "permits/vca-2026-permit.pdf",
                             "fileName", "vca-2026-permit.pdf"))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("READY_FOR_FLIGHT"))
+        .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
         .andExpect(jsonPath("$.data.flightPermitFileName").value("vca-2026-permit.pdf"));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
-        .isEqualTo(InspectionStatus.READY_FOR_FLIGHT);
+        .isEqualTo(InspectionStatus.SCHEDULED);
 
     log.info("[MF2] Step 2.3: Inspector starts Field Session (status -> IN_PROGRESS)...");
     String startSessionResponse =
@@ -537,10 +537,10 @@ class ConnectedMainFlowE2eIntegrationTest {
                     reportVersionId)
                 .with(principal(reviewerId, "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
-        .isEqualTo(InspectionStatus.REPORT_PUBLISHED);
+        .isEqualTo(InspectionStatus.COMPLETED);
 
     log.info("[MF3] Step 3.7: Forwarding the confirmed finding to Maintenance...");
     mockMvc
@@ -550,13 +550,13 @@ class ConnectedMainFlowE2eIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("findingIds", List.of(findingId)))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId.toString()));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
-        .isEqualTo(InspectionStatus.REPAIR_PENDING);
+        .isEqualTo(InspectionStatus.COMPLETED);
     log.info(
-        "[MF3] SUCCESS: Report published and corrective findings handed off to REPAIR_PENDING");
+        "[MF3] SUCCESS: Report published and corrective findings handed off with status COMPLETED");
 
     // =========================================================================
     // STEP 4: MF4 - Repair Candidates, Work Order, Team, Tasks, Estimates, Work Logs & Closure

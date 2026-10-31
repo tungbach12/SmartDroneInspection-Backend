@@ -111,6 +111,19 @@ class InspectionReportDraftingApiIntegrationTest {
               "POOR",
               "Submerged components were not observed.");
         }
+
+        @Override
+        public AiSummary summarizeReport(DraftContext context) throws IOException {
+          LAST_CONTEXT.set(context);
+          if (FAIL_NEXT.get()) {
+            throw new IOException("stubbed summary failure");
+          }
+          return new AiSummary(
+              "AI summary for " + context.findings().size() + " confirmed findings.",
+              java.util.List.of("Notable finding observed"),
+              "Recommended follow up",
+              "MEDIUM");
+        }
       };
     }
   }
@@ -144,7 +157,7 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void draftingProposesSectionValuesThatTheAuthorCanReadBack() throws Exception {
+  void draftingAutoGeneratesReportVersionFromInspectionData() throws Exception {
     UUID versionId = draft();
 
     mockMvc
@@ -155,14 +168,7 @@ class InspectionReportDraftingApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.sections.executiveSummary")
-                .value("Proposed executive summary for 0 confirmed findings."))
-        .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
-        .andExpect(jsonPath("$.data.sections.overallCondition").value("POOR"))
-        .andExpect(
-            jsonPath("$.data.sections.omissionDisclosure")
-                .value("Submerged components were not observed."));
+        .andExpect(jsonPath("$.data.status").value("DRAFT"));
   }
 
   @Test
@@ -192,14 +198,20 @@ class InspectionReportDraftingApiIntegrationTest {
 
     assertThat(fallbackDraft.status())
         .isEqualTo(com.smartdroneinspection.inspections.domain.enums.ReportStatus.DRAFT);
-    assertThat(fallbackDraft.contentSnapshot()).contains("local-synthesizer");
-    assertThat(fallbackDraft.sections().executiveSummary()).isNotBlank();
-    assertThat(fallbackDraft.sections().omissionDisclosure()).isNotBlank();
   }
 
   @Test
   void draftingReceivesInspectionItemsFromStoredInspection() throws Exception {
-    draft();
+    UUID versionId = draft();
+
+    mockMvc
+        .perform(
+            get(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/ai-summary",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "MANAGER")))
+        .andExpect(status().isOk());
 
     ReportDraftPort.DraftContext context = DraftingStub.LAST_CONTEXT.get();
     assertThat(context.inspection()).isNotNull();
@@ -246,7 +258,16 @@ class InspectionReportDraftingApiIntegrationTest {
         sessionId,
         fixture.inspectionId());
 
-    draft();
+    UUID versionId = draft();
+
+    mockMvc
+        .perform(
+            get(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/ai-summary",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "MANAGER")))
+        .andExpect(status().isOk());
 
     DraftContext context = DraftingStub.LAST_CONTEXT.get();
     // The detector's provenance travels with the finding, so the drafting model is told which
@@ -310,23 +331,24 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
-  void aFailedGenerationLeavesNoVersionAndReportsTheFailure() throws Exception {
-    confirmFindings(true);
+  void aiSummaryFallsBackToDeterministicWhenExternalModelFails() throws Exception {
+    UUID versionId = draft();
     DraftingStub.FAIL_NEXT.set(true);
-    long before = countVersions();
 
     mockMvc
         .perform(
-            post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.code").value("REPORT_DRAFT_UNAVAILABLE"));
-
-    assertThat(countVersions()).isEqualTo(before);
+            get(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/ai-summary",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "MANAGER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.summary").isNotEmpty())
+        .andExpect(jsonPath("$.data.overallRisk").isNotEmpty());
   }
 
   @Test
-  void theManualDraftRemainsAvailableAsAnEmptyStructuredVersion() throws Exception {
+  void theManualDraftRemainsAvailableAsAnAutoStructuredVersion() throws Exception {
     confirmFindings(true);
     mockMvc
         .perform(
@@ -336,10 +358,7 @@ class InspectionReportDraftingApiIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("DRAFT"))
         .andExpect(jsonPath("$.data.sections.executiveSummary").doesNotExist())
         .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
-        .andExpect(jsonPath("$.data.narrative").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.contentSnapshot")
-                .value(org.hamcrest.Matchers.containsString("MANUAL")));
+        .andExpect(jsonPath("$.data.narrative").doesNotExist());
   }
 
   // ------------------------------------------------------------------ helpers

@@ -48,10 +48,10 @@ class ReportHtmlTemplateLocalizationTest {
 
     assertThat(html)
         .contains("Báo cáo kiểm tra công trình hạ tầng")
-        .contains("Tóm tắt")
+        .contains("1. Thông tin nhận dạng")
+        .contains("3. Phương pháp, thiết bị và điều kiện")
         .contains("Ghi chú danh sách kiểm tra trước chuyến bay")
         .contains("Normal wear")
-        .contains(authoredSummary)
         .doesNotContain("Infrastructure Asset Inspection Report")
         .doesNotContain("Executive summary")
         .doesNotContain("Pre-flight checklist note:");

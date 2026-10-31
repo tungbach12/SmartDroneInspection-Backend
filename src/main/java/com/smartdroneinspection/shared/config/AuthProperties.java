@@ -15,8 +15,21 @@ public class AuthProperties {
   private String jwtSecret = "";
   private String refreshTokenPepper = "";
   private boolean secureCookies = true;
-  private List<String> allowedOrigins = new ArrayList<>(List.of("http://localhost:3000"));
+  private List<String> allowedOrigins =
+      new ArrayList<>(
+          List.of(
+              "http://localhost:3000",
+              "http://127.0.0.1:3000",
+              "http://localhost:5173",
+              "http://127.0.0.1:5173",
+              "http://localhost",
+              "http://127.0.0.1",
+              "http://localhost:80",
+              "http://127.0.0.1:80",
+              "http://smartdroneinspection.duckdns.org",
+              "https://smartdroneinspection.duckdns.org"));
   private Bootstrap bootstrap = new Bootstrap();
+  private GoogleOAuth google = new GoogleOAuth();
 
   public String getIssuer() {
     return issuer;
@@ -88,6 +101,72 @@ public class AuthProperties {
 
   public void setBootstrap(Bootstrap bootstrap) {
     this.bootstrap = bootstrap;
+  }
+
+  public GoogleOAuth getGoogle() {
+    return google;
+  }
+
+  public void setGoogle(GoogleOAuth google) {
+    this.google = google;
+  }
+
+  public static class GoogleOAuth {
+
+    private String clientId = "";
+    private String clientSecret = "";
+    private String redirectUri = "";
+    private String frontendSuccessUrl = "http://localhost:3000/auth/callback";
+    private String frontendFailureUrl = "http://localhost:3000/login";
+    private String mobileSuccessUrl = "smartdrone://auth/callback";
+
+    public String getClientId() {
+      return clientId;
+    }
+
+    public void setClientId(String clientId) {
+      this.clientId = clientId;
+    }
+
+    public String getClientSecret() {
+      return clientSecret;
+    }
+
+    public void setClientSecret(String clientSecret) {
+      this.clientSecret = clientSecret;
+    }
+
+    public String getRedirectUri() {
+      return redirectUri;
+    }
+
+    public void setRedirectUri(String redirectUri) {
+      this.redirectUri = redirectUri;
+    }
+
+    public String getFrontendSuccessUrl() {
+      return frontendSuccessUrl;
+    }
+
+    public void setFrontendSuccessUrl(String frontendSuccessUrl) {
+      this.frontendSuccessUrl = frontendSuccessUrl;
+    }
+
+    public String getFrontendFailureUrl() {
+      return frontendFailureUrl;
+    }
+
+    public void setFrontendFailureUrl(String frontendFailureUrl) {
+      this.frontendFailureUrl = frontendFailureUrl;
+    }
+
+    public String getMobileSuccessUrl() {
+      return mobileSuccessUrl;
+    }
+
+    public void setMobileSuccessUrl(String mobileSuccessUrl) {
+      this.mobileSuccessUrl = mobileSuccessUrl;
+    }
   }
 
   public static class Bootstrap {

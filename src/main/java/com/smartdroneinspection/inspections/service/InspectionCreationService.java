@@ -327,6 +327,152 @@ public class InspectionCreationService {
     return toResponse(saved, asset);
   }
 
+  @Transactional
+  public InspectionResponse reschedule(
+      UUID actorId, UUID inspectionId, Instant plannedStartAt, Instant plannedEndAt) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.MANAGER)
+        && !actor.hasRole(Roles.ADMIN)
+        && !actor.hasRole(Roles.CUSTOMER)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only managers or admins can reschedule an inspection.");
+    }
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+
+    if (actor.organizationId() != null
+        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
+    }
+
+    if (inspection.getStatus()
+        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Only a scheduled inspection can be rescheduled.");
+    }
+
+    if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
+    }
+
+    subscriptionEntitlement.requireActive(inspection.getOrganizationId(), plannedStartAt);
+
+    inspection.updatePlannedWindow(plannedStartAt, plannedEndAt);
+    Inspection saved = inspections.saveAndFlush(inspection);
+    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
+    return toResponse(saved, asset);
+  }
+
+  @Transactional
+  public InspectionResponse reassign(
+      UUID actorId, UUID inspectionId, UUID newInspectorId, UUID newDroneId) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.MANAGER)
+        && !actor.hasRole(Roles.ADMIN)
+        && !actor.hasRole(Roles.CUSTOMER)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only managers or admins can reassign an inspection.");
+    }
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+
+    if (actor.organizationId() != null
+        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
+    }
+
+    if (inspection.getStatus()
+        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Only a scheduled inspection can be reassigned.");
+    }
+
+    UserAccess.ActiveUser newInspector =
+        userAccess
+            .findActiveUser(newInspectorId)
+            .filter(u -> u.hasRole(Roles.INSPECTOR))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_INSPECTOR",
+                        "Assigned inspector must be active."));
+
+    if (newDroneId != null) {
+      drones
+          .findById(newDroneId)
+          .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+          .orElseThrow(
+              () ->
+                  new BusinessException(
+                      HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active."));
+    }
+
+    inspection.reassign(newInspector.id(), newDroneId);
+    Inspection saved = inspections.saveAndFlush(inspection);
+
+    eventPublisher.publishEvent(
+        new InspectionAssignedEvent(
+            saved.getId(),
+            saved.getOrganizationId(),
+            saved.getInspectorId(),
+            saved.getPlannedStartAt()));
+
+    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
+    return toResponse(saved, asset);
+  }
+
+  @Transactional
+  public InspectionResponse cancel(UUID actorId, UUID inspectionId, String reason) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.MANAGER)
+        && !actor.hasRole(Roles.ADMIN)
+        && !actor.hasRole(Roles.CUSTOMER)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only managers or admins can cancel an inspection.");
+    }
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+
+    if (actor.organizationId() != null
+        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
+    }
+
+    if (inspection.getStatus()
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED
+        || inspection.getStatus()
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Inspection cannot be cancelled from status " + inspection.getStatus());
+    }
+
+    inspection.cancel(reason);
+    Inspection saved = inspections.saveAndFlush(inspection);
+    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
+    return toResponse(saved, asset);
+  }
+
   private InspectionResponse toResponse(Inspection inspection, Asset asset) {
     String assetName = asset == null ? null : asset.getName();
     String inspectorName =

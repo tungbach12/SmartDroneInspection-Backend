@@ -24,7 +24,10 @@ public class FieldSession {
   public static final String PLANNED = "PLANNED";
   public static final String IN_PROGRESS = "IN_PROGRESS";
   public static final String FIELD_COMPLETED = "FIELD_COMPLETED";
-  public static final String POSTPONED = "POSTPONED";
+
+  /** Deprecated: field sessions are aborted rather than postponed. */
+  @Deprecated public static final String POSTPONED = "POSTPONED";
+
   public static final String ABORTED = "ABORTED";
 
   @Id @GeneratedValue private UUID id;
@@ -87,14 +90,6 @@ public class FieldSession {
     this.startedAt = Objects.requireNonNull(startedAt, "Session start time is required");
     this.status = IN_PROGRESS;
     this.updatedAt = startedAt;
-  }
-
-  public void postpone(String postponementReason) {
-    requireOpenSession();
-    this.postponementReason = requireReason(postponementReason);
-    this.status = POSTPONED;
-    this.endedAt = Instant.now();
-    this.updatedAt = endedAt;
   }
 
   public void abort(String abortReason) {

@@ -302,7 +302,7 @@ class InspectionEvidenceApiIntegrationTest {
   void evidenceLocationCanBeEditedInReportDraftButNotWhileSubmitted() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
     jdbcTemplate.update(
-        "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
+        "UPDATE inspections SET status = 'FIELD_COMPLETED' WHERE id = ?", fixture.inspectionId());
     jdbcTemplate.update(
         "UPDATE inspections SET findings_confirmed_at = CURRENT_TIMESTAMP, findings_snapshot_hash = ? WHERE id = ?",
         "confirmed-hash",
@@ -320,8 +320,8 @@ class InspectionEvidenceApiIntegrationTest {
         .andExpect(status().isOk());
 
     jdbcTemplate.update(
-        "INSERT INTO inspection_reports (id, inspection_id, version_no, status, content_snapshot, created_at, submitted_at) "
-            + "VALUES (?, ?, 1, 'SUBMITTED', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        "INSERT INTO inspection_reports (id, inspection_id, version_no, status, created_at, submitted_at) "
+            + "VALUES (?, ?, 1, 'SUBMITTED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
         UUID.randomUUID(),
         fixture.inspectionId());
     mockMvc

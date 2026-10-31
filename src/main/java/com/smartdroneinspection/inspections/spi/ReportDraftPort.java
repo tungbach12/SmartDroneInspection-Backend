@@ -23,6 +23,14 @@ public interface ReportDraftPort {
    */
   SectionDraft draftSections(DraftContext context) throws IOException;
 
+  /** Summarizes an inspection report for executive review by managers or viewing by customers. */
+  default AiSummary summarizeReport(DraftContext context) throws IOException {
+    return null;
+  }
+
+  record AiSummary(
+      String summary, List<String> keyHighlights, String recommendedActions, String overallRisk) {}
+
   record DefectVerificationSummary(
       String defectLabel, String severity, String resolutionStatus, String inspectorNotes) {}
 
