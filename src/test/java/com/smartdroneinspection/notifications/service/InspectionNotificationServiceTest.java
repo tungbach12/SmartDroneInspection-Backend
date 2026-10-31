@@ -197,4 +197,33 @@ class InspectionNotificationServiceTest {
     assertThat(saved.getStatus()).isEqualTo(NotificationStatus.SENT);
     assertThat(saved.getDeduplicationKey()).isEqualTo(key);
   }
+
+  @Test
+  void recordFieldSessionAbortedCreatesNotificationForManagers() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID orgId = UUID.randomUUID();
+    UUID managerId = UUID.randomUUID();
+
+    UserAccess.WorkforceMember manager =
+        new UserAccess.WorkforceMember(
+            managerId, "manager@test.org", "Test Manager", Set.of("MANAGER"), "ACTIVE", orgId);
+    when(userAccess.listWorkforceMembers(orgId)).thenReturn(java.util.List.of(manager));
+
+    service.recordFieldSessionAborted(inspectionId, orgId, UUID.randomUUID(), "Heavy rain");
+
+    ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+    verify(notificationRepository).saveAndFlush(captor.capture());
+
+    Notification saved = captor.getValue();
+    assertThat(saved.getRecipientUserId()).isEqualTo(managerId);
+    assertThat(saved.getEventType()).isEqualTo("FIELD_SESSION_ABORTED");
+    assertThat(saved.getBody()).contains("Heavy rain");
+  }
+
+  @Test
+  void recordFieldSessionAbortedSkipsWhenIdsMissing() {
+    service.recordFieldSessionAborted(null, UUID.randomUUID(), UUID.randomUUID(), "Reason");
+    service.recordFieldSessionAborted(UUID.randomUUID(), null, UUID.randomUUID(), "Reason");
+    verify(notificationRepository, never()).saveAndFlush(any());
+  }
 }

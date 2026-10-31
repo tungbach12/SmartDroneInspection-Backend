@@ -2,7 +2,6 @@ package com.smartdroneinspection.inspections.api;
 
 import com.smartdroneinspection.inspections.api.dto.request.AbortFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.PostponeFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
@@ -32,7 +31,7 @@ public class InspectionFieldSessionController {
   }
 
   @GetMapping
-  @PreAuthorize("hasRole('INSPECTOR')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<List<FieldSessionResponse>> list(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(
@@ -50,17 +49,6 @@ public class InspectionFieldSessionController {
     return ApiResponse.success(
         response(
             fieldSessions.start(subject(jwt), inspectionId, request.preFlightChecklistNote())));
-  }
-
-  @PostMapping("/{sessionId}/postponement")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<FieldSessionResponse> postpone(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID sessionId,
-      @Valid @RequestBody PostponeFieldSessionRequest request) {
-    return ApiResponse.success(
-        response(fieldSessions.postpone(subject(jwt), inspectionId, sessionId, request.reason())));
   }
 
   @PostMapping("/{sessionId}/completion")

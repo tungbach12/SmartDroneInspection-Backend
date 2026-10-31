@@ -133,20 +133,13 @@ class InspectionFieldSessionApiIntegrationTest {
   }
 
   @Test
-  void aPostponementRecordsTheReasonThroughTheApi() throws Exception {
-    UUID sessionId = startSession();
+  void theManagerCanListSessions() throws Exception {
+    startSession();
 
     mockMvc
-        .perform(
-            post("/api/v1/inspections/{i}/field-sessions/{s}/postponement", inspectionId, sessionId)
-                .with(inspector())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json(Map.of("reason", "High wind above 10 m/s"))))
+        .perform(get("/api/v1/inspections/{i}/field-sessions", inspectionId).with(orgAdmin()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("POSTPONED"))
-        .andExpect(jsonPath("$.data.postponementReason").value("High wind above 10 m/s"));
-
-    assertThat(statusOfInspection()).isEqualTo("SCHEDULED");
+        .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"));
   }
 
   @Test
@@ -163,7 +156,7 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("ABORTED"))
         .andExpect(jsonPath("$.data.abortReason").value("Structure found unsafe on site"));
 
-    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("SCHEDULED");
   }
 
   @Test
@@ -268,7 +261,7 @@ class InspectionFieldSessionApiIntegrationTest {
     UUID sessionId = startSession();
     mockMvc
         .perform(
-            post("/api/v1/inspections/{i}/field-sessions/{s}/postponement", inspectionId, sessionId)
+            post("/api/v1/inspections/{i}/field-sessions/{s}/abort", inspectionId, sessionId)
                 .with(orgAdmin())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(Map.of("reason", "Wind"))))
@@ -278,13 +271,13 @@ class InspectionFieldSessionApiIntegrationTest {
   }
 
   @Test
-  void anotherInspectorCannotPostponeThisSession() throws Exception {
+  void anotherInspectorCannotAbortThisSession() throws Exception {
     UUID sessionId = startSession();
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
     mockMvc
         .perform(
-            post("/api/v1/inspections/{i}/field-sessions/{s}/postponement", inspectionId, sessionId)
+            post("/api/v1/inspections/{i}/field-sessions/{s}/abort", inspectionId, sessionId)
                 .with(inspector(otherInspectorId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(Map.of("reason", "Wind"))))

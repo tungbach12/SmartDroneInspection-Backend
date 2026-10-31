@@ -364,7 +364,26 @@ public class Inspection {
     moveTo(InspectionStatus.FIELD_COMPLETED);
   }
 
+  public void reassign(UUID newInspectorId, UUID newDroneId) {
+    if (status != InspectionStatus.SCHEDULED) {
+      throw new IllegalStateException("Only a scheduled inspection can be reassigned");
+    }
+    this.inspectorId = Objects.requireNonNull(newInspectorId, "Inspector ID is required");
+    this.droneId = newDroneId;
+    this.updatedAt = Instant.now();
+  }
+
+  public void cancel(String reason) {
+    if (status == InspectionStatus.COMPLETED || status == InspectionStatus.CANCELLED) {
+      throw new IllegalStateException("Inspection cannot be cancelled from status " + status);
+    }
+    moveTo(InspectionStatus.CANCELLED);
+  }
+
   public void updatePlannedWindow(Instant plannedStartAt, Instant plannedEndAt) {
+    if (status != InspectionStatus.SCHEDULED) {
+      throw new IllegalStateException("Only a scheduled inspection can be rescheduled");
+    }
     if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
       throw new IllegalArgumentException("Planned end must be after planned start");
     }

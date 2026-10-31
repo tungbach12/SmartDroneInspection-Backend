@@ -52,4 +52,21 @@ class InspectionNotificationListenerTest {
     verify(notificationService)
         .recordInspectionReminder(inspectionId, orgId, inspectorId, plannedStart);
   }
+
+  @Test
+  void onFieldSessionAbortedDelegatesToService() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID orgId = UUID.randomUUID();
+    UUID sessionId = UUID.randomUUID();
+    UUID inspectorId = UUID.randomUUID();
+    String reason = "Heavy thunderstorm";
+
+    com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent event =
+        new com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent(
+            inspectionId, orgId, sessionId, inspectorId, reason, Instant.now());
+
+    listener.onFieldSessionAborted(event);
+
+    verify(notificationService).recordFieldSessionAborted(inspectionId, orgId, inspectorId, reason);
+  }
 }
