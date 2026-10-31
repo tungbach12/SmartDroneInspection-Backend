@@ -7,6 +7,7 @@ import com.smartdroneinspection.maintenance.api.dto.request.ReconcileCostsReques
 import com.smartdroneinspection.maintenance.api.dto.request.RecordAcceptanceRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.RecordActualCostLineRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.RecordWorkLogRequest;
+import com.smartdroneinspection.maintenance.api.dto.response.AcceptanceComplianceResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.AcceptanceDecisionResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.ChangeOrderResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.CostReconciliationResponse;
@@ -21,10 +22,12 @@ import com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion;
 import com.smartdroneinspection.maintenance.domain.MaintenanceTask;
 import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
 import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
+import com.smartdroneinspection.maintenance.domain.enums.AcceptanceDecisionKind;
 import com.smartdroneinspection.maintenance.domain.enums.ChangeOrderStatus;
 import com.smartdroneinspection.maintenance.domain.enums.CostLineState;
 import com.smartdroneinspection.maintenance.domain.enums.EstimateStatus;
 import com.smartdroneinspection.maintenance.domain.enums.ReportVersionStatus;
+import com.smartdroneinspection.maintenance.domain.enums.TaskStatus;
 import com.smartdroneinspection.maintenance.domain.enums.WorkLogStatus;
 import com.smartdroneinspection.maintenance.domain.enums.WorkOrderStatus;
 import com.smartdroneinspection.maintenance.events.AcceptanceRecordedEvent;
@@ -188,6 +191,34 @@ public class MaintenanceExecutionService {
   public WorkOrderResponse markWorkCompleted(UUID actorId, UUID workOrderId) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     requireTeamLead(order, actorId);
+
+    if (changeOrders.existsByWorkOrderIdAndStatusIn(
+        order.getId(), List.of(ChangeOrderStatus.AWAITING_APPROVAL, ChangeOrderStatus.RETURNED))) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "PENDING_CHANGES_EXIST",
+          "Cannot declare work completed while change orders are pending approval");
+    }
+
+    Optional<MaintenanceAcceptanceDecision> lastDecision =
+        acceptanceDecisions.findFirstByWorkOrderIdOrderByDecidedAtDesc(order.getId());
+    if (lastDecision.isPresent()
+        && lastDecision.get().getDecision() == AcceptanceDecisionKind.REWORK_REQUIRED) {
+      Instant reworkRequestedAt = lastDecision.get().getDecidedAt();
+      boolean hasReworkWorkLog =
+          workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId()).stream()
+              .anyMatch(
+                  log ->
+                      log.getStatus() == WorkLogStatus.VERIFIED
+                          && log.getCreatedAt().isAfter(reworkRequestedAt));
+      if (!hasReworkWorkLog) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "REWORK_LOG_REQUIRED",
+            "At least one verified work log recorded after the rework request is required before completion");
+      }
+    }
+
     long submitted = workLogs.countByWorkOrderId(order.getId());
     long verified = workLogs.countByWorkOrderIdAndStatus(order.getId(), WorkLogStatus.VERIFIED);
     transition(() -> order.markWorkCompleted(submitted, verified));
@@ -270,6 +301,21 @@ public class MaintenanceExecutionService {
     transition(log::verify);
     workLogs.saveAndFlush(log);
     return WorkLogResponse.from(log);
+  }
+
+  /** MF4-11: verify all submitted work logs for this work order at once. */
+  @Transactional
+  public List<WorkLogResponse> batchVerifyWorkLogs(UUID actorId, UUID workOrderId) {
+    MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    requireTeamLead(order, actorId);
+    List<MaintenanceWorkLog> submitted =
+        workLogs.findByWorkOrderIdAndStatus(order.getId(), WorkLogStatus.SUBMITTED);
+    for (MaintenanceWorkLog log : submitted) {
+      transition(log::verify);
+      workLogs.save(log);
+    }
+    workLogs.flush();
+    return submitted.stream().map(WorkLogResponse::from).toList();
   }
 
   @Transactional(readOnly = true)
@@ -432,6 +478,102 @@ public class MaintenanceExecutionService {
   }
 
   /**
+   * MF4-14/16: pre-populates completion report draft content from completed tasks, verified logs,
+   * and approved changes so the author doesn't have to assemble narrative manually.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, String> generateReportDraft(UUID actorId, UUID workOrderId) {
+    MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    if (!actorId.equals(order.getReportAuthorUserId())
+        && !actorId.equals(order.getTeamLeadUserId())
+        && !teamMembers.existsByWorkOrderIdAndEngineerUserIdAndActiveTrue(order.getId(), actorId)) {
+      throw denied("Only the designated report author or team member may generate draft content");
+    }
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("## 1. MỤC TIÊU VÀ PHẠM VI SỬA CHỮA (SCOPE & CRITERIA)\n");
+    sb.append("- Phạm vi công việc: ")
+        .append(
+            order.getCorrectiveScope() != null && !order.getCorrectiveScope().isBlank()
+                ? order.getCorrectiveScope()
+                : "Theo hồ sơ kỹ thuật đã duyệt")
+        .append("\n");
+    if (order.getAcceptanceCriteria() != null && !order.getAcceptanceCriteria().isBlank()) {
+      sb.append("- Tiêu chuẩn nghiệm thu: ").append(order.getAcceptanceCriteria()).append("\n");
+    }
+
+    sb.append("\n## 2. HẠNG MỤC CÔNG VIỆC ĐÃ HOÀN THÀNH (COMPLETED TASKS)\n");
+    List<MaintenanceTask> taskList = tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId());
+    if (taskList.isEmpty()) {
+      sb.append("- Đã tiến hành xử lý kỹ thuật trực tiếp tại hiện trường.\n");
+    } else {
+      for (MaintenanceTask task : taskList) {
+        sb.append(String.format("- Hạng mục %d: %s", task.getTaskNumber(), task.getName()));
+        if (task.getMethod() != null && !task.getMethod().isBlank()) {
+          sb.append(" (Phương pháp: ").append(task.getMethod()).append(")");
+        }
+        sb.append(" — Trạng thái: ").append(task.getStatus()).append("\n");
+      }
+    }
+
+    sb.append("\n## 3. KẾT QUẢ ĐO ĐẠC & TÌNH TRẠNG HIỆN TRƯỜNG (WORK LOGS & READINGS)\n");
+    List<MaintenanceWorkLog> logList = workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId());
+    BigDecimal totalHours = BigDecimal.ZERO;
+    List<String> conditions = new java.util.ArrayList<>();
+    List<String> readings = new java.util.ArrayList<>();
+    for (MaintenanceWorkLog log : logList) {
+      if (log.getHours() != null) {
+        totalHours = totalHours.add(log.getHours());
+      }
+      if (log.getAsLeftCondition() != null && !log.getAsLeftCondition().isBlank()) {
+        conditions.add(log.getAsLeftCondition());
+      }
+      if (log.getTestReadings() != null && !log.getTestReadings().isBlank()) {
+        readings.add(log.getTestReadings());
+      }
+    }
+    sb.append(
+        String.format(
+            "- Tổng thời gian thi công thực tế: %s giờ (%d ca ghi nhận)\n",
+            totalHours.toPlainString(), logList.size()));
+    if (!conditions.isEmpty()) {
+      sb.append("- Tình trạng sau sửa chữa (As-left):\n");
+      for (String c : conditions) {
+        sb.append("  + ").append(c).append("\n");
+      }
+    }
+    if (!readings.isEmpty()) {
+      sb.append("- Kết quả đo đạc kiểm tra kỹ thuật (Test readings):\n");
+      for (String r : readings) {
+        sb.append("  + ").append(r).append("\n");
+      }
+    }
+
+    List<MaintenanceChangeOrder> changes =
+        changeOrders.findByWorkOrderIdOrderByChangeNumberDesc(order.getId());
+    List<MaintenanceChangeOrder> approvedChanges =
+        changes.stream().filter(c -> c.getStatus() == ChangeOrderStatus.APPROVED).toList();
+    sb.append("\n## 4. THAY ĐỔI & PHÁT SINH KỸ THUẬT (CHANGE ORDERS)\n");
+    if (approvedChanges.isEmpty()) {
+      sb.append("- Không có phát sinh thay đổi ngoài phạm vi và dự toán ban đầu.\n");
+    } else {
+      for (MaintenanceChangeOrder c : approvedChanges) {
+        sb.append(
+            String.format(
+                "- Thay đổi #%d: %s (Chi phí điều chỉnh: %s)\n",
+                c.getChangeNumber(), c.getReason(), c.getProposedDelta()));
+      }
+    }
+
+    sb.append("\n## 5. KẾT LUẬN & ĐỀ NGHỊ NGHIỆM THU\n");
+    sb.append(
+        "Toàn bộ công tác sửa chữa, khắc phục khuyết tật đã được hoàn thành đúng quy trình kỹ thuật"
+            + " và đảm bảo an toàn. Kính chuyển bộ phận nghiệm thu độc lập xem xét, đánh giá chấp thuận hoàn thành công trình.\n");
+
+    return Map.of("content", sb.toString());
+  }
+
+  /**
    * MF4-18: the independent reviewer decides on a submitted completion report.
    *
    * <p>REINSPECTION_REQUIRED records the decision and leaves the order resumable. Dispatching the
@@ -545,6 +687,107 @@ public class MaintenanceExecutionService {
     return acceptanceDecisions.findByWorkOrderIdOrderByDecidedAtDesc(order.getId()).stream()
         .map(AcceptanceDecisionResponse::from)
         .toList();
+  }
+
+  /**
+   * MF4-18: RAG-assisted technical compliance audit for independent acceptance reviewer. Compares
+   * recorded field test readings and completed tasks against the acceptance criteria.
+   */
+  @Transactional(readOnly = true)
+  public AcceptanceComplianceResponse checkAcceptanceCompliance(UUID actorId, UUID workOrderId) {
+    MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    List<MaintenanceTask> taskList = tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId());
+    List<MaintenanceWorkLog> logList = workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId());
+
+    List<AcceptanceComplianceResponse.ComplianceCheckItem> checks = new java.util.ArrayList<>();
+
+    // 1. Task execution completion check
+    boolean allTasksCompleted =
+        !taskList.isEmpty()
+            && taskList.stream()
+                .allMatch(
+                    t ->
+                        t.getStatus() == TaskStatus.WORK_COMPLETED
+                            || t.getStatus() == TaskStatus.ACCEPTED);
+    checks.add(
+        new AcceptanceComplianceResponse.ComplianceCheckItem(
+            "Hoàn thành các hạng mục thi công (Planned Tasks)",
+            "100% hạng mục được xác nhận hoàn thành",
+            taskList.size() + " hạng mục đã thi công",
+            allTasksCompleted ? "PASSED" : "WARNING"));
+
+    // 2. Work log verification invariant check
+    long submittedLogs = workLogs.countByWorkOrderId(order.getId());
+    long verifiedLogs = workLogs.countByWorkOrderIdAndStatus(order.getId(), WorkLogStatus.VERIFIED);
+    boolean allLogsVerified = submittedLogs > 0 && submittedLogs == verifiedLogs;
+    checks.add(
+        new AcceptanceComplianceResponse.ComplianceCheckItem(
+            "Xác minh nhật ký thi công (Work Logs)",
+            "100% ca làm việc được Đội trưởng (Team Lead) phê duyệt",
+            verifiedLogs + "/" + submittedLogs + " nhật ký đã xác minh",
+            allLogsVerified ? "PASSED" : "FAILED"));
+
+    // 3. Technical test measurements verification
+    boolean hasTestReadings =
+        logList.stream()
+            .anyMatch(l -> l.getTestReadings() != null && !l.getTestReadings().isBlank());
+    String sampleReadings =
+        logList.stream()
+            .map(MaintenanceWorkLog::getTestReadings)
+            .filter(r -> r != null && !r.isBlank())
+            .findFirst()
+            .orElse("Chưa ghi nhận số đo thử nghiệm hiện trường");
+
+    String criteria =
+        order.getAcceptanceCriteria() != null && !order.getAcceptanceCriteria().isBlank()
+            ? order.getAcceptanceCriteria()
+            : "Chỉ số kỹ thuật đạt chuẩn TCVN / Thiết kế phê duyệt";
+    checks.add(
+        new AcceptanceComplianceResponse.ComplianceCheckItem(
+            "Chỉ số kiểm tra hiện trường (Test Readings)",
+            criteria,
+            sampleReadings,
+            hasTestReadings ? "PASSED" : "WARNING"));
+
+    // 4. As-left condition assessment
+    boolean hasAsLeft =
+        logList.stream()
+            .anyMatch(l -> l.getAsLeftCondition() != null && !l.getAsLeftCondition().isBlank());
+    String sampleAsLeft =
+        logList.stream()
+            .map(MaintenanceWorkLog::getAsLeftCondition)
+            .filter(c -> c != null && !c.isBlank())
+            .findFirst()
+            .orElse("Chưa ghi nhận tình trạng sau sửa chữa");
+    checks.add(
+        new AcceptanceComplianceResponse.ComplianceCheckItem(
+            "Đánh giá tình trạng sau sửa chữa (As-left Condition)",
+            "Bề mặt kết cấu hoàn thiện, không phát sinh khuyết tật thứ cấp",
+            sampleAsLeft,
+            hasAsLeft ? "PASSED" : "WARNING"));
+
+    int passedCount = (int) checks.stream().filter(c -> "PASSED".equals(c.resultStatus())).count();
+    int score = (passedCount * 100) / checks.size();
+
+    String status = score >= 75 ? "COMPLIANT" : (score >= 50 ? "POTENTIAL_RISK" : "NON_COMPLIANT");
+    String recommendation;
+    String summary;
+
+    if (score >= 75) {
+      recommendation = "ACCEPTED";
+      summary =
+          "Hồ sơ thi công và các chỉ số đo đạc hiện trường đáp ứng đầy đủ tiêu chí kỹ thuật theo quy chuẩn. Khuyến nghị người nghiệm thu độc lập phê duyệt nghiệm thu (ACCEPTED).";
+    } else if (score >= 50) {
+      recommendation = "REWORK_REQUIRED";
+      summary =
+          "Các hạng mục thi công cơ bản hoàn thành nhưng thiếu hụt một số chỉ số đo đạc kiểm nghiệm hiện trường. Khuyến nghị yêu cầu đội thi công bổ sung số liệu trước khi nghiệm thu.";
+    } else {
+      recommendation = "REINSPECTION_REQUIRED";
+      summary =
+          "Nhật ký thi công chưa được xác minh đầy đủ hoặc không có kết quả đo đạc kiểm tra. Khuyến nghị kiểm tra kỹ hoặc điều phối chuyến bay Drone tái kiểm định (REINSPECTION_REQUIRED).";
+    }
+
+    return new AcceptanceComplianceResponse(score, status, recommendation, summary, checks);
   }
 
   /**

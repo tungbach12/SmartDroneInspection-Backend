@@ -4,6 +4,7 @@ import com.smartdroneinspection.maintenance.domain.enums.MaintenancePriority;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -20,4 +21,30 @@ public record CreateWorkOrderRequest(
     MaintenancePriority priority,
     Instant dueAt,
     @NotBlank String correctiveScope,
-    String acceptanceCriteria) {}
+    String acceptanceCriteria,
+    List<InitialTaskRequest> initialTasks) {
+
+  public CreateWorkOrderRequest(
+      UUID assetId,
+      UUID sourceReportVersionId,
+      UUID sourceFindingId,
+      UUID budgetApproverUserId,
+      MaintenancePriority priority,
+      Instant dueAt,
+      String correctiveScope,
+      String acceptanceCriteria) {
+    this(
+        assetId,
+        sourceReportVersionId,
+        sourceFindingId,
+        budgetApproverUserId,
+        priority,
+        dueAt,
+        correctiveScope,
+        acceptanceCriteria,
+        null);
+  }
+
+  public record InitialTaskRequest(
+      @NotBlank String name, String method, String acceptanceCriteria) {}
+}

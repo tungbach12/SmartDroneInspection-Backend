@@ -189,7 +189,31 @@ public class WorkOrderService {
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw conflict(ex);
     }
-    return toWorkOrderResponse(workOrders.saveAndFlush(order));
+    MaintenanceWorkOrder saved = workOrders.saveAndFlush(order);
+
+    if (request.initialTasks() != null && !request.initialTasks().isEmpty()) {
+      int taskNumber = 1;
+      for (CreateWorkOrderRequest.InitialTaskRequest taskReq : request.initialTasks()) {
+        if (taskReq.name() != null && !taskReq.name().isBlank()) {
+          MaintenanceTask task =
+              new MaintenanceTask(
+                  saved.getId(),
+                  taskNumber++,
+                  taskReq.name().trim(),
+                  taskReq.method() == null ? null : taskReq.method().trim(),
+                  null,
+                  null,
+                  null,
+                  taskReq.acceptanceCriteria() == null
+                      ? null
+                      : taskReq.acceptanceCriteria().trim());
+          tasks.save(task);
+        }
+      }
+      tasks.flush();
+    }
+
+    return toWorkOrderResponse(saved);
   }
 
   @Transactional(readOnly = true)

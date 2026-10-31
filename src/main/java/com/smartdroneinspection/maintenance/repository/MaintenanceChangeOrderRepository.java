@@ -23,6 +23,8 @@ public interface MaintenanceChangeOrderRepository
   List<MaintenanceChangeOrder> findByWorkOrderIdAndStatus(
       UUID workOrderId, ChangeOrderStatus status);
 
+  boolean existsByWorkOrderIdAndStatusIn(UUID workOrderId, List<ChangeOrderStatus> statuses);
+
   /**
    * MF4-13: only approved changes widen the authorized amount, so the delta is summed over approved
    * rows alone.

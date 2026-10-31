@@ -10,7 +10,10 @@ import static org.mockito.Mockito.when;
 import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
 import com.smartdroneinspection.maintenance.api.dto.request.SuggestScopeRequest;
 import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse;
+import com.smartdroneinspection.maintenance.domain.MaintenanceTask;
+import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
 import com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk;
+import com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository;
 import com.smartdroneinspection.maintenance.repository.RepairKnowledgeChunkRepository;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.SuggestedScope;
@@ -31,6 +34,8 @@ class MaintenanceScopeAdvisorServiceTest {
   private RepairCandidateAccess repairCandidateAccess;
   private DeterministicScopeFallback deterministicFallback;
   private UserAccess userAccess;
+  private WorkOrderService workOrderService;
+  private MaintenanceTaskRepository tasks;
   private MaintenanceScopeAdvisorService service;
 
   private final UUID actorId = UUID.randomUUID();
@@ -45,6 +50,8 @@ class MaintenanceScopeAdvisorServiceTest {
     repairCandidateAccess = mock(RepairCandidateAccess.class);
     deterministicFallback = new DeterministicScopeFallback();
     userAccess = mock(UserAccess.class);
+    workOrderService = mock(WorkOrderService.class);
+    tasks = mock(MaintenanceTaskRepository.class);
 
     service =
         new MaintenanceScopeAdvisorService(
@@ -52,7 +59,9 @@ class MaintenanceScopeAdvisorServiceTest {
             knowledgeRepository,
             repairCandidateAccess,
             deterministicFallback,
-            userAccess);
+            userAccess,
+            workOrderService,
+            tasks);
 
     UserAccess.ActiveUser actor =
         new UserAccess.ActiveUser(actorId, Set.of("CUSTOMER"), organizationId, "Org Admin");
@@ -156,5 +165,34 @@ class MaintenanceScopeAdvisorServiceTest {
     assertThat(response.fallbackApplied()).isTrue();
     assertThat(response.correctiveScope()).contains("vữa sửa chữa");
     assertThat(response.referenceStandards()).contains("EN 1504-9");
+  }
+
+  @Test
+  void suggestEstimateCalculatesNormsAndLines() {
+    UUID workOrderId = UUID.randomUUID();
+    MaintenanceWorkOrder order =
+        new MaintenanceWorkOrder(
+            organizationId,
+            UUID.randomUUID(),
+            reportVersionId,
+            findingId,
+            actorId,
+            UUID.randomUUID());
+    order.triage(null, null, "Sửa chữa nứt dầm bê tông cốt thép", "TCVN 9343:2012");
+    when(workOrderService.requireWorkOrderInScope(actorId, workOrderId)).thenReturn(order);
+
+    MaintenanceTask task1 =
+        new MaintenanceTask(
+            workOrderId, 1, "Vệ sinh khe nứt", "Bơm khí", actorId, null, null, null);
+    when(tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())).thenReturn(List.of(task1));
+
+    var estimate = service.suggestEstimate(actorId, workOrderId);
+
+    assertThat(estimate).isNotNull();
+    assertThat(estimate.currency()).isEqualTo("VND");
+    assertThat(estimate.lines()).isNotEmpty();
+    assertThat(estimate.estimatedTotal()).isGreaterThan(java.math.BigDecimal.ZERO);
+    assertThat(estimate.lines().get(0).description()).contains("Nhân công");
+    assertThat(estimate.lines().get(1).description()).contains("Sikadur");
   }
 }
