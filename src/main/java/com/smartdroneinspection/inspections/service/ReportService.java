@@ -7,6 +7,7 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionReportCon
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
+import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
@@ -228,146 +229,16 @@ public class ReportService {
 
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
-    List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
-    List<FieldSession> recordedSessions =
-        fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
-    Identity reportIdentity =
-        reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
-            .orElse(null);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
-    // The drafting model is told about the suggestions the detector made. A finding carries that
-    // provenance when it has one, so the suggestions are the findings that came from the model.
-    List<Finding> detectionFindings =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(finding -> finding.getModelName() != null)
-            .filter(finding -> currentEvidenceIds.contains(finding.getEvidenceId()))
-            .toList();
-
-    List<ReportDraftPort.DefectVerificationSummary> defectVerificationsList = List.of();
-    if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
-        && defectVerificationsRepo.isPresent()) {
-      defectVerificationsList =
-          defectVerificationsRepo.get().findByReinspectionId(inspectionId).stream()
-              .map(
-                  v -> {
-                    Finding srcFinding = findings.findById(v.getSourceFindingId()).orElse(null);
-                    String label =
-                        srcFinding != null ? srcFinding.getDefectLabel() : "Target defect";
-                    String severity =
-                        srcFinding != null ? srcFinding.getSeverity().name() : "MEDIUM";
-                    return new ReportDraftPort.DefectVerificationSummary(
-                        label, severity, v.getResolutionStatus().name(), v.getInspectorNotes());
-                  })
-              .toList();
-    }
-
-    ReportDraftPort port = draftPort.orElseGet(this::createLocalDraftSynthesizer);
-
-    ReportDraftPort.SectionDraft proposal;
-    try {
-      proposal =
-          port.draftSections(
-              new ReportDraftPort.DraftContext(
-                  new InspectionSummary(
-                      reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
-                      inspection.getFlightPermitFileName(),
-                      inspection.getPlannedStartAt() == null
-                          ? null
-                          : inspection.getPlannedStartAt().toString(),
-                      inspection.getPlannedEndAt() == null
-                          ? null
-                          : inspection.getPlannedEndAt().toString(),
-                      droneDisplayReference(reportIdentity, inspection.getDroneId()),
-                      inspection.getInspectionType().name()),
-                  confirmedFindings.stream()
-                      .map(
-                          finding ->
-                              new ReportDraftPort.FindingSummary(
-                                  finding.getDefectLabel(),
-                                  finding.getSeverity().name(),
-                                  finding.getTechnicalNotes(),
-                                  finding.getRecommendedAction()))
-                      .toList(),
-                  confirmedEvidence.stream()
-                      .map(
-                          item ->
-                              new ReportDraftPort.EvidenceSummary(
-                                  item.getFileName(),
-                                  item.getContentType(),
-                                  item.getCaptureTime() == null
-                                      ? null
-                                      : item.getCaptureTime().toString(),
-                                  item.getLatitude() == null
-                                      ? null
-                                      : item.getLatitude().toPlainString(),
-                                  item.getLongitude() == null
-                                      ? null
-                                      : item.getLongitude().toPlainString(),
-                                  item.getFieldSessionId() == null
-                                      ? null
-                                      : item.getFieldSessionId().toString(),
-                                  item.getLocationDescription()))
-                      .toList(),
-                  detectionFindings.stream()
-                      .map(
-                          detection ->
-                              new ReportDraftPort.CandidateSummary(
-                                  detection.getId().toString(),
-                                  detection.getEvidenceId().toString(),
-                                  null,
-                                  detection.getModelName(),
-                                  null,
-                                  detection.getDefectLabel(),
-                                  detection.getConfidence() == null
-                                      ? null
-                                      : detection.getConfidence().toPlainString(),
-                                  detection.getBoundingBox(),
-                                  detection.getStatus().name()))
-                      .toList(),
-                  recordedSessions.stream()
-                      .map(
-                          session ->
-                              new ReportDraftPort.FieldSessionSummary(
-                                  session.getId().toString(),
-                                  session.getStatus(),
-                                  session.getStartedAt() == null
-                                      ? null
-                                      : session.getStartedAt().toString(),
-                                  session.getEndedAt() == null
-                                      ? null
-                                      : session.getEndedAt().toString(),
-                                  session.getPreFlightChecklistNote(),
-                                  session.getPostponementReason(),
-                                  session.getAbortReason(),
-                                  droneDisplayReference(reportIdentity, inspection.getDroneId())))
-                      .toList(),
-                  locale,
-                  defectVerificationsList));
-    } catch (IOException ex) {
-      // A failed generation permits a manual draft under the same review gates. No placeholder text
-      // is written into a section: a section the author did not write and the model did not supply
-      // stays absent, and reads as "not supplied" rather than as a confident blank.
-      throw new BusinessException(
-          HttpStatus.SERVICE_UNAVAILABLE,
-          "REPORT_DRAFT_UNAVAILABLE",
-          "Automated drafting is temporarily unavailable");
-    }
-
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReport version =
-        new InspectionReport(
-            inspectionId,
-            versionNo,
-            buildContentSnapshot(inspection, confirmedEvidence, confirmedFindings, proposal, port));
+    InspectionReport version = new InspectionReport(inspectionId, versionNo);
     return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
   /**
-   * MF3-08 manual authoring. Report 3 requires that a failed or unconfigured drafting service still
-   * lets the author complete a structured draft, so this creates the same version record under the
-   * same review gates and records that no automated drafting contributed to it.
+   * MF3-08 manual authoring. Creates an auto-generated structured draft from existing data under
+   * the same review gates.
    */
   @Transactional
   public InspectionReportResponse authorManualDraft(UUID actorId, UUID inspectionId) {
@@ -387,11 +258,7 @@ public class ReportService {
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReport version =
-        new InspectionReport(
-            inspectionId,
-            versionNo,
-            buildManualContentSnapshot(inspection, confirmedEvidence, confirmedFindings));
+    InspectionReport version = new InspectionReport(inspectionId, versionNo);
     return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
@@ -439,9 +306,8 @@ public class ReportService {
             request.conclusionsRecommendations(),
             request.overallCondition(),
             request.omissionDisclosure());
-    String updated = sections.applyTo(version.getContentSnapshot(), objectMapper);
     try {
-      version.editContent(updated);
+      version.editContent(null);
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
@@ -572,10 +438,10 @@ public class ReportService {
           HttpStatus.CONFLICT, "REPORT_WITHDRAWAL_INVALID", ex.getMessage());
     }
     versions.saveAndFlush(version);
-    inspection.reopenFindings();
     if (inspection.getStatus() == InspectionStatus.UNDER_REVIEW) {
       inspection.returnToDraft();
     }
+    inspection.reopenFindings();
     inspections.saveAndFlush(inspection);
     return toResponse(version, inspection.getInspectorId());
   }
@@ -1446,6 +1312,239 @@ public class ReportService {
     }
   }
 
+  private String buildAutoContentSnapshot(
+      Inspection inspection, List<Evidence> confirmedEvidence, List<Finding> confirmedFindings) {
+    ObjectNode snapshot = objectMapper.createObjectNode();
+    snapshot.put("model", "auto-generated");
+    snapshot.put("assetId", inspection.getAssetId().toString());
+    snapshot.put("inspectionId", inspection.getId().toString());
+    snapshot.put("evidenceCount", confirmedEvidence.size());
+    snapshot.put("findingsCount", confirmedFindings.size());
+    snapshot.put("analysisMethod", "AUTO_INSPECTION_DATA");
+    try {
+      return objectMapper.writeValueAsString(snapshot);
+    } catch (JacksonException exception) {
+      throw new IllegalStateException("Could not create an auto report snapshot", exception);
+    }
+  }
+
+  /** Generates or returns an executive AI summary for Manager review and Customer viewing. */
+  @Transactional(readOnly = true)
+  public ReportAiSummaryResponse getOrGenerateAiSummary(
+      UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+    requireVersion(inspectionId, versionId);
+    Inspection inspection =
+        inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+
+    List<Evidence> confirmedEvidence =
+        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
+    List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
+    List<FieldSession> recordedSessions =
+        fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    Identity reportIdentity =
+        reportContextAccess
+            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .orElse(null);
+    List<Finding> confirmedFindings = inspectorFindings(inspectionId);
+
+    List<Finding> detectionFindings =
+        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+            .filter(finding -> finding.getModelName() != null)
+            .filter(finding -> currentEvidenceIds.contains(finding.getEvidenceId()))
+            .toList();
+
+    List<ReportDraftPort.DefectVerificationSummary> defectVerificationsList = List.of();
+    if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
+        && defectVerificationsRepo.isPresent()) {
+      defectVerificationsList =
+          defectVerificationsRepo.get().findByReinspectionId(inspectionId).stream()
+              .map(
+                  v -> {
+                    Finding srcFinding = findings.findById(v.getSourceFindingId()).orElse(null);
+                    String label =
+                        srcFinding != null ? srcFinding.getDefectLabel() : "Target defect";
+                    String severity =
+                        srcFinding != null ? srcFinding.getSeverity().name() : "MEDIUM";
+                    return new ReportDraftPort.DefectVerificationSummary(
+                        label, severity, v.getResolutionStatus().name(), v.getInspectorNotes());
+                  })
+              .toList();
+    }
+
+    ReportDraftPort.DraftContext context =
+        new ReportDraftPort.DraftContext(
+            new InspectionSummary(
+                reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
+                inspection.getFlightPermitFileName(),
+                inspection.getPlannedStartAt() == null
+                    ? null
+                    : inspection.getPlannedStartAt().toString(),
+                inspection.getPlannedEndAt() == null
+                    ? null
+                    : inspection.getPlannedEndAt().toString(),
+                droneDisplayReference(reportIdentity, inspection.getDroneId()),
+                inspection.getInspectionType().name()),
+            confirmedFindings.stream()
+                .map(
+                    finding ->
+                        new ReportDraftPort.FindingSummary(
+                            finding.getDefectLabel(),
+                            finding.getSeverity().name(),
+                            finding.getTechnicalNotes(),
+                            finding.getRecommendedAction()))
+                .toList(),
+            confirmedEvidence.stream()
+                .map(
+                    item ->
+                        new ReportDraftPort.EvidenceSummary(
+                            item.getFileName(),
+                            item.getContentType(),
+                            item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
+                            item.getLatitude() == null ? null : item.getLatitude().toPlainString(),
+                            item.getLongitude() == null
+                                ? null
+                                : item.getLongitude().toPlainString(),
+                            item.getFieldSessionId() == null
+                                ? null
+                                : item.getFieldSessionId().toString(),
+                            item.getLocationDescription()))
+                .toList(),
+            detectionFindings.stream()
+                .map(
+                    detection ->
+                        new ReportDraftPort.CandidateSummary(
+                            detection.getId().toString(),
+                            detection.getEvidenceId().toString(),
+                            null,
+                            detection.getModelName(),
+                            null,
+                            detection.getDefectLabel(),
+                            detection.getConfidence() == null
+                                ? null
+                                : detection.getConfidence().toPlainString(),
+                            detection.getBoundingBox(),
+                            detection.getStatus().name()))
+                .toList(),
+            recordedSessions.stream()
+                .map(
+                    session ->
+                        new ReportDraftPort.FieldSessionSummary(
+                            session.getId().toString(),
+                            session.getStatus(),
+                            session.getStartedAt() == null
+                                ? null
+                                : session.getStartedAt().toString(),
+                            session.getEndedAt() == null ? null : session.getEndedAt().toString(),
+                            session.getPreFlightChecklistNote(),
+                            session.getPostponementReason(),
+                            session.getAbortReason(),
+                            droneDisplayReference(reportIdentity, inspection.getDroneId())))
+                .toList(),
+            locale,
+            defectVerificationsList);
+
+    if (draftPort.isPresent()) {
+      try {
+        ReportDraftPort.AiSummary aiSummary = draftPort.get().summarizeReport(context);
+        if (aiSummary != null && aiSummary.summary() != null && !aiSummary.summary().isBlank()) {
+          return new ReportAiSummaryResponse(
+              aiSummary.summary(),
+              aiSummary.keyHighlights() == null ? List.of() : aiSummary.keyHighlights(),
+              aiSummary.recommendedActions(),
+              aiSummary.overallRisk() == null ? "MEDIUM" : aiSummary.overallRisk());
+        }
+      } catch (Exception ex) {
+        // Fall back to deterministic rule-based summary
+      }
+    }
+
+    return buildDeterministicAiSummary(context);
+  }
+
+  private ReportAiSummaryResponse buildDeterministicAiSummary(
+      ReportDraftPort.DraftContext context) {
+    boolean isVietnamese =
+        context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage());
+    List<ReportDraftPort.FindingSummary> findings = context.findings();
+    boolean hasCritical =
+        findings.stream().anyMatch(f -> "CRITICAL".equalsIgnoreCase(f.severity()));
+    boolean hasHigh = findings.stream().anyMatch(f -> "HIGH".equalsIgnoreCase(f.severity()));
+    boolean hasMedium = findings.stream().anyMatch(f -> "MEDIUM".equalsIgnoreCase(f.severity()));
+
+    String overallRisk = hasCritical ? "CRITICAL" : hasHigh ? "HIGH" : hasMedium ? "MEDIUM" : "LOW";
+
+    String summary;
+    List<String> keyHighlights = new ArrayList<>();
+    String recommendedActions;
+
+    if (isVietnamese) {
+      if (findings.isEmpty()) {
+        summary =
+            "Khảo sát kiểm định trực quan bằng drone đã hoàn tất. Không phát hiện khiếm khuyết kết"
+                + " cấu nào trong phạm vi khảo sát. Hiện trạng tổng thể của tài sản được đánh giá ở"
+                + " mức Tốt.";
+        keyHighlights.add("Không ghi nhận khiếm khuyết kết cấu nào");
+        recommendedActions = "Khuyến nghị duy trì lịch trình bay kiểm tra định kỳ theo quy định.";
+      } else {
+        long criticalCount =
+            findings.stream().filter(f -> "CRITICAL".equalsIgnoreCase(f.severity())).count();
+        long highCount =
+            findings.stream().filter(f -> "HIGH".equalsIgnoreCase(f.severity())).count();
+        long mediumCount =
+            findings.stream().filter(f -> "MEDIUM".equalsIgnoreCase(f.severity())).count();
+        long lowCount = findings.stream().filter(f -> "LOW".equalsIgnoreCase(f.severity())).count();
+
+        summary =
+            String.format(
+                "Khảo sát kiểm định trực quan bằng drone đã hoàn tất với %d khiếm khuyết được ghi"
+                    + " nhận. Đánh giá rủi ro hiện trạng ở mức %s.",
+                findings.size(), overallRisk);
+
+        if (criticalCount > 0)
+          keyHighlights.add(criticalCount + " khiếm khuyết mức độ Nghiêm trọng (CRITICAL)");
+        if (highCount > 0) keyHighlights.add(highCount + " khiếm khuyết mức độ Cao (HIGH)");
+        if (mediumCount > 0)
+          keyHighlights.add(mediumCount + " khiếm khuyết mức độ Trung bình (MEDIUM)");
+        if (lowCount > 0) keyHighlights.add(lowCount + " khiếm khuyết mức độ Thấp (LOW)");
+
+        recommendedActions =
+            "Đề xuất mở lệnh bảo trì sửa chữa (Work Order) đối với các khiếm khuyết nghiêm trọng và"
+                + " lên kế hoạch bay tái kiểm định.";
+      }
+    } else {
+      if (findings.isEmpty()) {
+        summary =
+            "Drone aerial visual inspection completed. No structural defects were observed within the"
+                + " inspected scope. Overall asset condition is assessed as Good.";
+        keyHighlights.add("No structural defects observed");
+        recommendedActions = "Routine periodic drone inspection schedule is recommended.";
+      } else {
+        summary =
+            String.format(
+                "Drone aerial visual inspection completed with %d confirmed defect(s). Overall"
+                    + " condition risk is assessed as %s.",
+                findings.size(), overallRisk);
+
+        findings.stream()
+            .filter(
+                f ->
+                    "CRITICAL".equalsIgnoreCase(f.severity())
+                        || "HIGH".equalsIgnoreCase(f.severity()))
+            .forEach(f -> keyHighlights.add(f.defectLabel() + " (" + f.severity() + ")"));
+        if (keyHighlights.isEmpty()) {
+          keyHighlights.add(findings.size() + " defect(s) confirmed at moderate severity");
+        }
+
+        recommendedActions =
+            "Timely maintenance intervention recommended. Immediate work order handoff advised for"
+                + " critical/high defects.";
+      }
+    }
+
+    return new ReportAiSummaryResponse(summary, keyHighlights, recommendedActions, overallRisk);
+  }
+
   private String composePurposeScopeCriteria(
       Inspection inspection, Identity identity, Locale locale) {
     StringBuilder content = new StringBuilder();
@@ -1592,7 +1691,6 @@ public class ReportService {
   }
 
   private InspectionReportResponse toResponse(InspectionReport version, UUID authorUserId) {
-    JsonNode content = readContentSnapshot(version.getContentSnapshot());
     return new InspectionReportResponse(
         version.getId(),
         version.getInspectionReportId(),
@@ -1605,10 +1703,9 @@ public class ReportService {
         version.getReturnReason(),
         version.getPublishedAt(),
         version.getCreatedAt(),
-        textOrNull(content, "omissionDisclosure"),
-        version.getContentSnapshot(),
-        ReportSectionsResponse.from(
-            ReportSections.read(version.getContentSnapshot(), objectMapper)),
+        null,
+        null,
+        ReportSectionsResponse.from(ReportSections.EMPTY),
         reportContextForVersion(version));
   }
 

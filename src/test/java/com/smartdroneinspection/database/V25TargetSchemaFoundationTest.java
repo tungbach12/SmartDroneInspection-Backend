@@ -181,7 +181,6 @@ class V25TargetSchemaFoundationTest {
                     "inspection_id",
                     "version_no",
                     "status",
-                    "content_snapshot",
                     "submitted_at",
                     "reviewer_user_id",
                     "reviewed_at",

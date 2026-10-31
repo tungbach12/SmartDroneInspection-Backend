@@ -18,12 +18,10 @@ public final class ReportHtmlTemplate {
     StringBuilder body = new StringBuilder();
     header(body, context, preview);
     identification(body, context);
-    executiveSummary(body, context);
     purposeScopeCriteria(body, context);
     methodEquipmentConditions(body, context);
     evidenceRegister(body, context);
     confirmedFindings(body, context);
-    conclusions(body, context);
     appendices(body, context);
     if (!preview) {
       approval(body, context);
@@ -91,30 +89,9 @@ public final class ReportHtmlTemplate {
     body.append("</table>");
   }
 
-  private static void executiveSummary(StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "2. Executive summary");
-    ReportRenderPort.Sections sections = context.sections();
-    body.append("<p class=\"summary\">");
-    if (sections.overallCondition() != null && !sections.overallCondition().isBlank()) {
-      body.append("<b>")
-          .append(text(context, "Overall condition"))
-          .append(": ")
-          .append(escape(text(context, sections.overallCondition())))
-          .append(".</b> ");
-    }
-    body.append(escape(orNotSupplied(sections.executiveSummary(), context))).append("</p>");
-    if (hasText(sections.omissionDisclosure())) {
-      body.append("<p class=\"disclosure\"><b>")
-          .append(text(context, "Limitations and omissions"))
-          .append(".</b> ")
-          .append(escape(sections.omissionDisclosure()))
-          .append("</p>");
-    }
-  }
-
   private static void purposeScopeCriteria(
       StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "3. Purpose, scope and criteria");
+    section(body, context, "2. Purpose, scope and criteria");
     paragraph(body, context, context.sections().purposeScopeCriteria());
     if (hasText(context.sections().inspectorCoverageAssessment())) {
       body.append("<p><b>")
@@ -127,7 +104,7 @@ public final class ReportHtmlTemplate {
 
   private static void methodEquipmentConditions(
       StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "4. Method, equipment and conditions");
+    section(body, context, "3. Method, equipment and conditions");
     paragraph(body, context, context.sections().methodEquipmentConditions());
     ReportRenderPort.ReportContext report = context.reportContext();
     if (report != null) {
@@ -164,7 +141,7 @@ public final class ReportHtmlTemplate {
   }
 
   private static void evidenceRegister(StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "5. Evidence register");
+    section(body, context, "4. Evidence register");
     if (context.evidence().isEmpty()) {
       body.append("<p class=\"none\">")
           .append(text(context, "No evidence was linked to this version."))
@@ -197,7 +174,7 @@ public final class ReportHtmlTemplate {
 
   private static void confirmedFindings(
       StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "6. Confirmed findings");
+    section(body, context, "5. Confirmed findings");
     if (context.findings().isEmpty()) {
       body.append("<p class=\"none\">")
           .append(text(context, "No confirmed findings were recorded for this version."))
@@ -285,24 +262,19 @@ public final class ReportHtmlTemplate {
     }
   }
 
-  private static void conclusions(StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "7. Conclusions and recommendations");
-    paragraph(body, context, context.sections().conclusionsRecommendations());
+  private static void appendices(StringBuilder body, ReportRenderPort.RenderContext context) {
+    section(body, context, "6. Appendices");
+    body.append("<p>")
+        .append(
+            text(
+                context,
+                "Evidence associated with confirmed findings is shown in section 5. The evidence register and recorded inspection context appear in sections 2, 3 and 4."))
+        .append("</p>");
     body.append("<p class=\"scope\">")
         .append(
             text(
                 context,
                 "This application report records the inspection evidence and findings shown above. It is not a statement of whole-asset safety, a certified non-destructive or load-capacity test, or a repair-completion certificate."))
-        .append("</p>");
-  }
-
-  private static void appendices(StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "8. Appendices");
-    body.append("<p>")
-        .append(
-            text(
-                context,
-                "Evidence associated with confirmed findings is shown in section 6. The evidence register and recorded inspection context appear in sections 4 and 5."))
         .append("</p>");
 
     java.util.Set<String> findingEvidenceIds = new java.util.HashSet<>();
@@ -346,7 +318,7 @@ public final class ReportHtmlTemplate {
   }
 
   private static void approval(StringBuilder body, ReportRenderPort.RenderContext context) {
-    section(body, context, "9. Approval and revisions");
+    section(body, context, "7. Approval and revisions");
     body.append("<table class=\"kv\">")
         .append("<tr><th>")
         .append(text(context, "Author"))
@@ -458,14 +430,12 @@ public final class ReportHtmlTemplate {
       case "Issued" -> "Ngày phát hành";
       case "Not supplied" -> "Chưa được cung cấp";
       case "1. Identification" -> "1. Thông tin nhận dạng";
-      case "2. Executive summary" -> "2. Tóm tắt điều hành";
-      case "3. Purpose, scope and criteria" -> "3. Mục đích, phạm vi và tiêu chí";
-      case "4. Method, equipment and conditions" -> "4. Phương pháp, thiết bị và điều kiện";
-      case "5. Evidence register" -> "5. Danh mục bằng chứng";
-      case "6. Confirmed findings" -> "6. Phát hiện đã xác nhận";
-      case "7. Conclusions and recommendations" -> "7. Kết luận và khuyến nghị";
-      case "8. Appendices" -> "8. Phụ lục";
-      case "9. Approval and revisions" -> "9. Phê duyệt và các lần chỉnh sửa";
+      case "2. Purpose, scope and criteria" -> "2. Mục đích, phạm vi và tiêu chí";
+      case "3. Method, equipment and conditions" -> "3. Phương pháp, thiết bị và điều kiện";
+      case "4. Evidence register" -> "4. Danh mục bằng chứng";
+      case "5. Confirmed findings" -> "5. Phát hiện đã xác nhận";
+      case "6. Appendices" -> "6. Phụ lục";
+      case "7. Approval and revisions" -> "7. Phê duyệt và các lần chỉnh sửa";
       case "Organization" -> "Tổ chức";
       case "Asset" -> "Tài sản";
       case "Asset code" -> "Mã tài sản";

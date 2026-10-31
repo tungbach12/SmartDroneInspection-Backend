@@ -207,9 +207,12 @@ public class Inspection {
   public void markUnderReview() {
     if (status != InspectionStatus.FIELD_COMPLETED
         && status != InspectionStatus.REPORT_DRAFT
-        && status != InspectionStatus.UNDER_REVIEW) {
+        && status != InspectionStatus.UNDER_REVIEW
+        && status != InspectionStatus.REPORT_PUBLISHED
+        && status != InspectionStatus.COMPLETED) {
       throw new IllegalStateException(
-          "Inspection must be completed in the field or in report drafting but is " + status);
+          "Inspection must be completed in the field, in report drafting, or published but is "
+              + status);
     }
     status = InspectionStatus.UNDER_REVIEW;
     updatedAt = Instant.now();
