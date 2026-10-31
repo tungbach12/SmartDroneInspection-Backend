@@ -306,7 +306,8 @@ public class EvidenceService {
   }
 
   private void syncFindingsConfirmationAfterEvidenceEdit(Inspection inspection) {
-    if (inspection.getStatus() == InspectionStatus.REPORT_DRAFT) {
+    if (inspection.getStatus() == InspectionStatus.FIELD_COMPLETED
+        && inspection.hasFindingsConfirmation()) {
       inspection.reopenFindings();
       inspections.saveAndFlush(inspection);
     }
@@ -332,9 +333,7 @@ public class EvidenceService {
   }
 
   private void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
-    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED
-        || inspection.getStatus() == InspectionStatus.REPAIR_PENDING
-        || inspection.getStatus() == InspectionStatus.COMPLETED) {
+    if (inspection.getStatus() == InspectionStatus.COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "INSPECTION_STATE_CONFLICT",

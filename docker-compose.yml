@@ -87,7 +87,7 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
       AUTH_REFRESH_TOKEN_PEPPER: ${AUTH_REFRESH_TOKEN_PEPPER:-}
       AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-false}
-      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:80,http://127.0.0.1:18080,http://smartdroneinspection.duckdns.org,https://smartdroneinspection.duckdns.org}
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:80,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:18080,http://smartdroneinspection.duckdns.org,https://smartdroneinspection.duckdns.org}
       AUTH_BOOTSTRAP_ENABLED: ${AUTH_BOOTSTRAP_ENABLED:-false}
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-}
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-}
@@ -117,6 +117,12 @@ services:
       PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
       PAYOS_RETURN_URL: ${PAYOS_RETURN_URL:-http://localhost:5173/client/reports/{inspectionId}}
       PAYOS_CANCEL_URL: ${PAYOS_CANCEL_URL:-http://localhost:5173/client/reports/{inspectionId}}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8080/api/v1/auth/oauth2/callback/google}
+      GOOGLE_FRONTEND_SUCCESS_URL: ${GOOGLE_FRONTEND_SUCCESS_URL:-http://localhost:3000/auth/callback}
+      GOOGLE_FRONTEND_FAILURE_URL: ${GOOGLE_FRONTEND_FAILURE_URL:-http://localhost:3000/login}
+      GOOGLE_MOBILE_SUCCESS_URL: ${GOOGLE_MOBILE_SUCCESS_URL:-smartdrone://auth/callback}
     depends_on:
       postgres:
         condition: service_healthy

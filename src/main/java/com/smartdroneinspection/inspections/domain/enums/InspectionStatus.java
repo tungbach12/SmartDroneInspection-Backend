@@ -1,20 +1,17 @@
 package com.smartdroneinspection.inspections.domain.enums;
 
 /**
- * Target inspection lifecycle from Report 3 business-flows section VI.
+ * Streamlined inspection lifecycle (6 canonical states).
  *
- * <p>READY_FOR_FLIGHT records an internal human readiness decision, not external flight authority.
+ * <p>Flight readiness is governed by regulatory permit on file and active pilot licensing rather
+ * than a separate readiness state. Report drafting takes place in FIELD_COMPLETED with domain
+ * timestamps and snapshot hashes. Completed inspections conclude upon report publication.
  */
 public enum InspectionStatus {
-  DRAFT,
-  ASSIGNED,
-  READY_FOR_FLIGHT,
+  SCHEDULED,
   IN_PROGRESS,
   FIELD_COMPLETED,
-  REPORT_DRAFT,
   UNDER_REVIEW,
-  REPORT_PUBLISHED,
-  REPAIR_PENDING,
   COMPLETED,
   CANCELLED
 }

@@ -76,7 +76,7 @@ public final class MaintenanceTestFixture {
         """
         INSERT INTO inspections (id, asset_id, status, created_at, updated_at, row_version,
                                  organization_id, inspector_id, drone_id)
-        VALUES (?, ?, 'REPAIR_PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+        VALUES (?, ?, 'COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
                 ?, ?, ?)
         """,
         inspectionId,

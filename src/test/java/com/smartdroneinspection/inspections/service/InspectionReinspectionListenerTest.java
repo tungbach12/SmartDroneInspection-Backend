@@ -90,7 +90,7 @@ class InspectionReinspectionListenerTest {
     assertThat(saved.getAssetId()).isEqualTo(assetId);
     assertThat(saved.getInspectorId()).isEqualTo(inspectorId);
     assertThat(saved.getDroneId()).isEqualTo(droneId);
-    assertThat(saved.getStatus()).isEqualTo(InspectionStatus.ASSIGNED);
+    assertThat(saved.getStatus()).isEqualTo(InspectionStatus.SCHEDULED);
     assertThat(saved.getInspectionType()).isEqualTo(InspectionType.RE_INSPECTION);
     assertThat(saved.getWorkOrderId()).isEqualTo(workOrderId);
     assertThat(saved.getSourceReportVersionId()).isEqualTo(event.sourceReportVersionId());

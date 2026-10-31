@@ -108,7 +108,7 @@ class InspectionReportSectionsApiIntegrationTest {
             get("/api/v1/inspections/{id}/workflow-state", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("REPORT_DRAFT"))
+        .andExpect(jsonPath("$.data.status").value("FIELD_COMPLETED"))
         .andExpect(jsonPath("$.data.findingsConfirmedAt").isNotEmpty())
         .andExpect(jsonPath("$.data.findingsSnapshotHash").isNotEmpty());
   }
