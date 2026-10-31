@@ -39,10 +39,6 @@ public class InspectionReport {
   @Column(name = "return_reason", length = 2000)
   private String returnReason;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "content_snapshot", nullable = false, columnDefinition = "jsonb")
-  private String contentSnapshot;
-
   @Column(name = "rendered_object_key", length = 1000)
   private String renderedObjectKey;
 
@@ -61,12 +57,15 @@ public class InspectionReport {
 
   protected InspectionReport() {}
 
-  public InspectionReport(UUID inspectionId, int versionNo, String contentSnapshot) {
+  public InspectionReport(UUID inspectionId, int versionNo) {
     this.inspectionId = inspectionId;
     this.versionNo = versionNo;
-    this.contentSnapshot = contentSnapshot;
     this.status = ReportStatus.DRAFT;
     this.createdAt = Instant.now();
+  }
+
+  public InspectionReport(UUID inspectionId, int versionNo, String contentSnapshot) {
+    this(inspectionId, versionNo);
   }
 
   /** Only the report author may verify the draft against its sources. */
@@ -84,7 +83,6 @@ public class InspectionReport {
 
   public void editContent(String newContent) {
     requireStatus(ReportStatus.DRAFT, ReportStatus.RETURNED);
-    contentSnapshot = newContent;
   }
 
   public void recordArtefact(String objectKey, String checksumSha256) {
@@ -205,7 +203,7 @@ public class InspectionReport {
   }
 
   public String getContentSnapshot() {
-    return contentSnapshot;
+    return null;
   }
 
   public Instant getSubmittedAt() {

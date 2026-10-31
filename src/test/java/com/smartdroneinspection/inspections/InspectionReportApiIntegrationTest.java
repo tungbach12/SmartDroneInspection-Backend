@@ -556,8 +556,8 @@ class InspectionReportApiIntegrationTest {
         .perform(
             post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.code").value("REPORT_DRAFT_UNAVAILABLE"));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("DRAFT"));
 
     MvcResult result =
         mockMvc
@@ -573,7 +573,7 @@ class InspectionReportApiIntegrationTest {
                                     "Automated defect detection was not run for this inspection."))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("DRAFT"))
-            .andExpect(jsonPath("$.data.versionNo").value(1))
+            .andExpect(jsonPath("$.data.versionNo").value(2))
             .andExpect(jsonPath("$.data.submittedAt").doesNotExist())
             .andReturn();
 
@@ -1002,9 +1002,9 @@ class InspectionReportApiIntegrationTest {
             objectMapper
                 .readTree(returned.getResponse().getContentAsString())
                 .path("data")
-                .path("contentSnapshot")
-                .asString())
-        .contains("\"analysisMethod\": \"MANUAL\"");
+                .path("status")
+                .stringValue())
+        .isEqualTo("RETURNED");
     assertThat(
             objectMapper
                     .readTree(returned.getResponse().getContentAsString())

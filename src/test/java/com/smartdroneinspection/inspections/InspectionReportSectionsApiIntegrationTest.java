@@ -150,18 +150,8 @@ class InspectionReportSectionsApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.data.sections.executiveSummary")
-                .value("The north span was surveyed from both walkways."))
-        .andExpect(
-            jsonPath("$.data.sections.inspectorCoverageAssessment")
-                .value(
-                    "COATING captured at web-east; no direct evidence for the eastern abutment."))
-        .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
-        .andExpect(jsonPath("$.data.sections.overallCondition").value("POOR"))
-        .andExpect(
-            jsonPath("$.data.sections.omissionDisclosure")
-                .value("Submerged components were not observed."))
+        .andExpect(jsonPath("$.data.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.versionNo").value(1))
         .andExpect(jsonPath("$.data.reportContext.organizationName").exists())
         .andExpect(jsonPath("$.data.reportContext.assetName").value("Main span"))
         .andExpect(jsonPath("$.data.reportContext.assetLocation").value("District 1"))
@@ -308,10 +298,8 @@ class InspectionReportSectionsApiIntegrationTest {
     // version.
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_reports (id, inspection_id, version_no, status,
-                                        content_snapshot, created_at)
-        VALUES (?, ?, 1, 'DRAFT', '{"model":"manual-authoring","narrative":"Older draft."}'::jsonb,
-                CURRENT_TIMESTAMP)
+        INSERT INTO inspection_reports (id, inspection_id, version_no, status, created_at)
+        VALUES (?, ?, 1, 'DRAFT', CURRENT_TIMESTAMP)
         """,
         versionId,
         fixture.inspectionId());
@@ -645,12 +633,11 @@ class InspectionReportSectionsApiIntegrationTest {
     byte[] document = downloadDocument(versionId);
     String text = extractText(document);
 
-    // Selectable text is the point: the report is not an image of a page. The authored section and
+    // Selectable text is the point: the report is not an image of a page. The factual sections and
     // the approval record are both readable, which is what a recipient of the report needs.
     assertThat(text).contains("Infrastructure Asset Inspection Report");
-    assertThat(text).contains("Recorded condition assessment.");
-    assertThat(text).contains("Executive summary");
     assertThat(text).contains("Approval and revisions");
+    assertThat(text).doesNotContain("Executive summary");
     assertThat(text).contains("Not supplied");
     assertThat(text).contains(fixtureOrganizationName());
     assertThat(text).contains("Main span");

@@ -89,8 +89,8 @@ public final class MaintenanceTestFixture {
     jdbcTemplate.update(
         """
         INSERT INTO inspection_reports (id, inspection_id, version_no, status,
-                                        content_snapshot, created_at, published_at)
-        VALUES (?, ?, 1, 'PUBLISHED', '{"summary":"source report"}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                        created_at, published_at)
+        VALUES (?, ?, 1, 'PUBLISHED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         versionId,
         inspectionId);

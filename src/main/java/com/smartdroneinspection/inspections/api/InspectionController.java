@@ -21,6 +21,7 @@ import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
+import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
@@ -482,6 +483,18 @@ public class InspectionController {
       @Valid @RequestBody ReportSectionsRequest request) {
     return ApiResponse.success(
         reportService.saveSections(actorId(jwt), inspectionId, versionId, request));
+  }
+
+  @GetMapping("/report/versions/{versionId}/ai-summary")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  public ApiResponse<ReportAiSummaryResponse> getAiSummary(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        reportService.getOrGenerateAiSummary(
+            actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
   }
 
   @GetMapping("/report/versions/{versionId}/preview")

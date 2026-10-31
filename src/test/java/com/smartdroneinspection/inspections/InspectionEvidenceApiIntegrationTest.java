@@ -320,8 +320,8 @@ class InspectionEvidenceApiIntegrationTest {
         .andExpect(status().isOk());
 
     jdbcTemplate.update(
-        "INSERT INTO inspection_reports (id, inspection_id, version_no, status, content_snapshot, created_at, submitted_at) "
-            + "VALUES (?, ?, 1, 'SUBMITTED', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        "INSERT INTO inspection_reports (id, inspection_id, version_no, status, created_at, submitted_at) "
+            + "VALUES (?, ?, 1, 'SUBMITTED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
         UUID.randomUUID(),
         fixture.inspectionId());
     mockMvc
