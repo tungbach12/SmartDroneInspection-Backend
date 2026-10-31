@@ -2,7 +2,6 @@ package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.AuthException;
-import com.smartdroneinspection.users.api.dto.request.CreateInspectorPartnerApplicationRequest;
 import com.smartdroneinspection.users.api.dto.request.ReviewInspectorPartnerApplicationRequest;
 import com.smartdroneinspection.users.api.dto.response.InspectorPartnerApplicationResponse;
 import com.smartdroneinspection.users.api.dto.response.InspectorPartnerApprovalResponse;
@@ -41,44 +40,6 @@ public class InspectorPartnerApplicationService {
     this.passwords = passwords;
     this.audit = audit;
     this.licenseDocuments = licenseDocuments;
-  }
-
-  @Transactional
-  public InspectorPartnerApplicationResponse submit(
-      CreateInspectorPartnerApplicationRequest request,
-      String ip,
-      String agent,
-      String correlationId) {
-    licenseDocuments.validateReference(request.pilotLicenseFileKey());
-    String email = User.normalizeEmail(request.email());
-    if (request.pilotLicenseExpiresAt().isBefore(LocalDate.now())) {
-      throw new AuthException(
-          HttpStatus.BAD_REQUEST, "PILOT_LICENSE_EXPIRED", "Pilot license is expired.");
-    }
-    if (users.findByNormalizedEmail(email).isPresent()
-        || applications.existsByNormalizedEmailAndStatus(email, "PENDING")) {
-      throw new AuthException(
-          HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already registered or pending.");
-    }
-    var application =
-        applications.saveAndFlush(
-            new InspectorPartnerApplication(
-                request.email(),
-                request.fullName(),
-                request.phone(),
-                request.pilotLicenseNumber(),
-                request.pilotLicenseClass(),
-                request.pilotLicenseExpiresAt(),
-                request.pilotLicenseFileKey()));
-    audit.record(
-        null,
-        application.getId(),
-        "INSPECTOR_PARTNER_APPLICATION_SUBMITTED",
-        "SUCCESS",
-        ip,
-        agent,
-        correlationId);
-    return InspectorPartnerApplicationResponse.from(application);
   }
 
   @Transactional(readOnly = true)

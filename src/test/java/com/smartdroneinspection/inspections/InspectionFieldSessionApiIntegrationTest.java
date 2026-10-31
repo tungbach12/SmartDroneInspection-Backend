@@ -146,7 +146,7 @@ class InspectionFieldSessionApiIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("POSTPONED"))
         .andExpect(jsonPath("$.data.postponementReason").value("High wind above 10 m/s"));
 
-    assertThat(statusOfInspection()).isEqualTo("READY_FOR_FLIGHT");
+    assertThat(statusOfInspection()).isEqualTo("SCHEDULED");
   }
 
   @Test
@@ -378,7 +378,7 @@ class InspectionFieldSessionApiIntegrationTest {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
         "INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_uploaded_at, status, planned_start_at, planned_end_at) "
-            + "VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'READY_FOR_FLIGHT', ?, ?)",
+            + "VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'SCHEDULED', ?, ?)",
         id,
         organizationId,
         assetId,

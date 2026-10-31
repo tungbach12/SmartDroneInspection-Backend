@@ -267,6 +267,7 @@
                 <exclude>com/smartdroneinspection/users/service/AdminUserService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/AuthService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/BootstrapAdministrator*</exclude>
+                <exclude>com/smartdroneinspection/users/service/GoogleOAuthService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/LoginFailureService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/SecurityAuditService*</exclude>
                 <exclude>com/smartdroneinspection/shared/**</exclude>

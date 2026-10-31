@@ -938,7 +938,8 @@ class InspectionReportApiIntegrationTest {
                 .getStatus())
         .isEqualTo(com.smartdroneinspection.inspections.domain.enums.FindingStatus.CONFIRMED);
     assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
-        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT);
+        .isEqualTo(
+            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
   }
 
   @Test
@@ -1084,7 +1085,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
 
     mockMvc
@@ -1096,7 +1097,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("findingIds", List.of(findingId.toString())))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId.toString()));
   }
 
@@ -1215,7 +1216,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("findingIds", java.util.List.of(findingId1.toString())))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId1.toString()));
 
     assertThat(
@@ -1473,7 +1474,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
 
     mockMvc
         .perform(
@@ -1484,7 +1485,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("findingIds", List.of(repairFindingId.toString())))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(repairFindingId.toString()));
   }
 
@@ -1512,13 +1513,13 @@ class InspectionReportApiIntegrationTest {
                 .path("id")
                 .stringValue());
 
-    // Drafting moves the inspection out of field work; publication would be impossible otherwise.
+    // Drafting occurs in FIELD_COMPLETED state; publication moves to COMPLETED.
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT status FROM inspections WHERE id = ?",
                 String.class,
                 fixture.inspectionId()))
-        .isEqualTo("REPORT_DRAFT");
+        .isEqualTo("FIELD_COMPLETED");
 
     mockMvc
         .perform(

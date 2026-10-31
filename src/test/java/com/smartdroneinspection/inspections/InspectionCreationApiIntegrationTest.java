@@ -163,7 +163,7 @@ class InspectionCreationApiIntegrationTest {
                 .content(body))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.status").value("ASSIGNED"))
+        .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
         .andExpect(jsonPath("$.data.assetId").value(assetId.toString()))
         .andExpect(jsonPath("$.data.inspectorId").value(inspectorId.toString()))
         .andExpect(jsonPath("$.data.droneId").value(droneId.toString()))
@@ -329,7 +329,7 @@ class InspectionCreationApiIntegrationTest {
         "VN-UAV-12345", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
     users.saveAndFlush(inspector);
 
-    // Inspector uploads flight permit -> transitions to READY_FOR_FLIGHT
+    // Inspector uploads flight permit -> status remains SCHEDULED with permit attached
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart(
@@ -338,7 +338,7 @@ class InspectionCreationApiIntegrationTest {
                 .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.status").value("READY_FOR_FLIGHT"))
+        .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
         .andExpect(jsonPath("$.data.flightPermitFileName").value("permit.pdf"));
   }
 
@@ -397,7 +397,7 @@ class InspectionCreationApiIntegrationTest {
     UUID inspectionId = occurrence.getInspectionId();
     var generatedInspection = inspections.findById(inspectionId).orElseThrow();
     org.assertj.core.api.Assertions.assertThat(generatedInspection.getStatus().name())
-        .isEqualTo("ASSIGNED");
+        .isEqualTo("SCHEDULED");
     org.assertj.core.api.Assertions.assertThat(generatedInspection.getRecurringScheduleId())
         .isEqualTo(scheduleId);
 
@@ -432,7 +432,7 @@ class InspectionCreationApiIntegrationTest {
                 .file(permitFile)
                 .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("READY_FOR_FLIGHT"))
+        .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
         .andExpect(jsonPath("$.data.inspectionItems[0]").value("Mố cầu M1"));
 
     org.assertj.core.api.Assertions.assertThat(

@@ -105,10 +105,7 @@ public class Inspection {
     }
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    this.status =
-        (inspectorId != null && droneId != null)
-            ? InspectionStatus.ASSIGNED
-            : InspectionStatus.DRAFT;
+    this.status = InspectionStatus.SCHEDULED;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
@@ -119,8 +116,8 @@ public class Inspection {
 
   /** Marks an inspection assigned by the MF2 partner registry path. */
   public void markPartnerAssignment() {
-    if (inspectorId == null || droneId == null || status != InspectionStatus.ASSIGNED) {
-      throw new IllegalStateException("A partner inspection must be fully assigned");
+    if (inspectorId == null || droneId == null || status != InspectionStatus.SCHEDULED) {
+      throw new IllegalStateException("A partner inspection must be fully assigned and scheduled");
     }
     partnerAssignment = true;
   }
@@ -139,9 +136,6 @@ public class Inspection {
     this.flightPermitFileKey = fileKey.trim();
     this.flightPermitFileName = fileName.trim();
     this.flightPermitUploadedAt = uploadedAt != null ? uploadedAt : Instant.now();
-    if (this.status == InspectionStatus.ASSIGNED) {
-      this.status = InspectionStatus.READY_FOR_FLIGHT;
-    }
     this.updatedAt = Instant.now();
   }
 
@@ -151,7 +145,7 @@ public class Inspection {
 
   /** MF3-06: the Inspector confirms the reviewed evidence/findings baseline before drafting. */
   public void confirmFindings(String snapshotHash) {
-    if (status != InspectionStatus.FIELD_COMPLETED && status != InspectionStatus.REPORT_DRAFT) {
+    if (status != InspectionStatus.FIELD_COMPLETED) {
       throw new IllegalStateException("Findings can only be confirmed after field completion");
     }
     if (snapshotHash == null || snapshotHash.isBlank()) {
@@ -159,23 +153,19 @@ public class Inspection {
     }
     findingsConfirmedAt = Instant.now();
     findingsSnapshotHash = snapshotHash;
-    status = InspectionStatus.REPORT_DRAFT;
     updatedAt = findingsConfirmedAt;
   }
 
   /** A pre-submission edit invalidates the reviewed set and returns the inspection to Findings. */
   public void reopenFindings() {
-    if (status != InspectionStatus.REPORT_DRAFT) return;
     findingsConfirmedAt = null;
     findingsSnapshotHash = null;
-    status = InspectionStatus.FIELD_COMPLETED;
     updatedAt = Instant.now();
   }
 
   public boolean hasCurrentFindingsConfirmation(String snapshotHash) {
-    return (status == InspectionStatus.REPORT_DRAFT
-            || status == InspectionStatus.REPORT_PUBLISHED
-            || status == InspectionStatus.REPAIR_PENDING
+    return (status == InspectionStatus.FIELD_COMPLETED
+            || status == InspectionStatus.UNDER_REVIEW
             || status == InspectionStatus.COMPLETED)
         && findingsConfirmedAt != null
         && findingsSnapshotHash != null
@@ -194,24 +184,19 @@ public class Inspection {
     return findingsConfirmedAt != null && findingsSnapshotHash != null;
   }
 
-  /**
-   * Legacy transition retained for migration compatibility with existing persisted report states.
-   */
+  /** Deprecated transition retained for backwards compatibility. */
+  @Deprecated
   public void beginReportDraft() {
-    requireStatus(InspectionStatus.FIELD_COMPLETED);
-    status = InspectionStatus.REPORT_DRAFT;
-    updatedAt = Instant.now();
+    // In 6-status model, report drafting occurs while status is FIELD_COMPLETED
   }
 
   /** MF3-08: report submitted and awaiting reviewer decision. */
   public void markUnderReview() {
     if (status != InspectionStatus.FIELD_COMPLETED
-        && status != InspectionStatus.REPORT_DRAFT
         && status != InspectionStatus.UNDER_REVIEW
-        && status != InspectionStatus.REPORT_PUBLISHED
         && status != InspectionStatus.COMPLETED) {
       throw new IllegalStateException(
-          "Inspection must be completed in the field, in report drafting, or published but is "
+          "Inspection must be completed in the field, under review, or already completed but is "
               + status);
     }
     status = InspectionStatus.UNDER_REVIEW;
@@ -223,36 +208,36 @@ public class Inspection {
     if (status != InspectionStatus.UNDER_REVIEW) {
       throw new IllegalStateException("Only an inspection under review can be returned to draft");
     }
-    status = InspectionStatus.REPORT_DRAFT;
+    status = InspectionStatus.FIELD_COMPLETED;
     updatedAt = Instant.now();
   }
 
-  /** MF3-11 publication. */
+  /** MF3-11 publication. Concludes the inspection into COMPLETED state. */
   public void markReportPublished() {
-    if (status != InspectionStatus.REPORT_DRAFT
+    if (status != InspectionStatus.FIELD_COMPLETED
         && status != InspectionStatus.UNDER_REVIEW
-        && status != InspectionStatus.REPORT_PUBLISHED
-        && status != InspectionStatus.REPAIR_PENDING
         && status != InspectionStatus.COMPLETED) {
       throw new IllegalStateException(
-          "Inspection must be in drafting, under review, active report, or closed status but is "
+          "Inspection must be completed in the field, under review, or already completed but is "
               + status);
     }
-    status = InspectionStatus.REPORT_PUBLISHED;
+    status = InspectionStatus.COMPLETED;
     updatedAt = Instant.now();
   }
 
-  /** MF3-12: confirmed repair-required findings were handed to MF4. */
+  /** Deprecated: maintenance handoff operates on findings without mutating inspection status. */
+  @Deprecated
   public void markRepairPending() {
-    requireStatus(InspectionStatus.REPORT_PUBLISHED);
-    status = InspectionStatus.REPAIR_PENDING;
-    updatedAt = Instant.now();
+    // No-op in 6-status model; inspection concludes at COMPLETED
   }
 
-  /** MF3-13: no corrective work was required within the observed scope. */
+  /** Concludes the inspection. */
   public void complete() {
-    if (status != InspectionStatus.REPORT_PUBLISHED && status != InspectionStatus.REPAIR_PENDING) {
-      throw new IllegalStateException("Only a published inspection can be completed");
+    if (status != InspectionStatus.UNDER_REVIEW
+        && status != InspectionStatus.FIELD_COMPLETED
+        && status != InspectionStatus.COMPLETED) {
+      throw new IllegalStateException(
+          "Only an under review or field completed inspection can be completed");
     }
     status = InspectionStatus.COMPLETED;
     updatedAt = Instant.now();
@@ -369,10 +354,9 @@ public class Inspection {
   }
 
   public void dispatch() {
-    if (status != InspectionStatus.DRAFT) {
-      throw new IllegalStateException("Only a draft inspection can be dispatched");
+    if (status != InspectionStatus.SCHEDULED) {
+      throw new IllegalStateException("Only a scheduled inspection can be dispatched");
     }
-    moveTo(InspectionStatus.ASSIGNED);
   }
 
   public void completeFieldSession() {

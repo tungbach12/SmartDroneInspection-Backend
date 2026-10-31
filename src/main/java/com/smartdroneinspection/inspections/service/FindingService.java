@@ -78,9 +78,7 @@ public class FindingService {
   public void confirmFindings(UUID actorId, UUID inspectionId, boolean noFindingsAcknowledged) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     if (inspection.getStatus()
-            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
-        && inspection.getStatus()
-            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "INSPECTION_STATE_CONFLICT",
@@ -125,7 +123,8 @@ public class FindingService {
     }
     String snapshot = findingsSnapshotHash(inspectionId);
     if (inspection.getStatus()
-        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
+        && inspection.hasFindingsConfirmation()) {
       if (inspection.hasCurrentFindingsConfirmation(snapshot)) return;
       rejectLockedFindingEdits(inspectionId);
       inspection.reopenFindings();
@@ -145,7 +144,8 @@ public class FindingService {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectFinalizedReportFindingEdits(inspectionId);
     if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
+        || !inspection.hasFindingsConfirmation()) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", "Findings are not currently confirmed");
     }
@@ -166,9 +166,7 @@ public class FindingService {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
     if (inspection.getStatus()
-            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
-        && inspection.getStatus()
-            != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",
@@ -547,7 +545,8 @@ public class FindingService {
 
   private void syncFindingsConfirmationAfterEdit(Inspection inspection) {
     if (inspection.getStatus()
-        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT) {
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
+        && inspection.hasFindingsConfirmation()) {
       inspection.reopenFindings();
       inspections.saveAndFlush(inspection);
     }
@@ -578,13 +577,8 @@ public class FindingService {
   private void rejectLockedFindingEdits(UUID inspectionId) {
     Inspection inspection = inspections.findById(inspectionId).orElse(null);
     if (inspection != null
-        && (inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus
-                    .REPORT_PUBLISHED
-            || inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPAIR_PENDING
-            || inspection.getStatus()
-                == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED)) {
+        && inspection.getStatus()
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",

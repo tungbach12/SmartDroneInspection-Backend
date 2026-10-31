@@ -302,7 +302,7 @@ class InspectionEvidenceApiIntegrationTest {
   void evidenceLocationCanBeEditedInReportDraftButNotWhileSubmitted() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
     jdbcTemplate.update(
-        "UPDATE inspections SET status = 'REPORT_DRAFT' WHERE id = ?", fixture.inspectionId());
+        "UPDATE inspections SET status = 'FIELD_COMPLETED' WHERE id = ?", fixture.inspectionId());
     jdbcTemplate.update(
         "UPDATE inspections SET findings_confirmed_at = CURRENT_TIMESTAMP, findings_snapshot_hash = ? WHERE id = ?",
         "confirmed-hash",

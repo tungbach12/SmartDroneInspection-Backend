@@ -532,25 +532,25 @@ public class ReportService {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "FINDINGS_REQUIRED", "Provide the selected findings list");
     }
-    if (inspection.getStatus() == InspectionStatus.COMPLETED) {
+    if (inspection.getStatus() != InspectionStatus.COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Only a published and completed report can forward findings to maintenance");
+    }
+    Long handoffCount =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_events WHERE aggregate_id = ? AND action = 'MF3_MAINTENANCE_HANDOFF'",
+            Long.class,
+            inspectionId);
+    if (handoffCount != null && handoffCount > 0) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "INSPECTION_ALREADY_COMPLETED",
           "A completed inspection cannot change its maintenance decision");
     }
-    if (inspection.getStatus() != InspectionStatus.REPORT_PUBLISHED
-        && inspection.getStatus() != InspectionStatus.REPAIR_PENDING) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "INSPECTION_STATE_CONFLICT",
-          "Only a published report can forward findings to maintenance");
-    }
     InspectionStatus beforeStatus = inspection.getStatus();
     if (selectedFindingIds.isEmpty()) {
-      if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED) {
-        inspection.complete();
-        inspections.saveAndFlush(inspection);
-      }
       recordMaintenanceHandoff(inspection, reviewer.id(), version.getId(), beforeStatus, List.of());
       events.publishEvent(
           new ReportPublishedEvent(
@@ -595,10 +595,6 @@ public class ReportService {
       selected.add(finding);
     }
     findings.saveAllAndFlush(selected);
-    if (inspection.getStatus() == InspectionStatus.REPORT_PUBLISHED) {
-      inspection.markRepairPending();
-      inspections.saveAndFlush(inspection);
-    }
     List<UUID> forwardedFindingIds = selected.stream().map(Finding::getId).toList();
     recordMaintenanceHandoff(
         inspection, reviewer.id(), version.getId(), beforeStatus, forwardedFindingIds);
