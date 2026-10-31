@@ -52,6 +52,32 @@ public class AdminUserService {
       String ipAddress,
       String userAgent,
       String correlationId) {
+    if (actorId != null) {
+      users
+          .findDetailedById(actorId)
+          .ifPresent(
+              actor -> {
+                if (actor.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.MANAGER)
+                    && !actor
+                        .roleValues()
+                        .contains(com.smartdroneinspection.shared.auth.Roles.ADMIN)) {
+                  if (request.actorZone()
+                          != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER
+                      || request.organizationId() != null
+                      || request.roles() == null
+                      || request.roles().size() != 1
+                      || !request
+                          .roles()
+                          .contains(
+                              com.smartdroneinspection.users.domain.enums.UserRole.INSPECTOR)) {
+                    throw new AuthException(
+                        HttpStatus.FORBIDDEN,
+                        "FORBIDDEN",
+                        "A Platform Manager may only create partner Inspector accounts.");
+                  }
+                }
+              });
+    }
     rolePolicy.validate(request.actorZone(), request.organizationId(), request.roles());
     String normalizedEmail = User.normalizeEmail(request.email());
     if (users.findByNormalizedEmail(normalizedEmail).isPresent()) {

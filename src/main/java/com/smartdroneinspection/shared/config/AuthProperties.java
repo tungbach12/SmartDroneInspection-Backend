@@ -17,6 +17,7 @@ public class AuthProperties {
   private boolean secureCookies = true;
   private List<String> allowedOrigins = new ArrayList<>(List.of("http://localhost:3000"));
   private Bootstrap bootstrap = new Bootstrap();
+  private Google google = new Google();
 
   public String getIssuer() {
     return issuer;
@@ -88,6 +89,27 @@ public class AuthProperties {
 
   public void setBootstrap(Bootstrap bootstrap) {
     this.bootstrap = bootstrap;
+  }
+
+  public Google getGoogle() {
+    return google;
+  }
+
+  public void setGoogle(Google google) {
+    this.google = google;
+  }
+
+  public static class Google {
+
+    private String clientId = "";
+
+    public String getClientId() {
+      return clientId;
+    }
+
+    public void setClientId(String clientId) {
+      this.clientId = clientId;
+    }
   }
 
   public static class Bootstrap {

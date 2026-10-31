@@ -1,6 +1,17 @@
 spring:
   application:
     name: smartdroneinspection
+  mail:
+    host: ${AUTH_OTP_SMTP_HOST:}
+    port: ${AUTH_OTP_SMTP_PORT:587}
+    username: ${AUTH_OTP_SMTP_USERNAME:}
+    password: ${AUTH_OTP_SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${AUTH_OTP_SMTP_AUTH:true}
+          starttls:
+            enable: ${AUTH_OTP_SMTP_STARTTLS:true}
   servlet:
     multipart:
       max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
@@ -114,6 +125,16 @@ app:
     refresh-token-pepper: ${AUTH_REFRESH_TOKEN_PEPPER:}
     secure-cookies: ${AUTH_SECURE_COOKIES:false}
     allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:3000}
+    otp:
+      smtp-host: ${AUTH_OTP_SMTP_HOST:}
+      enabled: ${AUTH_OTP_ENABLED:true}
+      challenge-pepper: ${AUTH_OTP_CHALLENGE_PEPPER:}
+      email-from: ${AUTH_OTP_EMAIL_FROM:}
+      sms-account-sid: ${TWILIO_ACCOUNT_SID:}
+      sms-auth-token: ${TWILIO_AUTH_TOKEN:}
+      sms-from-number: ${TWILIO_FROM_NUMBER:}
+    google:
+      client-id: ${AUTH_GOOGLE_CLIENT_ID:690876253853-mqm43muduqudn1jbsu292sprrcec100a.apps.googleusercontent.com}
     bootstrap:
       enabled: ${AUTH_BOOTSTRAP_ENABLED:false}
       email: ${AUTH_BOOTSTRAP_EMAIL:}

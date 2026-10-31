@@ -9,6 +9,8 @@ import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeReque
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.PasswordChangeRequest;
+import com.smartdroneinspection.users.api.dto.request.SendLoginOtpRequest;
+import com.smartdroneinspection.users.api.dto.request.VerifyLoginOtpRequest;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
@@ -40,19 +42,49 @@ public class BrowserAuthController {
   private final AuthService auth;
   private final OrganizationRegistrationService registration;
   private final RefreshCookieService cookies;
+  private final com.smartdroneinspection.users.service.RegistrationOtpService registrationOtp;
 
   public BrowserAuthController(
       AuthService auth,
       OrganizationRegistrationService registration,
-      RefreshCookieService cookies) {
+      RefreshCookieService cookies,
+      com.smartdroneinspection.users.service.RegistrationOtpService registrationOtp) {
     this.auth = auth;
     this.registration = registration;
     this.cookies = cookies;
+    this.registrationOtp = registrationOtp;
   }
 
   @GetMapping("/csrf")
   public ApiResponse<CsrfToken> csrf(CsrfToken token) {
     return ApiResponse.success(token);
+  }
+
+  @PostMapping("/registration/otp/send")
+  public ResponseEntity<
+          ApiResponse<
+              com.smartdroneinspection.users.service.RegistrationOtpService
+                  .RegistrationOtpSendResponse>>
+      sendRegistrationOtp(
+          @Valid @RequestBody
+              com.smartdroneinspection.users.api.dto.request.SendRegistrationOtpRequest body,
+          HttpServletRequest request) {
+    com.smartdroneinspection.users.domain.enums.LoginOtpChannel channel;
+    try {
+      channel = com.smartdroneinspection.users.domain.enums.LoginOtpChannel.valueOf(body.channel());
+    } catch (Exception ex) {
+      channel = com.smartdroneinspection.users.domain.enums.LoginOtpChannel.EMAIL;
+    }
+    String destination =
+        channel == com.smartdroneinspection.users.domain.enums.LoginOtpChannel.SMS
+                && body.phoneNumber() != null
+                && !body.phoneNumber().isBlank()
+            ? body.phoneNumber()
+            : body.email();
+    var response = registrationOtp.send(destination, channel, clientIp(request));
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(ApiResponse.success(response));
   }
 
   @PostMapping("/register")
@@ -76,6 +108,46 @@ public class BrowserAuthController {
         auth.login(
             body.email(),
             body.password(),
+            ClientType.WEB,
+            clientIp(request),
+            userAgent(request),
+            correlationId(request));
+    return webResponse(result);
+  }
+
+  @PostMapping("/google")
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> loginWithGoogle(
+      @Valid @RequestBody com.smartdroneinspection.users.api.dto.request.GoogleLoginRequest body,
+      HttpServletRequest request) {
+    var result =
+        auth.loginWithGoogle(
+            body.idToken(),
+            ClientType.WEB,
+            clientIp(request),
+            userAgent(request),
+            correlationId(request));
+    return webResponse(result);
+  }
+
+  @PostMapping("/otp/send")
+  public ResponseEntity<ApiResponse<Void>> sendLoginOtp(
+      @Valid @RequestBody SendLoginOtpRequest body, HttpServletRequest request) {
+    auth.sendLoginOtp(
+        body.challengeToken(),
+        body.channel(),
+        clientIp(request),
+        userAgent(request),
+        correlationId(request));
+    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.success(null));
+  }
+
+  @PostMapping("/otp/verify")
+  public ResponseEntity<ApiResponse<AuthFlowResponse>> verifyLoginOtp(
+      @Valid @RequestBody VerifyLoginOtpRequest body, HttpServletRequest request) {
+    var result =
+        auth.verifyLoginOtp(
+            body.challengeToken(),
+            body.code(),
             ClientType.WEB,
             clientIp(request),
             userAgent(request),
@@ -169,7 +241,9 @@ public class BrowserAuthController {
             response.accessToken(),
             null,
             response.accessTokenExpiresInSeconds(),
-            response.user());
+            response.user(),
+            response.challengeToken(),
+            response.availableOtpChannels());
     var builder = ResponseEntity.ok().cacheControl(CacheControl.noStore());
     if (result.refreshToken() != null) {
       builder.header(HttpHeaders.SET_COOKIE, cookies.create(result.refreshToken()).toString());

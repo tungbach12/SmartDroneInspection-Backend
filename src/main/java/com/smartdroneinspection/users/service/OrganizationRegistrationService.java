@@ -33,6 +33,7 @@ public class OrganizationRegistrationService {
   private final PasswordEncoder passwords;
   private final PasswordPolicy passwordPolicy;
   private final SecurityAuditService audit;
+  private final RegistrationOtpService registrationOtp;
 
   public OrganizationRegistrationService(
       OrganizationRepository organizations,
@@ -42,7 +43,8 @@ public class OrganizationRegistrationService {
       CustomerAirspacePolicy airspace,
       PasswordEncoder passwords,
       PasswordPolicy passwordPolicy,
-      SecurityAuditService audit) {
+      SecurityAuditService audit,
+      RegistrationOtpService registrationOtp) {
     this.organizations = organizations;
     this.users = users;
     this.prospectiveRegistrations = prospectiveRegistrations;
@@ -51,6 +53,7 @@ public class OrganizationRegistrationService {
     this.passwords = passwords;
     this.passwordPolicy = passwordPolicy;
     this.audit = audit;
+    this.registrationOtp = registrationOtp;
   }
 
   @Transactional
@@ -101,6 +104,18 @@ public class OrganizationRegistrationService {
           "Organization code is already in use.");
     }
     passwordPolicy.validate(request.password(), email, fullName);
+    if (registrationOtp.isReady()) {
+      if (request.otpChallengeToken() == null
+          || request.otpChallengeToken().isBlank()
+          || request.otpCode() == null
+          || request.otpCode().isBlank()) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "OTP_REQUIRED",
+            "Mã xác thực OTP là bắt buộc để đăng ký tài khoản.");
+      }
+      registrationOtp.verify(request.otpChallengeToken(), request.otpCode(), email);
+    }
     if (!requiresAirspaceReview) {
       validateFirstAsset(request.firstAsset());
     }
@@ -162,10 +177,13 @@ public class OrganizationRegistrationService {
         new User(
             email,
             fullName,
+            request.phoneNumber() != null ? request.phoneNumber().trim() : null,
+            null,
             passwords.encode(request.password()),
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organization.getId());
+    customer.setOtpVerified(true);
     customer.addRole(UserRole.CUSTOMER);
     customer = users.saveAndFlush(customer);
 

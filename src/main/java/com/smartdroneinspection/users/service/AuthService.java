@@ -32,6 +32,8 @@ public class AuthService {
   private final String tokenPepper;
   private final LoginFailureService loginFailures;
   private final SecurityAuditService audit;
+  private final LoginOtpService loginOtp;
+  private final com.smartdroneinspection.users.security.GoogleTokenVerifier googleVerifier;
   private final String dummyPasswordHash;
 
   public AuthService(
@@ -43,7 +45,9 @@ public class AuthService {
       AuthProperties properties,
       AuthSecrets secrets,
       LoginFailureService loginFailures,
-      SecurityAuditService audit) {
+      SecurityAuditService audit,
+      LoginOtpService loginOtp,
+      com.smartdroneinspection.users.security.GoogleTokenVerifier googleVerifier) {
     this.users = users;
     this.sessions = sessions;
     this.passwords = passwords;
@@ -53,6 +57,8 @@ public class AuthService {
     this.tokenPepper = secrets.refreshTokenPepper();
     this.loginFailures = loginFailures;
     this.audit = audit;
+    this.loginOtp = loginOtp;
+    this.googleVerifier = googleVerifier;
     this.dummyPasswordHash = passwords.encode(AuthCrypto.randomToken());
   }
 
@@ -97,6 +103,29 @@ public class AuthService {
           null);
     }
 
+    if (clientType == ClientType.WEB
+        && user.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.INSPECTOR)
+        && !user.isOtpVerified()) {
+      if (!loginOtp.isReady()) {
+        throw new AuthException(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "OTP_NOT_CONFIGURED",
+            "Inspector web verification is not configured.");
+      }
+      if (passwords.upgradeEncoding(user.getPasswordHash())) {
+        user.setPasswordHash(passwords.encode(password));
+      }
+      audit.record(
+          user.getId(),
+          user.getId(),
+          "AUTH_LOGIN_OTP_REQUIRED",
+          "SUCCESS",
+          ipAddress,
+          userAgent,
+          correlationId);
+      return new AuthResult(loginOtp.createChallenge(user, ipAddress), null);
+    }
+
     if (passwords.upgradeEncoding(user.getPasswordHash())) {
       user.setPasswordHash(passwords.encode(password));
     }
@@ -104,6 +133,80 @@ public class AuthService {
     AuthResult result = createSession(user, clientType);
     audit.record(
         user.getId(), user.getId(), "AUTH_LOGIN", "SUCCESS", ipAddress, userAgent, correlationId);
+    return result;
+  }
+
+  @Transactional(noRollbackFor = AuthException.class)
+  public AuthResult loginWithGoogle(
+      String idToken,
+      ClientType clientType,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    com.smartdroneinspection.users.security.GoogleTokenVerifier.GoogleUser googleUser =
+        googleVerifier.verify(idToken);
+    String email = User.normalizeEmail(googleUser.email());
+    User user = users.findByNormalizedEmail(email).orElse(null);
+
+    if (user == null) {
+      audit.record(
+          null,
+          null,
+          "AUTH_GOOGLE_LOGIN",
+          "DENIED_UNREGISTERED",
+          ipAddress,
+          userAgent,
+          correlationId);
+      throw new AuthException(
+          HttpStatus.FORBIDDEN,
+          "GOOGLE_ACCOUNT_NOT_PROVISIONED",
+          "Tài khoản Google ("
+              + googleUser.email()
+              + ") chưa được Manager cấp quyền truy cập hệ thống. Vui lòng liên hệ quản lý.");
+    }
+
+    if (!user.active()) {
+      audit.record(
+          null,
+          user.getId(),
+          "AUTH_GOOGLE_LOGIN",
+          "DENIED_INACTIVE",
+          ipAddress,
+          userAgent,
+          correlationId);
+      throw AuthException.invalidCredentials();
+    }
+
+    if (clientType == ClientType.WEB
+        && user.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.INSPECTOR)
+        && !user.isOtpVerified()) {
+      if (!loginOtp.isReady()) {
+        throw new AuthException(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "OTP_NOT_CONFIGURED",
+            "Inspector web verification is not configured.");
+      }
+      audit.record(
+          user.getId(),
+          user.getId(),
+          "AUTH_GOOGLE_LOGIN_OTP_REQUIRED",
+          "SUCCESS",
+          ipAddress,
+          userAgent,
+          correlationId);
+      return new AuthResult(loginOtp.createChallenge(user, ipAddress), null);
+    }
+
+    user.recordSuccessfulLogin(ipAddress);
+    AuthResult result = createSession(user, clientType);
+    audit.record(
+        user.getId(),
+        user.getId(),
+        "AUTH_GOOGLE_LOGIN",
+        "SUCCESS",
+        ipAddress,
+        userAgent,
+        correlationId);
     return result;
   }
 
@@ -127,9 +230,36 @@ public class AuthService {
       throw AuthException.invalidCredentials();
     }
     passwordPolicy.validate(newPassword, user.getEmail(), user.getFullName());
+    boolean inspectorWebLogin =
+        clientType == ClientType.WEB
+            && user.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.INSPECTOR)
+            && !user.isOtpVerified();
+    if (inspectorWebLogin && !loginOtp.isReady()) {
+      throw new AuthException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "OTP_NOT_CONFIGURED",
+          "Inspector web verification is not configured.");
+    }
+    if (inspectorWebLogin && !loginOtp.hasDeliveryChannel(user)) {
+      throw new AuthException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "OTP_CHANNEL_UNAVAILABLE",
+          "No sign-in verification method is configured for this account.");
+    }
     user.setPasswordHash(passwords.encode(newPassword));
     user.incrementAuthVersion();
     revokeAllSessions(user.getId(), "initial-password-change");
+    if (inspectorWebLogin) {
+      audit.record(
+          user.getId(),
+          user.getId(),
+          "AUTH_INITIAL_PASSWORD_CHANGED_OTP_REQUIRED",
+          "SUCCESS",
+          ipAddress,
+          userAgent,
+          correlationId);
+      return new AuthResult(loginOtp.createChallenge(user, ipAddress), null);
+    }
     AuthResult result = createSession(user, clientType);
     audit.record(
         user.getId(),
@@ -140,6 +270,49 @@ public class AuthService {
         userAgent,
         correlationId);
     return result;
+  }
+
+  @Transactional(noRollbackFor = AuthException.class)
+  public AuthResult verifyLoginOtp(
+      String challengeToken,
+      String code,
+      ClientType clientType,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    if (clientType != ClientType.WEB) {
+      throw AuthException.invalidCredentials();
+    }
+    User user = loginOtp.verify(challengeToken, code, ipAddress);
+    user.setOtpVerified(true);
+    user.recordSuccessfulLogin(ipAddress);
+    AuthResult result = createSession(user, clientType);
+    audit.record(
+        user.getId(),
+        user.getId(),
+        "AUTH_LOGIN_OTP_VERIFIED",
+        "SUCCESS",
+        ipAddress,
+        userAgent,
+        correlationId);
+    return result;
+  }
+
+  @Transactional(noRollbackFor = AuthException.class)
+  public void sendLoginOtp(
+      String challengeToken,
+      String channel,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    if (channel == null) throw AuthException.invalidCredentials();
+    com.smartdroneinspection.users.domain.enums.LoginOtpChannel otpChannel;
+    try {
+      otpChannel = com.smartdroneinspection.users.domain.enums.LoginOtpChannel.valueOf(channel);
+    } catch (IllegalArgumentException exception) {
+      throw AuthException.invalidCredentials();
+    }
+    loginOtp.send(challengeToken, otpChannel, ipAddress);
   }
 
   @Transactional(noRollbackFor = AuthException.class)

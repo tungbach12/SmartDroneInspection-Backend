@@ -93,8 +93,8 @@ public class DroneRegistrationApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public EvidenceContent openEvidence(UUID adminId, UUID applicationId, String type) {
-    requireAdmin(adminId);
+  public EvidenceContent openEvidence(UUID reviewerId, UUID applicationId, String type) {
+    requireReviewer(reviewerId);
     DroneRegistrationApplication application =
         applications.findById(applicationId).orElseThrow(this::notFound);
     String fileKey =
@@ -145,8 +145,8 @@ public class DroneRegistrationApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public List<DroneRegistrationApplicationResponse> pending(UUID adminId) {
-    requireAdmin(adminId);
+  public List<DroneRegistrationApplicationResponse> pending(UUID reviewerId) {
+    requireReviewer(reviewerId);
     return applications.findAllByStatusOrderByCreatedAtAsc("PENDING").stream()
         .map(DroneRegistrationApplicationResponse::from)
         .toList();
@@ -154,8 +154,8 @@ public class DroneRegistrationApplicationService {
 
   @Transactional
   public DroneRegistrationApplicationResponse approve(
-      UUID adminId, UUID applicationId, String ip, String agent, String correlationId) {
-    requireAdmin(adminId);
+      UUID reviewerId, UUID applicationId, String ip, String agent, String correlationId) {
+    requireReviewer(reviewerId);
     DroneRegistrationApplication application = requirePending(applicationId);
     requireInspector(application.getInspectorUserId());
     if (!application.getRegistrationExpiresAt().isAfter(Instant.now())) {
@@ -178,10 +178,10 @@ public class DroneRegistrationApplicationService {
                 application.getRegistrationNumber(),
                 application.getRegistrationFileKey(),
                 application.getRegistrationExpiresAt()));
-    application.approve(adminId, drone.getId());
+    application.approve(reviewerId, drone.getId());
     applications.saveAndFlush(application);
     userAccess.recordSecurityAudit(
-        adminId,
+        reviewerId,
         application.getId(),
         "DRONE_REGISTRATION_APPROVED",
         "SUCCESS",
@@ -193,18 +193,18 @@ public class DroneRegistrationApplicationService {
 
   @Transactional
   public DroneRegistrationApplicationResponse reject(
-      UUID adminId,
+      UUID reviewerId,
       UUID applicationId,
       ReviewDroneRegistrationApplicationRequest request,
       String ip,
       String agent,
       String correlationId) {
-    requireAdmin(adminId);
+    requireReviewer(reviewerId);
     DroneRegistrationApplication application = requirePending(applicationId);
-    application.reject(adminId, request.reviewNote().trim());
+    application.reject(reviewerId, request.reviewNote().trim());
     applications.saveAndFlush(application);
     userAccess.recordSecurityAudit(
-        adminId,
+        reviewerId,
         application.getId(),
         "DRONE_REGISTRATION_REJECTED",
         "SUCCESS",
@@ -240,11 +240,12 @@ public class DroneRegistrationApplicationService {
                     "An active Inspector partner is required."));
   }
 
-  private void requireAdmin(UUID id) {
-    UserAccess.ActiveUser admin = userAccess.findActiveUser(id).orElseThrow(() -> notFound());
-    if (!"PLATFORM".equals(admin.actorZone()) || !admin.hasRole(Roles.ADMIN)) {
+  private void requireReviewer(UUID id) {
+    UserAccess.ActiveUser user = userAccess.findActiveUser(id).orElseThrow(() -> notFound());
+    if (!"PLATFORM".equals(user.actorZone())
+        || (!user.hasRole(Roles.ADMIN) && !user.hasRole(Roles.MANAGER))) {
       throw new AuthException(
-          HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "Platform Admin access is required.");
+          HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
     }
   }
 }

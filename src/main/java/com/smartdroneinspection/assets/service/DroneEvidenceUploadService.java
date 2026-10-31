@@ -77,12 +77,12 @@ public class DroneEvidenceUploadService {
     }
   }
 
-  public EvidenceContent open(UUID adminId, String objectKey) {
+  public EvidenceContent open(UUID reviewerId, String objectKey) {
     Matcher matcher = objectKey == null ? null : OBJECT_KEY.matcher(objectKey);
     if (matcher == null || !matcher.matches()) {
       throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Evidence document not found");
     }
-    requireAdmin(adminId);
+    requireReviewer(reviewerId);
     String extension = matcher.group(3).substring(matcher.group(3).lastIndexOf('.') + 1);
     try {
       return new EvidenceContent(
@@ -124,19 +124,20 @@ public class DroneEvidenceUploadService {
     }
   }
 
-  private void requireAdmin(UUID adminId) {
+  private void requireReviewer(UUID reviewerId) {
     UserAccess.ActiveUser admin =
         userAccess
-            .findActiveUser(adminId)
+            .findActiveUser(reviewerId)
             .orElseThrow(
                 () ->
                     new AuthException(
                         HttpStatus.FORBIDDEN,
-                        "ADMIN_REQUIRED",
-                        "Platform Admin access is required."));
-    if (!"PLATFORM".equals(admin.actorZone()) || !admin.hasRole("ADMIN")) {
+                        "REVIEWER_REQUIRED",
+                        "Platform Reviewer access is required."));
+    if (!"PLATFORM".equals(admin.actorZone())
+        || (!admin.hasRole("ADMIN") && !admin.hasRole("MANAGER"))) {
       throw new AuthException(
-          HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "Platform Admin access is required.");
+          HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
     }
   }
 

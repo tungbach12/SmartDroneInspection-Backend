@@ -70,10 +70,11 @@ class FullDatabaseSchemaMigrationTest {
             "service_request_quotes",
             "service_request_occurrences",
             "inspection_finance_settings",
+            "login_otp_challenges",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(43);
+    assertThat(expected).hasSize(44);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -108,12 +109,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToV13AndCreatesPayOSSupport() {
+  void appliesAllMigrationsUpToV15AndCreatesPayOSOtpAndReinspectionSupport() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(13);
-    assertThat(versions.getLast()).isEqualTo("13");
+    assertThat(versions).hasSize(15);
+    assertThat(versions.getLast()).isEqualTo("15");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -135,5 +136,27 @@ class FullDatabaseSchemaMigrationTest {
             """,
             String.class);
     assertThat(columns).contains("payos_order_code", "payos_payment_link_id", "payment_method");
+
+    List<String> otpColumns =
+        jdbcTemplate.queryForList(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'login_otp_challenges'
+            """,
+            String.class);
+    assertThat(otpColumns)
+        .contains(
+            "challenge_hash",
+            "user_id",
+            "client_ip",
+            "code_hash",
+            "code_expires_at",
+            "expires_at",
+            "consumed_at",
+            "failed_attempts",
+            "send_count",
+            "row_version");
   }
 }

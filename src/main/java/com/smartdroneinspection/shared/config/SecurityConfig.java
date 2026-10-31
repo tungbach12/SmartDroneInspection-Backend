@@ -68,8 +68,12 @@ public class SecurityConfig {
                         "/api/v1/inspector-partner-applications/license-document",
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
+                        "/api/v1/auth/registration/otp/send",
                         "/api/v1/auth/password/setup",
-                        "/api/v1/auth/refresh")
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/otp/send",
+                        "/api/v1/auth/otp/verify",
+                        "/api/v1/auth/google")
                     .permitAll()
                     .anyRequest()
                     .authenticated())

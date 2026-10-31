@@ -67,6 +67,9 @@ public class User {
   @Column(name = "vision_fallback_enabled", nullable = false)
   private boolean visionFallbackEnabled = true;
 
+  @Column(name = "otp_verified", nullable = false)
+  private boolean otpVerified = false;
+
   @Column(name = "last_login_at")
   private Instant lastLoginAt;
 
@@ -325,6 +328,15 @@ public class User {
     this.organizationId = organizationId;
     replaceRoles(roles);
     incrementAuthVersion();
+  }
+
+  public boolean isOtpVerified() {
+    return otpVerified;
+  }
+
+  public void setOtpVerified(boolean otpVerified) {
+    this.otpVerified = otpVerified;
+    this.updatedAt = Instant.now();
   }
 
   public void incrementAuthVersion() {
