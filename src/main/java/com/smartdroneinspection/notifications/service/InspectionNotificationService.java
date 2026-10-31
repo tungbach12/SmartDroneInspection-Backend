@@ -152,6 +152,45 @@ public class InspectionNotificationService {
     saveWithDeduplication(notification, deduplicationKey);
   }
 
+  @Transactional
+  public void recordFieldSessionAborted(
+      UUID inspectionId, UUID organizationId, UUID inspectorId, String abortReason) {
+    if (inspectionId == null || organizationId == null) {
+      log.warn("Skipping field session aborted notification: required identifiers missing");
+      return;
+    }
+
+    String deduplicationKey =
+        "SESSION_ABORTED:" + inspectionId + ":" + Instant.now().getEpochSecond();
+    String title = "Phiên bay bị dừng";
+    String body =
+        "Phiên bay của đợt kiểm tra bị dừng do: "
+            + (abortReason != null && !abortReason.isBlank() ? abortReason : "sự cố thực địa")
+            + ". Vui lòng điều phối hoặc dời lịch.";
+    String targetPath = "/operations/inspections/" + inspectionId;
+
+    java.util.List<UserAccess.WorkforceMember> members =
+        userAccess.listWorkforceMembers(organizationId);
+    for (UserAccess.WorkforceMember m : members) {
+      if (m.roles().contains("MANAGER")
+          || m.roles().contains("CUSTOMER")
+          || m.roles().contains("ADMIN")) {
+        String key = deduplicationKey + ":" + m.id();
+        Notification notification =
+            new Notification(
+                m.id(),
+                organizationId,
+                "FIELD_SESSION_ABORTED",
+                NotificationChannel.IN_APP,
+                title,
+                body,
+                targetPath,
+                key);
+        saveWithDeduplication(notification, key);
+      }
+    }
+  }
+
   private void saveWithDeduplication(Notification notification, String deduplicationKey) {
     try {
       notificationRepository.saveAndFlush(notification);

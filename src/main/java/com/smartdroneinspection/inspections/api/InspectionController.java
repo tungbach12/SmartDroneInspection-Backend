@@ -150,6 +150,48 @@ public class InspectionController {
             actorId(jwt), inspectionId, request.fileKey(), request.fileName(), null, null));
   }
 
+  @PutMapping("/schedule")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      reschedule(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @Valid @RequestBody
+              com.smartdroneinspection.inspections.api.dto.request.RescheduleInspectionRequest
+                  request) {
+    return ApiResponse.success(
+        creationService.reschedule(
+            actorId(jwt), inspectionId, request.plannedStartAt(), request.plannedEndAt()));
+  }
+
+  @PutMapping("/assignment")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      reassign(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @Valid @RequestBody
+              com.smartdroneinspection.inspections.api.dto.request.ReassignInspectionRequest
+                  request) {
+    return ApiResponse.success(
+        creationService.reassign(
+            actorId(jwt), inspectionId, request.inspectorId(), request.droneId()));
+  }
+
+  @PostMapping("/cancellation")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      cancel(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @RequestBody(required = false)
+              com.smartdroneinspection.inspections.api.dto.request.CancelInspectionRequest
+                  request) {
+    return ApiResponse.success(
+        creationService.cancel(
+            actorId(jwt), inspectionId, request != null ? request.reason() : null));
+  }
+
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<EvidenceResponse> uploadEvidence(
