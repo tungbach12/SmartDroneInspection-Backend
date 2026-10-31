@@ -3,6 +3,7 @@ package com.smartdroneinspection.infrastructure.ai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.DraftContext;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.EvidenceSummary;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.FindingSummary;
@@ -219,6 +220,66 @@ class ReportDraftClientTest {
     assertThatThrownBy(() -> emptyClient.draftSections(context()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("empty or blank response");
+  }
+
+  @Test
+  void summarizesReportSuccessfullyInEnglishAndVietnamese() throws Exception {
+    String aiSummaryReply =
+        """
+        {"summary":"Drone inspection completed with 1 finding.",\
+        "keyHighlights":["Surface crack observed"],\
+        "recommendedActions":"Monitor during next cycle",\
+        "overallRisk":"HIGH"}""";
+    AtomicReference<String> requestBody = new AtomicReference<>();
+    startServer(
+        exchange -> {
+          requestBody.set(
+              new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+          respond(exchange, 200, chatCompletionBody(aiSummaryReply));
+        });
+
+    ReportDraftPort.AiSummary summary = client("key", "model").summarizeReport(context());
+
+    assertThat(summary.summary()).isEqualTo("Drone inspection completed with 1 finding.");
+    assertThat(summary.keyHighlights()).containsExactly("Surface crack observed");
+    assertThat(summary.recommendedActions()).isEqualTo("Monitor during next cycle");
+    assertThat(summary.overallRisk()).isEqualTo("HIGH");
+
+    DraftContext viContext =
+        new DraftContext(
+            context().inspection(),
+            context().findings(),
+            context().evidence(),
+            context().candidates(),
+            context().fieldSessions(),
+            Locale.forLanguageTag("vi"));
+    client("key", "model").summarizeReport(viContext);
+    assertThat(requestBody.get()).contains("Output all text fields in Vietnamese.");
+  }
+
+  @Test
+  void summarizeReportThrowsIOExceptionOnHttpErrorOrMalformedJson() throws Exception {
+    startServer(exchange -> respond(exchange, 500, "Internal Server Error"));
+    ReportDraftClient client = client("key", "model");
+
+    assertThatThrownBy(() -> client.summarizeReport(context()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("AI report summary failed");
+
+    server.stop(0);
+    startServer(exchange -> respond(exchange, 200, "{\"choices\":[]}"));
+    ReportDraftClient emptyClient = client("key", "model");
+
+    assertThatThrownBy(() -> emptyClient.summarizeReport(context()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("empty response");
+
+    server.stop(0);
+    startServer(exchange -> respond(exchange, 200, chatCompletionBody("not a json")));
+    ReportDraftClient invalidJsonClient = client("key", "model");
+
+    assertThatThrownBy(() -> invalidJsonClient.summarizeReport(context()))
+        .isInstanceOf(IOException.class);
   }
 
   @Test
