@@ -227,13 +227,22 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
+    if (latestExisting != null
+        && (latestExisting.getStatus() == ReportStatus.SUBMITTED
+            || latestExisting.getStatus() == ReportStatus.APPROVED)) {
+      return toResponse(latestExisting, inspection.getInspectorId());
+    }
+
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
     InspectionReport version = new InspectionReport(inspectionId, versionNo);
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+    InspectionReport saved = versions.saveAndFlush(version);
+    inspection.markUnderReview();
+    inspections.saveAndFlush(inspection);
+    return toResponse(saved, inspection.getInspectorId());
   }
 
   /**
@@ -253,13 +262,22 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
+    if (latestExisting != null
+        && (latestExisting.getStatus() == ReportStatus.SUBMITTED
+            || latestExisting.getStatus() == ReportStatus.APPROVED)) {
+      return toResponse(latestExisting, inspection.getInspectorId());
+    }
+
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
     InspectionReport version = new InspectionReport(inspectionId, versionNo);
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+    InspectionReport saved = versions.saveAndFlush(version);
+    inspection.markUnderReview();
+    inspections.saveAndFlush(inspection);
+    return toResponse(saved, inspection.getInspectorId());
   }
 
   private List<Finding> inspectorFindings(UUID inspectionId) {

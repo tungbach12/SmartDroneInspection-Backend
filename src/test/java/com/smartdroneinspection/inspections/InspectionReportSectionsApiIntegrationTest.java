@@ -150,7 +150,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
         .andExpect(jsonPath("$.data.versionNo").value(1))
         .andExpect(jsonPath("$.data.reportContext.organizationName").exists())
         .andExpect(jsonPath("$.data.reportContext.assetName").value("Main span"))
@@ -192,8 +192,8 @@ class InspectionReportSectionsApiIntegrationTest {
                 .content(objectMapper.writeValueAsString(Map.of("executiveSummary", "Revised."))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.versionNo").value(1))
-        .andExpect(jsonPath("$.data.status").value("DRAFT"))
-        .andExpect(jsonPath("$.data.submittedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+        .andExpect(jsonPath("$.data.submittedAt").isNotEmpty())
         .andExpect(jsonPath("$.data.llmModel").doesNotExist());
   }
 
@@ -298,8 +298,8 @@ class InspectionReportSectionsApiIntegrationTest {
     // version.
     jdbcTemplate.update(
         """
-        INSERT INTO inspection_reports (id, inspection_id, version_no, status, created_at)
-        VALUES (?, ?, 1, 'DRAFT', CURRENT_TIMESTAMP)
+        INSERT INTO inspection_reports (id, inspection_id, version_no, status, created_at, submitted_at)
+        VALUES (?, ?, 1, 'SUBMITTED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         versionId,
         fixture.inspectionId());

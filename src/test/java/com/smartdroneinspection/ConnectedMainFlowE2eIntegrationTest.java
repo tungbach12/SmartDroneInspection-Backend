@@ -499,16 +499,6 @@ class ConnectedMainFlowE2eIntegrationTest {
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/report/versions/{vId}/verify",
-                    inspectionId,
-                    reportVersionId)
-                .with(principal(inspectorId, "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("AUTHOR_VERIFIED"));
-
-    mockMvc
-        .perform(
-            post(
                     "/api/v1/inspections/{id}/report/versions/{vId}/submit",
                     inspectionId,
                     reportVersionId)

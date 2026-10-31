@@ -16,7 +16,7 @@ class ReportHtmlTemplateLocalizationTest {
         new ReportRenderPort.RenderContext(
             "SDI-RPT-TEST-V1",
             1,
-            "DRAFT",
+            "SUBMITTED",
             "Inspect the bridge",
             "Bridge 01",
             "Organization",

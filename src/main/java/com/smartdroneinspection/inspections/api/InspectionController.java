@@ -505,6 +505,19 @@ public class InspectionController {
         reportAcceptancePort.get().createPayOSPaymentLink(actorId(jwt), inspectionId));
   }
 
+  @GetMapping("/report/payment-status")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<InspectionReportAcceptancePort.PaymentStatusDetails> getReportPaymentStatus(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      return ApiResponse.success(
+          new InspectionReportAcceptancePort.PaymentStatusDetails(
+              false, false, "NOT_APPLICABLE", null, null, null));
+    }
+    return ApiResponse.success(
+        reportAcceptancePort.get().getPaymentStatus(actorId(jwt), inspectionId));
+  }
+
   @PostMapping("/report/corrective-handoff")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
