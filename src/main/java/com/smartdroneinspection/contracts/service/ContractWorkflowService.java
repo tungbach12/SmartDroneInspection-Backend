@@ -527,11 +527,9 @@ public class ContractWorkflowService
 
     // Check per-occurrence signed contract gate
     if (!occurrence.hasSignedContract()) {
-      // Legacy compatibility: ONE_TIME occurrence index 1 may inherit from request if uploaded
-      // there
-      if (request.getRequestType() == RequestType.ONE_TIME
-          && occurrence.getOccurrenceIndex() == 1
-          && request.getContractObjectKey() != null) {
+      // Per Report 3 Decision D2: A parent signed contract covers occurrences without requiring
+      // re-upload
+      if (request.getContractObjectKey() != null) {
         occurrence.recordSignedContract(
             request.getContractObjectKey(),
             request.getContractFileName(),
@@ -1175,8 +1173,15 @@ public class ContractWorkflowService
             .map(ServiceRequestOccurrenceResponse::from)
             .toList(),
         messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
-            .map(ServiceRequestMessageResponse::from)
+            .map(this::toMessageResponse)
             .toList());
+  }
+
+  private ServiceRequestMessageResponse toMessageResponse(ServiceRequestMessage message) {
+    Optional<UserAccess.ActiveUser> author = users.findActiveUser(message.getAuthorUserId());
+    String authorName = author.map(UserAccess.ActiveUser::fullName).orElse(null);
+    String authorRole = author.map(u -> u.roles().stream().findFirst().orElse(null)).orElse(null);
+    return ServiceRequestMessageResponse.from(message, authorName, authorRole);
   }
 
   private ServiceRequest requireRequestForActor(UserAccess.ActiveUser actor, UUID requestId) {

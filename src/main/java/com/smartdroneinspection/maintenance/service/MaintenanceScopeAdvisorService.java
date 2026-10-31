@@ -3,9 +3,14 @@ package com.smartdroneinspection.maintenance.service;
 import com.smartdroneinspection.inspections.spi.RepairCandidate;
 import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
 import com.smartdroneinspection.maintenance.api.dto.request.SuggestScopeRequest;
+import com.smartdroneinspection.maintenance.api.dto.response.SuggestEstimateResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse.SuggestedTaskDto;
+import com.smartdroneinspection.maintenance.domain.MaintenanceTask;
+import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
 import com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk;
+import com.smartdroneinspection.maintenance.domain.enums.CostLineKind;
+import com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository;
 import com.smartdroneinspection.maintenance.repository.RepairKnowledgeChunkRepository;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.KnowledgeChunkSummary;
@@ -14,6 +19,7 @@ import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.Sugg
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +46,26 @@ public class MaintenanceScopeAdvisorService {
   private final RepairCandidateAccess repairCandidateAccess;
   private final DeterministicScopeFallback deterministicFallback;
   private final UserAccess userAccess;
+  private final WorkOrderService workOrderService;
+  private final MaintenanceTaskRepository tasks;
+
+  @Autowired
+  public MaintenanceScopeAdvisorService(
+      Optional<MaintenanceScopeAdvisorPort> advisorPort,
+      RepairKnowledgeChunkRepository knowledgeRepository,
+      RepairCandidateAccess repairCandidateAccess,
+      DeterministicScopeFallback deterministicFallback,
+      UserAccess userAccess,
+      WorkOrderService workOrderService,
+      MaintenanceTaskRepository tasks) {
+    this.advisorPort = advisorPort;
+    this.knowledgeRepository = knowledgeRepository;
+    this.repairCandidateAccess = repairCandidateAccess;
+    this.deterministicFallback = deterministicFallback;
+    this.userAccess = userAccess;
+    this.workOrderService = workOrderService;
+    this.tasks = tasks;
+  }
 
   public MaintenanceScopeAdvisorService(
       Optional<MaintenanceScopeAdvisorPort> advisorPort,
@@ -46,11 +73,14 @@ public class MaintenanceScopeAdvisorService {
       RepairCandidateAccess repairCandidateAccess,
       DeterministicScopeFallback deterministicFallback,
       UserAccess userAccess) {
-    this.advisorPort = advisorPort;
-    this.knowledgeRepository = knowledgeRepository;
-    this.repairCandidateAccess = repairCandidateAccess;
-    this.deterministicFallback = deterministicFallback;
-    this.userAccess = userAccess;
+    this(
+        advisorPort,
+        knowledgeRepository,
+        repairCandidateAccess,
+        deterministicFallback,
+        userAccess,
+        null,
+        null);
   }
 
   @Transactional(readOnly = true)
@@ -167,6 +197,215 @@ public class MaintenanceScopeAdvisorService {
       return "WATER_LEAKAGE";
     }
     return "STRUCTURAL_DEFORMATION";
+  }
+
+  @Transactional(readOnly = true)
+  public SuggestEstimateResponse suggestEstimate(UUID actorId, UUID workOrderId) {
+    if (workOrderService == null || tasks == null) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNCONFIGURED", "WorkOrderService is required");
+    }
+    MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    List<MaintenanceTask> taskList = tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId());
+
+    String category = mapCategory(order.getCorrectiveScope(), order.getAcceptanceCriteria());
+    List<SuggestEstimateResponse.SuggestedLineDto> lines = new ArrayList<>();
+
+    UUID firstTaskId = taskList.isEmpty() ? null : taskList.get(0).getId();
+    UUID secondTaskId = taskList.size() > 1 ? taskList.get(1).getId() : firstTaskId;
+    UUID thirdTaskId = taskList.size() > 2 ? taskList.get(2).getId() : secondTaskId;
+
+    switch (category) {
+      case "CONCRETE_CRACK" -> {
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.LABOR,
+                "Nhân công kỹ thuật bơm keo epoxy (Thợ bậc 4/7 theo Định mức BXD)",
+                BigDecimal.valueOf(8),
+                "giờ",
+                BigDecimal.valueOf(150000),
+                BigDecimal.valueOf(1200000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.MATERIAL,
+                "Keo trám khe nứt epoxy Sikadur-731 (Bộ 2 thành phần)",
+                BigDecimal.valueOf(2),
+                "bộ",
+                BigDecimal.valueOf(480000),
+                BigDecimal.valueOf(960000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                secondTaskId,
+                CostLineKind.MATERIAL,
+                "Keo epoxy độ nhớt thấp Sikadur-752 bơm chèn vết nứt",
+                BigDecimal.valueOf(3),
+                "lít",
+                BigDecimal.valueOf(650000),
+                BigDecimal.valueOf(1950000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                thirdTaskId,
+                CostLineKind.EQUIPMENT,
+                "Máy bơm keo áp lực thấp & Bát bơm chuyên dụng",
+                BigDecimal.valueOf(1),
+                "ca",
+                BigDecimal.valueOf(500000),
+                BigDecimal.valueOf(500000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                null,
+                CostLineKind.CONTINGENCY,
+                "Dự phòng hao hụt vật tư kỹ thuật công trường (5%)",
+                BigDecimal.valueOf(1),
+                "gói",
+                BigDecimal.valueOf(230000),
+                BigDecimal.valueOf(230000)));
+      }
+      case "SPALLING" -> {
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.LABOR,
+                "Nhân công đục tẩy bê tông rỗ mục và tẩy gỉ cốt thép",
+                BigDecimal.valueOf(12),
+                "giờ",
+                BigDecimal.valueOf(120000),
+                BigDecimal.valueOf(1440000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.MATERIAL,
+                "Chất quét bảo vệ cốt thép gốc kẽm Sika Monotop-910S",
+                BigDecimal.valueOf(1),
+                "bộ",
+                BigDecimal.valueOf(550000),
+                BigDecimal.valueOf(550000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                secondTaskId,
+                CostLineKind.MATERIAL,
+                "Vữa sửa chữa polyme cường độ cao Sika Monotop R",
+                BigDecimal.valueOf(4),
+                "bao",
+                BigDecimal.valueOf(380000),
+                BigDecimal.valueOf(1520000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                thirdTaskId,
+                CostLineKind.EQUIPMENT,
+                "Máy cắt bê tông & Máy phun nước áp lực cao",
+                BigDecimal.valueOf(2),
+                "ca",
+                BigDecimal.valueOf(400000),
+                BigDecimal.valueOf(800000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                null,
+                CostLineKind.CONTINGENCY,
+                "Dự phòng hao hụt và xử lý phát sinh (5%)",
+                BigDecimal.valueOf(1),
+                "gói",
+                BigDecimal.valueOf(215000),
+                BigDecimal.valueOf(215000)));
+      }
+      case "STEEL_CORROSION" -> {
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.LABOR,
+                "Nhân công phun hạt mài Sa 2.5 và sơn bảo vệ kết cấu",
+                BigDecimal.valueOf(16),
+                "giờ",
+                BigDecimal.valueOf(130000),
+                BigDecimal.valueOf(2080000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.MATERIAL,
+                "Hạt mài xỉ đồng làm sạch bề mặt đạt chuẩn ISO 8501-1",
+                BigDecimal.valueOf(80),
+                "kg",
+                BigDecimal.valueOf(18000),
+                BigDecimal.valueOf(1440000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                secondTaskId,
+                CostLineKind.MATERIAL,
+                "Hệ sơn epoxy-polyurethane 3 lớp chuẩn ISO 12944 (DFT >= 225um)",
+                BigDecimal.valueOf(1),
+                "bộ",
+                BigDecimal.valueOf(2800000),
+                BigDecimal.valueOf(2800000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                thirdTaskId,
+                CostLineKind.EQUIPMENT,
+                "Máy nén khí & Cối phun hạt mài công nghiệp",
+                BigDecimal.valueOf(2),
+                "ca",
+                BigDecimal.valueOf(600000),
+                BigDecimal.valueOf(1200000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                null,
+                CostLineKind.CONTINGENCY,
+                "Dự phòng vật tư che chắn môi trường",
+                BigDecimal.valueOf(1),
+                "gói",
+                BigDecimal.valueOf(375000),
+                BigDecimal.valueOf(375000)));
+      }
+      default -> {
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                firstTaskId,
+                CostLineKind.LABOR,
+                "Nhân công thi công sửa chữa chuyên dụng",
+                BigDecimal.valueOf(10),
+                "giờ",
+                BigDecimal.valueOf(120000),
+                BigDecimal.valueOf(1200000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                secondTaskId,
+                CostLineKind.MATERIAL,
+                "Vật liệu kỹ thuật phục hồi kết cấu công trình",
+                BigDecimal.valueOf(1),
+                "gói",
+                BigDecimal.valueOf(2000000),
+                BigDecimal.valueOf(2000000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                thirdTaskId,
+                CostLineKind.EQUIPMENT,
+                "Trang thiết bị và dụng cụ thi công an toàn",
+                BigDecimal.valueOf(1),
+                "ca",
+                BigDecimal.valueOf(500000),
+                BigDecimal.valueOf(500000)));
+        lines.add(
+            new SuggestEstimateResponse.SuggestedLineDto(
+                null,
+                CostLineKind.CONTINGENCY,
+                "Dự phòng phát sinh công trường (5%)",
+                BigDecimal.valueOf(1),
+                "gói",
+                BigDecimal.valueOf(185000),
+                BigDecimal.valueOf(185000)));
+      }
+    }
+
+    BigDecimal total =
+        lines.stream()
+            .map(SuggestEstimateResponse.SuggestedLineDto::amount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    String assumptions =
+        String.format(
+            "Định mức dự toán chi phí kỹ thuật lập theo tiêu chuẩn %s và định mức xây dựng hiện hành",
+            category);
+    return new SuggestEstimateResponse("VND", assumptions, total, lines);
   }
 
   private String extractKeyword(String defectLabel, String description) {

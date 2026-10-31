@@ -81,14 +81,30 @@ public class AssetService {
   @Transactional(readOnly = true)
   public AssetPageResponse list(UUID actorId, int page, int pageSize, String search) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = requireOrganization(actor);
     int safePage = Math.max(page, 1);
     int safePageSize = Math.min(Math.max(pageSize, 1), 100);
     PageRequest pageRequest = PageRequest.of(safePage - 1, safePageSize, Sort.by("name"));
-    Page<Asset> result =
-        search == null || search.isBlank()
-            ? assets.findByOrganizationId(organizationId, pageRequest)
-            : assets.searchByOrganizationId(organizationId, search.trim(), pageRequest);
+
+    Page<Asset> result;
+    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
+      if (actor.organizationId() != null) {
+        result =
+            search == null || search.isBlank()
+                ? assets.findByOrganizationId(actor.organizationId(), pageRequest)
+                : assets.searchByOrganizationId(actor.organizationId(), search.trim(), pageRequest);
+      } else {
+        result =
+            search == null || search.isBlank()
+                ? assets.findAll(pageRequest)
+                : assets.searchAll(search.trim(), pageRequest);
+      }
+    } else {
+      UUID organizationId = requireOrganization(actor);
+      result =
+          search == null || search.isBlank()
+              ? assets.findByOrganizationId(organizationId, pageRequest)
+              : assets.searchByOrganizationId(organizationId, search.trim(), pageRequest);
+    }
     return new AssetPageResponse(
         result.getContent().stream().map(this::toResponse).toList(),
         safePage,

@@ -43,4 +43,10 @@ public interface AssetRepository extends JpaRepository<Asset, UUID> {
       @Param("organizationId") UUID organizationId,
       @Param("search") String search,
       Pageable pageable);
+
+  @Query(
+      "select a from Asset a where "
+          + "lower(a.code) like lower(concat('%', :search, '%')) "
+          + "or lower(a.name) like lower(concat('%', :search, '%'))")
+  Page<Asset> searchAll(@Param("search") String search, Pageable pageable);
 }
