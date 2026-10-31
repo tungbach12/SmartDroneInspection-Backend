@@ -189,7 +189,7 @@ class InspectionListApiIntegrationTest {
     mockMvc
         .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.items[0].reportStatus").value("DRAFT"))
+        .andExpect(jsonPath("$.data.items[0].reportStatus").value("SUBMITTED"))
         .andExpect(jsonPath("$.data.items[0].reportVersionNo").value(1))
         .andExpect(jsonPath("$.data.items[0].reportId").isNotEmpty());
   }

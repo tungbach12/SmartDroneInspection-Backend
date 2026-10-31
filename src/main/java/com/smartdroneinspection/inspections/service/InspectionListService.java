@@ -67,7 +67,7 @@ public class InspectionListService {
     Scope scope = requireScope(actorId);
     Page<Inspection> result = scope.query(pageRequest(page, pageSize));
     logCrossTenantRead(scope, actorId, result, "inspection");
-    return toPage(result, page, pageSize);
+    return toPage(result, page, pageSize, scope);
   }
 
   /**
@@ -79,10 +79,11 @@ public class InspectionListService {
     Scope scope = requireScope(actorId);
     Page<Inspection> result = scope.queryWithReport(pageRequest(page, pageSize));
     logCrossTenantRead(scope, actorId, result, "report");
-    return toPage(result, page, pageSize);
+    return toPage(result, page, pageSize, scope);
   }
 
-  private InspectionPageResponse toPage(Page<Inspection> result, int page, int pageSize) {
+  private InspectionPageResponse toPage(
+      Page<Inspection> result, int page, int pageSize, Scope scope) {
     int safePage = Math.max(page, 1);
     int safePageSize = clampPageSize(pageSize);
     Map<UUID, InspectionReport> reportByInspection = reportsFor(result.getContent());

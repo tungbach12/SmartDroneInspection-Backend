@@ -749,6 +749,19 @@ public class ContractWorkflowService
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
+    if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
+      PayOSGateway.PayOSPaymentLink existing =
+          occurrence.getPayosOrderCode() != null
+              ? payOSGateway.getPaymentLink(occurrence.getPayosOrderCode())
+              : null;
+      return new PayOSPaymentLinkResponse(
+          occurrence.getPayosOrderCode() != null ? occurrence.getPayosOrderCode() : 0,
+          existing != null ? existing.checkoutUrl() : null,
+          existing != null ? existing.qrCode() : null,
+          occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : 0,
+          occurrence.getPayosPaymentLinkId());
+    }
+
     if (occurrence.getReportAcceptedAt() == null
         || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE) {
       throw failure(
@@ -771,15 +784,24 @@ public class ContractWorkflowService
           "Occurrence total price must be greater than zero");
     }
 
+    long amount = occurrence.getTotalPrice().longValue();
     long orderCode;
     if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
       orderCode = occurrence.getPayosOrderCode();
+      PayOSGateway.PayOSPaymentLink existing = payOSGateway.getPaymentLink(orderCode);
+      if (existing != null && existing.checkoutUrl() != null && !existing.checkoutUrl().isBlank()) {
+        return new PayOSPaymentLinkResponse(
+            existing.orderCode(),
+            existing.checkoutUrl(),
+            existing.qrCode(),
+            amount,
+            existing.paymentLinkId());
+      }
     } else {
       Long nextCode = occurrences.getNextPayosOrderCode();
       orderCode = (nextCode != null) ? nextCode : System.currentTimeMillis();
     }
 
-    long amount = occurrence.getTotalPrice().longValue();
     String description = "SDI OCC " + occurrence.getOccurrenceIndex();
     if (description.length() > 25) {
       description = description.substring(0, 25);
@@ -901,6 +923,36 @@ public class ContractWorkflowService
         createPayOSPaymentLink(actorId, request.getId(), occurrence.getId());
     return new InspectionReportAcceptancePort.PayOSCheckoutDetails(
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public InspectionReportAcceptancePort.PaymentStatusDetails getPaymentStatus(
+      UUID actorId, UUID inspectionId) {
+    if (inspectionId == null) {
+      return new InspectionReportAcceptancePort.PaymentStatusDetails(
+          false, false, "NOT_APPLICABLE", null, null, null);
+    }
+    ServiceRequestOccurrence occurrence = occurrences.findByInspectionId(inspectionId).orElse(null);
+    if (occurrence == null) {
+      return new InspectionReportAcceptancePort.PaymentStatusDetails(
+          false, false, "NOT_APPLICABLE", null, null, null);
+    }
+    boolean accepted = occurrence.getReportAcceptedAt() != null;
+    boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
+    String status = occurrence.getPaymentStatus().name();
+    Long orderCode = occurrence.getPayosOrderCode();
+    Long amount =
+        occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : null;
+    String checkoutUrl = null;
+    if (orderCode != null && orderCode > 0) {
+      PayOSGateway.PayOSPaymentLink link = payOSGateway.getPaymentLink(orderCode);
+      if (link != null) {
+        checkoutUrl = link.checkoutUrl();
+      }
+    }
+    return new InspectionReportAcceptancePort.PaymentStatusDetails(
+        accepted, isPaid, status, orderCode, amount, checkoutUrl);
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
