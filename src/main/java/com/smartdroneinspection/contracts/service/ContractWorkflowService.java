@@ -773,8 +773,7 @@ public class ContractWorkflowService
     if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
       orderCode = occurrence.getPayosOrderCode();
     } else {
-      Long nextCode = occurrences.getNextPayosOrderCode();
-      orderCode = (nextCode != null) ? nextCode : System.currentTimeMillis();
+      orderCode = (System.currentTimeMillis() % 9000000000L) + 1000000000L;
     }
 
     long amount = occurrence.getTotalPrice().longValue();
@@ -790,8 +789,24 @@ public class ContractWorkflowService
       cancelUrl = payOSGateway.resolveCancelUrl(occurrence.getInspectionId().toString());
     }
 
-    PayOSGateway.PayOSPaymentLink link =
-        payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+    PayOSGateway.PayOSPaymentLink link;
+    try {
+      link = payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+    } catch (IllegalStateException ex) {
+      if (ex.getMessage() != null && ex.getMessage().contains("[231]")) {
+        orderCode =
+            (System.currentTimeMillis() % 9000000000L)
+                + 2000000000L
+                + (long) (Math.random() * 10000);
+        if (occurrence.getInspectionId() != null) {
+          returnUrl =
+              payOSGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode);
+        }
+        link = payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+      } else {
+        throw ex;
+      }
+    }
 
     occurrence.assignPayOSOrder(orderCode, link.paymentLinkId());
     occurrences.saveAndFlush(occurrence);

@@ -226,6 +226,9 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
     }
+    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.DRAFT) {
+      return toResponse(latestExisting, inspection.getInspectorId());
+    }
 
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
@@ -251,6 +254,9 @@ public class ReportService {
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
+    }
+    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.DRAFT) {
+      return toResponse(latestExisting, inspection.getInspectorId());
     }
 
     List<Evidence> confirmedEvidence =
@@ -339,10 +345,14 @@ public class ReportService {
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
     try {
+      if (version.getStatus() == ReportStatus.DRAFT
+          || version.getStatus() == ReportStatus.RETURNED) {
+        version.verifyAsAuthor(actorId, inspection.getInspectorId());
+      }
       version.submit();
       inspection.markUnderReview();
       inspections.saveAndFlush(inspection);
-    } catch (IllegalStateException ex) {
+    } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
     return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
