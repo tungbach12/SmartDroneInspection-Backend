@@ -88,8 +88,9 @@ public class ContractWorkflowController {
   }
 
   /**
-   * @deprecated Legacy parent request contract upload: attaches to request and occurrence 1 for ONE_TIME.
-   * Prefer occurrence-level {@code /{requestId}/occurrences/{occurrenceId}/signed-contract}.
+   * @deprecated Legacy parent request contract upload: attaches to request and occurrence 1 for
+   *     ONE_TIME. Prefer occurrence-level {@code
+   *     /{requestId}/occurrences/{occurrenceId}/signed-contract}.
    */
   @Deprecated(since = "v1.1", forRemoval = false)
   @PostMapping("/{requestId}/signed-contract")
@@ -101,8 +102,8 @@ public class ContractWorkflowController {
   }
 
   /**
-   * @deprecated Legacy parent request contract download.
-   * Prefer occurrence-level {@code /{requestId}/occurrences/{occurrenceId}/contract-document}.
+   * @deprecated Legacy parent request contract download. Prefer occurrence-level {@code
+   *     /{requestId}/occurrences/{occurrenceId}/contract-document}.
    */
   @Deprecated(since = "v1.1", forRemoval = false)
   @GetMapping("/{requestId}/signed-contract")
