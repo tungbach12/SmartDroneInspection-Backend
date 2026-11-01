@@ -2,5 +2,6 @@ package com.smartdroneinspection.users.api.dto.response;
 
 public enum AuthStep {
   AUTHENTICATED,
-  PASSWORD_CHANGE_REQUIRED
+  PASSWORD_CHANGE_REQUIRED,
+  OTP_REQUIRED
 }

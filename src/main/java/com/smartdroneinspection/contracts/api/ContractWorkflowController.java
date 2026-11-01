@@ -87,6 +87,12 @@ public class ContractWorkflowController {
     return ApiResponse.success(workflow.acceptQuote(actorId(jwt), requestId, versionNo));
   }
 
+  /**
+   * @deprecated Legacy parent request contract upload: attaches to request and occurrence 1 for
+   *     ONE_TIME. Prefer occurrence-level {@code
+   *     /{requestId}/occurrences/{occurrenceId}/signed-contract}.
+   */
+  @Deprecated(since = "v1.1", forRemoval = false)
   @PostMapping("/{requestId}/signed-contract")
   public ApiResponse<ServiceRequestResponse> uploadSignedContract(
       @AuthenticationPrincipal Jwt jwt,
@@ -95,18 +101,26 @@ public class ContractWorkflowController {
     return ApiResponse.success(workflow.uploadSignedContract(actorId(jwt), requestId, file));
   }
 
+  /**
+   * @deprecated Legacy parent request contract download. Prefer occurrence-level {@code
+   *     /{requestId}/occurrences/{occurrenceId}/contract-document}.
+   */
+  @Deprecated(since = "v1.1", forRemoval = false)
   @GetMapping("/{requestId}/signed-contract")
   public ResponseEntity<InputStreamResource> downloadSignedContract(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
     ContractWorkflowService.SignedContractFile file =
         workflow.openSignedContract(actorId(jwt), requestId);
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(file.contentType()))
-        .contentLength(file.sizeBytes())
-        .header(
-            HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(file.fileName()).build().toString())
-        .body(new InputStreamResource(file.stream()));
+    ResponseEntity.BodyBuilder builder =
+        ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType(file.contentType()))
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(file.fileName()).build().toString());
+    if (file.sizeBytes() != null) {
+      builder.contentLength(file.sizeBytes());
+    }
+    return builder.body(new InputStreamResource(file.stream()));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/signed-contract")

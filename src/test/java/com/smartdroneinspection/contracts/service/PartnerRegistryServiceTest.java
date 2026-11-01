@@ -2,21 +2,16 @@ package com.smartdroneinspection.contracts.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRepository;
-import com.smartdroneinspection.contracts.domain.PartnerDrone;
-import com.smartdroneinspection.contracts.domain.PartnerInspector;
-import com.smartdroneinspection.contracts.repository.ContractPartnerDroneRepository;
-import com.smartdroneinspection.contracts.repository.ContractPartnerInspectorRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -26,8 +21,6 @@ import org.junit.jupiter.api.Test;
 
 class PartnerRegistryServiceTest {
 
-  private ContractPartnerInspectorRepository inspectors;
-  private ContractPartnerDroneRepository partnerDrones;
   private DroneRepository drones;
   private UserAccess users;
   private PartnerRegistryService service;
@@ -37,11 +30,9 @@ class PartnerRegistryServiceTest {
 
   @BeforeEach
   void setUp() {
-    inspectors = mock(ContractPartnerInspectorRepository.class);
-    partnerDrones = mock(ContractPartnerDroneRepository.class);
     drones = mock(DroneRepository.class);
     users = mock(UserAccess.class);
-    service = new PartnerRegistryService(inspectors, partnerDrones, drones, users);
+    service = new PartnerRegistryService(drones, users);
 
     when(users.findActiveUser(managerId))
         .thenReturn(
@@ -50,34 +41,22 @@ class PartnerRegistryServiceTest {
   }
 
   @Test
-  void ignoresLegacyOrganizationDroneRowsWithoutPartnerInspectorOwner() {
-    PartnerDrone legacyPartnerDrone = new PartnerDrone(droneId, null, managerId);
-    Drone drone = mock(Drone.class);
-    when(partnerDrones.findActive()).thenReturn(List.of(legacyPartnerDrone));
-    when(drones.findById(droneId)).thenReturn(Optional.of(drone));
+  void listsOnlyEligibleInspectorOwnedDronesFromMf1() {
+    Drone orgDrone = mock(Drone.class);
+    when(orgDrone.getInspectorOwnerId()).thenReturn(null);
+    when(drones.findActivePartnerDrones()).thenReturn(List.of(orgDrone));
 
     assertThat(service.listDrones(managerId)).isEmpty();
 
-    Drone partnerDrone = mock(Drone.class);
     UUID inspectorId = UUID.randomUUID();
-    PartnerDrone registered = new PartnerDrone(droneId, inspectorId, managerId);
-    when(partnerDrones.findActive()).thenReturn(List.of(registered));
-    when(drones.findById(droneId)).thenReturn(Optional.of(partnerDrone));
+    Drone partnerDrone = mock(Drone.class);
+    when(partnerDrone.getId()).thenReturn(droneId);
     when(partnerDrone.getInspectorOwnerId()).thenReturn(inspectorId);
     when(partnerDrone.isEligibleForAssignment()).thenReturn(true);
     when(partnerDrone.getSerialNumber()).thenReturn("SDI-001");
     when(partnerDrone.getModel()).thenReturn("M350");
-
     when(partnerDrone.getRegistrationExpiresAt()).thenReturn(null);
-    assertThat(service.listDrones(managerId))
-        .singleElement()
-        .satisfies(option -> assertThat(option.inspectorOwnerId()).isEqualTo(inspectorId));
-  }
-
-  @Test
-  void listsOnlyActivePartnerInspectorsWithValidLicenses() {
-    UUID inspectorId = UUID.randomUUID();
-    when(inspectors.findActive()).thenReturn(List.of(new PartnerInspector(inspectorId, managerId)));
+    when(drones.findActivePartnerDrones()).thenReturn(List.of(partnerDrone));
     when(users.findActiveUser(inspectorId))
         .thenReturn(
             Optional.of(
@@ -90,8 +69,30 @@ class PartnerRegistryServiceTest {
                     "pilot@example.test",
                     "LIC-001",
                     "CLASS_A",
-                    java.time.Instant.now().plusSeconds(3600),
+                    Instant.now().plusSeconds(3600),
                     "licenses/pilot.pdf")));
+
+    assertThat(service.listDrones(managerId))
+        .singleElement()
+        .satisfies(option -> assertThat(option.inspectorOwnerId()).isEqualTo(inspectorId));
+  }
+
+  @Test
+  void listsOnlyActivePartnerInspectorsWithValidLicenses() {
+    UUID inspectorId = UUID.randomUUID();
+    UserAccess.ActiveUser inspector =
+        new UserAccess.ActiveUser(
+            inspectorId,
+            Set.of(Roles.INSPECTOR),
+            null,
+            "INSPECTOR_PARTNER",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-001",
+            "CLASS_A",
+            Instant.now().plusSeconds(3600),
+            "licenses/pilot.pdf");
+    when(users.listActiveInspectorPartners()).thenReturn(List.of(inspector));
 
     assertThat(service.listInspectors(managerId))
         .hasSize(1)
@@ -124,13 +125,16 @@ class PartnerRegistryServiceTest {
   }
 
   @Test
-  void registersPartnerDroneAndUpdatesItsInspectorOwner() {
+  void verifiesPartnerDroneAndInspectorEligibility() {
     UUID inspectorId = UUID.randomUUID();
     Drone drone = mock(Drone.class);
-    when(drones.findWithLockById(droneId)).thenReturn(Optional.of(drone));
+    when(drone.getId()).thenReturn(droneId);
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
     when(drone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
-    when(drone.getRegistrationExpiresAt()).thenReturn(java.time.Instant.now().plusSeconds(3600));
+    when(drone.getSerialNumber()).thenReturn("SDI-002");
+    when(drone.getModel()).thenReturn("M350");
+    when(drone.getRegistrationExpiresAt()).thenReturn(Instant.now().plusSeconds(3600));
+    when(drones.findWithLockById(droneId)).thenReturn(Optional.of(drone));
     when(users.findActiveUser(inspectorId))
         .thenReturn(
             Optional.of(
@@ -143,49 +147,12 @@ class PartnerRegistryServiceTest {
                     "pilot@example.test",
                     "LIC-001",
                     "CLASS_A",
-                    java.time.Instant.now().plusSeconds(3600),
+                    Instant.now().plusSeconds(3600),
                     "licenses/pilot.pdf")));
 
-    service.registerDrone(managerId, droneId);
+    PartnerRegistryService.DroneOption option = service.registerDrone(managerId, droneId);
 
-    verify(partnerDrones).saveAndFlush(any(PartnerDrone.class));
-  }
-
-  @Test
-  void deactivatesAndReactivatesPartnerInspector() {
-    UUID inspectorId = UUID.randomUUID();
-    PartnerInspector inspector = new PartnerInspector(inspectorId, managerId);
-    when(inspectors.findWithLockByInspectorId(inspectorId)).thenReturn(Optional.of(inspector));
-
-    service.setInspectorActive(managerId, inspectorId, false);
-    assertThat(inspector.getStatus()).isEqualTo("INACTIVE");
-
-    when(users.findActiveUser(inspectorId))
-        .thenReturn(
-            Optional.of(
-                new UserAccess.ActiveUser(
-                    inspectorId,
-                    Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
-                    "Pilot",
-                    "pilot@example.test",
-                    "LIC-001",
-                    "CLASS_A",
-                    java.time.Instant.now().plusSeconds(3600),
-                    "licenses/pilot.pdf")));
-    service.setInspectorActive(managerId, inspectorId, true);
-    assertThat(inspector.getStatus()).isEqualTo("ACTIVE");
-  }
-
-  @Test
-  void marksRegisteredPartnerDroneInactive() {
-    UUID inspectorId = UUID.randomUUID();
-    PartnerDrone drone = new PartnerDrone(droneId, inspectorId, managerId);
-    when(partnerDrones.findWithLockByDroneId(droneId)).thenReturn(Optional.of(drone));
-
-    service.setDroneActive(managerId, droneId, false);
-
-    assertThat(drone.getStatus()).isEqualTo("INACTIVE");
+    assertThat(option.id()).isEqualTo(droneId);
+    assertThat(option.inspectorOwnerId()).isEqualTo(inspectorId);
   }
 }

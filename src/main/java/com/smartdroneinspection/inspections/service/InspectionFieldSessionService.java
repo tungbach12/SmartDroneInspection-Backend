@@ -4,6 +4,8 @@ import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent;
+import com.smartdroneinspection.inspections.events.FieldSessionCompletedEvent;
+import com.smartdroneinspection.inspections.reportcontext.ReportContextAccess;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -12,9 +14,12 @@ import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,7 +32,9 @@ public class InspectionFieldSessionService {
   private final FieldSessionRepository sessions;
   private final UserAccess userAccess;
   private final EntityManager entityManager;
+  private final ObjectProvider<ReportContextAccess> reportContextAccessProvider;
   private final ApplicationEventPublisher eventPublisher;
+
   private static final String SESSION_SCOPE_DENIED = "SESSION_SCOPE_DENIED";
   private static final String SESSION_NOT_FOUND = "SESSION_NOT_FOUND";
   private static final String SESSION_NOT_IN_PROGRESS = "SESSION_NOT_IN_PROGRESS";
@@ -38,20 +45,22 @@ public class InspectionFieldSessionService {
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
-    this(inspections, sessions, userAccess, entityManager, null);
+    this(inspections, sessions, userAccess, entityManager, null, null);
   }
 
-  @org.springframework.beans.factory.annotation.Autowired
+  @Autowired
   public InspectionFieldSessionService(
       InspectionRepository inspections,
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager,
+      ObjectProvider<ReportContextAccess> reportContextAccessProvider,
       ApplicationEventPublisher eventPublisher) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.userAccess = userAccess;
     this.entityManager = entityManager;
+    this.reportContextAccessProvider = reportContextAccessProvider;
     this.eventPublisher = eventPublisher;
   }
 
@@ -197,7 +206,106 @@ public class InspectionFieldSessionService {
       throw sessionFailure(SESSION_NOT_IN_PROGRESS, exception.getMessage());
     }
     inspections.saveAndFlush(inspection);
-    return sessions.saveAndFlush(session);
+    FieldSession savedSession = sessions.saveAndFlush(session);
+    publishFieldSessionCompletedEvent(inspection, savedSession, outcomeNotes);
+    return savedSession;
+  }
+
+  private void publishFieldSessionCompletedEvent(
+      Inspection inspection, FieldSession session, String outcomeNotes) {
+    if (eventPublisher == null) {
+      return;
+    }
+    long durationMinutes = 1;
+    if (session.getStartedAt() != null && session.getEndedAt() != null) {
+      long mins = Duration.between(session.getStartedAt(), session.getEndedAt()).toMinutes();
+      durationMinutes = Math.max(1, mins);
+    }
+
+    String missionTitle =
+        "Nhiệm vụ kiểm định " + inspection.getId().toString().substring(0, 8).toUpperCase();
+    String location = "Hiện trường";
+    String assetCategory = "Kiểm tra thực địa";
+    String droneModel = "UAV";
+    String droneSerialNumber = null;
+
+    if (reportContextAccessProvider != null) {
+      var contextAccess = reportContextAccessProvider.getIfAvailable();
+      if (contextAccess != null) {
+        var identity =
+            contextAccess.find(
+                inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId());
+        if (identity.isPresent()) {
+          var id = identity.get();
+          if (id.assetName() != null && !id.assetName().isBlank()) {
+            missionTitle = id.assetName();
+          }
+          if (id.assetLocation() != null && !id.assetLocation().isBlank()) {
+            location = id.assetLocation();
+          }
+          if (id.assetCategory() != null && !id.assetCategory().isBlank()) {
+            assetCategory = id.assetCategory();
+          }
+          if (id.droneModel() != null && !id.droneModel().isBlank()) {
+            droneModel = id.droneModel();
+          }
+          droneSerialNumber = id.droneSerialNumber();
+        }
+      }
+    }
+
+    String inspectionType =
+        inspection.getInspectionType() != null
+            ? inspection.getInspectionType().name()
+            : assetCategory;
+
+    String flightCode =
+        "FL-INSP-"
+            + inspection.getId().toString().substring(0, 8).toUpperCase()
+            + (session.getId() != null
+                ? "-" + session.getId().toString().substring(0, 4).toUpperCase()
+                : "");
+    java.time.LocalDate flightDate =
+        session.getStartedAt() != null
+            ? session.getStartedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()
+            : java.time.LocalDate.now();
+
+    if (userAccess != null && inspection.getInspectorId() != null) {
+      try {
+        userAccess.recordInspectorFlightLog(
+            inspection.getInspectorId(),
+            flightCode,
+            flightDate,
+            missionTitle,
+            droneModel,
+            droneSerialNumber,
+            location,
+            (int) durationMinutes,
+            inspectionType,
+            outcomeNotes);
+      } catch (Exception ex) {
+        // Do not fail session completion if profile flight log recording encounters an issue
+      }
+    }
+
+    eventPublisher.publishEvent(
+        new FieldSessionCompletedEvent(
+            inspection.getId(),
+            session.getId(),
+            inspection.getOrganizationId(),
+            inspection.getInspectorId(),
+            inspection.getDroneId(),
+            inspection.getAssetId(),
+            session.getStartedAt(),
+            session.getEndedAt(),
+            durationMinutes,
+            inspectionType,
+            outcomeNotes,
+            missionTitle,
+            location,
+            assetCategory,
+            droneModel,
+            droneSerialNumber));
   }
 
   private FieldSession reopenInspection(

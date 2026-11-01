@@ -506,7 +506,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/payment-status")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN', 'INSPECTOR')")
   public ApiResponse<InspectionReportAcceptancePort.PaymentStatusDetails> getReportPaymentStatus(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     if (reportAcceptancePort.isEmpty()) {

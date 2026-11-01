@@ -27,18 +27,21 @@ public class UserAccessService implements UserAccess {
   private final AdminUserService adminUsers;
   private final RolePolicy rolePolicy;
   private final SecurityAuditService securityAudit;
+  private final InspectorProfileService inspectorProfiles;
 
   public UserAccessService(
       UserRepository users,
       com.smartdroneinspection.users.repository.OrganizationRepository organizations,
       AdminUserService adminUsers,
       RolePolicy rolePolicy,
-      SecurityAuditService securityAudit) {
+      SecurityAuditService securityAudit,
+      InspectorProfileService inspectorProfiles) {
     this.users = users;
     this.organizations = organizations;
     this.adminUsers = adminUsers;
     this.rolePolicy = rolePolicy;
     this.securityAudit = securityAudit;
+    this.inspectorProfiles = inspectorProfiles;
   }
 
   @Override
@@ -62,9 +65,38 @@ public class UserAccessService implements UserAccess {
   @Override
   @Transactional(readOnly = true)
   public Optional<ActiveUser> findActiveUser(UUID userId) {
+    return users.findDetailedById(userId).filter(User::active).map(UserAccessService::toActiveUser);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ActiveUser> listActiveInspectorPartners() {
+    return users.findActiveInspectorPartners().stream()
+        .filter(User::active)
+        .map(UserAccessService::toActiveUser)
+        .filter(ActiveUser::isInspectorPartner)
+        .toList();
+  }
+
+  private static ActiveUser toActiveUser(User user) {
+    return new ActiveUser(
+        user.getId(),
+        Set.copyOf(user.roleValues()),
+        user.getOrganizationId(),
+        user.getActorZone().name(),
+        user.getFullName(),
+        user.getEmail(),
+        user.getPilotLicenseNumber(),
+        user.getPilotLicenseClass(),
+        user.getPilotLicenseExpiresAt(),
+        user.getPilotLicenseFileKey());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<ActiveUser> findUser(UUID userId) {
     return users
         .findDetailedById(userId)
-        .filter(User::active)
         .map(
             user ->
                 new ActiveUser(
@@ -216,6 +248,34 @@ public class UserAccessService implements UserAccess {
       String correlationId) {
     securityAudit.record(
         actorUserId, aggregateId, action, afterStatus, ipAddress, userAgent, correlationId);
+  }
+
+  @Override
+  @Transactional
+  public void recordInspectorFlightLog(
+      UUID inspectorUserId,
+      String flightCode,
+      java.time.LocalDate flightDate,
+      String missionTitle,
+      String droneModel,
+      String droneSerialNumber,
+      String location,
+      int flightDurationMinutes,
+      String inspectionType,
+      String outcomeNotes) {
+    if (inspectorProfiles != null) {
+      inspectorProfiles.recordAutomaticFlightSession(
+          inspectorUserId,
+          flightCode,
+          flightDate,
+          missionTitle,
+          droneModel,
+          droneSerialNumber,
+          location,
+          flightDurationMinutes,
+          inspectionType,
+          outcomeNotes);
+    }
   }
 
   /**

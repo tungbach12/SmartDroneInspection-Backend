@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -36,14 +37,8 @@ public class ServiceRequestQuote {
   @Column(name = "drone_id", nullable = false)
   private UUID droneId;
 
-  @Column(name = "currency", nullable = false, length = 3)
-  private String currency = "VND";
-
-  @Column(name = "price_per_occurrence_vnd", precision = 15, scale = 2)
+  @Column(name = "price_per_occurrence_vnd", nullable = false, precision = 15, scale = 2)
   private BigDecimal pricePerOccurrenceVnd;
-
-  @Column(name = "price_per_occurrence_usd", precision = 12, scale = 2)
-  private BigDecimal pricePerOccurrenceUsd;
 
   @Column(name = "issued_by_user_id", nullable = false)
   private UUID issuedByUserId;
@@ -61,20 +56,31 @@ public class ServiceRequestQuote {
       Instant firstOccurrenceEndAt,
       UUID inspectorId,
       UUID droneId,
-      BigDecimal pricePerOccurrenceUsd,
+      BigDecimal pricePerOccurrenceVnd,
       UUID issuedByUserId) {
-    this(
-        requestId,
-        versionNo,
-        scopeSnapshot,
-        firstOccurrenceStartAt,
-        firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
-        "USD",
-        null,
-        pricePerOccurrenceUsd,
-        issuedByUserId);
+    if (requestId == null
+        || versionNo < 1
+        || scopeSnapshot == null
+        || scopeSnapshot.isBlank()
+        || firstOccurrenceStartAt == null
+        || firstOccurrenceEndAt == null
+        || !firstOccurrenceEndAt.isAfter(firstOccurrenceStartAt)
+        || inspectorId == null
+        || droneId == null
+        || pricePerOccurrenceVnd == null
+        || pricePerOccurrenceVnd.signum() <= 0
+        || issuedByUserId == null) {
+      throw new IllegalArgumentException("Quote fields are invalid");
+    }
+    this.requestId = requestId;
+    this.versionNo = versionNo;
+    this.scopeSnapshot = scopeSnapshot.trim();
+    this.firstOccurrenceStartAt = firstOccurrenceStartAt;
+    this.firstOccurrenceEndAt = firstOccurrenceEndAt;
+    this.inspectorId = inspectorId;
+    this.droneId = droneId;
+    this.pricePerOccurrenceVnd = pricePerOccurrenceVnd.setScale(2, RoundingMode.HALF_UP);
+    this.issuedByUserId = issuedByUserId;
   }
 
   public ServiceRequestQuote(
@@ -89,51 +95,20 @@ public class ServiceRequestQuote {
       BigDecimal pricePerOccurrenceVnd,
       BigDecimal pricePerOccurrenceUsd,
       UUID issuedByUserId) {
-    if (requestId == null
-        || versionNo < 1
-        || scopeSnapshot == null
-        || scopeSnapshot.isBlank()
-        || firstOccurrenceStartAt == null
-        || firstOccurrenceEndAt == null
-        || !firstOccurrenceEndAt.isAfter(firstOccurrenceStartAt)
-        || inspectorId == null
-        || droneId == null
-        || issuedByUserId == null) {
-      throw new IllegalArgumentException("Quote fields are invalid");
-    }
-    String resolvedCurrency =
-        (currency != null && !currency.isBlank()) ? currency.trim().toUpperCase() : "VND";
-    if (!"USD".equals(resolvedCurrency) && !"VND".equals(resolvedCurrency)) {
-      throw new IllegalArgumentException("Unsupported currency: " + currency);
-    }
-    if ("VND".equals(resolvedCurrency)) {
-      if (pricePerOccurrenceVnd == null || pricePerOccurrenceVnd.signum() <= 0) {
-        throw new IllegalArgumentException("VND quote price must be positive");
-      }
-      this.pricePerOccurrenceVnd =
-          pricePerOccurrenceVnd.setScale(2, java.math.RoundingMode.HALF_UP);
-      this.pricePerOccurrenceUsd = null;
-    } else {
-      if (pricePerOccurrenceUsd == null || pricePerOccurrenceUsd.signum() <= 0) {
-        throw new IllegalArgumentException("USD quote price must be positive");
-      }
-      this.pricePerOccurrenceUsd =
-          pricePerOccurrenceUsd.setScale(2, java.math.RoundingMode.HALF_UP);
-      this.pricePerOccurrenceVnd = null;
-    }
-    this.requestId = requestId;
-    this.versionNo = versionNo;
-    this.scopeSnapshot = scopeSnapshot.trim();
-    this.firstOccurrenceStartAt = firstOccurrenceStartAt;
-    this.firstOccurrenceEndAt = firstOccurrenceEndAt;
-    this.inspectorId = inspectorId;
-    this.droneId = droneId;
-    this.currency = resolvedCurrency;
-    this.issuedByUserId = issuedByUserId;
+    this(
+        requestId,
+        versionNo,
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        pricePerOccurrenceVnd != null ? pricePerOccurrenceVnd : pricePerOccurrenceUsd,
+        issuedByUserId);
   }
 
   public BigDecimal getEffectivePrice() {
-    return "VND".equalsIgnoreCase(currency) ? pricePerOccurrenceVnd : pricePerOccurrenceUsd;
+    return pricePerOccurrenceVnd;
   }
 
   public UUID getId() {
@@ -169,7 +144,7 @@ public class ServiceRequestQuote {
   }
 
   public String getCurrency() {
-    return currency;
+    return "VND";
   }
 
   public BigDecimal getPricePerOccurrenceVnd() {
@@ -177,7 +152,7 @@ public class ServiceRequestQuote {
   }
 
   public BigDecimal getPricePerOccurrenceUsd() {
-    return pricePerOccurrenceUsd;
+    return pricePerOccurrenceVnd;
   }
 
   public UUID getIssuedByUserId() {

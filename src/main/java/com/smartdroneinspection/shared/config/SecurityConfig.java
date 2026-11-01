@@ -66,8 +66,14 @@ public class SecurityConfig {
                         HttpMethod.POST,
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
+                        "/api/v1/auth/registration/otp/send",
+                        "/api/v1/auth/password-reset/otp/send",
+                        "/api/v1/auth/password-reset/confirm",
                         "/api/v1/auth/password/setup",
                         "/api/v1/auth/refresh",
+                        "/api/v1/auth/otp/send",
+                        "/api/v1/auth/otp/verify",
+                        "/api/v1/auth/google",
                         "/api/v1/auth/oauth2/**")
                     .permitAll()
                     .anyRequest()

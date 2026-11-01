@@ -10,6 +10,12 @@ public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
 
+  Optional<ActiveUser> findUser(UUID userId);
+
+  default List<ActiveUser> listActiveInspectorPartners() {
+    return List.of();
+  }
+
   Optional<String> findOrganizationName(UUID organizationId);
 
   Optional<String> findOrganizationCode(UUID organizationId);
@@ -56,6 +62,18 @@ public interface UserAccess {
       String ipAddress,
       String userAgent,
       String correlationId);
+
+  void recordInspectorFlightLog(
+      UUID inspectorUserId,
+      String flightCode,
+      java.time.LocalDate flightDate,
+      String missionTitle,
+      String droneModel,
+      String droneSerialNumber,
+      String location,
+      int flightDurationMinutes,
+      String inspectionType,
+      String outcomeNotes);
 
   record ActiveUser(
       UUID id,

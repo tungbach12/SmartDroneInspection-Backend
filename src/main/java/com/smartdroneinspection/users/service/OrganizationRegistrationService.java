@@ -33,6 +33,7 @@ public class OrganizationRegistrationService {
   private final PasswordEncoder passwords;
   private final PasswordPolicy passwordPolicy;
   private final SecurityAuditService audit;
+  private final RegistrationOtpService registrationOtp;
 
   public OrganizationRegistrationService(
       OrganizationRepository organizations,
@@ -42,7 +43,8 @@ public class OrganizationRegistrationService {
       CustomerAirspacePolicy airspace,
       PasswordEncoder passwords,
       PasswordPolicy passwordPolicy,
-      SecurityAuditService audit) {
+      SecurityAuditService audit,
+      RegistrationOtpService registrationOtp) {
     this.organizations = organizations;
     this.users = users;
     this.prospectiveRegistrations = prospectiveRegistrations;
@@ -51,6 +53,7 @@ public class OrganizationRegistrationService {
     this.passwords = passwords;
     this.passwordPolicy = passwordPolicy;
     this.audit = audit;
+    this.registrationOtp = registrationOtp;
   }
 
   @Transactional
@@ -64,22 +67,27 @@ public class OrganizationRegistrationService {
     String organizationName = request.organizationName().trim();
     String organizationCode = Organization.normalizeCode(request.organizationCode());
     var firstAsset = request.firstAsset();
-    if (firstAsset.latitude() == null || firstAsset.longitude() == null) {
-      throw new AuthException(
-          HttpStatus.BAD_REQUEST,
-          "ASSET_COORDINATES_REQUIRED",
-          "The first asset requires latitude and longitude for airspace review.");
-    }
+    boolean requiresAirspaceReview = false;
+    CustomerAirspaceEvaluation evaluation = null;
 
-    CustomerAirspaceEvaluation evaluation =
-        airspace.evaluateCustomerOnboarding(firstAsset.latitude(), firstAsset.longitude());
-    if (evaluation.status() == CustomerAirspaceStatus.NO_FLY_ZONE) {
-      throw new AuthException(
-          HttpStatus.FORBIDDEN,
-          "ASSET_IN_NO_FLY_ZONE",
-          "Customer registration is not allowed for an asset in a no-fly zone.");
+    if (firstAsset != null) {
+      if (firstAsset.latitude() == null || firstAsset.longitude() == null) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "ASSET_COORDINATES_REQUIRED",
+            "The first asset requires latitude and longitude for airspace review.");
+      }
+
+      evaluation =
+          airspace.evaluateCustomerOnboarding(firstAsset.latitude(), firstAsset.longitude());
+      if (evaluation.status() == CustomerAirspaceStatus.NO_FLY_ZONE) {
+        throw new AuthException(
+            HttpStatus.FORBIDDEN,
+            "ASSET_IN_NO_FLY_ZONE",
+            "Customer registration is not allowed for an asset in a no-fly zone.");
+      }
+      requiresAirspaceReview = evaluation.status() != CustomerAirspaceStatus.CLEAR_ZONE;
     }
-    boolean requiresAirspaceReview = evaluation.status() != CustomerAirspaceStatus.CLEAR_ZONE;
 
     if (users.findByNormalizedEmail(email).isPresent()) {
       throw new AuthException(
@@ -101,7 +109,19 @@ public class OrganizationRegistrationService {
           "Organization code is already in use.");
     }
     passwordPolicy.validate(request.password(), email, fullName);
-    if (!requiresAirspaceReview) {
+    if (registrationOtp.isReady()) {
+      if (request.otpChallengeToken() == null
+          || request.otpChallengeToken().isBlank()
+          || request.otpCode() == null
+          || request.otpCode().isBlank()) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "OTP_REQUIRED",
+            "Mã xác thực OTP là bắt buộc để đăng ký tài khoản.");
+      }
+      registrationOtp.verify(request.otpChallengeToken(), request.otpCode(), email);
+    }
+    if (!requiresAirspaceReview && firstAsset != null) {
       validateFirstAsset(request.firstAsset());
     }
 
@@ -162,27 +182,32 @@ public class OrganizationRegistrationService {
         new User(
             email,
             fullName,
+            request.phoneNumber() != null ? request.phoneNumber().trim() : null,
+            null,
             passwords.encode(request.password()),
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organization.getId());
+    customer.setOtpVerified(true);
     customer.addRole(UserRole.CUSTOMER);
     customer = users.saveAndFlush(customer);
 
     organization.attributeToCreator(customer.getId());
     organizations.saveAndFlush(organization);
-    events.publishEvent(
-        new CustomerRegistrationEvent(
-            organization.getId(),
-            customer.getId(),
-            firstAsset.categoryId(),
-            firstAsset.code(),
-            firstAsset.name(),
-            firstAsset.description(),
-            firstAsset.locationText(),
-            firstAsset.latitude(),
-            firstAsset.longitude(),
-            firstAsset.ownershipInformation()));
+    if (firstAsset != null) {
+      events.publishEvent(
+          new CustomerRegistrationEvent(
+              organization.getId(),
+              customer.getId(),
+              firstAsset.categoryId(),
+              firstAsset.code(),
+              firstAsset.name(),
+              firstAsset.description(),
+              firstAsset.locationText(),
+              firstAsset.latitude(),
+              firstAsset.longitude(),
+              firstAsset.ownershipInformation()));
+    }
 
     audit.record(
         null,

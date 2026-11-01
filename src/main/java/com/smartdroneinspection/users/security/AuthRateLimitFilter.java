@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class AuthRateLimitFilter extends OncePerRequestFilter {
 
   private static final int LIMIT = 10;
+  private static final int OTP_LIMIT = 5;
   private static final long WINDOW_SECONDS = 60;
   private static final int MAX_TRACKED_CLIENTS = 10_000;
   private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
@@ -29,6 +30,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     String path = request.getRequestURI();
     return !(path.endsWith("/auth/login")
         || path.endsWith("/auth/password/setup")
+        || path.endsWith("/auth/otp/send")
+        || path.endsWith("/auth/otp/verify")
+        || path.endsWith("/auth/google")
         || path.endsWith("/auth/register")
         || path.endsWith("/airspace/evaluate"));
   }
@@ -53,7 +57,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
       windows.entrySet().removeIf(entry -> entry.getValue().startedAt() + WINDOW_SECONDS <= now);
     }
 
-    if (window.count() > LIMIT) {
+    int limit = request.getRequestURI().contains("/auth/otp/") ? OTP_LIMIT : LIMIT;
+    if (window.count() > limit) {
       long retryAfter = Math.max(1, window.startedAt() + WINDOW_SECONDS - now);
       response.setStatus(429);
       response.setHeader("Retry-After", Long.toString(retryAfter));

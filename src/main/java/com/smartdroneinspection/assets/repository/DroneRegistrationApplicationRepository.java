@@ -12,6 +12,8 @@ public interface DroneRegistrationApplicationRepository
 
   List<DroneRegistrationApplication> findAllByStatusOrderByCreatedAtAsc(String status);
 
+  List<DroneRegistrationApplication> findAllByStatusInOrderByReviewedAtDesc(List<String> statuses);
+
   Optional<DroneRegistrationApplication> findByIdAndStatus(UUID id, String status);
 
   boolean existsBySerialNumberIgnoreCaseAndStatus(String serialNumber, String status);

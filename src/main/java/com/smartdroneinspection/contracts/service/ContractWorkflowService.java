@@ -37,14 +37,11 @@ import com.smartdroneinspection.users.UserAccess;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -320,35 +317,22 @@ public class ContractWorkflowService
     return toResponse(request);
   }
 
-  /**
-   * Upload signed contract for a specific occurrence.
-   *
-   * <p>Every occurrence (whether one-time or recurring) requires its own signed contract before
-   * assignment.
-   */
+  /** Upload signed contract via occurrence endpoint (attaches to parent service request). */
   @Transactional
   public ServiceRequestResponse uploadOccurrenceSignedContract(
       UUID actorId, UUID requestId, UUID occurrenceId, MultipartFile file) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
-    ServiceRequestOccurrence occurrence =
-        occurrences
-            .findWithLockById(occurrenceId)
-            .filter(value -> requestId.equals(value.getRequestId()))
-            .orElseThrow(
-                () ->
-                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    occurrences
+        .findWithLockById(occurrenceId)
+        .filter(value -> requestId.equals(value.getRequestId()))
+        .orElseThrow(
+            () -> failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
     byte[] content = validateAndExtractFile(file);
     String contentType = file.getContentType().toLowerCase(java.util.Locale.ROOT);
     String fileName = sanitizeFileName(file.getOriginalFilename());
-    String objectKey =
-        "contracts/requests/"
-            + requestId
-            + "/occurrences/"
-            + occurrenceId
-            + "/"
-            + UUID.randomUUID();
+    String objectKey = "contracts/requests/" + requestId + "/" + UUID.randomUUID() + "/" + fileName;
 
     EvidenceObjectStore store = requireStore();
     try {
@@ -358,17 +342,8 @@ public class ContractWorkflowService
     }
 
     try {
-      occurrence.recordSignedContract(
-          objectKey, fileName, contentType, content.length, sha256(content), manager.id());
-      occurrences.saveAndFlush(occurrence);
-
-      // If this is a one-time request and parent request metadata is empty, synchronize parent
-      if (request.getRequestType() == RequestType.ONE_TIME
-          && request.getContractObjectKey() == null) {
-        request.recordSignedContract(
-            objectKey, fileName, contentType, content.length, sha256(content), manager.id());
-        requests.saveAndFlush(request);
-      }
+      request.recordSignedContract(objectKey);
+      requests.saveAndFlush(request);
     } catch (RuntimeException exception) {
       try {
         store.delete(objectKey);
@@ -380,20 +355,18 @@ public class ContractWorkflowService
     return toResponse(request);
   }
 
-  /** Scoped download of an occurrence's signed contract file. */
+  /** Scoped download of a signed contract file via occurrence endpoint. */
   @Transactional(readOnly = true)
   public DownloadedContract openOccurrenceSignedContract(
       UUID actorId, UUID requestId, UUID occurrenceId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
-    ServiceRequestOccurrence occurrence =
-        occurrences
-            .findById(occurrenceId)
-            .filter(value -> requestId.equals(value.getRequestId()))
-            .orElseThrow(
-                () ->
-                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
-    if (!occurrence.hasSignedContract()) {
+    occurrences
+        .findById(occurrenceId)
+        .filter(value -> requestId.equals(value.getRequestId()))
+        .orElseThrow(
+            () -> failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (!request.hasSignedContract()) {
       throw failure(
           HttpStatus.NOT_FOUND,
           "CONTRACT_NOT_FOUND",
@@ -401,11 +374,11 @@ public class ContractWorkflowService
     }
     EvidenceObjectStore store = requireStore();
     try {
-      InputStream stream = store.open(occurrence.getContractObjectKey());
+      InputStream stream = store.open(request.getContractObjectKey());
       return new DownloadedContract(
-          occurrence.getContractFileName(),
-          occurrence.getContractContentType(),
-          occurrence.getContractSizeBytes(),
+          request.getContractFileName(),
+          request.getContractContentType(),
+          request.getContractSizeBytes(),
           stream);
     } catch (IOException ex) {
       throw failure(
@@ -413,7 +386,7 @@ public class ContractWorkflowService
     }
   }
 
-  /** Legacy parent request contract upload: attaches to request and occurrence 1 for ONE_TIME. */
+  /** Parent request signed contract upload. */
   @Transactional
   public ServiceRequestResponse uploadSignedContract(
       UUID actorId, UUID requestId, MultipartFile file) {
@@ -428,7 +401,7 @@ public class ContractWorkflowService
     byte[] content = validateAndExtractFile(file);
     String contentType = file.getContentType().toLowerCase(java.util.Locale.ROOT);
     String fileName = sanitizeFileName(file.getOriginalFilename());
-    String objectKey = "contracts/requests/" + requestId + "/" + UUID.randomUUID();
+    String objectKey = "contracts/requests/" + requestId + "/" + UUID.randomUUID() + "/" + fileName;
 
     EvidenceObjectStore store = requireStore();
     try {
@@ -438,8 +411,7 @@ public class ContractWorkflowService
     }
 
     try {
-      request.recordSignedContract(
-          objectKey, fileName, contentType, content.length, sha256(content), manager.id());
+      request.recordSignedContract(objectKey);
       requests.saveAndFlush(request);
 
       ServiceRequestQuote acceptedQuote =
@@ -447,25 +419,6 @@ public class ContractWorkflowService
               .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
               .orElse(null);
       materializeOccurrences(request, acceptedQuote);
-
-      // For ONE_TIME request, attach to the single occurrence as well
-      if (request.getRequestType() == RequestType.ONE_TIME) {
-        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).stream()
-            .findFirst()
-            .ifPresent(
-                occ -> {
-                  if (!occ.hasSignedContract()) {
-                    occ.recordSignedContract(
-                        objectKey,
-                        fileName,
-                        contentType,
-                        content.length,
-                        sha256(content),
-                        manager.id());
-                    occurrences.saveAndFlush(occ);
-                  }
-                });
-      }
     } catch (RuntimeException exception) {
       try {
         store.delete(objectKey);
@@ -525,27 +478,11 @@ public class ContractWorkflowService
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
-    // Check per-occurrence signed contract gate
-    if (!occurrence.hasSignedContract()) {
-      // Per Report 3 Decision D2: A parent signed contract covers occurrences without requiring
-      // re-upload
-      if (request.getContractObjectKey() != null) {
-        occurrence.recordSignedContract(
-            request.getContractObjectKey(),
-            request.getContractFileName(),
-            request.getContractContentType(),
-            request.getContractSizeBytes() != null ? request.getContractSizeBytes() : 0L,
-            request.getContractChecksumSha256(),
-            request.getContractUploadedByUserId() != null
-                ? request.getContractUploadedByUserId()
-                : manager.id());
-        occurrences.saveAndFlush(occurrence);
-      } else {
-        throw failure(
-            HttpStatus.CONFLICT,
-            "OCCURRENCE_CONTRACT_REQUIRED",
-            "Occurrence must have its own signed contract attached before assignment");
-      }
+    if (!request.hasSignedContract()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "OCCURRENCE_CONTRACT_REQUIRED",
+          "Service request must have a signed contract attached before assignment");
     }
 
     requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
@@ -757,7 +694,7 @@ public class ContractWorkflowService
           existing != null ? existing.checkoutUrl() : null,
           existing != null ? existing.qrCode() : null,
           occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : 0,
-          occurrence.getPayosPaymentLinkId());
+          existing != null ? existing.paymentLinkId() : null);
     }
 
     if (occurrence.getReportAcceptedAt() == null
@@ -1135,37 +1072,10 @@ public class ContractWorkflowService
       if (quote.getEffectivePrice() != null) {
         if (currentSettings.isPresent() && currentSettings.get().isFullyConfigured()) {
           InspectionFinanceSettings s = currentSettings.get();
-          InspectionFinanceCalculator.FinanceCalculation calc =
-              InspectionFinanceCalculator.calculate(
-                  quote.getEffectivePrice(),
-                  s.getVatRate(),
-                  s.getCommissionRate(),
-                  s.getTncnRate());
           occurrence.snapshotFinance(
-              quote.getCurrency(),
-              calc.totalPrice(),
-              calc.serviceBaseAmount(),
-              calc.vatRate(),
-              calc.vatAmount(),
-              calc.commissionRate(),
-              calc.commissionAmount(),
-              calc.inspectorGrossPayout(),
-              calc.tncnRate(),
-              calc.tncnAmount(),
-              calc.inspectorNetPayout());
+              quote.getEffectivePrice(), s.getVatRate(), s.getCommissionRate(), s.getTncnRate());
         } else {
-          occurrence.snapshotFinance(
-              quote.getCurrency(),
-              quote.getEffectivePrice(),
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              null);
+          occurrence.snapshotFinance(quote.getEffectivePrice(), null, null, null);
         }
       }
       occurrences.save(occurrence);
@@ -1291,7 +1201,7 @@ public class ContractWorkflowService
             .map(ServiceRequestQuoteResponse::from)
             .toList(),
         occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
-            .map(ServiceRequestOccurrenceResponse::from)
+            .map(occ -> ServiceRequestOccurrenceResponse.from(occ, request))
             .toList(),
         messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
             .map(this::toMessageResponse)
@@ -1407,14 +1317,6 @@ public class ContractWorkflowService
         && (bytes[0] & 0xff) == 0xff
         && (bytes[1] & 0xff) == 0xd8
         && (bytes[2] & 0xff) == 0xff;
-  }
-
-  private static String sha256(byte[] bytes) {
-    try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-    } catch (NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is not available", exception);
-    }
   }
 
   public record SignedContractFile(

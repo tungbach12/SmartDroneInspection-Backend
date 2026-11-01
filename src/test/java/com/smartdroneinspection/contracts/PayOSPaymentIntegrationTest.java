@@ -136,8 +136,6 @@ class PayOSPaymentIntegrationTest {
     jdbcTemplate.execute("DELETE FROM service_request_occurrences");
     jdbcTemplate.execute("DELETE FROM service_requests");
     jdbcTemplate.execute("DELETE FROM service_request_quotes");
-    jdbcTemplate.execute("DELETE FROM contract_partner_drones");
-    jdbcTemplate.execute("DELETE FROM contract_partner_inspectors");
 
     // Organizations
     orgId = UUID.randomUUID();

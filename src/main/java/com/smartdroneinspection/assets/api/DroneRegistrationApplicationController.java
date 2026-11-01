@@ -55,7 +55,7 @@ public class DroneRegistrationApplicationController {
   }
 
   @GetMapping("/{applicationId}/evidence/{type}")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ResponseEntity<InputStreamResource> evidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,
@@ -99,14 +99,21 @@ public class DroneRegistrationApplicationController {
   }
 
   @GetMapping("/pending")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<List<DroneRegistrationApplicationResponse>> pending(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(applications.pending(subject(jwt)));
   }
 
+  @GetMapping("/history")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  public ApiResponse<List<DroneRegistrationApplicationResponse>> history(
+      @AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(applications.history(subject(jwt)));
+  }
+
   @PostMapping("/{applicationId}/approve")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<DroneRegistrationApplicationResponse> approve(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,
@@ -121,7 +128,7 @@ public class DroneRegistrationApplicationController {
   }
 
   @PostMapping("/{applicationId}/reject")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<DroneRegistrationApplicationResponse> reject(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,

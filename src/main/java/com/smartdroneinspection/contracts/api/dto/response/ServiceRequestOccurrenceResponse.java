@@ -1,5 +1,6 @@
 package com.smartdroneinspection.contracts.api.dto.response;
 
+import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus;
@@ -40,6 +41,11 @@ public record ServiceRequestOccurrenceResponse(
     Instant reportAcceptedAt) {
 
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
+    return from(occurrence, null);
+  }
+
+  public static ServiceRequestOccurrenceResponse from(
+      ServiceRequestOccurrence occurrence, ServiceRequest request) {
     return new ServiceRequestOccurrenceResponse(
         occurrence.getId(),
         occurrence.getOccurrenceIndex(),
@@ -50,10 +56,10 @@ public record ServiceRequestOccurrenceResponse(
         occurrence.getDroneId(),
         occurrence.getInspectionId(),
         occurrence.getAssignedAt(),
-        occurrence.getContractFileName(),
-        occurrence.getContractContentType(),
-        occurrence.getContractSizeBytes(),
-        occurrence.getContractUploadedAt(),
+        request != null ? request.getContractFileName() : null,
+        request != null ? request.getContractContentType() : null,
+        request != null ? request.getContractSizeBytes() : null,
+        request != null ? request.getContractUploadedAt() : null,
         occurrence.getCurrency(),
         occurrence.getTotalPrice(),
         occurrence.getServiceBaseAmount(),

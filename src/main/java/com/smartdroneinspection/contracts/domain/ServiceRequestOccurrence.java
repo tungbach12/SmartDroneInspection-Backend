@@ -1,5 +1,7 @@
 package com.smartdroneinspection.contracts.domain;
 
+import com.smartdroneinspection.contracts.service.InspectionFinanceCalculator;
+import com.smartdroneinspection.contracts.service.InspectionFinanceCalculator.FinanceCalculation;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -43,83 +45,22 @@ public class ServiceRequestOccurrence {
   @Column(name = "inspection_id", unique = true)
   private UUID inspectionId;
 
-  @Column(name = "assigned_by_user_id")
-  private UUID assignedByUserId;
-
-  @Column(name = "assigned_at")
-  private Instant assignedAt;
-
-  // Occurrence signed contract attachment metadata
-  @Column(name = "contract_object_key", length = 1000)
-  private String contractObjectKey;
-
-  @Column(name = "contract_file_name", length = 500)
-  private String contractFileName;
-
-  @Column(name = "contract_content_type", length = 160)
-  private String contractContentType;
-
-  @Column(name = "contract_size_bytes")
-  private Long contractSizeBytes;
-
-  @Column(name = "contract_checksum_sha256", length = 64)
-  private String contractChecksumSha256;
-
-  @Column(name = "contract_uploaded_by_user_id")
-  private UUID contractUploadedByUserId;
-
-  @Column(name = "contract_uploaded_at")
-  private Instant contractUploadedAt;
-
-  // Financial snapshot (VAT split, platform commission, and Inspector payout)
-  @Column(name = "currency", nullable = false, length = 3)
-  private String currency = "VND";
-
+  // Financial rate snapshot (amounts are derived dynamically via InspectionFinanceCalculator)
   @Column(name = "total_price", precision = 15, scale = 2)
   private BigDecimal totalPrice;
-
-  @Column(name = "service_base_amount", precision = 15, scale = 2)
-  private BigDecimal serviceBaseAmount;
 
   @Column(name = "vat_rate", precision = 5, scale = 2)
   private BigDecimal vatRate;
 
-  @Column(name = "vat_amount", precision = 15, scale = 2)
-  private BigDecimal vatAmount;
-
   @Column(name = "commission_rate", precision = 5, scale = 2)
   private BigDecimal commissionRate;
-
-  @Column(name = "commission_amount", precision = 15, scale = 2)
-  private BigDecimal commissionAmount;
-
-  /**
-   * MVP assumption for accountant review: Tax base is defined as Inspector gross payout after
-   * platform commission and before TNCN. Configured TNCN withholding rate is applied to this base.
-   * This is a simplified product assumption for MVP workflow and accounting validation, NOT
-   * statutory tax advice.
-   */
-  @Column(name = "inspector_gross_payout", precision = 15, scale = 2)
-  private BigDecimal inspectorGrossPayout;
 
   @Column(name = "tncn_rate", precision = 5, scale = 2)
   private BigDecimal tncnRate;
 
-  @Column(name = "tncn_amount", precision = 15, scale = 2)
-  private BigDecimal tncnAmount;
-
-  @Column(name = "inspector_net_payout", precision = 15, scale = 2)
-  private BigDecimal inspectorNetPayout;
-
   // Report Acceptance
   @Column(name = "report_accepted_at")
   private Instant reportAcceptedAt;
-
-  @Column(name = "report_accepted_by_user_id")
-  private UUID reportAcceptedByUserId;
-
-  @Column(name = "accepted_report_version_id")
-  private UUID acceptedReportVersionId;
 
   // Customer Payment
   @Enumerated(EnumType.STRING)
@@ -129,20 +70,11 @@ public class ServiceRequestOccurrence {
   @Column(name = "payment_reference", length = 255)
   private String paymentReference;
 
-  @Column(name = "payment_amount", precision = 15, scale = 2)
-  private BigDecimal paymentAmount;
-
-  @Column(name = "payment_confirmed_by_user_id")
-  private UUID paymentConfirmedByUserId;
-
   @Column(name = "payment_confirmed_at")
   private Instant paymentConfirmedAt;
 
   @Column(name = "payos_order_code", unique = true)
   private Long payosOrderCode;
-
-  @Column(name = "payos_payment_link_id", length = 100)
-  private String payosPaymentLinkId;
 
   @Column(name = "payment_method", length = 30)
   private String paymentMethod;
@@ -154,9 +86,6 @@ public class ServiceRequestOccurrence {
 
   @Column(name = "payout_reference", length = 255)
   private String payoutReference;
-
-  @Column(name = "payout_recorded_by_user_id")
-  private UUID payoutRecordedByUserId;
 
   @Column(name = "payout_recorded_at")
   private Instant payoutRecordedAt;
@@ -188,28 +117,16 @@ public class ServiceRequestOccurrence {
     this.plannedEndAt = plannedEndAt;
   }
 
-  public boolean hasSignedContract() {
-    return contractObjectKey != null && !contractObjectKey.isBlank();
-  }
-
-  public void recordSignedContract(
-      String objectKey,
-      String fileName,
-      String contentType,
-      long sizeBytes,
-      String checksumSha256,
-      UUID uploadedByUserId) {
-    if (objectKey == null || objectKey.isBlank() || fileName == null || fileName.isBlank()) {
-      throw new IllegalArgumentException("Contract file metadata is required");
+  public void snapshotFinance(
+      BigDecimal totalPrice, BigDecimal vatRate, BigDecimal commissionRate, BigDecimal tncnRate) {
+    if (this.totalPrice != null) {
+      return; // Immutable once snapshotted
     }
-    this.contractObjectKey = objectKey;
-    this.contractFileName = fileName;
-    this.contractContentType = contentType;
-    this.contractSizeBytes = sizeBytes;
-    this.contractChecksumSha256 = checksumSha256;
-    this.contractUploadedByUserId = uploadedByUserId;
-    this.contractUploadedAt = Instant.now();
-    this.updatedAt = contractUploadedAt;
+    this.totalPrice = totalPrice;
+    this.vatRate = vatRate;
+    this.commissionRate = commissionRate;
+    this.tncnRate = tncnRate;
+    this.updatedAt = Instant.now();
   }
 
   public void snapshotFinance(
@@ -224,41 +141,36 @@ public class ServiceRequestOccurrence {
       BigDecimal tncnRate,
       BigDecimal tncnAmount,
       BigDecimal inspectorNetPayout) {
-    if (this.totalPrice != null) {
-      // Immutable once snapshotted
-      return;
+    snapshotFinance(totalPrice, vatRate, commissionRate, tncnRate);
+  }
+
+  private FinanceCalculation financeCalculation() {
+    if (totalPrice == null
+        || totalPrice.signum() <= 0
+        || vatRate == null
+        || commissionRate == null
+        || tncnRate == null) {
+      return null;
     }
-    this.currency = (currency != null && !currency.isBlank()) ? currency : "VND";
-    this.totalPrice = totalPrice;
-    this.serviceBaseAmount = serviceBaseAmount;
-    this.vatRate = vatRate;
-    this.vatAmount = vatAmount;
-    this.commissionRate = commissionRate;
-    this.commissionAmount = commissionAmount;
-    this.inspectorGrossPayout = inspectorGrossPayout;
-    this.tncnRate = tncnRate;
-    this.tncnAmount = tncnAmount;
-    this.inspectorNetPayout = inspectorNetPayout;
-    this.updatedAt = Instant.now();
+    return InspectionFinanceCalculator.calculate(totalPrice, vatRate, commissionRate, tncnRate);
+  }
+
+  public void acceptReport() {
+    if (this.reportAcceptedAt != null) {
+      return; // Idempotent
+    }
+    this.reportAcceptedAt = Instant.now();
+    if (this.paymentStatus == OccurrencePaymentStatus.PENDING) {
+      this.paymentStatus = OccurrencePaymentStatus.PAYMENT_DUE;
+    }
+    this.updatedAt = reportAcceptedAt;
   }
 
   public void acceptReport(UUID versionId, UUID customerUserId) {
     if (versionId == null || customerUserId == null) {
       throw new IllegalArgumentException("Report version and customer user are required");
     }
-    if (this.reportAcceptedAt != null) {
-      if (versionId.equals(this.acceptedReportVersionId)) {
-        return; // Idempotent
-      }
-      throw new IllegalStateException("A different report version was already accepted");
-    }
-    this.acceptedReportVersionId = versionId;
-    this.reportAcceptedByUserId = customerUserId;
-    this.reportAcceptedAt = Instant.now();
-    if (this.paymentStatus == OccurrencePaymentStatus.PENDING) {
-      this.paymentStatus = OccurrencePaymentStatus.PAYMENT_DUE;
-    }
-    this.updatedAt = reportAcceptedAt;
+    acceptReport();
   }
 
   public void confirmPayment(String reference, BigDecimal amount, UUID managerUserId) {
@@ -277,16 +189,14 @@ public class ServiceRequestOccurrence {
           "Payment amount must match agreed total: " + this.totalPrice);
     }
     if (this.paymentStatus == OccurrencePaymentStatus.PAID) {
-      if (reference.equals(this.paymentReference) && amount.compareTo(this.paymentAmount) == 0) {
+      if (reference.trim().equals(this.paymentReference)) {
         return; // Idempotent
       }
       throw new IllegalStateException("Payment was already confirmed with different details");
     }
     this.paymentStatus = OccurrencePaymentStatus.PAID;
     this.paymentReference = reference.trim();
-    this.paymentAmount = amount;
     this.paymentMethod = (this.paymentMethod != null) ? this.paymentMethod : "MANUAL_WIRE";
-    this.paymentConfirmedByUserId = managerUserId;
     this.paymentConfirmedAt = Instant.now();
     if (this.inspectorId != null) {
       this.payoutStatus = OccurrencePayoutStatus.PAID;
@@ -299,11 +209,14 @@ public class ServiceRequestOccurrence {
     this.updatedAt = paymentConfirmedAt;
   }
 
-  public void assignPayOSOrder(long orderCode, String paymentLinkId) {
+  public void assignPayOSOrder(long orderCode) {
     this.payosOrderCode = orderCode;
-    this.payosPaymentLinkId = paymentLinkId;
     this.paymentMethod = "PAYOS";
     this.updatedAt = Instant.now();
+  }
+
+  public void assignPayOSOrder(long orderCode, String paymentLinkId) {
+    assignPayOSOrder(orderCode);
   }
 
   public void confirmOnlinePayment(String reference, BigDecimal amount, String method) {
@@ -322,16 +235,14 @@ public class ServiceRequestOccurrence {
           "Payment amount must match agreed total: " + this.totalPrice);
     }
     if (this.paymentStatus == OccurrencePaymentStatus.PAID) {
-      if (reference.equals(this.paymentReference) && amount.compareTo(this.paymentAmount) == 0) {
+      if (reference.trim().equals(this.paymentReference)) {
         return; // Idempotent
       }
       throw new IllegalStateException("Payment was already confirmed with different details");
     }
     this.paymentStatus = OccurrencePaymentStatus.PAID;
     this.paymentReference = reference.trim();
-    this.paymentAmount = amount;
     this.paymentMethod = (method != null && !method.isBlank()) ? method : "PAYOS";
-    this.paymentConfirmedByUserId = null;
     this.paymentConfirmedAt = Instant.now();
     if (this.inspectorId != null) {
       this.payoutStatus = OccurrencePayoutStatus.PAID;
@@ -355,7 +266,7 @@ public class ServiceRequestOccurrence {
       throw new IllegalStateException("No inspector assigned to receive payout");
     }
     if (this.payoutStatus == OccurrencePayoutStatus.PAID) {
-      if (reference.equals(this.payoutReference)) {
+      if (reference.trim().equals(this.payoutReference)) {
         return; // Idempotent
       }
       if (this.payoutReference != null && this.payoutReference.startsWith("AUTO-DISBURSE-")) {
@@ -370,7 +281,6 @@ public class ServiceRequestOccurrence {
     }
     this.payoutStatus = OccurrencePayoutStatus.PAID;
     this.payoutReference = reference.trim();
-    this.payoutRecordedByUserId = managerUserId;
     this.payoutRecordedAt = Instant.now();
     this.updatedAt = payoutRecordedAt;
   }
@@ -405,10 +315,8 @@ public class ServiceRequestOccurrence {
     this.inspectorId = inspectorId;
     this.droneId = droneId;
     this.inspectionId = inspectionId;
-    this.assignedByUserId = assignedByUserId;
-    this.assignedAt = Instant.now();
     this.status = OccurrenceStatus.ASSIGNED;
-    this.updatedAt = assignedAt;
+    this.updatedAt = Instant.now();
   }
 
   public UUID getId() {
@@ -459,44 +367,12 @@ public class ServiceRequestOccurrence {
     return inspectionId;
   }
 
-  public UUID getAssignedByUserId() {
-    return assignedByUserId;
-  }
-
   public Instant getAssignedAt() {
-    return assignedAt;
-  }
-
-  public String getContractObjectKey() {
-    return contractObjectKey;
-  }
-
-  public String getContractFileName() {
-    return contractFileName;
-  }
-
-  public String getContractContentType() {
-    return contractContentType;
-  }
-
-  public Long getContractSizeBytes() {
-    return contractSizeBytes;
-  }
-
-  public String getContractChecksumSha256() {
-    return contractChecksumSha256;
-  }
-
-  public UUID getContractUploadedByUserId() {
-    return contractUploadedByUserId;
-  }
-
-  public Instant getContractUploadedAt() {
-    return contractUploadedAt;
+    return status == OccurrenceStatus.ASSIGNED ? updatedAt : null;
   }
 
   public String getCurrency() {
-    return currency;
+    return "VND";
   }
 
   public BigDecimal getTotalPrice() {
@@ -504,7 +380,8 @@ public class ServiceRequestOccurrence {
   }
 
   public BigDecimal getServiceBaseAmount() {
-    return serviceBaseAmount;
+    FinanceCalculation calc = financeCalculation();
+    return calc != null ? calc.serviceBaseAmount() : null;
   }
 
   public BigDecimal getVatRate() {
@@ -512,7 +389,8 @@ public class ServiceRequestOccurrence {
   }
 
   public BigDecimal getVatAmount() {
-    return vatAmount;
+    FinanceCalculation calc = financeCalculation();
+    return calc != null ? calc.vatAmount() : null;
   }
 
   public BigDecimal getCommissionRate() {
@@ -520,11 +398,13 @@ public class ServiceRequestOccurrence {
   }
 
   public BigDecimal getCommissionAmount() {
-    return commissionAmount;
+    FinanceCalculation calc = financeCalculation();
+    return calc != null ? calc.commissionAmount() : null;
   }
 
   public BigDecimal getInspectorGrossPayout() {
-    return inspectorGrossPayout;
+    FinanceCalculation calc = financeCalculation();
+    return calc != null ? calc.inspectorGrossPayout() : null;
   }
 
   public BigDecimal getTncnRate() {
@@ -532,11 +412,13 @@ public class ServiceRequestOccurrence {
   }
 
   public BigDecimal getTncnAmount() {
-    return tncnAmount;
+    FinanceCalculation calc = financeCalculation();
+    return calc != null ? calc.tncnAmount() : null;
   }
 
   public BigDecimal getInspectorNetPayout() {
-    return inspectorNetPayout;
+    FinanceCalculation calc = financeCalculation();
+    return calc != null ? calc.inspectorNetPayout() : null;
   }
 
   public Instant getReportAcceptedAt() {
@@ -544,11 +426,11 @@ public class ServiceRequestOccurrence {
   }
 
   public UUID getReportAcceptedByUserId() {
-    return reportAcceptedByUserId;
+    return null;
   }
 
   public UUID getAcceptedReportVersionId() {
-    return acceptedReportVersionId;
+    return null;
   }
 
   public OccurrencePaymentStatus getPaymentStatus() {
@@ -560,11 +442,11 @@ public class ServiceRequestOccurrence {
   }
 
   public BigDecimal getPaymentAmount() {
-    return paymentAmount;
+    return paymentStatus == OccurrencePaymentStatus.PAID ? totalPrice : null;
   }
 
   public UUID getPaymentConfirmedByUserId() {
-    return paymentConfirmedByUserId;
+    return null;
   }
 
   public Instant getPaymentConfirmedAt() {
@@ -573,10 +455,6 @@ public class ServiceRequestOccurrence {
 
   public Long getPayosOrderCode() {
     return payosOrderCode;
-  }
-
-  public String getPayosPaymentLinkId() {
-    return payosPaymentLinkId;
   }
 
   public String getPaymentMethod() {
@@ -592,7 +470,7 @@ public class ServiceRequestOccurrence {
   }
 
   public UUID getPayoutRecordedByUserId() {
-    return payoutRecordedByUserId;
+    return null;
   }
 
   public Instant getPayoutRecordedAt() {

@@ -20,7 +20,7 @@ public class DroneRegistrationApplication {
   @Column(name = "serial_number", nullable = false, length = 128)
   private String serialNumber;
 
-  @Column(length = 200)
+  @Column(length = 1000)
   private String model;
 
   @Column(length = 200)

@@ -81,6 +81,23 @@ class AssetApiIntegrationTest {
   }
 
   @Test
+  void createAssetInNoFlyZone_rejectedWithBadRequest() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/assets")
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"code\":\"ASSET-NFZ\",\"name\":\"Airport asset\",\"description\":\"Near runway\","
+                        + "\"categoryId\":\""
+                        + fixture.categoryId()
+                        + "\",\"locationText\":\"Sân bay Tân Sơn Nhất\","
+                        + "\"latitude\":10.8188,\"longitude\":106.6519}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("NO_FLY_ZONE_RESTRICTION"));
+  }
+
+  @Test
   void duplicateCodeInSameOrganizationConflictsAndOtherOrganizationSeesNothing() throws Exception {
     String body =
         "{\"code\":\"BR-DUP\",\"name\":\"Bridge\",\"categoryId\":\""

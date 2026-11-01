@@ -226,6 +226,7 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
     }
+
     if (latestExisting != null
         && (latestExisting.getStatus() == ReportStatus.SUBMITTED
             || latestExisting.getStatus() == ReportStatus.APPROVED)) {
@@ -260,6 +261,7 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
     }
+
     if (latestExisting != null
         && (latestExisting.getStatus() == ReportStatus.SUBMITTED
             || latestExisting.getStatus() == ReportStatus.APPROVED)) {
