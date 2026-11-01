@@ -54,8 +54,13 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ProblemDetail handleBeanValidation(
       MethodArgumentNotValidException ex, HttpServletRequest request) {
-    return problem(
-        HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed.", request);
+    String detail =
+        ex.getBindingResult().getFieldErrors().stream()
+            .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+            .reduce((a, b) -> a + "; " + b)
+            .orElse("Request validation failed.");
+    LOG.warn("Validation failed for {}: {}", request.getRequestURI(), detail);
+    return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", detail, request);
   }
 
   /**
@@ -66,8 +71,8 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ProblemDetail handleUnreadableBody(
       HttpMessageNotReadableException ex, HttpServletRequest request) {
-    return problem(
-        HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed.", request);
+    LOG.warn("Unreadable body for {}: {}", request.getRequestURI(), ex.getMessage());
+    return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", ex.getMessage(), request);
   }
 
   @ExceptionHandler(IllegalArgumentException.class)

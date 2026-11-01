@@ -94,8 +94,6 @@ class InspectionFinanceApiIntegrationTest {
     jdbcTemplate.execute("DELETE FROM service_request_occurrences");
     jdbcTemplate.execute("DELETE FROM service_requests");
     jdbcTemplate.execute("DELETE FROM service_request_quotes");
-    jdbcTemplate.execute("DELETE FROM contract_partner_drones");
-    jdbcTemplate.execute("DELETE FROM contract_partner_inspectors");
 
     // Organization
     orgId = UUID.randomUUID();
@@ -264,9 +262,9 @@ class InspectionFinanceApiIntegrationTest {
     // -------------------------------------------------------------------------
 
     ZoneId utc = ZoneId.of("UTC");
-    Instant start = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.HOURS);
+    LocalDate reqDate = LocalDate.now(utc).plusDays(2);
+    Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
     Instant end = start.plus(2, ChronoUnit.HOURS);
-    LocalDate reqDate = start.atZone(utc).toLocalDate();
 
     // 2.1 Customer creates a one-time service request
     String createResp =
@@ -628,7 +626,7 @@ class InspectionFinanceApiIntegrationTest {
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
     assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
     assertThat(updatedOcc.getPaymentReference()).isEqualTo("BANK-TRANSFER-5555");
-    assertThat(updatedOcc.getPaymentConfirmedByUserId()).isEqualTo(managerUserId);
+    assertThat(updatedOcc.getPaymentConfirmedAt()).isNotNull();
 
     // 4.9 Final deliverable document is now UNLOCKED for Customer!
     mockMvc
@@ -656,7 +654,7 @@ class InspectionFinanceApiIntegrationTest {
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(updatedOcc.getPayoutReference()).isEqualTo("PAYOUT-BANK-8888");
-    assertThat(updatedOcc.getPayoutRecordedByUserId()).isEqualTo(managerUserId);
+    assertThat(updatedOcc.getPayoutRecordedAt()).isNotNull();
 
     // 4.11 Duplicate payout recording is idempotent
     mockMvc

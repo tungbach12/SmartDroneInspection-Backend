@@ -65,22 +65,31 @@ public class UserAccessService implements UserAccess {
   @Override
   @Transactional(readOnly = true)
   public Optional<ActiveUser> findActiveUser(UUID userId) {
-    return users
-        .findDetailedById(userId)
+    return users.findDetailedById(userId).filter(User::active).map(UserAccessService::toActiveUser);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ActiveUser> listActiveInspectorPartners() {
+    return users.findActiveInspectorPartners().stream()
         .filter(User::active)
-        .map(
-            user ->
-                new ActiveUser(
-                    user.getId(),
-                    Set.copyOf(user.roleValues()),
-                    user.getOrganizationId(),
-                    user.getActorZone().name(),
-                    user.getFullName(),
-                    user.getEmail(),
-                    user.getPilotLicenseNumber(),
-                    user.getPilotLicenseClass(),
-                    user.getPilotLicenseExpiresAt(),
-                    user.getPilotLicenseFileKey()));
+        .map(UserAccessService::toActiveUser)
+        .filter(ActiveUser::isInspectorPartner)
+        .toList();
+  }
+
+  private static ActiveUser toActiveUser(User user) {
+    return new ActiveUser(
+        user.getId(),
+        Set.copyOf(user.roleValues()),
+        user.getOrganizationId(),
+        user.getActorZone().name(),
+        user.getFullName(),
+        user.getEmail(),
+        user.getPilotLicenseNumber(),
+        user.getPilotLicenseClass(),
+        user.getPilotLicenseExpiresAt(),
+        user.getPilotLicenseFileKey());
   }
 
   @Override

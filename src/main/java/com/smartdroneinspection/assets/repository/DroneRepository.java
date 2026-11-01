@@ -45,6 +45,13 @@ public interface DroneRepository extends JpaRepository<Drone, UUID> {
           + "order by drone.serialNumber asc")
   List<Drone> findAssignableByOrganizationId(@Param("organizationId") UUID organizationId);
 
+  /** Inspector-owned partner drones eligible for MF2 contract assignment. */
+  @Query(
+      "select drone from Drone drone where drone.inspectorOwnerId is not null "
+          + "and drone.serviceability = com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE "
+          + "order by drone.serialNumber asc")
+  List<Drone> findActivePartnerDrones();
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select drone from Drone drone where drone.id = :id")
   Optional<Drone> findWithLockById(@Param("id") UUID id);

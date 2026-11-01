@@ -241,6 +241,10 @@ public class BrowserAuthController {
         .build();
   }
 
+  /**
+   * @deprecated Use canonical {@code /api/v1/users/me} in {@link UserProfileController}.
+   */
+  @Deprecated(since = "v1.1", forRemoval = false)
   @GetMapping("/me")
   public ResponseEntity<ApiResponse<UserResponse>> me(@AuthenticationPrincipal Jwt jwt) {
     return ResponseEntity.ok()
