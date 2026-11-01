@@ -288,7 +288,12 @@ public class ServiceRequestOccurrence {
     this.paymentMethod = (this.paymentMethod != null) ? this.paymentMethod : "MANUAL_WIRE";
     this.paymentConfirmedByUserId = managerUserId;
     this.paymentConfirmedAt = Instant.now();
-    if (this.payoutStatus == OccurrencePayoutStatus.PENDING) {
+    if (this.inspectorId != null) {
+      this.payoutStatus = OccurrencePayoutStatus.PAID;
+      this.payoutReference = "AUTO-DISBURSE-" + this.paymentReference;
+      this.payoutRecordedByUserId = managerUserId;
+      this.payoutRecordedAt = this.paymentConfirmedAt;
+    } else if (this.payoutStatus == OccurrencePayoutStatus.PENDING) {
       this.payoutStatus = OccurrencePayoutStatus.ELIGIBLE;
     }
     this.updatedAt = paymentConfirmedAt;
@@ -328,7 +333,12 @@ public class ServiceRequestOccurrence {
     this.paymentMethod = (method != null && !method.isBlank()) ? method : "PAYOS";
     this.paymentConfirmedByUserId = null;
     this.paymentConfirmedAt = Instant.now();
-    if (this.payoutStatus == OccurrencePayoutStatus.PENDING) {
+    if (this.inspectorId != null) {
+      this.payoutStatus = OccurrencePayoutStatus.PAID;
+      this.payoutReference = "AUTO-DISBURSE-" + this.paymentReference;
+      this.payoutRecordedByUserId = null;
+      this.payoutRecordedAt = this.paymentConfirmedAt;
+    } else if (this.payoutStatus == OccurrencePayoutStatus.PENDING) {
       this.payoutStatus = OccurrencePayoutStatus.ELIGIBLE;
     }
     this.updatedAt = paymentConfirmedAt;
@@ -347,6 +357,13 @@ public class ServiceRequestOccurrence {
     if (this.payoutStatus == OccurrencePayoutStatus.PAID) {
       if (reference.equals(this.payoutReference)) {
         return; // Idempotent
+      }
+      if (this.payoutReference != null && this.payoutReference.startsWith("AUTO-DISBURSE-")) {
+        this.payoutReference = reference.trim();
+        this.payoutRecordedByUserId = managerUserId;
+        this.payoutRecordedAt = Instant.now();
+        this.updatedAt = this.payoutRecordedAt;
+        return;
       }
       throw new IllegalStateException(
           "Payout was already recorded with reference " + this.payoutReference);

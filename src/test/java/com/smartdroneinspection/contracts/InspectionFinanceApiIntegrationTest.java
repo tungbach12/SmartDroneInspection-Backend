@@ -264,9 +264,9 @@ class InspectionFinanceApiIntegrationTest {
     // -------------------------------------------------------------------------
 
     ZoneId utc = ZoneId.of("UTC");
-    Instant start = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.HOURS);
+    LocalDate reqDate = LocalDate.now(utc).plusDays(2);
+    Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
     Instant end = start.plus(2, ChronoUnit.HOURS);
-    LocalDate reqDate = start.atZone(utc).toLocalDate();
 
     // 2.1 Customer creates a one-time service request
     String createResp =
@@ -534,7 +534,7 @@ class InspectionFinanceApiIntegrationTest {
                 .with(principal(customerUserId, "CUSTOMER")))
         .andExpect(status().isOk());
 
-    // 4.2 BUT Customer CANNOT download the rendered deliverable document yet! (Payment Required)
+    // 4.2 Customer CAN export/download the rendered PDF document immediately upon publication
     mockMvc
         .perform(
             get(
@@ -542,7 +542,7 @@ class InspectionFinanceApiIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .with(principal(customerUserId, "CUSTOMER")))
-        .andExpect(status().isPaymentRequired());
+        .andExpect(status().isOk());
 
     // 4.3 Customer accepts the published report version
     mockMvc
@@ -559,7 +559,7 @@ class InspectionFinanceApiIntegrationTest {
     ServiceRequestOccurrence updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
-    // 4.4 Deliverable document STILL locked for Customer while PAYMENT_DUE
+    // 4.4 Deliverable PDF remains available for export while PAYMENT_DUE
     mockMvc
         .perform(
             get(
@@ -567,7 +567,7 @@ class InspectionFinanceApiIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .with(principal(customerUserId, "CUSTOMER")))
-        .andExpect(status().isPaymentRequired());
+        .andExpect(status().isOk());
 
     // 4.5 Manager payout recording is blocked before customer payment is confirmed
     mockMvc
@@ -626,7 +626,7 @@ class InspectionFinanceApiIntegrationTest {
 
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(updatedOcc.getPaymentReference()).isEqualTo("BANK-TRANSFER-5555");
     assertThat(updatedOcc.getPaymentConfirmedByUserId()).isEqualTo(managerUserId);
 
@@ -694,7 +694,8 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(jsonPath("$.data.inspectorNetPayout").doesNotExist())
         .andExpect(jsonPath("$.data.payoutStatus").doesNotExist());
 
-    // 5.2 Inspector financial view: sees gross compensation, TNCN withheld, net payout
+    // 5.2 Inspector financial view: sees order price, platform commission, gross compensation, TNCN
+    // withheld, net payout
     mockMvc
         .perform(
             get(
@@ -703,13 +704,14 @@ class InspectionFinanceApiIntegrationTest {
                     occurrenceId)
                 .with(principal(inspectorUserId, "INSPECTOR")))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalPrice").value(11000000.00))
+        .andExpect(jsonPath("$.data.commissionRate").value(15.00))
+        .andExpect(jsonPath("$.data.commissionAmount").value(1500000.00))
         .andExpect(jsonPath("$.data.inspectorGrossPayout").value(8500000.00))
         .andExpect(jsonPath("$.data.tncnRate").value(10.00))
         .andExpect(jsonPath("$.data.tncnAmount").value(850000.00))
         .andExpect(jsonPath("$.data.inspectorNetPayout").value(7650000.00))
-        .andExpect(jsonPath("$.data.payoutStatus").value("PAID"))
-        .andExpect(jsonPath("$.data.totalPrice").doesNotExist())
-        .andExpect(jsonPath("$.data.commissionRate").doesNotExist());
+        .andExpect(jsonPath("$.data.payoutStatus").value("PAID"));
 
     // 5.3 Manager financial view: full transparency
     mockMvc

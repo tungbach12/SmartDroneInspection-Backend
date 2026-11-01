@@ -226,10 +226,6 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
     }
-    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.DRAFT) {
-      return toResponse(latestExisting, inspection.getInspectorId());
-    }
-
     if (latestExisting != null
         && (latestExisting.getStatus() == ReportStatus.SUBMITTED
             || latestExisting.getStatus() == ReportStatus.APPROVED)) {
@@ -264,10 +260,6 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
     }
-    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.DRAFT) {
-      return toResponse(latestExisting, inspection.getInspectorId());
-    }
-
     if (latestExisting != null
         && (latestExisting.getStatus() == ReportStatus.SUBMITTED
             || latestExisting.getStatus() == ReportStatus.APPROVED)) {
@@ -363,8 +355,7 @@ public class ReportService {
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
     try {
-      if (version.getStatus() == ReportStatus.DRAFT
-          || version.getStatus() == ReportStatus.RETURNED) {
+      if (version.getStatus() == ReportStatus.RETURNED) {
         version.verifyAsAuthor(actorId, inspection.getInspectorId());
       }
       version.submit();
@@ -728,18 +719,6 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> downloadArtefact(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
-    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
-    boolean isClientOnly =
-        actor != null
-            && actor.hasRole(Roles.CUSTOMER)
-            && !actor.hasRole(Roles.MANAGER)
-            && !actor.hasRole(Roles.ADMIN);
-    if (isClientOnly && paymentGate.isPresent() && paymentGate.get().isPaymentDue(inspectionId)) {
-      throw new BusinessException(
-          HttpStatus.PAYMENT_REQUIRED,
-          "PAYMENT_REQUIRED",
-          "Final downloadable inspection report deliverables are locked until customer payment is confirmed");
-    }
     InspectionReport version = requireVersion(inspectionId, versionId);
     String objectKey = version.getRenderedObjectKey();
     if (objectKey == null || objectKey.isBlank()) {

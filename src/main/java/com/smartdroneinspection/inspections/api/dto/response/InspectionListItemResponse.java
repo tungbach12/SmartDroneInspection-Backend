@@ -1,11 +1,12 @@
 package com.smartdroneinspection.inspections.api.dto.response;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One row of the inspection list. The report summary travels with the row so the inspections and
- * reports screens read the same source and never disagree about a report's state.
+ * One row of the inspection list. The report summary and occurrence settlement/payout fields travel
+ * with the row so Customer, Inspector, and Manager screens read consistent state.
  */
 public record InspectionListItemResponse(
     UUID id,
@@ -22,7 +23,114 @@ public record InspectionListItemResponse(
     Integer reportVersionNo,
     String pendingAction,
     String inspectionType,
-    UUID workOrderId) {
+    UUID workOrderId,
+    String objective,
+    String assetName,
+    String assetCode,
+    String assetLocation,
+    Boolean reportAccepted,
+    String paymentStatus,
+    Long paymentAmount,
+    BigDecimal commissionRate,
+    BigDecimal commissionAmount,
+    BigDecimal inspectorNetPayout,
+    String payoutStatus) {
+
+  public InspectionListItemResponse(
+      UUID id,
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      String status,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      Instant createdAt,
+      Instant updatedAt,
+      UUID reportId,
+      String reportStatus,
+      Integer reportVersionNo,
+      String pendingAction,
+      String inspectionType,
+      UUID workOrderId,
+      String assetName,
+      String assetCode,
+      String assetLocation,
+      Boolean reportAccepted,
+      String paymentStatus,
+      Long paymentAmount) {
+    this(
+        id,
+        organizationId,
+        assetId,
+        inspectorId,
+        status,
+        plannedStartAt,
+        plannedEndAt,
+        createdAt,
+        updatedAt,
+        reportId,
+        reportStatus,
+        reportVersionNo,
+        pendingAction,
+        inspectionType,
+        workOrderId,
+        null,
+        assetName,
+        assetCode,
+        assetLocation,
+        reportAccepted,
+        paymentStatus,
+        paymentAmount,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  public InspectionListItemResponse(
+      UUID id,
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      String status,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      Instant createdAt,
+      Instant updatedAt,
+      UUID reportId,
+      String reportStatus,
+      Integer reportVersionNo,
+      String pendingAction,
+      String inspectionType,
+      UUID workOrderId) {
+    this(
+        id,
+        organizationId,
+        assetId,
+        inspectorId,
+        status,
+        plannedStartAt,
+        plannedEndAt,
+        createdAt,
+        updatedAt,
+        reportId,
+        reportStatus,
+        reportVersionNo,
+        pendingAction,
+        inspectionType,
+        workOrderId,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+  }
 
   public InspectionListItemResponse(
       UUID id,
@@ -53,6 +161,17 @@ public record InspectionListItemResponse(
         reportVersionNo,
         pendingAction,
         "INITIAL",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
         null);
   }
 }

@@ -24,10 +24,19 @@ public record ServiceRequestOccurrenceResponse(
     Instant contractUploadedAt,
     String currency,
     BigDecimal totalPrice,
+    BigDecimal serviceBaseAmount,
+    BigDecimal vatRate,
     BigDecimal vatAmount,
+    BigDecimal commissionRate,
+    BigDecimal commissionAmount,
+    BigDecimal inspectorGrossPayout,
+    BigDecimal tncnRate,
+    BigDecimal tncnAmount,
+    BigDecimal inspectorNetPayout,
     OccurrencePaymentStatus paymentStatus,
     Instant paymentConfirmedAt,
     OccurrencePayoutStatus payoutStatus,
+    Instant payoutRecordedAt,
     Instant reportAcceptedAt) {
 
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
@@ -47,10 +56,19 @@ public record ServiceRequestOccurrenceResponse(
         occurrence.getContractUploadedAt(),
         occurrence.getCurrency(),
         occurrence.getTotalPrice(),
+        occurrence.getServiceBaseAmount(),
+        occurrence.getVatRate(),
         occurrence.getVatAmount(),
+        occurrence.getCommissionRate(),
+        occurrence.getCommissionAmount(),
+        occurrence.getInspectorGrossPayout(),
+        occurrence.getTncnRate(),
+        occurrence.getTncnAmount(),
+        occurrence.getInspectorNetPayout(),
         occurrence.getPaymentStatus(),
         occurrence.getPaymentConfirmedAt(),
         occurrence.getPayoutStatus(),
+        occurrence.getPayoutRecordedAt(),
         occurrence.getReportAcceptedAt());
   }
 }
