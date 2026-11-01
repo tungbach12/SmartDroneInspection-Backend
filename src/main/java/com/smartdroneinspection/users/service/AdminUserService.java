@@ -248,7 +248,7 @@ public class AdminUserService {
               + "- Mật khẩu tạm thời: "
               + temporaryPassword
               + "\n\n"
-              + "Đường dẫn đăng nhập: http://localhost:3002/login\n\n"
+              + "Đường dẫn đăng nhập: http://localhost:3000/login\n\n"
               + "Lưu ý an toàn:\n"
               + "- Bạn phải đổi sang mật khẩu mới trong lần đầu tiên đăng nhập.\n"
               + (isInspector
@@ -298,7 +298,7 @@ public class AdminUserService {
               + "Mật khẩu tạm thời mới của bạn là: "
               + temporaryPassword
               + "\n\n"
-              + "Đường dẫn đăng nhập: http://localhost:3002/login\n\n"
+              + "Đường dẫn đăng nhập: http://localhost:3000/login\n\n"
               + "Vui lòng đăng nhập và đổi mật khẩu mới ngay sau khi nhận được thông báo này.\n\n"
               + "Trân trọng,\n"
               + "Ban Quản trị SmartDroneInspection");
