@@ -192,7 +192,6 @@ public class OrganizationRegistrationService {
     customer.addRole(UserRole.CUSTOMER);
     customer = users.saveAndFlush(customer);
 
-    organization.attributeToCreator(customer.getId());
     organizations.saveAndFlush(organization);
     if (firstAsset != null) {
       events.publishEvent(

@@ -105,7 +105,6 @@ public class ProspectiveCustomerReviewService {
             new Organization(
                 registration.getOrganizationName(), registration.getOrganizationCode(), null));
     prospect.approveAsCustomer(organization.getId());
-    organization.attributeToCreator(prospect.getId());
     organizations.saveAndFlush(organization);
     events.publishEvent(
         new CustomerRegistrationEvent(

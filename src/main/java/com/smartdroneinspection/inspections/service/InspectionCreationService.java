@@ -14,7 +14,6 @@ import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
-import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -34,7 +33,6 @@ public class InspectionCreationService {
   private final DroneRepository drones;
   private final UserAccess userAccess;
   private final Optional<EvidenceObjectStore> objectStore;
-  private final SubscriptionEntitlement subscriptionEntitlement;
   private final ApplicationEventPublisher eventPublisher;
 
   public InspectionCreationService(
@@ -43,14 +41,12 @@ public class InspectionCreationService {
       DroneRepository drones,
       UserAccess userAccess,
       Optional<EvidenceObjectStore> objectStore,
-      SubscriptionEntitlement subscriptionEntitlement,
       ApplicationEventPublisher eventPublisher) {
     this.inspections = inspections;
     this.assets = assets;
     this.drones = drones;
     this.userAccess = userAccess;
     this.objectStore = objectStore;
-    this.subscriptionEntitlement = subscriptionEntitlement;
     this.eventPublisher = eventPublisher;
   }
 
@@ -58,10 +54,6 @@ public class InspectionCreationService {
   public InspectionResponse create(UUID actorId, CreateInspectionRequest request) {
     UserAccess.ActiveUser actor = requireOrgAdmin(actorId);
     UUID organizationId = actor.organizationId();
-
-    Instant entitlementCheckAt =
-        request.plannedStartAt() != null ? request.plannedStartAt() : Instant.now();
-    subscriptionEntitlement.requireActive(organizationId, entitlementCheckAt);
 
     Asset asset =
         assets
@@ -134,87 +126,6 @@ public class InspectionCreationService {
             saved.getPlannedStartAt()));
 
     return toResponse(saved, asset);
-  }
-
-  @Transactional
-  public Inspection dispatchInspectionInternal(
-      UUID organizationId,
-      UUID assetId,
-      UUID inspectorId,
-      UUID droneId,
-      Instant plannedStartAt,
-      Instant plannedEndAt,
-      UUID recurringScheduleId) {
-    if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
-    }
-    subscriptionEntitlement.requireActive(organizationId, plannedStartAt);
-
-    Asset asset =
-        assets
-            .findByIdAndOrganizationId(assetId, organizationId)
-            .orElseThrow(
-                () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
-
-    if (asset.getStatus() == AssetStatus.RETIRED) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT, "INVALID_STATE", "Cannot create an inspection for a retired asset.");
-    }
-
-    UserAccess.ActiveUser inspector =
-        userAccess
-            .findActiveUser(inspectorId)
-            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.BAD_REQUEST,
-                        "INVALID_INSPECTOR",
-                        "Assigned inspector must be active in the organization."));
-
-    Drone drone =
-        drones
-            .findWithLockByIdAndOrganizationId(droneId, organizationId)
-            .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.BAD_REQUEST,
-                        "INVALID_DRONE",
-                        "Assigned drone must be active in the organization."));
-
-    if (inspections.hasScheduleConflict(
-        organizationId, inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "SCHEDULE_CONFLICT",
-          "The assigned inspector or drone has a schedule conflict with another active inspection in this window.");
-    }
-
-    Inspection inspection =
-        new Inspection(
-            organizationId,
-            asset.getId(),
-            inspector.id(),
-            drone.getId(),
-            plannedStartAt,
-            plannedEndAt);
-
-    if (recurringScheduleId != null) {
-      inspection.setRecurringScheduleId(recurringScheduleId);
-    }
-
-    Inspection saved = inspections.saveAndFlush(inspection);
-
-    eventPublisher.publishEvent(
-        new InspectionAssignedEvent(
-            saved.getId(),
-            saved.getOrganizationId(),
-            saved.getInspectorId(),
-            saved.getPlannedStartAt()));
-
-    return saved;
   }
 
   @Transactional(readOnly = true)
@@ -372,8 +283,6 @@ public class InspectionCreationService {
           HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
     }
 
-    subscriptionEntitlement.requireActive(inspection.getOrganizationId(), plannedStartAt);
-
     inspection.updatePlannedWindow(plannedStartAt, plannedEndAt);
     Inspection saved = inspections.saveAndFlush(inspection);
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
@@ -516,7 +425,6 @@ public class InspectionCreationService {
         drone == null ? null : drone.getServiceability().name(),
         inspection.getFlightPermitFileKey(),
         inspection.getFlightPermitFileName(),
-        inspection.getFlightPermitUploadedAt(),
         inspection.getPlannedStartAt(),
         inspection.getPlannedEndAt(),
         inspection.getStatus().name(),
@@ -524,8 +432,7 @@ public class InspectionCreationService {
         inspection.getUpdatedAt(),
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
         inspection.getWorkOrderId(),
-        inspection.getSourceInspectionId(),
-        inspection.getSourceReportVersionId());
+        inspection.getSourceInspectionId());
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {

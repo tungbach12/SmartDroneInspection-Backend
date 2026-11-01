@@ -28,9 +28,6 @@ class PersistenceEntityOwnershipTest {
         Arguments.of("assets", "assets", "com.smartdroneinspection.assets.domain.Asset"),
         Arguments.of("assets", "drones", "com.smartdroneinspection.assets.domain.Drone"),
         Arguments.of(
-            "assets", "platform_drones", "com.smartdroneinspection.assets.domain.PlatformDrone"),
-        Arguments.of("assets", "drone_leases", "com.smartdroneinspection.assets.domain.DroneLease"),
-        Arguments.of(
             "assets", "asset_categories", "com.smartdroneinspection.assets.domain.AssetCategory"),
         Arguments.of(
             "assets", "asset_documents", "com.smartdroneinspection.assets.domain.AssetDocument"),
@@ -43,9 +40,11 @@ class PersistenceEntityOwnershipTest {
             "users", "organizations", "com.smartdroneinspection.users.domain.Organization"),
         Arguments.of("users", "users", "com.smartdroneinspection.users.domain.User"),
         Arguments.of(
-            "subscriptions",
-            "subscriptions",
-            "com.smartdroneinspection.subscriptions.domain.Subscription"),
+            "users",
+            "inspector_profiles",
+            "com.smartdroneinspection.users.domain.InspectorProfile"),
+        Arguments.of(
+            "users", "otp_challenges", "com.smartdroneinspection.users.domain.OtpChallenge"),
         Arguments.of(
             "inspections", "inspections", "com.smartdroneinspection.inspections.domain.Inspection"),
         Arguments.of(
@@ -60,18 +59,6 @@ class PersistenceEntityOwnershipTest {
             "inspections",
             "inspection_reports",
             "com.smartdroneinspection.inspections.domain.InspectionReport"),
-        Arguments.of(
-            "inspections",
-            "recurring_inspection_schedules",
-            "com.smartdroneinspection.inspections.domain.RecurringInspectionSchedule"),
-        Arguments.of(
-            "inspections",
-            "schedule_occurrences",
-            "com.smartdroneinspection.inspections.domain.ScheduleOccurrence"),
-        Arguments.of(
-            "subscriptions",
-            "payment_transactions",
-            "com.smartdroneinspection.subscriptions.domain.PaymentTransaction"),
         Arguments.of(
             "maintenance",
             "maintenance_work_orders",
@@ -115,6 +102,10 @@ class PersistenceEntityOwnershipTest {
         Arguments.of(
             "maintenance",
             "repair_knowledge_chunks",
-            "com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk"));
+            "com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk"),
+        Arguments.of(
+            "users",
+            "inspector_flight_logs",
+            "com.smartdroneinspection.users.domain.InspectorFlightLog"));
   }
 }

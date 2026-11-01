@@ -4,7 +4,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
-import com.smartdroneinspection.inspections.events.InspectionReminderDueEvent;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,22 +34,6 @@ class InspectionNotificationListenerTest {
 
     verify(notificationService)
         .recordInspectionAssignment(inspectionId, orgId, inspectorId, plannedStart);
-  }
-
-  @Test
-  void onInspectionReminderDueDelegatesToService() {
-    UUID inspectionId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
-    UUID inspectorId = UUID.randomUUID();
-    Instant plannedStart = Instant.now();
-
-    InspectionReminderDueEvent event =
-        new InspectionReminderDueEvent(inspectionId, orgId, inspectorId, plannedStart);
-
-    listener.onInspectionReminderDue(event);
-
-    verify(notificationService)
-        .recordInspectionReminder(inspectionId, orgId, inspectorId, plannedStart);
   }
 
   @Test

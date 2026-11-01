@@ -375,8 +375,6 @@ public class ReportDraftClient implements ReportDraftPort {
           .append(session.endedAt());
       if (hasText(session.preFlightChecklistNote()))
         builder.append(" | Pre-flight checklist note: ").append(session.preFlightChecklistNote());
-      if (hasText(session.postponementReason()))
-        builder.append(" | Postponement reason: ").append(session.postponementReason());
       if (hasText(session.abortReason()))
         builder.append(" | Abort reason: ").append(session.abortReason());
       builder

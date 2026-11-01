@@ -28,8 +28,6 @@ class DronePersistenceTest {
   @Test
   void roundTripsEveryMappedDroneColumn() {
     Fixture fixture = persistFixture();
-    Instant lastMaintenanceAt = Instant.parse("2026-08-01T10:00:00Z");
-    Instant nextMaintenanceAt = Instant.parse("2026-09-01T10:00:00Z");
     Instant registrationExpiresAt = Instant.parse("2027-08-01T10:00:00Z");
 
     Drone saved =
@@ -41,8 +39,6 @@ class DronePersistenceTest {
                 "DJI",
                 "{\"payloadGrams\": 500}",
                 DroneServiceability.MAINTENANCE,
-                lastMaintenanceAt,
-                nextMaintenanceAt,
                 "Awaiting blades",
                 "REG-12345",
                 "drones/reg/cert.pdf",
@@ -56,8 +52,6 @@ class DronePersistenceTest {
     assertThat(reloaded.getManufacturer()).isEqualTo("DJI");
     assertThat(reloaded.getPayloadMetadata()).isEqualTo("{\"payloadGrams\": 500}");
     assertThat(reloaded.getServiceability()).isEqualTo(DroneServiceability.MAINTENANCE);
-    assertThat(reloaded.getLastMaintenanceAt()).isEqualTo(lastMaintenanceAt);
-    assertThat(reloaded.getNextMaintenanceAt()).isEqualTo(nextMaintenanceAt);
     assertThat(reloaded.getNotes()).isEqualTo("Awaiting blades");
     assertThat(reloaded.getRegistrationNumber()).isEqualTo("REG-12345");
     assertThat(reloaded.getRegistrationFileKey()).isEqualTo("drones/reg/cert.pdf");
@@ -121,15 +115,7 @@ class DronePersistenceTest {
 
   private Drone newDrone(UUID organizationId, String serialNumber) {
     return new Drone(
-        organizationId,
-        serialNumber,
-        "Mavic 3",
-        "DJI",
-        "{}",
-        DroneServiceability.ACTIVE,
-        null,
-        null,
-        null);
+        organizationId, serialNumber, "Mavic 3", "DJI", "{}", DroneServiceability.ACTIVE, null);
   }
 
   private Fixture persistFixture() {

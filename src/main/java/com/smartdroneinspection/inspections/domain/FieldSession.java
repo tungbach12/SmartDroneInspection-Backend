@@ -44,9 +44,6 @@ public class FieldSession {
   @Column(name = "ended_at")
   private Instant endedAt;
 
-  @Column(name = "postponement_reason", length = 2000)
-  private String postponementReason;
-
   @Column(name = "abort_reason", length = 2000)
   private String abortReason;
 
@@ -155,8 +152,9 @@ public class FieldSession {
     return endedAt;
   }
 
+  /** Retained for response compatibility; postponement is no longer a field-session state. */
   public String getPostponementReason() {
-    return postponementReason;
+    return null;
   }
 
   public String getAbortReason() {

@@ -55,9 +55,6 @@ public class MaintenanceTask {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
-
   @Version
   @Column(name = "row_version", nullable = false)
   private long rowVersion;
@@ -83,7 +80,6 @@ public class MaintenanceTask {
     this.acceptanceCriteria = acceptanceCriteria;
     this.status = TaskStatus.PLANNED;
     this.createdAt = Instant.now();
-    this.updatedAt = this.createdAt;
   }
 
   /** MF4-05: a task may only be planned before its dates run backwards. */
@@ -103,13 +99,11 @@ public class MaintenanceTask {
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
     this.acceptanceCriteria = acceptanceCriteria;
-    this.updatedAt = Instant.now();
   }
 
   public void markReady() {
     if (status == TaskStatus.PLANNED) {
       this.status = TaskStatus.READY;
-      this.updatedAt = Instant.now();
     }
   }
 
@@ -118,28 +112,24 @@ public class MaintenanceTask {
         || status == TaskStatus.READY
         || status == TaskStatus.REWORK_REQUIRED) {
       this.status = TaskStatus.IN_PROGRESS;
-      this.updatedAt = Instant.now();
     }
   }
 
   public void markWorkCompleted() {
     if (status != TaskStatus.CANCELLED && status != TaskStatus.ACCEPTED) {
       this.status = TaskStatus.WORK_COMPLETED;
-      this.updatedAt = Instant.now();
     }
   }
 
   public void markAccepted() {
     if (status != TaskStatus.CANCELLED) {
       this.status = TaskStatus.ACCEPTED;
-      this.updatedAt = Instant.now();
     }
   }
 
   public void markReworkRequired() {
     if (status != TaskStatus.CANCELLED) {
       this.status = TaskStatus.REWORK_REQUIRED;
-      this.updatedAt = Instant.now();
     }
   }
 

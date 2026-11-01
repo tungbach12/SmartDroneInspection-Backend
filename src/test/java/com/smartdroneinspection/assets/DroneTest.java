@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
-import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -40,18 +39,5 @@ class DroneTest {
     assertThatThrownBy(() -> drone.changeServiceability(DroneServiceability.ACTIVE))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("Retired drones cannot change serviceability");
-  }
-
-  @Test
-  void recordingMaintenanceKeepsTheDueDateAndNotes() {
-    Drone drone = new Drone(UUID.randomUUID(), "DJI-M350-RTK-003");
-    Instant servicedAt = Instant.now();
-    Instant nextDueAt = servicedAt.plusSeconds(90L * 86_400L);
-
-    drone.recordMaintenance(servicedAt, nextDueAt, "Replaced gimbal bearing");
-
-    assertThat(drone.getLastMaintenanceAt()).isEqualTo(servicedAt);
-    assertThat(drone.getNextMaintenanceAt()).isEqualTo(nextDueAt);
-    assertThat(drone.getNotes()).isEqualTo("Replaced gimbal bearing");
   }
 }

@@ -324,14 +324,7 @@ class ReportDraftClientTest {
                 "PENDING")),
         List.of(
             new com.smartdroneinspection.inspections.spi.ReportDraftPort.FieldSessionSummary(
-                "session-1",
-                "IN_PROGRESS",
-                "2026-10-12T10:00:00Z",
-                null,
-                null,
-                null,
-                null,
-                "drone-1")));
+                "session-1", "IN_PROGRESS", "2026-10-12T10:00:00Z", null, null, null, "drone-1")));
   }
 
   private ReportDraftClient client(String apiKey, String model) {

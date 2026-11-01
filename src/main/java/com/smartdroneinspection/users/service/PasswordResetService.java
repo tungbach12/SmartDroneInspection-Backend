@@ -2,10 +2,11 @@ package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.response.SendPasswordResetOtpResponse;
-import com.smartdroneinspection.users.domain.PasswordResetOtpChallenge;
+import com.smartdroneinspection.users.domain.OtpChallenge;
 import com.smartdroneinspection.users.domain.User;
+import com.smartdroneinspection.users.domain.enums.OtpChallengePurpose;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
-import com.smartdroneinspection.users.repository.PasswordResetOtpChallengeRepository;
+import com.smartdroneinspection.users.repository.OtpChallengeRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
 import java.security.SecureRandom;
@@ -27,7 +28,7 @@ public class PasswordResetService {
   private static final org.slf4j.Logger log =
       org.slf4j.LoggerFactory.getLogger(PasswordResetService.class);
 
-  private final PasswordResetOtpChallengeRepository challenges;
+  private final OtpChallengeRepository challenges;
   private final UserRepository users;
   private final AuthSessionRepository sessions;
   private final LoginOtpProperties properties;
@@ -37,7 +38,7 @@ public class PasswordResetService {
   private final SecurityAuditService audit;
 
   public PasswordResetService(
-      PasswordResetOtpChallengeRepository challenges,
+      OtpChallengeRepository challenges,
       UserRepository users,
       AuthSessionRepository sessions,
       LoginOtpProperties properties,
@@ -74,7 +75,9 @@ public class PasswordResetService {
 
     Instant now = Instant.now();
     Instant since = now.minusSeconds(15 * 60L);
-    if (challenges.countByEmailAndCreatedAtAfter(normalized, since) >= 5) {
+    if (challenges.countByPurposeAndDestinationAndCreatedAtAfter(
+            OtpChallengePurpose.PASSWORD_RESET, normalized, since)
+        >= 5) {
       throw new AuthException(
           HttpStatus.TOO_MANY_REQUESTS,
           "OTP_SEND_RATE_LIMITED",
@@ -84,8 +87,8 @@ public class PasswordResetService {
     String code = String.format("%06d", RANDOM.nextInt(1_000_000));
     String rawChallenge = AuthCrypto.randomToken();
 
-    PasswordResetOtpChallenge challenge =
-        new PasswordResetOtpChallenge(
+    OtpChallenge challenge =
+        OtpChallenge.passwordReset(
             hash("pwd-reset-challenge:" + rawChallenge),
             normalized,
             hash("pwd-reset-otp:" + code),
@@ -135,9 +138,10 @@ public class PasswordResetService {
                         "USER_NOT_FOUND",
                         "Không tìm thấy tài khoản với địa chỉ email này."));
 
-    PasswordResetOtpChallenge challenge =
+    OtpChallenge challenge =
         challenges
-            .findByChallengeHash(hash("pwd-reset-challenge:" + rawChallenge))
+            .findForUpdateByChallengeHashAndPurpose(
+                hash("pwd-reset-challenge:" + rawChallenge), OtpChallengePurpose.PASSWORD_RESET)
             .orElseThrow(
                 () ->
                     new AuthException(
@@ -145,7 +149,7 @@ public class PasswordResetService {
                         "INVALID_CHALLENGE",
                         "Phiên xác thực đã hết hạn hoặc không tồn tại."));
 
-    if (!challenge.getEmail().equalsIgnoreCase(normalized)) {
+    if (!challenge.getDestination().equalsIgnoreCase(normalized)) {
       throw new AuthException(
           HttpStatus.BAD_REQUEST, "INVALID_CHALLENGE", "Email không khớp với phiên xác thực.");
     }

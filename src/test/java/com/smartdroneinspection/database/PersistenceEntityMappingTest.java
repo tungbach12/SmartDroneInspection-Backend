@@ -6,15 +6,11 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.Drone;
-import com.smartdroneinspection.assets.domain.DroneLease;
-import com.smartdroneinspection.assets.domain.PlatformDrone;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.domain.RecurringInspectionSchedule;
-import com.smartdroneinspection.inspections.domain.ScheduleOccurrence;
 import com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision;
 import com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder;
 import com.smartdroneinspection.maintenance.domain.MaintenanceCostLine;
@@ -26,10 +22,10 @@ import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
 import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
 import com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk;
 import com.smartdroneinspection.notifications.domain.Notification;
-import com.smartdroneinspection.subscriptions.domain.PaymentTransaction;
-import com.smartdroneinspection.subscriptions.domain.Subscription;
 import com.smartdroneinspection.users.domain.AuthSession;
+import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.Organization;
+import com.smartdroneinspection.users.domain.OtpChallenge;
 import com.smartdroneinspection.users.domain.User;
 import java.util.List;
 import org.hibernate.boot.Metadata;
@@ -47,21 +43,17 @@ class PersistenceEntityMappingTest {
           AssetCategory.class,
           AssetDocument.class,
           Drone.class,
-          PlatformDrone.class,
-          DroneLease.class,
           Inspection.class,
-          RecurringInspectionSchedule.class,
-          ScheduleOccurrence.class,
           FieldSession.class,
           Evidence.class,
           Finding.class,
           InspectionReport.class,
           Notification.class,
           AuthSession.class,
+          InspectorProfile.class,
+          OtpChallenge.class,
           Organization.class,
           User.class,
-          Subscription.class,
-          PaymentTransaction.class,
           MaintenanceWorkOrder.class,
           MaintenanceTask.class,
           MaintenanceTeamMember.class,

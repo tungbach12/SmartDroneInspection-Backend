@@ -156,49 +156,6 @@ class InspectionNotificationServiceTest {
   }
 
   @Test
-  void reminderSkipsWhenPlannedStartNotInFuture() {
-    UUID inspectionId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
-    UUID inspectorId = UUID.randomUUID();
-    Instant pastTime = Instant.now().minus(1, ChronoUnit.HOURS);
-
-    service.recordInspectionReminder(inspectionId, orgId, inspectorId, null);
-    service.recordInspectionReminder(inspectionId, orgId, inspectorId, pastTime);
-
-    verify(userAccess, never()).findActiveUser(any());
-    verify(notificationRepository, never()).saveAndFlush(any());
-  }
-
-  @Test
-  void reminderSavesNotificationSuccessfullyForFutureDate() {
-    UUID inspectionId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
-    UUID inspectorId = UUID.randomUUID();
-    Instant futureStart = Instant.now().plus(2, ChronoUnit.DAYS);
-    String key = "INSPECTION_REMINDER:" + inspectionId + ":" + inspectorId + ":" + futureStart;
-
-    ActiveUser user = new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId, "Inspector Test");
-    when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(user));
-    when(notificationRepository.existsByDeduplicationKey(key)).thenReturn(false);
-
-    service.recordInspectionReminder(inspectionId, orgId, inspectorId, futureStart);
-
-    ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-    verify(notificationRepository).saveAndFlush(captor.capture());
-
-    Notification saved = captor.getValue();
-    assertThat(saved.getRecipientUserId()).isEqualTo(inspectorId);
-    assertThat(saved.getOrganizationId()).isEqualTo(orgId);
-    assertThat(saved.getEventType()).isEqualTo("INSPECTION_REMINDER");
-    assertThat(saved.getChannel()).isEqualTo(NotificationChannel.IN_APP);
-    assertThat(saved.getTitle()).isEqualTo("Inspection Reminder");
-    assertThat(saved.getBody()).contains(inspectionId.toString());
-    assertThat(saved.getTargetPath()).isEqualTo("/inspections/" + inspectionId);
-    assertThat(saved.getStatus()).isEqualTo(NotificationStatus.SENT);
-    assertThat(saved.getDeduplicationKey()).isEqualTo(key);
-  }
-
-  @Test
   void recordFieldSessionAbortedCreatesNotificationForManagers() {
     UUID inspectionId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();

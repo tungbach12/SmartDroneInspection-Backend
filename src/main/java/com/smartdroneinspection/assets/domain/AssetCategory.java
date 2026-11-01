@@ -6,7 +6,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -28,12 +27,6 @@ public class AssetCategory {
   @Column(nullable = false)
   private boolean active;
 
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt;
-
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
-
   @Version
   @Column(name = "row_version", nullable = false)
   private long rowVersion;
@@ -45,8 +38,6 @@ public class AssetCategory {
     this.name = name;
     this.description = description;
     this.active = active;
-    this.createdAt = Instant.now();
-    this.updatedAt = createdAt;
   }
 
   public UUID getId() {

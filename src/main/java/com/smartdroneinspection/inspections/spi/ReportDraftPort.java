@@ -87,7 +87,6 @@ public interface ReportDraftPort {
       String startedAt,
       String endedAt,
       String preFlightChecklistNote,
-      String postponementReason,
       String abortReason,
       String assignedDroneId) {}
 
