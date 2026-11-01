@@ -51,9 +51,7 @@ public class PartnerRegistryController {
       @Valid @RequestBody RegisterPartnerInspectorRequest request) {
     UUID managerId = actorId(jwt);
     var inspector = partners.registerInspector(managerId, request.inspectorUserId());
-    return ApiResponse.success(
-        PartnerInspectorResponse.from(
-            partners.getInspector(managerId, inspector.getInspectorUserId())));
+    return ApiResponse.success(PartnerInspectorResponse.from(inspector));
   }
 
   @PatchMapping("/inspectors/{inspectorId}")
@@ -77,12 +75,7 @@ public class PartnerRegistryController {
       @AuthenticationPrincipal Jwt jwt,
       @Valid @RequestBody RegisterPartnerResourceRequest request) {
     var drone = partners.registerDrone(actorId(jwt), request.droneId());
-    return ApiResponse.success(
-        partners.listDrones(actorId(jwt)).stream()
-            .filter(option -> option.id().equals(drone.getDroneId()))
-            .findFirst()
-            .map(PartnerDroneResponse::from)
-            .orElseThrow());
+    return ApiResponse.success(PartnerDroneResponse.from(drone));
   }
 
   @PatchMapping("/drones/{droneId}")

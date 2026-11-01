@@ -11,6 +11,7 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.util.StringUtils;
 
@@ -70,29 +71,8 @@ public class ServiceRequest {
   @Column(name = "accepted_quote_version")
   private Integer acceptedQuoteVersion;
 
-  @Column(name = "accepted_by_user_id")
-  private UUID acceptedByUserId;
-
-  @Column(name = "accepted_at")
-  private Instant acceptedAt;
-
   @Column(name = "contract_object_key", length = 1000)
   private String contractObjectKey;
-
-  @Column(name = "contract_file_name", length = 500)
-  private String contractFileName;
-
-  @Column(name = "contract_content_type", length = 160)
-  private String contractContentType;
-
-  @Column(name = "contract_size_bytes")
-  private Long contractSizeBytes;
-
-  @Column(name = "contract_checksum_sha256", length = 64)
-  private String contractChecksumSha256;
-
-  @Column(name = "contract_uploaded_by_user_id")
-  private UUID contractUploadedByUserId;
 
   @Column(name = "contract_uploaded_at")
   private Instant contractUploadedAt;
@@ -257,12 +237,8 @@ public class ServiceRequest {
     return acceptedQuoteVersion;
   }
 
-  public UUID getAcceptedByUserId() {
-    return acceptedByUserId;
-  }
-
-  public Instant getAcceptedAt() {
-    return acceptedAt;
+  public boolean hasSignedContract() {
+    return StringUtils.hasText(contractObjectKey);
   }
 
   public String getContractObjectKey() {
@@ -270,23 +246,35 @@ public class ServiceRequest {
   }
 
   public String getContractFileName() {
-    return contractFileName;
+    if (!StringUtils.hasText(contractObjectKey)) {
+      return null;
+    }
+    int slash = contractObjectKey.lastIndexOf('/');
+    return slash >= 0 && slash + 1 < contractObjectKey.length()
+        ? contractObjectKey.substring(slash + 1)
+        : contractObjectKey;
   }
 
   public String getContractContentType() {
-    return contractContentType;
+    String fileName = getContractFileName();
+    if (fileName == null) {
+      return null;
+    }
+    String lower = fileName.toLowerCase(Locale.ROOT);
+    if (lower.endsWith(".docx")) {
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    }
+    if (lower.endsWith(".png")) {
+      return "image/png";
+    }
+    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+      return "image/jpeg";
+    }
+    return "application/pdf";
   }
 
   public Long getContractSizeBytes() {
-    return contractSizeBytes;
-  }
-
-  public String getContractChecksumSha256() {
-    return contractChecksumSha256;
-  }
-
-  public UUID getContractUploadedByUserId() {
-    return contractUploadedByUserId;
+    return null;
   }
 
   public Instant getContractUploadedAt() {
@@ -305,15 +293,35 @@ public class ServiceRequest {
     updatedAt = Instant.now();
   }
 
-  public void acceptQuote(int version, UUID userId) {
+  public void acceptQuote(int version) {
     if (status != ServiceRequestStatus.QUOTED || acceptedQuoteVersion != null) {
       throw new IllegalStateException("Request cannot accept another quote");
     }
     acceptedQuoteVersion = version;
-    acceptedByUserId = userId;
-    acceptedAt = Instant.now();
     status = ServiceRequestStatus.ACCEPTED;
-    updatedAt = acceptedAt;
+    updatedAt = Instant.now();
+  }
+
+  public void acceptQuote(int version, UUID userId) {
+    acceptQuote(version);
+  }
+
+  public void recordSignedContract(String objectKey) {
+    if ((status != ServiceRequestStatus.ACCEPTED
+            && status != ServiceRequestStatus.CONTRACT_SIGNED
+            && status != ServiceRequestStatus.ASSIGNED)
+        || acceptedQuoteVersion == null) {
+      throw new IllegalStateException("A quote must be accepted before contract upload");
+    }
+    if (!StringUtils.hasText(objectKey)) {
+      throw new IllegalArgumentException("Contract object key is required");
+    }
+    contractObjectKey = objectKey.trim();
+    contractUploadedAt = Instant.now();
+    if (status == ServiceRequestStatus.ACCEPTED) {
+      status = ServiceRequestStatus.CONTRACT_SIGNED;
+    }
+    updatedAt = contractUploadedAt;
   }
 
   public void recordSignedContract(
@@ -323,21 +331,12 @@ public class ServiceRequest {
       long size,
       String checksum,
       UUID uploadedBy) {
-    if (status != ServiceRequestStatus.ACCEPTED || acceptedQuoteVersion == null) {
-      throw new IllegalStateException("A quote must be accepted before contract upload");
-    }
     if (!StringUtils.hasText(objectKey) || !StringUtils.hasText(fileName)) {
       throw new IllegalArgumentException("Contract file metadata is required");
     }
-    contractObjectKey = objectKey;
-    contractFileName = fileName;
-    contractContentType = contentType;
-    contractSizeBytes = size;
-    contractChecksumSha256 = checksum;
-    contractUploadedByUserId = uploadedBy;
-    contractUploadedAt = Instant.now();
-    status = ServiceRequestStatus.CONTRACT_SIGNED;
-    updatedAt = contractUploadedAt;
+    String keyWithFileName =
+        objectKey.endsWith("/" + fileName) ? objectKey : (objectKey + "/" + fileName);
+    recordSignedContract(keyWithFileName);
   }
 
   public void markAssigned() {

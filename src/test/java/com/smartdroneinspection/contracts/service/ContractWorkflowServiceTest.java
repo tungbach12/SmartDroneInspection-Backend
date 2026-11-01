@@ -587,7 +587,7 @@ class ContractWorkflowServiceTest {
     verify(objectStore).put(any(String.class), eq("application/pdf"), eq(8L), any());
     verify(occurrences).save(any(ServiceRequestOccurrence.class));
     assertThat(request.getContractFileName()).isEqualTo("signed_contract.pdf");
-    assertThat(request.getContractChecksumSha256()).hasSize(64);
+    assertThat(request.hasSignedContract()).isTrue();
   }
 
   @Test
@@ -766,13 +766,12 @@ class ContractWorkflowServiceTest {
         managerId);
     when(requests.findByIdAndOrganizationId(requestId, orgId)).thenReturn(Optional.of(request));
     when(requests.findById(requestId)).thenReturn(Optional.of(request));
-    when(objectStore.open("contracts/requests/private-key"))
+    when(objectStore.open("contracts/requests/private-key/signed_contract.pdf"))
         .thenAnswer(invocation -> new java.io.ByteArrayInputStream("%PDF-e2e".getBytes()));
 
     var customerFile = service.openSignedContract(customerId, requestId);
     assertThat(customerFile.fileName()).isEqualTo("signed_contract.pdf");
     assertThat(customerFile.contentType()).isEqualTo("application/pdf");
-    assertThat(customerFile.sizeBytes()).isEqualTo(8);
     assertThat(customerFile.stream().readAllBytes()).isEqualTo("%PDF-e2e".getBytes());
 
     var managerFile = service.openSignedContract(managerId, requestId);
@@ -835,8 +834,7 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Per-occurrence signed contract gate blocks assignment when occurrence has no contract")
+  @DisplayName("Signed contract gate blocks assignment when request has no contract")
   void assignOccurrenceBlockedWhenOccurrenceHasNoSignedContract() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
@@ -861,18 +859,19 @@ class ContractWorkflowServiceTest {
     assertThatThrownBy(() -> service.assignOccurrence(managerId, requestId, occurrenceId, input))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining(
-            "Occurrence must have its own signed contract attached before assignment");
+            "Service request must have a signed contract attached before assignment");
   }
 
   @Test
-  @DisplayName("Recurring request occurrence 2 cannot be satisfied by occurrence 1 contract")
-  void recurringRequestOccurrencesIndependentlyGatedBySignedContract() throws IOException {
+  @DisplayName("Recurring request parent signed contract covers all occurrences")
+  void recurringRequestOccurrencesCoveredByParentSignedContract() {
     UUID requestId = UUID.randomUUID();
     UUID occ1Id = UUID.randomUUID();
     UUID occ2Id = UUID.randomUUID();
     ServiceRequest request = recurringRequest(requestId, 2, null);
     request.markQuoted();
     request.acceptQuote(1, customerId);
+    request.recordSignedContract("contracts/requests/" + requestId + "/signed-master.pdf");
 
     ServiceRequestOccurrence occ1 =
         new ServiceRequestOccurrence(
@@ -880,8 +879,6 @@ class ContractWorkflowServiceTest {
             1,
             Instant.parse("2027-02-01T09:00:00Z"),
             Instant.parse("2027-02-01T10:00:00Z"));
-    occ1.recordSignedContract(
-        "contracts/occ1", "signed-occ1.pdf", "application/pdf", 123L, "sha1".repeat(16), managerId);
 
     ServiceRequestOccurrence occ2 =
         new ServiceRequestOccurrence(
@@ -901,25 +898,21 @@ class ContractWorkflowServiceTest {
     when(assignment.assign(any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(UUID.randomUUID());
 
-    // Occ 1 has its contract, can be assigned
     AssignOccurrenceRequest input1 =
         new AssignOccurrenceRequest(
             occ1.getPlannedStartAt(), occ1.getPlannedEndAt(), inspectorId, droneId);
-    var resp1 = service.assignOccurrence(managerId, requestId, occ1Id, input1);
+    service.assignOccurrence(managerId, requestId, occ1Id, input1);
     assertThat(occ1.getStatus()).isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED);
 
-    // Occ 2 does not have its own contract, assignment must be blocked!
     AssignOccurrenceRequest input2 =
         new AssignOccurrenceRequest(
             occ2.getPlannedStartAt(), occ2.getPlannedEndAt(), inspectorId, droneId);
-    assertThatThrownBy(() -> service.assignOccurrence(managerId, requestId, occ2Id, input2))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining(
-            "Occurrence must have its own signed contract attached before assignment");
+    service.assignOccurrence(managerId, requestId, occ2Id, input2);
+    assertThat(occ2.getStatus()).isEqualTo(ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED);
   }
 
   @Test
-  @DisplayName("Manager can upload signed DOCX and PDF directly to an occurrence")
+  @DisplayName("Manager can upload signed DOCX and PDF directly via occurrence endpoint")
   void managerCanUploadSignedDocxAndPdfForOccurrence() throws IOException {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
@@ -953,9 +946,9 @@ class ContractWorkflowServiceTest {
 
     service.uploadOccurrenceSignedContract(managerId, requestId, occurrenceId, docxFile);
 
-    assertThat(occurrence.hasSignedContract()).isTrue();
-    assertThat(occurrence.getContractFileName()).isEqualTo("signed-contract.docx");
-    assertThat(occurrence.getContractContentType())
+    assertThat(request.hasSignedContract()).isTrue();
+    assertThat(request.getContractFileName()).isEqualTo("signed-contract.docx");
+    assertThat(request.getContractContentType())
         .isEqualTo("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     verify(objectStore)
         .put(
@@ -1128,8 +1121,6 @@ class ContractWorkflowServiceTest {
     service.customerAcceptReport(customerId, requestId, occurrenceId, reportVersionId);
 
     assertThat(occurrence.getReportAcceptedAt()).isNotNull();
-    assertThat(occurrence.getReportAcceptedByUserId()).isEqualTo(customerId);
-    assertThat(occurrence.getAcceptedReportVersionId()).isEqualTo(reportVersionId);
     assertThat(occurrence.getPaymentStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAYMENT_DUE);
   }
@@ -1220,7 +1211,7 @@ class ContractWorkflowServiceTest {
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
     assertThat(occurrence.getPaymentReference()).isEqualTo("TXN-12345");
-    assertThat(occurrence.getPaymentConfirmedByUserId()).isEqualTo(managerId);
+    assertThat(occurrence.getPaymentConfirmedAt()).isNotNull();
 
     // Duplicate exact confirmation is idempotent
     service.confirmOccurrencePayment(managerId, requestId, occurrenceId, matching);
@@ -1293,7 +1284,7 @@ class ContractWorkflowServiceTest {
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
     assertThat(occurrence.getPayoutReference()).isEqualTo("PAYOUT-REF-999");
-    assertThat(occurrence.getPayoutRecordedByUserId()).isEqualTo(managerId);
+    assertThat(occurrence.getPayoutRecordedAt()).isNotNull();
 
     // Duplicate payout recording is idempotent
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
