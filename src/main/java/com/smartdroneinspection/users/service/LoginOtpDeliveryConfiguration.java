@@ -10,7 +10,10 @@ public class LoginOtpDeliveryConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(LoginOtpDelivery.class)
-  @ConditionalOnProperty(prefix = "app.auth.otp", name = "enabled", havingValue = "false")
+  @ConditionalOnProperty(
+      prefix = "smartdroneinspection.auth.otp",
+      name = "enabled",
+      havingValue = "false")
   LoginOtpDelivery disabledLoginOtpDelivery() {
     return (channel, destination, code) -> {
       throw new IllegalStateException("Inspector web OTP is disabled");
