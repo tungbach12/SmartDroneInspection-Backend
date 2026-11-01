@@ -1,9 +1,13 @@
 package com.smartdroneinspection.shared.api;
 
+import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * Shared boundary interface for customer acceptance and payment of a published inspection report.
+ * Shared boundary interface for customer acceptance, payment, and auto-disbursement of a published
+ * inspection report.
  */
 public interface InspectionReportAcceptancePort {
 
@@ -13,9 +17,16 @@ public interface InspectionReportAcceptancePort {
   /** Creates a PayOS checkout link for the occurrence associated with this inspection. */
   PayOSCheckoutDetails createPayOSPaymentLink(UUID actorId, UUID inspectionId);
 
-  /** Retrieves commercial payment and report acceptance status for the occurrence. */
+  /** Retrieves commercial payment, commission, and payout status for the occurrence. */
   default PaymentStatusDetails getPaymentStatus(UUID actorId, UUID inspectionId) {
     return new PaymentStatusDetails(false, false, "NOT_APPLICABLE", null, null, null);
+  }
+
+  /**
+   * Batch retrieves commercial payment, commission, and payout status for a page of inspections.
+   */
+  default Map<UUID, PaymentStatusDetails> getPaymentStatuses(Collection<UUID> inspectionIds) {
+    return Map.of();
   }
 
   record PayOSCheckoutDetails(
@@ -27,5 +38,46 @@ public interface InspectionReportAcceptancePort {
       String paymentStatus,
       Long orderCode,
       Long amount,
-      String checkoutUrl) {}
+      String checkoutUrl,
+      BigDecimal serviceBaseAmount,
+      BigDecimal vatRate,
+      BigDecimal vatAmount,
+      BigDecimal commissionRate,
+      BigDecimal commissionAmount,
+      BigDecimal inspectorGrossPayout,
+      BigDecimal tncnRate,
+      BigDecimal tncnAmount,
+      BigDecimal inspectorNetPayout,
+      String payoutStatus,
+      String payoutReference,
+      String requestDescription) {
+
+    public PaymentStatusDetails(
+        boolean reportAccepted,
+        boolean paid,
+        String paymentStatus,
+        Long orderCode,
+        Long amount,
+        String checkoutUrl) {
+      this(
+          reportAccepted,
+          paid,
+          paymentStatus,
+          orderCode,
+          amount,
+          checkoutUrl,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null);
+    }
+  }
 }

@@ -1,5 +1,7 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionListItemResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPageResponse;
 import com.smartdroneinspection.inspections.domain.Finding;
@@ -9,15 +11,19 @@ import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -50,16 +56,32 @@ public class InspectionListService {
   private final InspectionReportRepository reports;
   private final FindingRepository findings;
   private final UserAccess userAccess;
+  private final AssetRepository assets;
+  private final Optional<InspectionReportAcceptancePort> reportAcceptancePort;
 
   public InspectionListService(
       InspectionRepository inspections,
       InspectionReportRepository reports,
       FindingRepository findings,
       UserAccess userAccess) {
+    this(inspections, reports, findings, userAccess, null, Optional.empty());
+  }
+
+  @Autowired
+  public InspectionListService(
+      InspectionRepository inspections,
+      InspectionReportRepository reports,
+      FindingRepository findings,
+      UserAccess userAccess,
+      AssetRepository assets,
+      Optional<InspectionReportAcceptancePort> reportAcceptancePort) {
     this.inspections = inspections;
     this.reports = reports;
     this.findings = findings;
     this.userAccess = userAccess;
+    this.assets = assets;
+    this.reportAcceptancePort =
+        reportAcceptancePort != null ? reportAcceptancePort : Optional.empty();
   }
 
   @Transactional(readOnly = true)
@@ -87,6 +109,9 @@ public class InspectionListService {
     int safePage = Math.max(page, 1);
     int safePageSize = clampPageSize(pageSize);
     Map<UUID, InspectionReport> reportByInspection = reportsFor(result.getContent());
+    Map<UUID, Asset> assetById = assetsFor(result.getContent());
+    Map<UUID, InspectionReportAcceptancePort.PaymentStatusDetails> paymentByInspection =
+        paymentsFor(result.getContent());
     return new InspectionPageResponse(
         result.getContent().stream()
             .map(
@@ -94,12 +119,40 @@ public class InspectionListService {
                     toItem(
                         inspection,
                         reportByInspection.get(inspection.getId()),
-                        pendingAction(inspection, reportByInspection.get(inspection.getId()))))
+                        pendingAction(inspection, reportByInspection.get(inspection.getId())),
+                        assetById.get(inspection.getAssetId()),
+                        paymentByInspection.get(inspection.getId())))
             .toList(),
         safePage,
         safePageSize,
         result.getTotalElements(),
         result.getTotalPages());
+  }
+
+  private Map<UUID, Asset> assetsFor(List<Inspection> pageRows) {
+    if (pageRows.isEmpty() || assets == null) {
+      return Map.of();
+    }
+    List<UUID> assetIds =
+        pageRows.stream().map(Inspection::getAssetId).filter(Objects::nonNull).distinct().toList();
+    if (assetIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, Asset> byId = new HashMap<>();
+    for (Asset asset : assets.findAllById(assetIds)) {
+      byId.put(asset.getId(), asset);
+    }
+    return byId;
+  }
+
+  private Map<UUID, InspectionReportAcceptancePort.PaymentStatusDetails> paymentsFor(
+      List<Inspection> pageRows) {
+    if (pageRows.isEmpty() || reportAcceptancePort.isEmpty()) {
+      return Map.of();
+    }
+    List<UUID> inspectionIds =
+        pageRows.stream().map(Inspection::getId).filter(Objects::nonNull).distinct().toList();
+    return reportAcceptancePort.get().getPaymentStatuses(inspectionIds);
   }
 
   /** The one decision the organization administrator is being asked for on this inspection. */
@@ -155,7 +208,15 @@ public class InspectionListService {
   }
 
   private InspectionListItemResponse toItem(
-      Inspection inspection, InspectionReport report, String pendingAction) {
+      Inspection inspection,
+      InspectionReport report,
+      String pendingAction,
+      Asset asset,
+      InspectionReportAcceptancePort.PaymentStatusDetails payment) {
+    String objective =
+        payment != null && payment.requestDescription() != null
+            ? payment.requestDescription()
+            : null;
     return new InspectionListItemResponse(
         inspection.getId(),
         inspection.getOrganizationId(),
@@ -171,7 +232,18 @@ public class InspectionListService {
         report == null ? null : report.getVersionNo(),
         pendingAction,
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        inspection.getWorkOrderId());
+        inspection.getWorkOrderId(),
+        objective,
+        asset == null ? null : asset.getName(),
+        asset == null ? null : asset.getCode(),
+        asset == null ? null : asset.getLocationText(),
+        payment == null ? null : payment.reportAccepted(),
+        payment == null ? null : payment.paymentStatus(),
+        payment == null ? null : payment.amount(),
+        payment == null ? null : payment.commissionRate(),
+        payment == null ? null : payment.commissionAmount(),
+        payment == null ? null : payment.inspectorNetPayout(),
+        payment == null ? null : payment.payoutStatus());
   }
 
   private Scope requireScope(UUID actorId) {

@@ -901,8 +901,114 @@ public class ContractWorkflowService
         checkoutUrl = link.checkoutUrl();
       }
     }
+    return toPaymentStatusDetails(occurrence, checkoutUrl);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public java.util.Map<UUID, InspectionReportAcceptancePort.PaymentStatusDetails>
+      getPaymentStatuses(java.util.Collection<UUID> inspectionIds) {
+    if (inspectionIds == null || inspectionIds.isEmpty()) {
+      return java.util.Map.of();
+    }
+    List<ServiceRequestOccurrence> matched = occurrences.findByInspectionIdIn(inspectionIds);
+    List<UUID> requestIds =
+        matched.stream()
+            .map(ServiceRequestOccurrence::getRequestId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList();
+    java.util.Map<UUID, ServiceRequest> requestMap = new java.util.HashMap<>();
+    for (ServiceRequest req : requests.findAllById(requestIds)) {
+      requestMap.put(req.getId(), req);
+    }
+    java.util.Map<UUID, InspectionReportAcceptancePort.PaymentStatusDetails> byInspection =
+        new java.util.HashMap<>();
+    for (ServiceRequestOccurrence occurrence : matched) {
+      if (occurrence.getInspectionId() == null) {
+        continue;
+      }
+      ServiceRequest req = requestMap.get(occurrence.getRequestId());
+      String desc = req != null ? req.getDescription() : null;
+      byInspection.put(
+          occurrence.getInspectionId(), toPaymentStatusDetails(occurrence, null, desc));
+    }
+    return byInspection;
+  }
+
+  private InspectionReportAcceptancePort.PaymentStatusDetails toPaymentStatusDetails(
+      ServiceRequestOccurrence occurrence, String checkoutUrl) {
+    String desc = null;
+    if (occurrence.getRequestId() != null) {
+      desc =
+          requests
+              .findById(occurrence.getRequestId())
+              .map(ServiceRequest::getDescription)
+              .orElse(null);
+    }
+    return toPaymentStatusDetails(occurrence, checkoutUrl, desc);
+  }
+
+  private InspectionReportAcceptancePort.PaymentStatusDetails toPaymentStatusDetails(
+      ServiceRequestOccurrence occurrence, String checkoutUrl, String requestDescription) {
+    boolean accepted = occurrence.getReportAcceptedAt() != null;
+    boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
+    String status = occurrence.getPaymentStatus().name();
+    Long orderCode = occurrence.getPayosOrderCode();
+    Long amount =
+        occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : null;
+
+    java.math.BigDecimal serviceBase = occurrence.getServiceBaseAmount();
+    java.math.BigDecimal vatRate = occurrence.getVatRate();
+    java.math.BigDecimal vatAmount = occurrence.getVatAmount();
+    java.math.BigDecimal commRate = occurrence.getCommissionRate();
+    java.math.BigDecimal commAmount = occurrence.getCommissionAmount();
+    java.math.BigDecimal grossPayout = occurrence.getInspectorGrossPayout();
+    java.math.BigDecimal tncnRate = occurrence.getTncnRate();
+    java.math.BigDecimal tncnAmount = occurrence.getTncnAmount();
+    java.math.BigDecimal netPayout = occurrence.getInspectorNetPayout();
+
+    if (occurrence.getTotalPrice() != null
+        && occurrence.getTotalPrice().signum() > 0
+        && commRate == null
+        && financeSettingsService != null) {
+      Optional<InspectionFinanceSettings> current = financeSettingsService.findCurrentSettings();
+      if (current.isPresent() && current.get().isFullyConfigured()) {
+        InspectionFinanceSettings s = current.get();
+        InspectionFinanceCalculator.FinanceCalculation calc =
+            InspectionFinanceCalculator.calculate(
+                occurrence.getTotalPrice(), s.getVatRate(), s.getCommissionRate(), s.getTncnRate());
+        serviceBase = calc.serviceBaseAmount();
+        vatRate = calc.vatRate();
+        vatAmount = calc.vatAmount();
+        commRate = calc.commissionRate();
+        commAmount = calc.commissionAmount();
+        grossPayout = calc.inspectorGrossPayout();
+        tncnRate = calc.tncnRate();
+        tncnAmount = calc.tncnAmount();
+        netPayout = calc.inspectorNetPayout();
+      }
+    }
+
     return new InspectionReportAcceptancePort.PaymentStatusDetails(
-        accepted, isPaid, status, orderCode, amount, checkoutUrl);
+        accepted,
+        isPaid,
+        status,
+        orderCode,
+        amount,
+        checkoutUrl,
+        serviceBase,
+        vatRate,
+        vatAmount,
+        commRate,
+        commAmount,
+        grossPayout,
+        tncnRate,
+        tncnAmount,
+        netPayout,
+        occurrence.getPayoutStatus() != null ? occurrence.getPayoutStatus().name() : null,
+        occurrence.getPayoutReference(),
+        requestDescription);
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {

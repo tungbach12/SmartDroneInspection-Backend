@@ -290,7 +290,7 @@ class PayOSPaymentIntegrationTest {
     UUID reportVersionId = prepared.reportVersionId();
     long agreedPrice = 5000000L; // Quote price is inclusive of VAT
 
-    // 2. Deliverable download is blocked with 402 PAYMENT_REQUIRED
+    // 2. Deliverable PDF export is available immediately upon report publication (not locked)
     mockMvc
         .perform(
             get(
@@ -298,7 +298,7 @@ class PayOSPaymentIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .with(principal(customerUserId, "CUSTOMER")))
-        .andExpect(status().isPaymentRequired());
+        .andExpect(status().isOk());
 
     // 3. Unauthorized org cannot access service request (404 Not Found per multi-tenant isolation)
     mockMvc
@@ -401,10 +401,10 @@ class PayOSPaymentIntegrationTest {
         .andExpect(jsonPath("$.code").value("00"))
         .andExpect(jsonPath("$.desc").value("success"));
 
-    // Verify occurrence is now PAID, payout is ELIGIBLE
+    // Verify occurrence is now PAID and payout is automatically disbursed (PAID)
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(settledOcc.getPaymentReference()).isEqualTo("PAYOS-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
 

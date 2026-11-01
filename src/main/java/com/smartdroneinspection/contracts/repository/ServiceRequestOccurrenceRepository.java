@@ -21,6 +21,8 @@ public interface ServiceRequestOccurrenceRepository
 
   Optional<ServiceRequestOccurrence> findByInspectionId(UUID inspectionId);
 
+  List<ServiceRequestOccurrence> findByInspectionIdIn(java.util.Collection<UUID> inspectionIds);
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
       "select occurrence from ServiceRequestOccurrence occurrence where occurrence.inspectionId = :inspectionId")

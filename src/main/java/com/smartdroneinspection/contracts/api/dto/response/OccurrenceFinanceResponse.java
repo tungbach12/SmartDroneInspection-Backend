@@ -110,8 +110,8 @@ public record OccurrenceFinanceResponse(
   }
 
   /**
-   * Scoped financial view for assigned Inspector: shows Inspector gross compensation, TNCN
-   * withholding, net payout, and payout status.
+   * Scoped financial view for assigned Inspector: shows full order price, platform commission,
+   * Inspector gross compensation, TNCN withholding, net payout, and auto-disbursement status.
    */
   public static OccurrenceFinanceResponse forInspector(ServiceRequestOccurrence occurrence) {
     return new OccurrenceFinanceResponse(
@@ -119,12 +119,12 @@ public record OccurrenceFinanceResponse(
         occurrence.getRequestId(),
         occurrence.getOccurrenceIndex(),
         occurrence.getCurrency(),
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+        occurrence.getTotalPrice(),
+        occurrence.getServiceBaseAmount(),
+        occurrence.getVatRate(),
+        occurrence.getVatAmount(),
+        occurrence.getCommissionRate(),
+        occurrence.getCommissionAmount(),
         occurrence.getInspectorGrossPayout(),
         occurrence.getTncnRate(),
         occurrence.getTncnAmount(),
@@ -134,7 +134,7 @@ public record OccurrenceFinanceResponse(
         occurrence.getAcceptedReportVersionId(),
         occurrence.getPaymentStatus(),
         null,
-        null,
+        occurrence.getPaymentAmount(),
         occurrence.getPaymentConfirmedAt(),
         null,
         occurrence.getPayoutStatus(),
