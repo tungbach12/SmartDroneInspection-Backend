@@ -67,22 +67,27 @@ public class OrganizationRegistrationService {
     String organizationName = request.organizationName().trim();
     String organizationCode = Organization.normalizeCode(request.organizationCode());
     var firstAsset = request.firstAsset();
-    if (firstAsset.latitude() == null || firstAsset.longitude() == null) {
-      throw new AuthException(
-          HttpStatus.BAD_REQUEST,
-          "ASSET_COORDINATES_REQUIRED",
-          "The first asset requires latitude and longitude for airspace review.");
-    }
+    boolean requiresAirspaceReview = false;
+    CustomerAirspaceEvaluation evaluation = null;
 
-    CustomerAirspaceEvaluation evaluation =
-        airspace.evaluateCustomerOnboarding(firstAsset.latitude(), firstAsset.longitude());
-    if (evaluation.status() == CustomerAirspaceStatus.NO_FLY_ZONE) {
-      throw new AuthException(
-          HttpStatus.FORBIDDEN,
-          "ASSET_IN_NO_FLY_ZONE",
-          "Customer registration is not allowed for an asset in a no-fly zone.");
+    if (firstAsset != null) {
+      if (firstAsset.latitude() == null || firstAsset.longitude() == null) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "ASSET_COORDINATES_REQUIRED",
+            "The first asset requires latitude and longitude for airspace review.");
+      }
+
+      evaluation =
+          airspace.evaluateCustomerOnboarding(firstAsset.latitude(), firstAsset.longitude());
+      if (evaluation.status() == CustomerAirspaceStatus.NO_FLY_ZONE) {
+        throw new AuthException(
+            HttpStatus.FORBIDDEN,
+            "ASSET_IN_NO_FLY_ZONE",
+            "Customer registration is not allowed for an asset in a no-fly zone.");
+      }
+      requiresAirspaceReview = evaluation.status() != CustomerAirspaceStatus.CLEAR_ZONE;
     }
-    boolean requiresAirspaceReview = evaluation.status() != CustomerAirspaceStatus.CLEAR_ZONE;
 
     if (users.findByNormalizedEmail(email).isPresent()) {
       throw new AuthException(
@@ -116,7 +121,7 @@ public class OrganizationRegistrationService {
       }
       registrationOtp.verify(request.otpChallengeToken(), request.otpCode(), email);
     }
-    if (!requiresAirspaceReview) {
+    if (!requiresAirspaceReview && firstAsset != null) {
       validateFirstAsset(request.firstAsset());
     }
 
@@ -189,18 +194,20 @@ public class OrganizationRegistrationService {
 
     organization.attributeToCreator(customer.getId());
     organizations.saveAndFlush(organization);
-    events.publishEvent(
-        new CustomerRegistrationEvent(
-            organization.getId(),
-            customer.getId(),
-            firstAsset.categoryId(),
-            firstAsset.code(),
-            firstAsset.name(),
-            firstAsset.description(),
-            firstAsset.locationText(),
-            firstAsset.latitude(),
-            firstAsset.longitude(),
-            firstAsset.ownershipInformation()));
+    if (firstAsset != null) {
+      events.publishEvent(
+          new CustomerRegistrationEvent(
+              organization.getId(),
+              customer.getId(),
+              firstAsset.categoryId(),
+              firstAsset.code(),
+              firstAsset.name(),
+              firstAsset.description(),
+              firstAsset.locationText(),
+              firstAsset.latitude(),
+              firstAsset.longitude(),
+              firstAsset.ownershipInformation()));
+    }
 
     audit.record(
         null,

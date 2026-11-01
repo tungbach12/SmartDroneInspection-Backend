@@ -28,4 +28,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
   @Query(
       "select count(u) > 0 from User u where concat(',', u.roles, ',') like concat('%,', :roleName, ',%')")
   boolean existsByRoleName(@Param("roleName") String roleName);
+
+  @Query(
+      "select distinct u from User u where concat(',', u.roles, ',') like '%,INSPECTOR,%' or u.actorZone = com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER order by u.fullName")
+  List<User> findAllInspectors();
 }

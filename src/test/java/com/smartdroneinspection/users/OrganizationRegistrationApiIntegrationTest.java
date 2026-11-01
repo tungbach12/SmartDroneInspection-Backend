@@ -87,6 +87,41 @@ class OrganizationRegistrationApiIntegrationTest {
   }
 
   @Test
+  void registrationWithoutFirstAssetCreatesActiveOrganizationAndCustomer() throws Exception {
+    String unique = UUID.randomUUID().toString().replace("-", "");
+    String email = "direct-" + unique + "@example.test";
+    String code = "DIR-" + unique.substring(0, 16);
+    String body =
+        """
+        {
+          "email":"%s",
+          "fullName":"Direct Customer Admin",
+          "organizationName":"Direct Infrastructure Company",
+          "organizationCode":"%s",
+          "password":"a sufficiently long passphrase"
+        }
+        """
+            .formatted(email, code);
+
+    mockMvc
+        .perform(
+            post("/api/v1/auth/register")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.registrationStatus").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")))
+        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER_ORGANIZATION"));
+
+    User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
+    assertThat(customer.roleValues()).containsExactly("CUSTOMER");
+    Organization organization = organizations.findById(customer.getOrganizationId()).orElseThrow();
+    assertThat(organization.getStatus()).isEqualTo("ACTIVE");
+    assertThat(organization.getCreatedByUserId()).isEqualTo(customer.getId());
+  }
+
+  @Test
   void unlistedAirspaceCreatesDisabledProspectAndNoOrganization() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
     String email = "pending-" + unique + "@example.test";

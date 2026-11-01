@@ -30,6 +30,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,21 +44,53 @@ public class BrowserAuthController {
   private final OrganizationRegistrationService registration;
   private final RefreshCookieService cookies;
   private final com.smartdroneinspection.users.service.RegistrationOtpService registrationOtp;
+  private final com.smartdroneinspection.users.service.PasswordResetService passwordReset;
 
   public BrowserAuthController(
       AuthService auth,
       OrganizationRegistrationService registration,
       RefreshCookieService cookies,
-      com.smartdroneinspection.users.service.RegistrationOtpService registrationOtp) {
+      com.smartdroneinspection.users.service.RegistrationOtpService registrationOtp,
+      com.smartdroneinspection.users.service.PasswordResetService passwordReset) {
     this.auth = auth;
     this.registration = registration;
     this.cookies = cookies;
     this.registrationOtp = registrationOtp;
+    this.passwordReset = passwordReset;
   }
 
   @GetMapping("/csrf")
   public ApiResponse<CsrfToken> csrf(CsrfToken token) {
     return ApiResponse.success(token);
+  }
+
+  @PostMapping("/password-reset/otp/send")
+  public ResponseEntity<
+          ApiResponse<com.smartdroneinspection.users.api.dto.response.SendPasswordResetOtpResponse>>
+      sendPasswordResetOtp(
+          @Valid @RequestBody
+              com.smartdroneinspection.users.api.dto.request.SendPasswordResetOtpRequest body,
+          HttpServletRequest request) {
+    var response = passwordReset.sendOtp(body.email(), clientIp(request));
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(ApiResponse.success(response));
+  }
+
+  @PostMapping("/password-reset/confirm")
+  public ResponseEntity<ApiResponse<Void>> confirmPasswordReset(
+      @Valid @RequestBody
+          com.smartdroneinspection.users.api.dto.request.ConfirmPasswordResetRequest body,
+      HttpServletRequest request) {
+    passwordReset.confirmPasswordReset(
+        body.email(),
+        body.challengeToken(),
+        body.code(),
+        body.newPassword(),
+        clientIp(request),
+        userAgent(request),
+        correlationId(request));
+    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.success(null));
   }
 
   @PostMapping("/registration/otp/send")
@@ -231,6 +264,16 @@ public class BrowserAuthController {
         .header(HttpHeaders.SET_COOKIE, cookies.clear().toString())
         .cacheControl(CacheControl.noStore())
         .build();
+  }
+
+  @PatchMapping("/profile/avatar")
+  public ResponseEntity<ApiResponse<UserResponse>> updateAvatar(
+      @AuthenticationPrincipal Jwt jwt,
+      @Valid @RequestBody com.smartdroneinspection.users.api.dto.request.UpdateAvatarRequest body) {
+    var updated = auth.updateAvatar(UUID.fromString(jwt.getSubject()), body.avatarUrl());
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(ApiResponse.success(updated));
   }
 
   private ResponseEntity<ApiResponse<AuthFlowResponse>> webResponse(AuthService.AuthResult result) {

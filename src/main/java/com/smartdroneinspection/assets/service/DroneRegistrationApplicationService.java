@@ -89,7 +89,8 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
-    return DroneRegistrationApplicationResponse.from(application);
+    var inspector = userAccess.findActiveUser(inspectorId).orElse(null);
+    return DroneRegistrationApplicationResponse.from(application, inspector);
   }
 
   @Transactional(readOnly = true)
@@ -130,8 +131,9 @@ public class DroneRegistrationApplicationService {
   @Transactional(readOnly = true)
   public List<DroneRegistrationApplicationResponse> mine(UUID inspectorId) {
     requireInspector(inspectorId);
+    var inspector = userAccess.findUser(inspectorId).orElse(null);
     return applications.findAllByInspectorUserIdOrderByCreatedAtDesc(inspectorId).stream()
-        .map(DroneRegistrationApplicationResponse::from)
+        .map(app -> DroneRegistrationApplicationResponse.from(app, inspector))
         .toList();
   }
 
@@ -139,8 +141,12 @@ public class DroneRegistrationApplicationService {
   public List<com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse>
       inspectorDrones(UUID inspectorId) {
     requireInspector(inspectorId);
+    var inspector = userAccess.findUser(inspectorId).orElse(null);
     return drones.findAllByInspectorOwnerId(inspectorId).stream()
-        .map(com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse::from)
+        .map(
+            d ->
+                com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse.from(
+                    d, inspector))
         .toList();
   }
 
@@ -148,7 +154,29 @@ public class DroneRegistrationApplicationService {
   public List<DroneRegistrationApplicationResponse> pending(UUID reviewerId) {
     requireReviewer(reviewerId);
     return applications.findAllByStatusOrderByCreatedAtAsc("PENDING").stream()
-        .map(DroneRegistrationApplicationResponse::from)
+        .map(
+            app -> {
+              var inspector = userAccess.findUser(app.getInspectorUserId()).orElse(null);
+              return DroneRegistrationApplicationResponse.from(app, inspector);
+            })
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<DroneRegistrationApplicationResponse> history(UUID reviewerId) {
+    requireReviewer(reviewerId);
+    return applications
+        .findAllByStatusInOrderByReviewedAtDesc(List.of("APPROVED", "REJECTED"))
+        .stream()
+        .map(
+            app -> {
+              var inspector = userAccess.findUser(app.getInspectorUserId()).orElse(null);
+              var reviewer =
+                  app.getReviewedByUserId() != null
+                      ? userAccess.findUser(app.getReviewedByUserId()).orElse(null)
+                      : null;
+              return DroneRegistrationApplicationResponse.from(app, inspector, reviewer);
+            })
         .toList();
   }
 
@@ -188,7 +216,9 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
-    return DroneRegistrationApplicationResponse.from(application);
+    var inspector = userAccess.findUser(application.getInspectorUserId()).orElse(null);
+    var reviewer = userAccess.findUser(reviewerId).orElse(null);
+    return DroneRegistrationApplicationResponse.from(application, inspector, reviewer);
   }
 
   @Transactional
@@ -211,7 +241,9 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
-    return DroneRegistrationApplicationResponse.from(application);
+    var inspector = userAccess.findUser(application.getInspectorUserId()).orElse(null);
+    var reviewer = userAccess.findUser(reviewerId).orElse(null);
+    return DroneRegistrationApplicationResponse.from(application, inspector, reviewer);
   }
 
   public record EvidenceContent(String contentType, InputStream stream) {}
@@ -230,8 +262,6 @@ public class DroneRegistrationApplicationService {
         .findActiveUser(id)
         .filter(user -> "INSPECTOR_PARTNER".equals(user.actorZone()))
         .filter(user -> user.hasRole(Roles.INSPECTOR))
-        .filter(user -> user.pilotLicenseExpiresAt() != null)
-        .filter(user -> user.pilotLicenseExpiresAt().isAfter(Instant.now()))
         .orElseThrow(
             () ->
                 new AuthException(

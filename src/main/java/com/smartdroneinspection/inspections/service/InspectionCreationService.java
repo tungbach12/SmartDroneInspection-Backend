@@ -229,6 +229,15 @@ public class InspectionCreationService {
                   () ->
                       new BusinessException(
                           HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else if (actor.isInspectorPartner()) {
+      inspection =
+          inspections
+              .findAssignedInspectorInspection(inspectionId, null, actorId, true)
+              .filter(Inspection::isPartnerAssignment)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
     } else {
       UUID organizationId = actor.organizationId();
       inspection =

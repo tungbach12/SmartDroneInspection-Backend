@@ -2,6 +2,8 @@ package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateAssetRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
+import com.smartdroneinspection.assets.api.dto.response.AirspaceEvaluationResponse;
+import com.smartdroneinspection.assets.api.dto.response.AirspaceZoneResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
 import com.smartdroneinspection.assets.domain.Asset;
@@ -29,22 +31,30 @@ public class AssetService {
   private final AssetCategoryRepository categories;
   private final UserAccess userAccess;
   private final SubscriptionEntitlement entitlement;
+  private final AirspaceAdvisoryService airspaceAdvisory;
 
   public AssetService(
       AssetRepository assets,
       AssetCategoryRepository categories,
       UserAccess userAccess,
-      SubscriptionEntitlement entitlement) {
+      SubscriptionEntitlement entitlement,
+      AirspaceAdvisoryService airspaceAdvisory) {
     this.assets = assets;
     this.categories = categories;
     this.userAccess = userAccess;
     this.entitlement = entitlement;
+    this.airspaceAdvisory = airspaceAdvisory;
   }
 
   @Transactional
   public AssetResponse create(UUID actorId, CreateAssetRequest request) {
     UUID organizationId = requireOrganization(requireActive(actorId));
     entitlement.requireActive(organizationId, Instant.now());
+
+    if (request.latitude() != null && request.longitude() != null) {
+      validateNoFlyZone(request.latitude(), request.longitude());
+    }
+
     AssetCategory category =
         categories
             .findById(request.categoryId())
@@ -109,6 +119,9 @@ public class AssetService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
     }
+    if (request.latitude() != null && request.longitude() != null) {
+      validateNoFlyZone(request.latitude(), request.longitude());
+    }
     asset.update(
         request.name(),
         request.description(),
@@ -118,6 +131,27 @@ public class AssetService {
         request.ownershipInformation(),
         request.inspectionItems());
     return toResponse(assets.saveAndFlush(asset));
+  }
+
+  private void validateNoFlyZone(java.math.BigDecimal latitude, java.math.BigDecimal longitude) {
+    if (airspaceAdvisory == null) {
+      return;
+    }
+    AirspaceEvaluationResponse airspace = airspaceAdvisory.evaluate(latitude, longitude);
+    if ("NO_FLY_ZONE".equals(airspace.classification())) {
+      String zoneName =
+          airspace.matchingZones().stream()
+              .filter(z -> "NO_FLY_ZONE".equals(z.zoneType()))
+              .map(AirspaceZoneResponse::name)
+              .findFirst()
+              .orElse("Vùng cấm bay tuyệt đối");
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "NO_FLY_ZONE_RESTRICTION",
+          "Tọa độ công trình nằm trong "
+              + zoneName
+              + " (Khu vực cấm bay tuyệt đối theo Quyết định 18/2020/QĐ-TTg và Nghị định 288/2025/NĐ-CP). Hệ thống không cho phép tạo hoặc di dời tài sản kiểm định drone vào khu vực cấm bay.");
+    }
   }
 
   @Transactional

@@ -116,7 +116,7 @@ public class DroneEvidenceUploadService {
                         HttpStatus.FORBIDDEN,
                         "INSPECTOR_PARTNER_REQUIRED",
                         "An active Inspector partner is required."));
-    if (!actor.isInspectorPartner() || !actor.hasValidPilotLicense(java.time.Instant.now())) {
+    if (!actor.isInspectorPartner()) {
       throw new AuthException(
           HttpStatus.FORBIDDEN,
           "INSPECTOR_PARTNER_REQUIRED",

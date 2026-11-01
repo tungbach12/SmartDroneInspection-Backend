@@ -105,6 +105,13 @@ public class DroneRegistrationApplicationController {
     return ApiResponse.success(applications.pending(subject(jwt)));
   }
 
+  @GetMapping("/history")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  public ApiResponse<List<DroneRegistrationApplicationResponse>> history(
+      @AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(applications.history(subject(jwt)));
+  }
+
   @PostMapping("/{applicationId}/approve")
   @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<DroneRegistrationApplicationResponse> approve(

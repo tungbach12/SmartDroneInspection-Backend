@@ -31,30 +31,43 @@ public final class EvidenceUploadValidator {
     } catch (IOException ex) {
       throw new BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Unreadable file");
     }
-    String contentType = file.getContentType() == null ? "" : file.getContentType();
+    String declaredType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
     String extension;
-    if (contentType.equals("application/pdf") && startsWith(content, PDF_SIGNATURE)) {
+    String resolvedContentType;
+    if (startsWith(content, PDF_SIGNATURE)) {
       extension = ".pdf";
-    } else if (contentType.equals("image/png") && startsWith(content, PNG_SIGNATURE)) {
+      resolvedContentType = "application/pdf";
+    } else if (startsWith(content, PNG_SIGNATURE)) {
       extension = ".png";
-    } else if (contentType.equals("image/jpeg")
-        && content.length >= 3
-        && content[0] == (byte) 0xff
-        && content[1] == (byte) 0xd8
-        && content[2] == (byte) 0xff) {
+      resolvedContentType = "image/png";
+    } else if (content.length >= 2 && content[0] == (byte) 0xff && content[1] == (byte) 0xd8) {
       extension = ".jpg";
-    } else if (contentType.equals("image/webp")
-        && content.length >= 12
-        && ascii(content, 0, "RIFF")
-        && ascii(content, 8, "WEBP")) {
+      resolvedContentType = "image/jpeg";
+    } else if (content.length >= 12 && ascii(content, 0, "RIFF") && ascii(content, 8, "WEBP")) {
       extension = ".webp";
+      resolvedContentType = "image/webp";
+    } else if (declaredType.equals("application/pdf") || declaredType.endsWith("/pdf")) {
+      extension = ".pdf";
+      resolvedContentType = "application/pdf";
+    } else if (declaredType.equals("image/png") || declaredType.endsWith("/png")) {
+      extension = ".png";
+      resolvedContentType = "image/png";
+    } else if (declaredType.equals("image/jpeg")
+        || declaredType.equals("image/jpg")
+        || declaredType.endsWith("/jpeg")
+        || declaredType.endsWith("/jpg")) {
+      extension = ".jpg";
+      resolvedContentType = "image/jpeg";
+    } else if (declaredType.equals("image/webp") || declaredType.endsWith("/webp")) {
+      extension = ".webp";
+      resolvedContentType = "image/webp";
     } else {
       throw new BusinessException(
           HttpStatus.UNSUPPORTED_MEDIA_TYPE,
           "UNSUPPORTED_MEDIA_TYPE",
           "Allowed document types: png, jpeg, webp, pdf with matching file content");
     }
-    return new ValidatedUpload(contentType, extension, content);
+    return new ValidatedUpload(resolvedContentType, extension, content);
   }
 
   public static String contentType(String extension) {

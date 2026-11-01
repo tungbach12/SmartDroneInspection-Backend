@@ -3,7 +3,6 @@ package com.smartdroneinspection.users.api.dto.request;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -19,7 +18,7 @@ public record OrganizationRegistrationRequest(
                 "Organization code must contain 3 to 64 letters, numbers, hyphens, or underscores.")
         String organizationCode,
     @NotBlank String password,
-    @NotNull @Valid FirstAssetRegistrationRequest firstAsset,
+    @Valid FirstAssetRegistrationRequest firstAsset,
     String otpChallengeToken,
     String otpCode) {
 

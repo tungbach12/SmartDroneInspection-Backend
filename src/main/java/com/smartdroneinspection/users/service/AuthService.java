@@ -414,6 +414,22 @@ public class AuthService {
   }
 
   @Transactional
+  public UserResponse updateAvatar(UUID userId, String avatarUrl) {
+    User user =
+        users
+            .findDetailedById(userId)
+            .filter(User::active)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.UNAUTHORIZED,
+                        "ACCOUNT_INACTIVE",
+                        "Authentication is required."));
+    user.setAvatarUrl(avatarUrl != null && !avatarUrl.isBlank() ? avatarUrl.trim() : null);
+    return toResponse(users.saveAndFlush(user));
+  }
+
+  @Transactional
   public UserResponse updatePilotLicense(
       UUID userId,
       com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest request) {
