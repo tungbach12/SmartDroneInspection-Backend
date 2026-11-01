@@ -13,6 +13,17 @@ public interface InspectionReportAcceptancePort {
   /** Creates a PayOS checkout link for the occurrence associated with this inspection. */
   PayOSCheckoutDetails createPayOSPaymentLink(UUID actorId, UUID inspectionId);
 
+  /** Retrieves the payment and acceptance status for the occurrence associated with this inspection. */
+  ReportPaymentStatus getPaymentStatus(UUID actorId, UUID inspectionId);
+
   record PayOSCheckoutDetails(
       long orderCode, long amount, String paymentLinkId, String checkoutUrl, String qrCode) {}
+
+  record ReportPaymentStatus(
+      boolean reportAccepted,
+      boolean paid,
+      String paymentStatus,
+      Long orderCode,
+      Long amount,
+      String checkoutUrl) {}
 }

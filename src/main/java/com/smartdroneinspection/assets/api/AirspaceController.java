@@ -30,6 +30,10 @@ public class AirspaceController {
     return ApiResponse.success(airspaceService.listZones());
   }
 
+  /**
+   * @deprecated Use {@code POST /api/v1/airspace/evaluate} with JSON body.
+   */
+  @Deprecated(since = "v1.1", forRemoval = true)
   @GetMapping("/evaluate")
   public ApiResponse<AirspaceEvaluationResponse> evaluateGet(
       @RequestParam BigDecimal latitude, @RequestParam BigDecimal longitude) {

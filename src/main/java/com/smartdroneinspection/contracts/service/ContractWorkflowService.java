@@ -916,6 +916,27 @@ public class ContractWorkflowService
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public InspectionReportAcceptancePort.ReportPaymentStatus getPaymentStatus(
+      UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      return new InspectionReportAcceptancePort.ReportPaymentStatus(
+          false, false, "UNKNOWN", null, null, null);
+    }
+    Optional<ServiceRequestOccurrence> occOpt = occurrences.findByInspectionId(inspectionId);
+    if (occOpt.isEmpty()) {
+      return new InspectionReportAcceptancePort.ReportPaymentStatus(
+          false, false, "NOT_APPLICABLE", null, null, null);
+    }
+    ServiceRequestOccurrence occ = occOpt.get();
+    boolean accepted =
+        occ.getStatus() == OccurrenceStatus.PAYMENT_DUE || occ.getStatus() == OccurrenceStatus.PAID;
+    boolean paid = occ.getStatus() == OccurrenceStatus.PAID;
+    return new InspectionReportAcceptancePort.ReportPaymentStatus(
+        accepted, paid, occ.getStatus().name(), occ.getPayosOrderCode(), null, null);
+  }
+
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
     if (!occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).isEmpty()) {
       return;
