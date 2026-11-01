@@ -47,7 +47,7 @@ public class InspectionNotificationService {
       return;
     }
 
-    if (!organizationId.equals(recipient.organizationId())) {
+    if (!recipient.isInspectorPartner() && !organizationId.equals(recipient.organizationId())) {
       log.warn(
           "Cannot record inspection assignment notification: organization mismatch for inspector {}",
           inspectorId);
@@ -69,12 +69,15 @@ public class InspectionNotificationService {
 
     String title = "Inspection Assigned";
     String body = "You have been assigned to inspection " + inspectionId;
-    String targetPath = "/inspections/" + inspectionId;
+    String targetPath =
+        recipient.isInspectorPartner()
+            ? "/operations/inspections/" + inspectionId
+            : "/inspections/" + inspectionId;
 
     Notification notification =
         new Notification(
             inspectorId,
-            organizationId,
+            recipient.organizationId(),
             "INSPECTION_ASSIGNED",
             NotificationChannel.IN_APP,
             title,
@@ -113,7 +116,7 @@ public class InspectionNotificationService {
       return;
     }
 
-    if (!organizationId.equals(recipient.organizationId())) {
+    if (!recipient.isInspectorPartner() && !organizationId.equals(recipient.organizationId())) {
       log.warn(
           "Cannot record inspection reminder notification: organization mismatch for inspector {}",
           inspectorId);
@@ -136,12 +139,15 @@ public class InspectionNotificationService {
 
     String title = "Inspection Reminder";
     String body = "Upcoming inspection " + inspectionId + " is scheduled for " + plannedStartAt;
-    String targetPath = "/inspections/" + inspectionId;
+    String targetPath =
+        recipient.isInspectorPartner()
+            ? "/operations/inspections/" + inspectionId
+            : "/inspections/" + inspectionId;
 
     Notification notification =
         new Notification(
             inspectorId,
-            organizationId,
+            recipient.organizationId(),
             "INSPECTION_REMINDER",
             NotificationChannel.IN_APP,
             title,
