@@ -130,7 +130,7 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void anInspectionThatIsNotReadyForFlightCannotStart() {
-    jdbcTemplate.update("UPDATE inspections SET status = 'ASSIGNED' WHERE id = ?", inspectionId);
+    jdbcTemplate.update("UPDATE inspections SET status = 'CANCELLED' WHERE id = ?", inspectionId);
     entityManager.clear();
 
     assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
@@ -208,24 +208,7 @@ class InspectionFieldSessionServiceTest {
   }
 
   @Test
-  void postponingRecordsTheReasonAndLeavesTheInspectionReadyForAnotherAttempt() {
-    FieldSession session =
-        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-
-    service.postpone(inspectorId, inspectionId, session.getId(), "High wind above 10 m/s");
-
-    assertThat(sessionStatus(session.getId())).isEqualTo("POSTPONED");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT postponement_reason FROM field_sessions WHERE id = ?",
-                String.class,
-                session.getId()))
-        .isEqualTo("High wind above 10 m/s");
-    assertThat(statusOfInspection()).isEqualTo("READY_FOR_FLIGHT");
-  }
-
-  @Test
-  void abortingRecordsTheReasonAndDoesNotReturnTheInspectionToReadyForFlight() {
+  void abortingRecordsTheReasonAndReturnsTheInspectionToScheduled() {
     FieldSession session =
         service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
 
@@ -238,12 +221,19 @@ class InspectionFieldSessionServiceTest {
                 String.class,
                 session.getId()))
         .isEqualTo("Structure found unsafe on site");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT postponement_reason FROM field_sessions WHERE id = ?",
-                String.class,
-                session.getId()))
-        .isNull();
+    assertThat(statusOfInspection()).isEqualTo("SCHEDULED");
+  }
+
+  @Test
+  void anInspectionMayBeStartedAgainAfterAnAbort() {
+    FieldSession first = service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
+    service.abort(inspectorId, inspectionId, first.getId(), "Heavy rain and high wind");
+
+    FieldSession second =
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
+
+    assertThat(second.getId()).isNotEqualTo(first.getId());
+    assertThat(sessionStatus(second.getId())).isEqualTo("IN_PROGRESS");
     assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
   }
 
@@ -291,40 +281,12 @@ class InspectionFieldSessionServiceTest {
   }
 
   @Test
-  void anInspectionMayBeStartedAgainAfterAPostponement() {
-    FieldSession first = service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-    service.postpone(inspectorId, inspectionId, first.getId(), "High wind above 10 m/s");
-
-    FieldSession second =
-        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-
-    assertThat(second.getId()).isNotEqualTo(first.getId());
-    assertThat(sessionStatus(second.getId())).isEqualTo("IN_PROGRESS");
-    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
-  }
-
-  @Test
-  void postponingWithoutAReasonIsRefused() {
-    FieldSession session =
-        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-
-    assertThatThrownBy(() -> service.postpone(inspectorId, inspectionId, session.getId(), "  "))
-        .isInstanceOf(BusinessException.class)
-        .satisfies(
-            error ->
-                assertThat(((BusinessException) error).code())
-                    .isEqualTo("POSTPONEMENT_REASON_REQUIRED"));
-    assertThat(sessionStatus(session.getId())).isEqualTo("IN_PROGRESS");
-  }
-
-  @Test
-  void anotherInspectorCannotPostponeThisSession() {
+  void anotherInspectorCannotAbortThisSession() {
     FieldSession session =
         service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
     UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
 
-    assertThatThrownBy(
-            () -> service.postpone(otherInspectorId, inspectionId, session.getId(), "Wind"))
+    assertThatThrownBy(() -> service.abort(otherInspectorId, inspectionId, session.getId(), "Wind"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error -> assertThat(((BusinessException) error).code()).isEqualTo("SESSION_NOT_FOUND"));
@@ -361,8 +323,7 @@ class InspectionFieldSessionServiceTest {
     UUID sessionId = startSession("Confirmed bridge is accessible").getId();
     UUID unrelatedInspectionId = UUID.randomUUID();
 
-    assertThatThrownBy(
-            () -> service.postpone(inspectorId, unrelatedInspectionId, sessionId, "Wind"))
+    assertThatThrownBy(() -> service.abort(inspectorId, unrelatedInspectionId, sessionId, "Wind"))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             error -> assertThat(((BusinessException) error).code()).isEqualTo("SESSION_NOT_FOUND"));
@@ -401,7 +362,7 @@ class InspectionFieldSessionServiceTest {
         """
         INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_uploaded_at, status,
           planned_start_at, planned_end_at)
-        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'READY_FOR_FLIGHT', ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'SCHEDULED', ?, ?)
         """,
         id,
         organizationId,

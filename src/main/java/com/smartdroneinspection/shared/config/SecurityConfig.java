@@ -60,12 +60,10 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             requests ->
                 requests
-                    .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf", "/api/v1/auth/oauth2/**")
                     .permitAll()
                     .requestMatchers(
                         HttpMethod.POST,
-                        "/api/v1/inspector-partner-applications",
-                        "/api/v1/inspector-partner-applications/license-document",
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
                         "/api/v1/auth/registration/otp/send",
@@ -75,7 +73,8 @@ public class SecurityConfig {
                         "/api/v1/auth/refresh",
                         "/api/v1/auth/otp/send",
                         "/api/v1/auth/otp/verify",
-                        "/api/v1/auth/google")
+                        "/api/v1/auth/google",
+                        "/api/v1/auth/oauth2/**")
                     .permitAll()
                     .anyRequest()
                     .authenticated())
@@ -104,11 +103,6 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             requests ->
                 requests
-                    .requestMatchers(
-                        HttpMethod.POST,
-                        "/api/v1/inspector-partner-applications",
-                        "/api/v1/inspector-partner-applications/license-document")
-                    .permitAll()
                     .requestMatchers(
                         "/api/v1/mobile/auth/**",
                         "/api/v1/webhooks/paypal",
@@ -147,14 +141,21 @@ public class SecurityConfig {
   CorsConfigurationSource corsConfigurationSource(AuthProperties properties) {
     var configuration = new CorsConfiguration();
     configuration.setAllowedOrigins(properties.getAllowedOrigins());
+    configuration.addAllowedOriginPattern("http://localhost:[*]");
+    configuration.addAllowedOriginPattern("http://127.0.0.1:[*]");
+    configuration.addAllowedOriginPattern("https://*.duckdns.org");
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
         List.of(
             "Authorization",
             "Content-Type",
             "X-XSRF-TOKEN",
+            "X-CSRF-TOKEN",
             "X-Correlation-ID",
-            "Accept-Language"));
+            "Accept-Language",
+            "Accept",
+            "Origin",
+            "X-Requested-With"));
     configuration.setExposedHeaders(List.of("X-Correlation-ID"));
     configuration.setAllowCredentials(true);
     configuration.setMaxAge(3600L);

@@ -88,7 +88,7 @@ class InspectionReminderJobTest {
     when(inspection.getId()).thenReturn(inspectionId);
     when(inspection.getOrganizationId()).thenReturn(orgId);
     when(inspection.getInspectorId()).thenReturn(inspectorId);
-    when(inspection.getStatus()).thenReturn(InspectionStatus.ASSIGNED);
+    when(inspection.getStatus()).thenReturn(InspectionStatus.SCHEDULED);
     when(inspection.getPlannedStartAt()).thenReturn(plannedStart);
 
     when(occurrenceRepository.findDueForReminder(eq(now), any(Instant.class), any(Pageable.class)))
@@ -165,7 +165,7 @@ class InspectionReminderJobTest {
 
     Inspection inspection = mock(Inspection.class);
     when(inspection.getId()).thenReturn(inspectionId);
-    when(inspection.getStatus()).thenReturn(InspectionStatus.ASSIGNED);
+    when(inspection.getStatus()).thenReturn(InspectionStatus.SCHEDULED);
     when(inspection.getPlannedStartAt()).thenReturn(pastStart);
 
     when(occurrenceRepository.findDueForReminder(eq(now), any(Instant.class), any(Pageable.class)))
@@ -215,7 +215,7 @@ class InspectionReminderJobTest {
     when(inspection.getOrganizationId()).thenReturn(orgId);
     when(inspection.getInspectorId()).thenReturn(inspectorId);
     when(inspection.isPartnerAssignment()).thenReturn(true);
-    when(inspection.getStatus()).thenReturn(InspectionStatus.ASSIGNED);
+    when(inspection.getStatus()).thenReturn(InspectionStatus.SCHEDULED);
     when(inspection.getPlannedStartAt()).thenReturn(plannedStart);
 
     when(occurrenceRepository.findById(occurrenceId)).thenReturn(Optional.of(occ));
@@ -226,7 +226,7 @@ class InspectionReminderJobTest {
   }
 
   @Test
-  void emitsReminderWhenInspectionIsReadyForFlight() {
+  void doesNotEmitReminderWhenInspectionIsNotScheduled() {
     Instant now = Instant.now();
     Instant plannedStart = now.plus(1, ChronoUnit.DAYS);
     ScheduleOccurrence occ =
@@ -245,13 +245,13 @@ class InspectionReminderJobTest {
     when(inspection.getId()).thenReturn(inspectionId);
     when(inspection.getOrganizationId()).thenReturn(orgId);
     when(inspection.getInspectorId()).thenReturn(inspectorId);
-    when(inspection.getStatus()).thenReturn(InspectionStatus.READY_FOR_FLIGHT);
+    when(inspection.getStatus()).thenReturn(InspectionStatus.IN_PROGRESS);
     when(inspection.getPlannedStartAt()).thenReturn(plannedStart);
 
     when(occurrenceRepository.findById(occurrenceId)).thenReturn(Optional.of(occ));
     when(inspectionRepository.findById(inspectionId)).thenReturn(Optional.of(inspection));
 
-    assertThat(reminderJob.processSingleReminder(occurrenceId, now)).isTrue();
-    verify(eventPublisher).publishEvent(any(InspectionReminderDueEvent.class));
+    assertThat(reminderJob.processSingleReminder(occurrenceId, now)).isFalse();
+    verify(eventPublisher, never()).publishEvent(any(InspectionReminderDueEvent.class));
   }
 }

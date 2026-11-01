@@ -6,6 +6,7 @@ import com.smartdroneinspection.maintenance.api.dto.request.CreateReportVersionR
 import com.smartdroneinspection.maintenance.api.dto.request.ReconcileCostsRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.RecordAcceptanceRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.RecordWorkLogRequest;
+import com.smartdroneinspection.maintenance.api.dto.response.AcceptanceComplianceResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.AcceptanceDecisionResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.ChangeOrderResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.CostReconciliationResponse;
@@ -16,6 +17,7 @@ import com.smartdroneinspection.maintenance.service.MaintenanceExecutionService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -82,6 +84,13 @@ public class MaintenanceExecutionController {
       @PathVariable UUID workLogId) {
     return ApiResponse.success(
         executionService.verifyWorkLog(actorId(jwt), workOrderId, workLogId));
+  }
+
+  @PostMapping("/work-logs/batch-verify")
+  @PreAuthorize("hasRole('MAINTENANCE_ENGINEER')")
+  public ApiResponse<List<WorkLogResponse>> batchVerifyWorkLogs(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
+    return ApiResponse.success(executionService.batchVerifyWorkLogs(actorId(jwt), workOrderId));
   }
 
   @GetMapping("/work-logs")
@@ -169,6 +178,13 @@ public class MaintenanceExecutionController {
     return ApiResponse.success(executionService.listReportVersions(actorId(jwt), workOrderId));
   }
 
+  @GetMapping("/reports/auto-draft")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MAINTENANCE_ENGINEER')")
+  public ApiResponse<Map<String, String>> generateReportDraft(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
+    return ApiResponse.success(executionService.generateReportDraft(actorId(jwt), workOrderId));
+  }
+
   @PostMapping("/reports")
   @PreAuthorize("hasRole('MAINTENANCE_ENGINEER')")
   public ApiResponse<ReportVersionResponse> createReportVersion(
@@ -202,6 +218,14 @@ public class MaintenanceExecutionController {
   public ApiResponse<List<AcceptanceDecisionResponse>> listAcceptanceDecisions(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
     return ApiResponse.success(executionService.listAcceptanceDecisions(actorId(jwt), workOrderId));
+  }
+
+  @GetMapping("/acceptance-compliance")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MAINTENANCE_ENGINEER')")
+  public ApiResponse<AcceptanceComplianceResponse> checkAcceptanceCompliance(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
+    return ApiResponse.success(
+        executionService.checkAcceptanceCompliance(actorId(jwt), workOrderId));
   }
 
   /** MF4-18: only the designated independent reviewer can reach this. */

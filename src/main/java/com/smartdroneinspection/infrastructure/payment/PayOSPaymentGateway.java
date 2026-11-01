@@ -32,7 +32,7 @@ public class PayOSPaymentGateway implements PayOSGateway {
   public String resolveReturnUrl(String inspectionId, long orderCode) {
     String base = properties.returnUrl();
     if (base == null || base.isBlank()) {
-      base = "http://localhost:5173/client/reports/{inspectionId}";
+      base = "http://localhost:3000/client/inspections/{inspectionId}/report";
     }
     String resolved = base.replace("{inspectionId}", inspectionId != null ? inspectionId : "");
     if (!resolved.contains("payment=")) {
@@ -45,7 +45,7 @@ public class PayOSPaymentGateway implements PayOSGateway {
   public String resolveCancelUrl(String inspectionId) {
     String base = properties.cancelUrl();
     if (base == null || base.isBlank()) {
-      base = "http://localhost:5173/client/reports/{inspectionId}";
+      base = "http://localhost:3000/client/inspections/{inspectionId}/report";
     }
     String resolved = base.replace("{inspectionId}", inspectionId != null ? inspectionId : "");
     if (!resolved.contains("payment=")) {
@@ -63,10 +63,10 @@ public class PayOSPaymentGateway implements PayOSGateway {
         (cancelUrl != null && !cancelUrl.isBlank()) ? cancelUrl : properties.cancelUrl();
 
     if (actualReturnUrl == null || actualReturnUrl.isBlank()) {
-      actualReturnUrl = "http://localhost:5173";
+      actualReturnUrl = "http://localhost:3000/client/inspections/report";
     }
     if (actualCancelUrl == null || actualCancelUrl.isBlank()) {
-      actualCancelUrl = "http://localhost:5173";
+      actualCancelUrl = "http://localhost:3000/client/inspections/report";
     }
 
     String cleanDescription =
@@ -115,6 +115,12 @@ public class PayOSPaymentGateway implements PayOSGateway {
 
     String code = text(response, "code");
     if (!"00".equals(code)) {
+      if ("231".equals(code)) {
+        PayOSPaymentLink existing = getPaymentLink(orderCode);
+        if (existing != null) {
+          return existing;
+        }
+      }
       String desc = text(response, "desc");
       throw new IllegalStateException("PayOS returned error code [" + code + "]: " + desc);
     }
@@ -126,6 +132,36 @@ public class PayOSPaymentGateway implements PayOSGateway {
     String status = text(data, "status");
 
     return new PayOSPaymentLink(orderCode, checkoutUrl, qrCode, amount, paymentLinkId, status);
+  }
+
+  @Override
+  public PayOSPaymentLink getPaymentLink(long orderCode) {
+    try {
+      JsonNode response =
+          client
+              .get()
+              .uri("/v2/payment-requests/" + orderCode)
+              .header("x-client-id", properties.clientId())
+              .header("x-api-key", properties.apiKey())
+              .retrieve()
+              .body(JsonNode.class);
+
+      if (response != null && "00".equals(text(response, "code"))) {
+        JsonNode data = response.path("data");
+        String paymentLinkId = text(data, "id");
+        String checkoutUrl = text(data, "checkoutUrl");
+        if (checkoutUrl == null || checkoutUrl.isBlank()) {
+          checkoutUrl = "https://pay.payos.vn/web/" + paymentLinkId;
+        }
+        String qrCode = text(data, "qrCode");
+        String status = text(data, "status");
+        long amount = data.path("amount").asLong(0);
+        return new PayOSPaymentLink(orderCode, checkoutUrl, qrCode, amount, paymentLinkId, status);
+      }
+    } catch (RestClientException ignored) {
+      // fall through and return null
+    }
+    return null;
   }
 
   @Override

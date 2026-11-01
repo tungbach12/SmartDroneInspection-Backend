@@ -12,14 +12,12 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class AuthRateLimitFilterTest {
 
   @Test
-  void limitsPublicPartnerLicenseUploadsPerClientIp() throws ServletException, IOException {
+  void limitsLoginRequestsPerClientIp() throws ServletException, IOException {
     AuthRateLimitFilter filter = new AuthRateLimitFilter();
     AtomicInteger continued = new AtomicInteger();
 
     for (int index = 0; index < 11; index++) {
-      MockHttpServletRequest request =
-          new MockHttpServletRequest(
-              "POST", "/api/v1/inspector-partner-applications/license-document");
+      MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/login");
       request.setRemoteAddr("198.51.100.42");
       MockHttpServletResponse response = new MockHttpServletResponse();
       filter.doFilter(request, response, (req, res) -> continued.incrementAndGet());

@@ -146,6 +146,100 @@ public class ReportDraftClient implements ReportDraftPort {
     }
   }
 
+  @Override
+  public AiSummary summarizeReport(DraftContext context) throws IOException {
+    String prompt = buildPrompt(context);
+    boolean isVietnamese =
+        context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage());
+    String systemInstructions =
+        """
+        You are an expert infrastructure inspection engineer. Provide a concise, professional executive summary
+        of this drone inspection report for review by management and asset owners.
+
+        Reply with a single JSON object and nothing else, using exactly these keys:
+          summary (a concise 2-4 sentence narrative summary of the inspection result and asset condition),
+          keyHighlights (JSON array of strings highlighting critical defects, severe findings, or notable conditions),
+          recommendedActions (concise follow-up maintenance recommendations),
+          overallRisk (exactly one of: LOW, MEDIUM, HIGH, CRITICAL)
+
+        Rules:
+        - Base your assessment strictly on confirmed inspector findings and observed records.
+        - Do not invent facts, numbers, or telemetry.
+        - NEVER output internal UUIDs.
+        """
+            + (isVietnamese
+                ? "\n- Output all text fields in Vietnamese."
+                : "\n- Output all text fields in English.");
+
+    Map<String, Object> requestPayload =
+        Map.of(
+            "model",
+            model,
+            "stream",
+            false,
+            "response_format",
+            Map.of("type", "json_object"),
+            "messages",
+            List.of(
+                Map.of("role", "system", "content", systemInstructions),
+                Map.of("role", "user", "content", prompt)));
+
+    try {
+      ChatCompletionResponse response =
+          client
+              .post()
+              .uri(CHAT_COMPLETIONS_PATH)
+              .contentType(MediaType.APPLICATION_JSON)
+              .headers(
+                  headers -> {
+                    if (apiKey != null && !apiKey.isBlank()) {
+                      headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.trim());
+                    }
+                  })
+              .body(requestPayload)
+              .retrieve()
+              .body(ChatCompletionResponse.class);
+
+      if (response == null
+          || response.choices() == null
+          || response.choices().isEmpty()
+          || response.choices().getFirst() == null
+          || response.choices().getFirst().message() == null) {
+        throw new IOException("AI report summary returned an empty response");
+      }
+      String content = response.choices().getFirst().message().content();
+      if (content == null || content.isBlank()) {
+        throw new IOException("AI report summary returned a blank response");
+      }
+      return parseAiSummary(content);
+    } catch (RestClientException exception) {
+      throw new IOException("AI report summary failed", exception);
+    }
+  }
+
+  private AiSummary parseAiSummary(String content) throws IOException {
+    String body = extractJsonObject(content);
+    try {
+      JsonNode node = objectMapper.readTree(body);
+      String summary = text(node, "summary");
+      String recommendedActions = text(node, "recommendedActions");
+      String overallRisk = text(node, "overallRisk");
+      List<String> keyHighlights = new java.util.ArrayList<>();
+      JsonNode highlightsNode = node.get("keyHighlights");
+      if (highlightsNode != null && highlightsNode.isArray()) {
+        for (JsonNode item : highlightsNode) {
+          if (item != null && !item.isNull() && !item.asText().isBlank()) {
+            keyHighlights.add(item.asText());
+          }
+        }
+      }
+      return new AiSummary(
+          summary, keyHighlights, recommendedActions, overallRisk != null ? overallRisk : "MEDIUM");
+    } catch (JacksonException exception) {
+      throw new IOException("AI report summary returned unreadable JSON", exception);
+    }
+  }
+
   /**
    * Reads the proposed section values out of the model's JSON reply.
    *

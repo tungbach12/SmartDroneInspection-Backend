@@ -8,6 +8,7 @@ import com.smartdroneinspection.maintenance.api.dto.request.EstimateDecisionRequ
 import com.smartdroneinspection.maintenance.api.dto.request.SuggestScopeRequest;
 import com.smartdroneinspection.maintenance.api.dto.response.EstimateVersionResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.RepairCandidateResponse;
+import com.smartdroneinspection.maintenance.api.dto.response.SuggestEstimateResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.SuggestScopeResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.TaskResponse;
 import com.smartdroneinspection.maintenance.api.dto.response.TeamMemberResponse;
@@ -135,6 +136,13 @@ public class MaintenanceController {
       @Valid @RequestBody CreateEstimateVersionRequest request) {
     return ApiResponse.success(
         workOrderService.createEstimateVersion(actorId(jwt), workOrderId, request));
+  }
+
+  @PostMapping("/work-orders/{workOrderId}/suggest-estimate")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MAINTENANCE_ENGINEER')")
+  public ApiResponse<SuggestEstimateResponse> suggestEstimate(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID workOrderId) {
+    return ApiResponse.success(scopeAdvisorService.suggestEstimate(actorId(jwt), workOrderId));
   }
 
   @PostMapping("/work-orders/{workOrderId}/estimate-versions/{versionNo}/submit")

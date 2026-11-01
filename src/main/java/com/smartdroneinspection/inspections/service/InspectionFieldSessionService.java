@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionCompletedEvent;
 import com.smartdroneinspection.inspections.reportcontext.ReportContextAccess;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
@@ -10,6 +11,7 @@ import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.Duration;
@@ -83,7 +85,7 @@ public class InspectionFieldSessionService {
           "FLIGHT_PERMIT_REQUIRED",
           "A flight permit must be uploaded before starting the field session.");
     }
-    if (inspection.getStatus() != InspectionStatus.READY_FOR_FLIGHT
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED
         && inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
       throw sessionFailure(
           "INSPECTION_NOT_READY_FOR_FLIGHT",
@@ -100,40 +102,49 @@ public class InspectionFieldSessionService {
   }
 
   @Transactional(readOnly = true)
-  public List<FieldSession> listSessions(UUID inspectorId, UUID inspectionId) {
-    boolean partnerAssignment = isInspectorPartner(inspectorId);
-    UUID organizationId = requireInspectorOrganization(inspectorId, partnerAssignment);
+  public List<FieldSession> listSessions(UUID actorId, UUID inspectionId) {
+    ActiveUser actor =
+        userAccess
+            .findActiveUser(actorId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "User not found"));
+    boolean isReviewer =
+        actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.CUSTOMER);
+
+    if (!isReviewer) {
+      boolean partnerAssignment = isInspectorPartner(actorId);
+      UUID organizationId = requireInspectorOrganization(actorId, partnerAssignment);
+      Inspection inspection =
+          inspections
+              .findAssignedInspectorInspection(
+                  inspectionId, organizationId, actorId, partnerAssignment)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.NOT_FOUND,
+                          "INSPECTION_NOT_FOUND",
+                          "Inspection was not found."));
+      if (!inspection.isInspectedBy(actorId)) {
+        throw new BusinessException(
+            HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found.");
+      }
+      return sessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
+    }
+
     Inspection inspection =
         inspections
-            .findAssignedInspectorInspection(
-                inspectionId, organizationId, inspectorId, partnerAssignment)
+            .findById(inspectionId)
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
-    if (!inspection.isInspectedBy(inspectorId)) {
-      return List.of();
+    if (actor.organizationId() != null
+        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "INSPECTION_SCOPE_DENIED", "Access denied");
     }
     return sessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
-  }
-
-  @Transactional
-  public FieldSession postpone(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
-    boolean partnerAssignment = isInspectorPartner(inspectorId);
-    UUID organizationId = requireInspectorOrganization(inspectorId, partnerAssignment);
-    FieldSession session =
-        requireOwnedOpenSession(
-            inspectionId, sessionId, organizationId, inspectorId, partnerAssignment);
-
-    try {
-      session.postpone(reason);
-    } catch (IllegalArgumentException exception) {
-      throw sessionFailure("POSTPONEMENT_REASON_REQUIRED", exception.getMessage());
-    } catch (IllegalStateException exception) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT, SESSION_NOT_IN_PROGRESS, exception.getMessage());
-    }
-    return reopenInspection(session, organizationId, inspectorId, partnerAssignment);
   }
 
   @Transactional
@@ -152,7 +163,14 @@ public class InspectionFieldSessionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, SESSION_NOT_IN_PROGRESS, exception.getMessage());
     }
-    return sessions.saveAndFlush(session);
+    FieldSession savedSession =
+        reopenInspection(session, organizationId, inspectorId, partnerAssignment);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new FieldSessionAbortedEvent(
+              inspectionId, organizationId, sessionId, inspectorId, reason, Instant.now()));
+    }
+    return savedSession;
   }
 
   @Transactional
@@ -298,7 +316,7 @@ public class InspectionFieldSessionService {
         .ifPresent(
             inspection -> {
               if (inspection.getStatus() == InspectionStatus.IN_PROGRESS) {
-                inspection.moveTo(InspectionStatus.READY_FOR_FLIGHT);
+                inspection.moveTo(InspectionStatus.SCHEDULED);
                 inspections.save(inspection);
               }
             });

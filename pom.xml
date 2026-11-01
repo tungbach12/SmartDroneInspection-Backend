@@ -264,6 +264,9 @@
                 <exclude>com/smartdroneinspection/notifications/domain/**</exclude>
                 <exclude>com/smartdroneinspection/notifications/repository/**</exclude>
 
+                <!-- Outbound infrastructure adapters are tested with mocks/stubs in contract tests. -->
+                <exclude>com/smartdroneinspection/infrastructure/**</exclude>
+
                 <!-- HTTP, persistence and Spring-security wiring are covered by contract tests. -->
                 <exclude>com/smartdroneinspection/users/api/**</exclude>
                 <exclude>com/smartdroneinspection/users/repository/**</exclude>
@@ -271,6 +274,7 @@
                 <exclude>com/smartdroneinspection/users/service/AdminUserService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/AuthService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/BootstrapAdministrator*</exclude>
+                <exclude>com/smartdroneinspection/users/service/GoogleOAuthService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/LoginFailureService*</exclude>
                 <exclude>com/smartdroneinspection/users/service/SecurityAuditService*</exclude>
                 <exclude>com/smartdroneinspection/shared/**</exclude>

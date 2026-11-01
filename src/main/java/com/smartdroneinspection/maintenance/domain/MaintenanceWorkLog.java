@@ -193,4 +193,8 @@ public class MaintenanceWorkLog {
   public WorkLogStatus getStatus() {
     return status;
   }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
 }

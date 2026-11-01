@@ -556,8 +556,8 @@ class InspectionReportApiIntegrationTest {
         .perform(
             post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.code").value("REPORT_DRAFT_UNAVAILABLE"));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
 
     MvcResult result =
         mockMvc
@@ -572,9 +572,9 @@ class InspectionReportApiIntegrationTest {
                                 "omissionDisclosure",
                                     "Automated defect detection was not run for this inspection."))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.status").value("DRAFT"))
+            .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
             .andExpect(jsonPath("$.data.versionNo").value(1))
-            .andExpect(jsonPath("$.data.submittedAt").doesNotExist())
+            .andExpect(jsonPath("$.data.submittedAt").isNotEmpty())
             .andReturn();
 
     UUID versionId =
@@ -590,12 +590,12 @@ class InspectionReportApiIntegrationTest {
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/submit",
                     fixture.inspectionId(),
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("AUTHOR_VERIFIED"));
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
   }
 
   @Test
@@ -605,8 +605,15 @@ class InspectionReportApiIntegrationTest {
 
     UUID versionId = createManualDraftVersion();
 
-    // A new capture requires an explicit return to Findings and a fresh confirmation.
-    reopenFindings();
+    // A new capture requires withdrawing the submitted report before reopening findings.
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/withdraw",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
     mockMvc
         .perform(
             multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
@@ -619,20 +626,20 @@ class InspectionReportApiIntegrationTest {
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/submit",
                     fixture.inspectionId(),
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("REPORT_SNAPSHOT_STALE"));
 
-    // The stale version is untouched: still DRAFT, never verified.
+    // The stale version is untouched: still RETURNED.
     mockMvc
         .perform(
             get("/api/v1/inspections/{id}/report/versions", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data[0].status").value("DRAFT"));
+        .andExpect(jsonPath("$.data[0].status").value("RETURNED"));
   }
 
   @Test
@@ -642,18 +649,15 @@ class InspectionReportApiIntegrationTest {
 
     UUID versionId = createManualDraftVersion();
 
+    // A new capture requires withdrawing the submitted report before reopening findings.
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/verify",
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/withdraw",
                     fixture.inspectionId(),
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("AUTHOR_VERIFIED"));
-
-    // A new capture requires explicit reopen and reconfirmation; its old draft remains stale.
-    reopenFindings();
+        .andExpect(status().isOk());
     mockMvc
         .perform(
             multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
@@ -678,7 +682,7 @@ class InspectionReportApiIntegrationTest {
             get("/api/v1/inspections/{id}/report/versions", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data[0].status").value("AUTHOR_VERIFIED"));
+        .andExpect(jsonPath("$.data[0].status").value("RETURNED"));
   }
 
   private void reopenFindings() throws Exception {
@@ -938,7 +942,8 @@ class InspectionReportApiIntegrationTest {
                 .getStatus())
         .isEqualTo(com.smartdroneinspection.inspections.domain.enums.FindingStatus.CONFIRMED);
     assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
-        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.InspectionStatus.REPORT_DRAFT);
+        .isEqualTo(
+            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
   }
 
   @Test
@@ -1001,9 +1006,9 @@ class InspectionReportApiIntegrationTest {
             objectMapper
                 .readTree(returned.getResponse().getContentAsString())
                 .path("data")
-                .path("contentSnapshot")
-                .asString())
-        .contains("\"analysisMethod\": \"MANUAL\"");
+                .path("status")
+                .stringValue())
+        .isEqualTo("RETURNED");
     assertThat(
             objectMapper
                     .readTree(returned.getResponse().getContentAsString())
@@ -1084,7 +1089,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
 
     mockMvc
@@ -1096,7 +1101,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("findingIds", List.of(findingId.toString())))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId.toString()));
   }
 
@@ -1117,8 +1122,8 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("DRAFT"))
-        .andExpect(jsonPath("$.data.submittedAt").doesNotExist());
+        .andExpect(jsonPath("$.data.status").value("RETURNED"))
+        .andExpect(jsonPath("$.data.submittedAt").isNotEmpty());
 
     assertThat(inspections.findById(fixture.inspectionId()).orElseThrow().getStatus())
         .isEqualTo(
@@ -1167,7 +1172,7 @@ class InspectionReportApiIntegrationTest {
                 .findByInspectionIdAndVersionNo(fixture.inspectionId(), 1)
                 .orElseThrow()
                 .getStatus())
-        .isEqualTo(ReportStatus.DRAFT);
+        .isEqualTo(ReportStatus.RETURNED);
   }
 
   private void reviewAndApproveVersion(UUID versionId) throws Exception {
@@ -1215,7 +1220,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("findingIds", java.util.List.of(findingId1.toString())))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId1.toString()));
 
     assertThat(
@@ -1473,7 +1478,7 @@ class InspectionReportApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPORT_PUBLISHED"));
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
 
     mockMvc
         .perform(
@@ -1484,7 +1489,7 @@ class InspectionReportApiIntegrationTest {
                     objectMapper.writeValueAsString(
                         Map.of("findingIds", List.of(repairFindingId.toString())))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("REPAIR_PENDING"))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(repairFindingId.toString()));
   }
 
@@ -1512,13 +1517,14 @@ class InspectionReportApiIntegrationTest {
                 .path("id")
                 .stringValue());
 
-    // Drafting moves the inspection out of field work; publication would be impossible otherwise.
+    // Drafting submits the report and moves inspection to UNDER_REVIEW; publication moves to
+    // COMPLETED.
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT status FROM inspections WHERE id = ?",
                 String.class,
                 fixture.inspectionId()))
-        .isEqualTo("REPORT_DRAFT");
+        .isEqualTo("UNDER_REVIEW");
 
     mockMvc
         .perform(

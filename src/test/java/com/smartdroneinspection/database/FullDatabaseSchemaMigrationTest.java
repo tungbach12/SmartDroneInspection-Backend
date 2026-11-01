@@ -71,10 +71,13 @@ class FullDatabaseSchemaMigrationTest {
             "service_request_occurrences",
             "inspection_finance_settings",
             "login_otp_challenges",
+            "registration_otp_challenges",
+            "password_reset_otp_challenges",
+            "inspector_flight_logs",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(44);
+    assertThat(expected).hasSize(47);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -109,12 +112,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToV15AndCreatesPayOSOtpAndReinspectionSupport() {
+  void appliesAllMigrationsUpToLatestAndCreatesPayOSSupport() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(15);
-    assertThat(versions.getLast()).isEqualTo("15");
+    assertThat(versions).hasSize(23);
+    assertThat(versions.getLast()).isEqualTo("23");
 
     List<String> sequences =
         jdbcTemplate.queryForList(

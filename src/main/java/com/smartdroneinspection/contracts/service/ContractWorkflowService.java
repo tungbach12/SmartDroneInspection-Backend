@@ -527,11 +527,9 @@ public class ContractWorkflowService
 
     // Check per-occurrence signed contract gate
     if (!occurrence.hasSignedContract()) {
-      // Legacy compatibility: ONE_TIME occurrence index 1 may inherit from request if uploaded
-      // there
-      if (request.getRequestType() == RequestType.ONE_TIME
-          && occurrence.getOccurrenceIndex() == 1
-          && request.getContractObjectKey() != null) {
+      // Per Report 3 Decision D2: A parent signed contract covers occurrences without requiring
+      // re-upload
+      if (request.getContractObjectKey() != null) {
         occurrence.recordSignedContract(
             request.getContractObjectKey(),
             request.getContractFileName(),
@@ -749,6 +747,19 @@ public class ContractWorkflowService
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
+    if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
+      PayOSGateway.PayOSPaymentLink existing =
+          occurrence.getPayosOrderCode() != null
+              ? payOSGateway.getPaymentLink(occurrence.getPayosOrderCode())
+              : null;
+      return new PayOSPaymentLinkResponse(
+          occurrence.getPayosOrderCode() != null ? occurrence.getPayosOrderCode() : 0,
+          existing != null ? existing.checkoutUrl() : null,
+          existing != null ? existing.qrCode() : null,
+          occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : 0,
+          occurrence.getPayosPaymentLinkId());
+    }
+
     if (occurrence.getReportAcceptedAt() == null
         || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE) {
       throw failure(
@@ -771,15 +782,23 @@ public class ContractWorkflowService
           "Occurrence total price must be greater than zero");
     }
 
+    long amount = occurrence.getTotalPrice().longValue();
     long orderCode;
     if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
       orderCode = occurrence.getPayosOrderCode();
+      PayOSGateway.PayOSPaymentLink existing = payOSGateway.getPaymentLink(orderCode);
+      if (existing != null && existing.checkoutUrl() != null && !existing.checkoutUrl().isBlank()) {
+        return new PayOSPaymentLinkResponse(
+            existing.orderCode(),
+            existing.checkoutUrl(),
+            existing.qrCode(),
+            amount,
+            existing.paymentLinkId());
+      }
     } else {
-      Long nextCode = occurrences.getNextPayosOrderCode();
-      orderCode = (nextCode != null) ? nextCode : System.currentTimeMillis();
+      orderCode = (System.currentTimeMillis() % 9000000000L) + 1000000000L;
     }
 
-    long amount = occurrence.getTotalPrice().longValue();
     String description = "SDI OCC " + occurrence.getOccurrenceIndex();
     if (description.length() > 25) {
       description = description.substring(0, 25);
@@ -792,8 +811,24 @@ public class ContractWorkflowService
       cancelUrl = payOSGateway.resolveCancelUrl(occurrence.getInspectionId().toString());
     }
 
-    PayOSGateway.PayOSPaymentLink link =
-        payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+    PayOSGateway.PayOSPaymentLink link;
+    try {
+      link = payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+    } catch (IllegalStateException ex) {
+      if (ex.getMessage() != null && ex.getMessage().contains("[231]")) {
+        orderCode =
+            (System.currentTimeMillis() % 9000000000L)
+                + 2000000000L
+                + (long) (Math.random() * 10000);
+        if (occurrence.getInspectionId() != null) {
+          returnUrl =
+              payOSGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode);
+        }
+        link = payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
+      } else {
+        throw ex;
+      }
+    }
 
     occurrence.assignPayOSOrder(orderCode, link.paymentLinkId());
     occurrences.saveAndFlush(occurrence);
@@ -901,6 +936,36 @@ public class ContractWorkflowService
         createPayOSPaymentLink(actorId, request.getId(), occurrence.getId());
     return new InspectionReportAcceptancePort.PayOSCheckoutDetails(
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public InspectionReportAcceptancePort.PaymentStatusDetails getPaymentStatus(
+      UUID actorId, UUID inspectionId) {
+    if (inspectionId == null) {
+      return new InspectionReportAcceptancePort.PaymentStatusDetails(
+          false, false, "NOT_APPLICABLE", null, null, null);
+    }
+    ServiceRequestOccurrence occurrence = occurrences.findByInspectionId(inspectionId).orElse(null);
+    if (occurrence == null) {
+      return new InspectionReportAcceptancePort.PaymentStatusDetails(
+          false, false, "NOT_APPLICABLE", null, null, null);
+    }
+    boolean accepted = occurrence.getReportAcceptedAt() != null;
+    boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
+    String status = occurrence.getPaymentStatus().name();
+    Long orderCode = occurrence.getPayosOrderCode();
+    Long amount =
+        occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : null;
+    String checkoutUrl = null;
+    if (orderCode != null && orderCode > 0) {
+      PayOSGateway.PayOSPaymentLink link = payOSGateway.getPaymentLink(orderCode);
+      if (link != null) {
+        checkoutUrl = link.checkoutUrl();
+      }
+    }
+    return new InspectionReportAcceptancePort.PaymentStatusDetails(
+        accepted, isPaid, status, orderCode, amount, checkoutUrl);
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
@@ -1123,8 +1188,15 @@ public class ContractWorkflowService
             .map(ServiceRequestOccurrenceResponse::from)
             .toList(),
         messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
-            .map(ServiceRequestMessageResponse::from)
+            .map(this::toMessageResponse)
             .toList());
+  }
+
+  private ServiceRequestMessageResponse toMessageResponse(ServiceRequestMessage message) {
+    Optional<UserAccess.ActiveUser> author = users.findActiveUser(message.getAuthorUserId());
+    String authorName = author.map(UserAccess.ActiveUser::fullName).orElse(null);
+    String authorRole = author.map(u -> u.roles().stream().findFirst().orElse(null)).orElse(null);
+    return ServiceRequestMessageResponse.from(message, authorName, authorRole);
   }
 
   private ServiceRequest requireRequestForActor(UserAccess.ActiveUser actor, UUID requestId) {
