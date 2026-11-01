@@ -226,9 +226,6 @@ public class ReportService {
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
     }
-    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.DRAFT) {
-      return toResponse(latestExisting, inspection.getInspectorId());
-    }
 
     if (latestExisting != null
         && (latestExisting.getStatus() == ReportStatus.SUBMITTED
@@ -263,9 +260,6 @@ public class ReportService {
           HttpStatus.FORBIDDEN,
           "REPORT_SCOPE_DENIED",
           "Only the assigned Inspector authors this report");
-    }
-    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.DRAFT) {
-      return toResponse(latestExisting, inspection.getInspectorId());
     }
 
     if (latestExisting != null
@@ -363,8 +357,7 @@ public class ReportService {
     requireFreshFindingsSnapshot(inspectionId, version);
     requireCurrentFindingsConfirmation(inspection);
     try {
-      if (version.getStatus() == ReportStatus.DRAFT
-          || version.getStatus() == ReportStatus.RETURNED) {
+      if (version.getStatus() == ReportStatus.RETURNED) {
         version.verifyAsAuthor(actorId, inspection.getInspectorId());
       }
       version.submit();

@@ -8,7 +8,6 @@ import static org.mockito.Mockito.when;
 import com.smartdroneinspection.users.api.dto.request.CreateInspectorFlightLogRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateInspectorProfileRequest;
 import com.smartdroneinspection.users.api.dto.response.InspectorFlightLogResponse;
-import com.smartdroneinspection.users.api.dto.response.InspectorPartnerLicenseUploadResponse;
 import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.domain.InspectorFlightLog;
 import com.smartdroneinspection.users.domain.User;
@@ -174,7 +173,7 @@ class InspectorProfileServiceTest {
             "file", "scan-license.pdf", "application/pdf", "%PDF-1.4 test".getBytes());
     String expectedKey = "inspector-partner-applications/licenses/" + UUID.randomUUID() + ".pdf";
     when(licenseDocumentService.upload(file))
-        .thenReturn(new InspectorPartnerLicenseUploadResponse(expectedKey));
+        .thenReturn(new InspectorPartnerLicenseDocumentService.UploadResponse(expectedKey));
 
     InspectorProfileResponse response = service.uploadLicenseScan(inspectorId, file, actorId);
 

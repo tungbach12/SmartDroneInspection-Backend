@@ -167,7 +167,6 @@ public class AuthProperties {
     public void setMobileSuccessUrl(String mobileSuccessUrl) {
       this.mobileSuccessUrl = mobileSuccessUrl;
     }
->>>>>>> origin/main
   }
 
   public static class Bootstrap {
