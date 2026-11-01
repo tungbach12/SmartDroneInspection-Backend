@@ -83,7 +83,6 @@ class OrganizationRegistrationApiIntegrationTest {
         .isEqualTo(1);
     Organization organization = organizations.findById(customer.getOrganizationId()).orElseThrow();
     assertThat(organization.getStatus()).isEqualTo("ACTIVE");
-    assertThat(organization.getCreatedByUserId()).isEqualTo(customer.getId());
   }
 
   @Test
@@ -118,7 +117,6 @@ class OrganizationRegistrationApiIntegrationTest {
     assertThat(customer.roleValues()).containsExactly("CUSTOMER");
     Organization organization = organizations.findById(customer.getOrganizationId()).orElseThrow();
     assertThat(organization.getStatus()).isEqualTo("ACTIVE");
-    assertThat(organization.getCreatedByUserId()).isEqualTo(customer.getId());
   }
 
   @Test

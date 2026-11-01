@@ -85,15 +85,6 @@ public final class AssetTestFixture {
     return organizationId;
   }
 
-  public void grantEntitlement(UUID organizationId) {
-    jdbcTemplate.update(
-        """
-        INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at)
-        VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')
-        """,
-        organizationId);
-  }
-
   private User saveUser(
       String label, UserStatus status, ActorZone actorZone, UUID organizationId, UserRole role) {
     UUID id = UUID.randomUUID();

@@ -6,9 +6,11 @@ import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.AuthStep;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.AuthSession;
+import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
+import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AccessTokenService;
 import com.smartdroneinspection.users.security.AuthCrypto;
@@ -33,6 +35,7 @@ public class AuthService {
   private final LoginFailureService loginFailures;
   private final SecurityAuditService audit;
   private final LoginOtpService loginOtp;
+  private final InspectorProfileRepository inspectorProfiles;
   private final com.smartdroneinspection.users.security.GoogleTokenVerifier googleVerifier;
   private final String dummyPasswordHash;
 
@@ -47,6 +50,7 @@ public class AuthService {
       LoginFailureService loginFailures,
       SecurityAuditService audit,
       LoginOtpService loginOtp,
+      InspectorProfileRepository inspectorProfiles,
       com.smartdroneinspection.users.security.GoogleTokenVerifier googleVerifier) {
     this.users = users;
     this.sessions = sessions;
@@ -58,6 +62,7 @@ public class AuthService {
     this.loginFailures = loginFailures;
     this.audit = audit;
     this.loginOtp = loginOtp;
+    this.inspectorProfiles = inspectorProfiles;
     this.googleVerifier = googleVerifier;
     this.dummyPasswordHash = passwords.encode(AuthCrypto.randomToken());
   }
@@ -508,12 +513,16 @@ public class AuthService {
             .filter(User::active)
             .orElseThrow(
                 () -> new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found"));
-    user.updatePilotLicense(
+    InspectorProfile profile =
+        inspectorProfiles.findById(userId).orElseGet(() -> new InspectorProfile(userId));
+    profile.updatePilotLicense(
         request.licenseNumber().trim(),
         request.licenseClass() == null ? null : request.licenseClass().trim(),
         request.expiresAt(),
         request.fileKey() == null ? null : request.fileKey().trim());
-    return toResponse(users.saveAndFlush(user));
+    users.saveAndFlush(user);
+    inspectorProfiles.saveAndFlush(profile);
+    return toResponse(user, profile);
   }
 
   @Transactional(readOnly = true)
@@ -573,6 +582,14 @@ public class AuthService {
   }
 
   private UserResponse toResponse(User user) {
+    return toResponse(
+        user,
+        inspectorProfiles
+            .findById(user.getId())
+            .orElseGet(() -> new InspectorProfile(user.getId())));
+  }
+
+  private UserResponse toResponse(User user, InspectorProfile profile) {
     return new UserResponse(
         user.getId(),
         user.getEmail(),
@@ -583,10 +600,10 @@ public class AuthService {
         user.getActorZone().name(),
         user.getOrganizationId(),
         user.isVisionFallbackEnabled(),
-        user.getPilotLicenseNumber(),
-        user.getPilotLicenseClass(),
-        user.getPilotLicenseExpiresAt(),
-        user.getPilotLicenseFileKey());
+        profile.getPilotLicenseNumber(),
+        profile.getPilotLicenseClass(),
+        profile.getPilotLicenseExpiresAt(),
+        profile.getPilotLicenseFileKey());
   }
 
   public void revokeAllSessions(UUID userId, String reason) {

@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.shared.exception.BusinessException;
-import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.workforce.api.dto.request.ProvisionWorkforceUserRequest;
 import com.smartdroneinspection.workforce.api.dto.request.UpdateWorkforceRolesRequest;
@@ -33,8 +32,6 @@ import org.mockito.quality.Strictness;
 class WorkforceServiceTest {
 
   @Mock UserAccess users;
-  @Mock SubscriptionEntitlement entitlement;
-
   @InjectMocks WorkforceService service;
 
   private UUID actorId;
@@ -70,7 +67,7 @@ class WorkforceServiceTest {
   }
 
   @Test
-  void provisionsMemberInActorOrganizationAndChecksEntitlementWithActorScope() {
+  void provisionsMemberInActorOrganization() {
     when(users.provisionWorkforceUser(any(), any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(new UserAccess.ProvisionedWorkforceMember(subject, "Temp-Password-1"));
 
@@ -83,7 +80,6 @@ class WorkforceServiceTest {
             "JUnit",
             "test-correlation");
 
-    verify(entitlement).requireActive(eq(organizationId), any());
     verify(users)
         .provisionWorkforceUser(
             eq(actorId),
@@ -239,7 +235,6 @@ class WorkforceServiceTest {
             "JUnit",
             "cid");
 
-    verify(entitlement).requireActive(eq(organizationId), any());
     verify(users)
         .updateWorkforceStatus(
             eq(actorId), eq(subjectId), eq("SUSPENDED"), eq("127.0.0.1"), eq("JUnit"), eq("cid"));
@@ -269,7 +264,6 @@ class WorkforceServiceTest {
             "JUnit",
             "cid");
 
-    verify(entitlement).requireActive(eq(organizationId), any());
     verify(users)
         .updateWorkforceRoles(
             eq(actorId),

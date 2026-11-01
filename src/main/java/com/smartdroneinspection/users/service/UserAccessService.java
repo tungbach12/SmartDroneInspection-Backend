@@ -5,11 +5,13 @@ import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.api.dto.request.CreateUserRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateRolesRequest;
+import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +30,7 @@ public class UserAccessService implements UserAccess {
   private final RolePolicy rolePolicy;
   private final SecurityAuditService securityAudit;
   private final InspectorProfileService inspectorProfiles;
+  private final InspectorProfileRepository inspectorProfileRepository;
 
   public UserAccessService(
       UserRepository users,
@@ -35,13 +38,15 @@ public class UserAccessService implements UserAccess {
       AdminUserService adminUsers,
       RolePolicy rolePolicy,
       SecurityAuditService securityAudit,
-      InspectorProfileService inspectorProfiles) {
+      InspectorProfileService inspectorProfiles,
+      InspectorProfileRepository inspectorProfileRepository) {
     this.users = users;
     this.organizations = organizations;
     this.adminUsers = adminUsers;
     this.rolePolicy = rolePolicy;
     this.securityAudit = securityAudit;
     this.inspectorProfiles = inspectorProfiles;
+    this.inspectorProfileRepository = inspectorProfileRepository;
   }
 
   @Override
@@ -65,7 +70,7 @@ public class UserAccessService implements UserAccess {
   @Override
   @Transactional(readOnly = true)
   public Optional<ActiveUser> findActiveUser(UUID userId) {
-    return users.findDetailedById(userId).filter(User::active).map(UserAccessService::toActiveUser);
+    return users.findDetailedById(userId).filter(User::active).map(this::toActiveUser);
   }
 
   @Override
@@ -73,12 +78,13 @@ public class UserAccessService implements UserAccess {
   public List<ActiveUser> listActiveInspectorPartners() {
     return users.findActiveInspectorPartners().stream()
         .filter(User::active)
-        .map(UserAccessService::toActiveUser)
+        .map(this::toActiveUser)
         .filter(ActiveUser::isInspectorPartner)
         .toList();
   }
 
-  private static ActiveUser toActiveUser(User user) {
+  private ActiveUser toActiveUser(User user) {
+    InspectorProfile profile = inspectorProfileRepository.findById(user.getId()).orElse(null);
     return new ActiveUser(
         user.getId(),
         Set.copyOf(user.roleValues()),
@@ -86,30 +92,16 @@ public class UserAccessService implements UserAccess {
         user.getActorZone().name(),
         user.getFullName(),
         user.getEmail(),
-        user.getPilotLicenseNumber(),
-        user.getPilotLicenseClass(),
-        user.getPilotLicenseExpiresAt(),
-        user.getPilotLicenseFileKey());
+        profile == null ? null : profile.getPilotLicenseNumber(),
+        profile == null ? null : profile.getPilotLicenseClass(),
+        profile == null ? null : profile.getPilotLicenseExpiresAt(),
+        profile == null ? null : profile.getPilotLicenseFileKey());
   }
 
   @Override
   @Transactional(readOnly = true)
   public Optional<ActiveUser> findUser(UUID userId) {
-    return users
-        .findDetailedById(userId)
-        .map(
-            user ->
-                new ActiveUser(
-                    user.getId(),
-                    Set.copyOf(user.roleValues()),
-                    user.getOrganizationId(),
-                    user.getActorZone().name(),
-                    user.getFullName(),
-                    user.getEmail(),
-                    user.getPilotLicenseNumber(),
-                    user.getPilotLicenseClass(),
-                    user.getPilotLicenseExpiresAt(),
-                    user.getPilotLicenseFileKey()));
+    return users.findDetailedById(userId).map(this::toActiveUser);
   }
 
   @Override

@@ -30,21 +30,15 @@ class FullDatabaseSchemaMigrationTest {
     Set<String> expected =
         Set.of(
             "organizations",
-            "subscriptions",
             "users",
             "auth_sessions",
-            "platform_drones",
-            "drone_leases",
             "prospective_customer_registrations",
-            "inspector_partner_applications",
             "drone_registration_applications",
             "drones",
             "asset_categories",
             "assets",
             "asset_documents",
             "inspections",
-            "recurring_inspection_schedules",
-            "schedule_occurrences",
             "field_sessions",
             "evidence",
             "findings",
@@ -61,22 +55,33 @@ class FullDatabaseSchemaMigrationTest {
             "audit_events",
             "notifications",
             "reinspection_defect_verifications",
-            "payment_transactions",
             "repair_knowledge_chunks",
             "service_requests",
             "service_request_messages",
             "service_request_quotes",
             "service_request_occurrences",
             "inspection_finance_settings",
-            "login_otp_challenges",
-            "registration_otp_challenges",
-            "password_reset_otp_challenges",
             "inspector_flight_logs",
+            "inspector_profiles",
+            "otp_challenges",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(45);
+    assertThat(expected).hasSize(37);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+    assertThat(actual)
+        .doesNotContain(
+            "subscriptions",
+            "payment_transactions",
+            "platform_drones",
+            "drone_leases",
+            "recurring_inspection_schedules",
+            "schedule_occurrences",
+            "inspector_partner_applications",
+            "login_otp_challenges",
+            "registration_otp_challenges",
+            "password_reset_otp_challenges");
+    assertThat(actual).contains("inspector_flight_logs");
   }
 
   @Test
@@ -102,7 +107,6 @@ class FullDatabaseSchemaMigrationTest {
         .contains(
             "uq_assets_organization_asset_code",
             "ix_notifications_recipient_status",
-            "ix_notifications_delivery",
             "uq_users_id_organization",
             "uq_assets_id_organization");
     assertThat(constraints)
@@ -110,12 +114,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToLatestAndCreatesPayOSSupport() {
+  void appliesAllMigrationsUpToV25AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(24);
-    assertThat(versions.getLast()).isEqualTo("24");
+    assertThat(versions).hasSize(25);
+    assertThat(versions.getLast()).isEqualTo("25");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -125,9 +129,9 @@ class FullDatabaseSchemaMigrationTest {
             WHERE sequence_schema = current_schema()
             """,
             String.class);
-    assertThat(sequences).contains("service_request_occurrences_payos_order_code_seq");
+    assertThat(sequences).doesNotContain("service_request_occurrences_payos_order_code_seq");
 
-    List<String> columns =
+    List<String> occurrenceColumns =
         jdbcTemplate.queryForList(
             """
             SELECT column_name
@@ -136,7 +140,8 @@ class FullDatabaseSchemaMigrationTest {
               AND table_name = 'service_request_occurrences'
             """,
             String.class);
-    assertThat(columns).contains("payos_order_code", "payos_payment_link_id", "payment_method");
+    assertThat(occurrenceColumns)
+        .contains("request_id", "inspector_id", "drone_id", "payos_order_code", "payment_method");
 
     List<String> otpColumns =
         jdbcTemplate.queryForList(
@@ -144,11 +149,12 @@ class FullDatabaseSchemaMigrationTest {
             SELECT column_name
             FROM information_schema.columns
             WHERE table_schema = current_schema()
-              AND table_name = 'login_otp_challenges'
+              AND table_name = 'otp_challenges'
             """,
             String.class);
     assertThat(otpColumns)
         .contains(
+            "purpose",
             "challenge_hash",
             "user_id",
             "client_ip",
@@ -159,5 +165,47 @@ class FullDatabaseSchemaMigrationTest {
             "failed_attempts",
             "send_count",
             "row_version");
+
+    List<String> oldOtpTables =
+        jdbcTemplate.queryForList(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name IN (
+                'login_otp_challenges',
+                'registration_otp_challenges',
+                'password_reset_otp_challenges')
+            """,
+            String.class);
+    assertThat(oldOtpTables).isEmpty();
+
+    List<String> profileColumns =
+        jdbcTemplate.queryForList(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'inspector_profiles'
+            """,
+            String.class);
+    assertThat(profileColumns)
+        .contains(
+            "user_id",
+            "pilot_license_number",
+            "pilot_license_class",
+            "pilot_license_expires_at",
+            "pilot_license_file_key",
+            "pilot_license_issued_date",
+            "pilot_license_authority",
+            "citizen_id",
+            "date_of_birth",
+            "address",
+            "prior_flight_hours",
+            "certified_drone_models",
+            "specializations",
+            "experience_summary",
+            "notes",
+            "updated_at");
   }
 }

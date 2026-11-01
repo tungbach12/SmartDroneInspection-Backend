@@ -1,6 +1,5 @@
 package com.smartdroneinspection.assets.domain;
 
-import com.smartdroneinspection.assets.domain.enums.DroneOwnershipType;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -52,22 +51,6 @@ public class Drone {
   @Column(nullable = false, length = 24)
   private DroneServiceability serviceability;
 
-  @Enumerated(EnumType.STRING)
-  @Column(name = "ownership_type", nullable = false, length = 24)
-  private DroneOwnershipType ownershipType = DroneOwnershipType.OWNED;
-
-  @Column(name = "lease_id")
-  private UUID leaseId;
-
-  @Column(name = "lease_expires_at")
-  private Instant leaseExpiresAt;
-
-  @Column(name = "last_maintenance_at")
-  private Instant lastMaintenanceAt;
-
-  @Column(name = "next_maintenance_at")
-  private Instant nextMaintenanceAt;
-
   @Column(length = 2000)
   private String notes;
 
@@ -103,16 +86,7 @@ public class Drone {
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability) {
-    this(
-        organizationId,
-        serialNumber,
-        model,
-        manufacturer,
-        payloadMetadata,
-        serviceability,
-        null,
-        null,
-        null);
+    this(organizationId, serialNumber, model, manufacturer, payloadMetadata, serviceability, null);
   }
 
   public Drone(
@@ -122,22 +96,11 @@ public class Drone {
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability,
-      Instant lastMaintenanceAt,
-      Instant nextMaintenanceAt,
       String notes,
       String registrationNumber,
       String registrationFileKey,
       Instant registrationExpiresAt) {
-    this(
-        organizationId,
-        serialNumber,
-        model,
-        manufacturer,
-        payloadMetadata,
-        serviceability,
-        lastMaintenanceAt,
-        nextMaintenanceAt,
-        notes);
+    this(organizationId, serialNumber, model, manufacturer, payloadMetadata, serviceability, notes);
     this.registrationNumber = registrationNumber;
     this.registrationFileKey = registrationFileKey;
     this.registrationExpiresAt = registrationExpiresAt;
@@ -150,8 +113,6 @@ public class Drone {
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability,
-      Instant lastMaintenanceAt,
-      Instant nextMaintenanceAt,
       String notes) {
     this.organizationId = Objects.requireNonNull(organizationId, "Drone organization is required");
     if (serialNumber == null || serialNumber.isBlank()) {
@@ -163,9 +124,6 @@ public class Drone {
     this.payloadMetadata = payloadMetadata;
     this.serviceability =
         Objects.requireNonNull(serviceability, "Drone serviceability is required");
-    this.ownershipType = DroneOwnershipType.OWNED;
-    this.lastMaintenanceAt = lastMaintenanceAt;
-    this.nextMaintenanceAt = nextMaintenanceAt;
     this.notes = notes;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
@@ -195,7 +153,6 @@ public class Drone {
     this.registrationFileKey = registrationFileKey;
     this.registrationExpiresAt = registrationExpiresAt;
     this.serviceability = DroneServiceability.ACTIVE;
-    this.ownershipType = DroneOwnershipType.OWNED;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
   }
@@ -238,32 +195,6 @@ public class Drone {
         registrationExpiresAt);
   }
 
-  public static Drone createLeased(
-      UUID organizationId,
-      String serialNumber,
-      String model,
-      String manufacturer,
-      String payloadMetadata,
-      UUID leaseId,
-      Instant leaseExpiresAt,
-      String notes) {
-    Drone drone =
-        new Drone(
-            organizationId,
-            serialNumber,
-            model,
-            manufacturer,
-            payloadMetadata,
-            DroneServiceability.ACTIVE,
-            null,
-            null,
-            notes);
-    drone.ownershipType = DroneOwnershipType.LEASED;
-    drone.leaseId = Objects.requireNonNull(leaseId, "Lease id is required");
-    drone.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "Lease expiry is required");
-    return drone;
-  }
-
   public UUID getId() {
     return id;
   }
@@ -294,26 +225,6 @@ public class Drone {
 
   public DroneServiceability getServiceability() {
     return serviceability;
-  }
-
-  public DroneOwnershipType getOwnershipType() {
-    return ownershipType;
-  }
-
-  public UUID getLeaseId() {
-    return leaseId;
-  }
-
-  public Instant getLeaseExpiresAt() {
-    return leaseExpiresAt;
-  }
-
-  public Instant getLastMaintenanceAt() {
-    return lastMaintenanceAt;
-  }
-
-  public Instant getNextMaintenanceAt() {
-    return nextMaintenanceAt;
   }
 
   public String getNotes() {
@@ -359,38 +270,6 @@ public class Drone {
       throw new IllegalStateException("Retired drones cannot change serviceability");
     }
     this.serviceability = target;
-    this.updatedAt = Instant.now();
-  }
-
-  public void activateLease(
-      UUID leaseId,
-      Instant leaseExpiresAt,
-      String model,
-      String manufacturer,
-      String payloadMetadata,
-      String notes) {
-    this.ownershipType = DroneOwnershipType.LEASED;
-    this.leaseId = Objects.requireNonNull(leaseId, "Lease id is required");
-    this.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt, "Lease expiry is required");
-    this.serviceability = DroneServiceability.ACTIVE;
-    this.model = model;
-    this.manufacturer = manufacturer;
-    this.payloadMetadata = payloadMetadata;
-    if (notes != null) {
-      this.notes = notes;
-    }
-    this.updatedAt = Instant.now();
-  }
-
-  public void reclaimLease() {
-    this.serviceability = DroneServiceability.RETIRED;
-    this.updatedAt = Instant.now();
-  }
-
-  public void recordMaintenance(Instant servicedAt, Instant nextDueAt, String maintenanceNotes) {
-    this.lastMaintenanceAt = servicedAt;
-    this.nextMaintenanceAt = nextDueAt;
-    if (maintenanceNotes != null) this.notes = maintenanceNotes;
     this.updatedAt = Instant.now();
   }
 }

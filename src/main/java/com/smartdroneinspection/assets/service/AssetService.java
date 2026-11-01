@@ -12,9 +12,7 @@ import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
-import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -30,26 +28,22 @@ public class AssetService {
   private final AssetRepository assets;
   private final AssetCategoryRepository categories;
   private final UserAccess userAccess;
-  private final SubscriptionEntitlement entitlement;
   private final AirspaceAdvisoryService airspaceAdvisory;
 
   public AssetService(
       AssetRepository assets,
       AssetCategoryRepository categories,
       UserAccess userAccess,
-      SubscriptionEntitlement entitlement,
       AirspaceAdvisoryService airspaceAdvisory) {
     this.assets = assets;
     this.categories = categories;
     this.userAccess = userAccess;
-    this.entitlement = entitlement;
     this.airspaceAdvisory = airspaceAdvisory;
   }
 
   @Transactional
   public AssetResponse create(UUID actorId, CreateAssetRequest request) {
     UUID organizationId = requireOrganization(requireActive(actorId));
-    entitlement.requireActive(organizationId, Instant.now());
 
     if (request.latitude() != null && request.longitude() != null) {
       validateNoFlyZone(request.latitude(), request.longitude());

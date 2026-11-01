@@ -70,12 +70,6 @@ public class User {
   @Column(name = "otp_verified", nullable = false)
   private boolean otpVerified = false;
 
-  @Column(name = "last_login_at")
-  private Instant lastLoginAt;
-
-  @Column(name = "last_login_ip", length = 45)
-  private String lastLoginIp;
-
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -84,48 +78,6 @@ public class User {
 
   @Column(name = "roles", nullable = false, length = 255)
   private String roles = "";
-
-  @Column(name = "pilot_license_number", length = 100)
-  private String pilotLicenseNumber;
-
-  @Column(name = "pilot_license_class", length = 16)
-  private String pilotLicenseClass;
-
-  @Column(name = "pilot_license_expires_at")
-  private Instant pilotLicenseExpiresAt;
-
-  @Column(name = "pilot_license_file_key", length = 1000)
-  private String pilotLicenseFileKey;
-
-  @Column(name = "citizen_id", length = 32)
-  private String citizenId;
-
-  @Column(name = "date_of_birth")
-  private java.time.LocalDate dateOfBirth;
-
-  @Column(name = "address", length = 500)
-  private String address;
-
-  @Column(name = "pilot_license_issued_date")
-  private java.time.LocalDate pilotLicenseIssuedDate;
-
-  @Column(name = "pilot_license_authority", length = 200)
-  private String pilotLicenseAuthority;
-
-  @Column(name = "prior_flight_hours", precision = 8, scale = 2, nullable = false)
-  private java.math.BigDecimal priorFlightHours = java.math.BigDecimal.ZERO;
-
-  @Column(name = "certified_drone_models", length = 500)
-  private String certifiedDroneModels;
-
-  @Column(name = "specializations", length = 500)
-  private String specializations;
-
-  @Column(name = "experience_summary", columnDefinition = "text")
-  private String experienceSummary;
-
-  @Column(name = "notes", columnDefinition = "text")
-  private String notes;
 
   protected User() {}
 
@@ -219,156 +171,9 @@ public class User {
     return organizationId;
   }
 
-  public String getPilotLicenseNumber() {
-    return pilotLicenseNumber;
-  }
-
-  public String getPilotLicenseClass() {
-    return pilotLicenseClass;
-  }
-
-  public Instant getPilotLicenseExpiresAt() {
-    return pilotLicenseExpiresAt;
-  }
-
-  public String getPilotLicenseFileKey() {
-    return pilotLicenseFileKey;
-  }
-
-  public String getCitizenId() {
-    return citizenId;
-  }
-
-  public void setCitizenId(String citizenId) {
-    this.citizenId = citizenId;
-    this.updatedAt = Instant.now();
-  }
-
-  public java.time.LocalDate getDateOfBirth() {
-    return dateOfBirth;
-  }
-
-  public void setDateOfBirth(java.time.LocalDate dateOfBirth) {
-    this.dateOfBirth = dateOfBirth;
-    this.updatedAt = Instant.now();
-  }
-
-  public String getAddress() {
-    return address;
-  }
-
-  public void setAddress(String address) {
-    this.address = address;
-    this.updatedAt = Instant.now();
-  }
-
-  public java.time.LocalDate getPilotLicenseIssuedDate() {
-    return pilotLicenseIssuedDate;
-  }
-
-  public void setPilotLicenseIssuedDate(java.time.LocalDate pilotLicenseIssuedDate) {
-    this.pilotLicenseIssuedDate = pilotLicenseIssuedDate;
-    this.updatedAt = Instant.now();
-  }
-
-  public String getPilotLicenseAuthority() {
-    return pilotLicenseAuthority;
-  }
-
-  public void setPilotLicenseAuthority(String pilotLicenseAuthority) {
-    this.pilotLicenseAuthority = pilotLicenseAuthority;
-    this.updatedAt = Instant.now();
-  }
-
-  public java.math.BigDecimal getPriorFlightHours() {
-    return priorFlightHours != null ? priorFlightHours : java.math.BigDecimal.ZERO;
-  }
-
-  public void setPriorFlightHours(java.math.BigDecimal priorFlightHours) {
-    this.priorFlightHours = priorFlightHours != null ? priorFlightHours : java.math.BigDecimal.ZERO;
-    this.updatedAt = Instant.now();
-  }
-
-  public String getCertifiedDroneModels() {
-    return certifiedDroneModels;
-  }
-
-  public void setCertifiedDroneModels(String certifiedDroneModels) {
-    this.certifiedDroneModels = certifiedDroneModels;
-    this.updatedAt = Instant.now();
-  }
-
-  public String getSpecializations() {
-    return specializations;
-  }
-
-  public void setSpecializations(String specializations) {
-    this.specializations = specializations;
-    this.updatedAt = Instant.now();
-  }
-
-  public String getExperienceSummary() {
-    return experienceSummary;
-  }
-
-  public void setExperienceSummary(String experienceSummary) {
-    this.experienceSummary = experienceSummary;
-    this.updatedAt = Instant.now();
-  }
-
-  public String getNotes() {
-    return notes;
-  }
-
-  public void setNotes(String notes) {
-    this.notes = notes;
-    this.updatedAt = Instant.now();
-  }
-
   public void setFullName(String fullName) {
     this.fullName = fullName;
     this.updatedAt = Instant.now();
-  }
-
-  public void setPilotLicenseFileKey(String pilotLicenseFileKey) {
-    this.pilotLicenseFileKey = pilotLicenseFileKey;
-    this.updatedAt = Instant.now();
-  }
-
-  public void updatePilotLicense(
-      String licenseNumber,
-      String licenseClass,
-      java.time.LocalDate issuedDate,
-      Instant expiresAt,
-      String authority,
-      String fileKey) {
-    this.pilotLicenseNumber = licenseNumber;
-    this.pilotLicenseClass = licenseClass;
-    this.pilotLicenseIssuedDate = issuedDate;
-    this.pilotLicenseExpiresAt = expiresAt;
-    this.pilotLicenseAuthority = authority;
-    if (fileKey != null && !fileKey.isBlank()) {
-      this.pilotLicenseFileKey = fileKey;
-    }
-    this.updatedAt = Instant.now();
-  }
-
-  public void updatePilotLicense(
-      String licenseNumber, String licenseClass, Instant expiresAt, String fileKey) {
-    this.pilotLicenseNumber = licenseNumber;
-    this.pilotLicenseClass = licenseClass;
-    this.pilotLicenseExpiresAt = expiresAt;
-    if (fileKey != null && !fileKey.isBlank()) {
-      this.pilotLicenseFileKey = fileKey;
-    }
-    this.updatedAt = Instant.now();
-  }
-
-  public void setPilotLicense(
-      String number, String licenseClass, java.time.LocalDate expiresAt, String fileKey) {
-    Instant instantExpiresAt =
-        expiresAt == null ? null : expiresAt.atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
-    updatePilotLicense(number, licenseClass, instantExpiresAt, fileKey);
   }
 
   public void approveAsCustomer(UUID organizationId) {
@@ -376,13 +181,6 @@ public class User {
         ActorZone.CUSTOMER_ORGANIZATION, organizationId, List.of(UserRole.CUSTOMER));
     this.status = UserStatus.ACTIVE;
     this.updatedAt = Instant.now();
-  }
-
-  public boolean hasValidPilotLicense(Instant at) {
-    Instant checkTime = at != null ? at : Instant.now();
-    return pilotLicenseNumber != null
-        && !pilotLicenseNumber.isBlank()
-        && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
   }
 
   public int getAuthVersion() {
@@ -441,8 +239,6 @@ public class User {
   public void recordSuccessfulLogin(String ip) {
     failedLoginCount = 0;
     lockoutUntil = null;
-    lastLoginAt = Instant.now();
-    lastLoginIp = ip;
     updatedAt = Instant.now();
   }
 

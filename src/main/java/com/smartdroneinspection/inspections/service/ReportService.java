@@ -1442,7 +1442,6 @@ public class ReportService {
                                 : session.getStartedAt().toString(),
                             session.getEndedAt() == null ? null : session.getEndedAt().toString(),
                             session.getPreFlightChecklistNote(),
-                            session.getPostponementReason(),
                             session.getAbortReason(),
                             droneDisplayReference(reportIdentity, inspection.getDroneId())))
                 .toList(),

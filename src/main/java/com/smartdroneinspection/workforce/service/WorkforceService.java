@@ -2,14 +2,12 @@ package com.smartdroneinspection.workforce.service;
 
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
-import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.workforce.api.dto.request.ProvisionWorkforceUserRequest;
 import com.smartdroneinspection.workforce.api.dto.request.UpdateWorkforceRolesRequest;
 import com.smartdroneinspection.workforce.api.dto.request.UpdateWorkforceStatusRequest;
 import com.smartdroneinspection.workforce.api.dto.response.ProvisionedWorkforceUserResponse;
 import com.smartdroneinspection.workforce.api.dto.response.WorkforceUserResponse;
-import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,11 +30,9 @@ public class WorkforceService {
   private static final String NOT_FOUND_MESSAGE = "User was not found.";
 
   private final UserAccess users;
-  private final SubscriptionEntitlement entitlement;
 
-  public WorkforceService(UserAccess users, SubscriptionEntitlement entitlement) {
+  public WorkforceService(UserAccess users) {
     this.users = users;
-    this.entitlement = entitlement;
   }
 
   public ProvisionedWorkforceUserResponse provision(
@@ -47,7 +43,6 @@ public class WorkforceService {
       String correlationId) {
     UUID organizationId = requireActorOrganization(actorId);
     requireGrantableRoles(request.roles());
-    requireEntitled(organizationId);
     var provisioned =
         users.provisionWorkforceUser(
             actorId,
@@ -78,7 +73,6 @@ public class WorkforceService {
       String correlationId) {
     UUID organizationId = requireActorOrganization(actorId);
     requireWorkforceMemberOfActorOrganization(userId, organizationId);
-    requireEntitled(organizationId);
     return WorkforceUserResponse.from(
         users.updateWorkforceStatus(
             actorId, userId, request.status(), ipAddress, userAgent, correlationId));
@@ -94,7 +88,6 @@ public class WorkforceService {
     UUID organizationId = requireActorOrganization(actorId);
     requireGrantableRoles(request.roles());
     requireWorkforceMemberOfActorOrganization(userId, organizationId);
-    requireEntitled(organizationId);
     return WorkforceUserResponse.from(
         users.updateWorkforceRoles(
             actorId, userId, request.roles(), ipAddress, userAgent, correlationId));
@@ -153,12 +146,5 @@ public class WorkforceService {
           "Role is not grantable by an organization administrator: "
               + String.join(", ", disallowed));
     }
-  }
-
-  /**
-   * Guards the tenant against writes while the organization is not entitled to MF1 capabilities.
-   */
-  private void requireEntitled(UUID organizationId) {
-    entitlement.requireActive(organizationId, Instant.now());
   }
 }

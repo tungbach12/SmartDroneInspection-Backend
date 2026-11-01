@@ -105,7 +105,6 @@ public class SecurityConfig {
                 requests
                     .requestMatchers(
                         "/api/v1/mobile/auth/**",
-                        "/api/v1/webhooks/paypal",
                         "/api/v1/webhooks/payos",
                         "/actuator/health/**",
                         "/error")

@@ -22,7 +22,6 @@ public record InspectionResponse(
     String droneServiceability,
     String flightPermitFileKey,
     String flightPermitFileName,
-    Instant flightPermitUploadedAt,
     Instant plannedStartAt,
     Instant plannedEndAt,
     String status,
@@ -30,8 +29,7 @@ public record InspectionResponse(
     Instant updatedAt,
     String inspectionType,
     UUID workOrderId,
-    UUID sourceInspectionId,
-    UUID sourceReportVersionId) {
+    UUID sourceInspectionId) {
 
   public InspectionResponse {
     inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
@@ -52,7 +50,6 @@ public record InspectionResponse(
       String droneServiceability,
       String flightPermitFileKey,
       String flightPermitFileName,
-      Instant flightPermitUploadedAt,
       Instant plannedStartAt,
       Instant plannedEndAt,
       String status,
@@ -75,14 +72,12 @@ public record InspectionResponse(
         droneServiceability,
         flightPermitFileKey,
         flightPermitFileName,
-        flightPermitUploadedAt,
         plannedStartAt,
         plannedEndAt,
         status,
         createdAt,
         updatedAt,
         "INITIAL",
-        null,
         null,
         null);
   }

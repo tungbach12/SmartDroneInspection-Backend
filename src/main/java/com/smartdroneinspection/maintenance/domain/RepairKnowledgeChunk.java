@@ -5,7 +5,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.Instant;
 import java.util.UUID;
 
 /** Reference engineering standard and repair procedure for RAG-assisted maintenance planning. */
@@ -30,12 +29,6 @@ public class RepairKnowledgeChunk {
   @Column(nullable = false, columnDefinition = "text")
   private String content;
 
-  @Column(name = "reference_url", length = 500)
-  private String referenceUrl;
-
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt = Instant.now();
-
   protected RepairKnowledgeChunk() {}
 
   public RepairKnowledgeChunk(
@@ -50,8 +43,6 @@ public class RepairKnowledgeChunk {
     this.category = category;
     this.defectPatterns = defectPatterns;
     this.content = content;
-    this.referenceUrl = referenceUrl;
-    this.createdAt = Instant.now();
   }
 
   public UUID getId() {
@@ -76,13 +67,5 @@ public class RepairKnowledgeChunk {
 
   public String getContent() {
     return content;
-  }
-
-  public String getReferenceUrl() {
-    return referenceUrl;
-  }
-
-  public Instant getCreatedAt() {
-    return createdAt;
   }
 }

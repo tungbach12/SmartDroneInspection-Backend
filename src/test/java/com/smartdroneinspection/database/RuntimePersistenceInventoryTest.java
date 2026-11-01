@@ -25,20 +25,15 @@ class RuntimePersistenceInventoryTest {
           "asset_categories",
           "asset_documents",
           "auth_sessions",
-          "platform_drones",
-          "drone_leases",
           "drones",
           "inspections",
-          "recurring_inspection_schedules",
-          "schedule_occurrences",
           "notifications",
           "prospective_customer_registrations",
-          "inspector_partner_applications",
           "drone_registration_applications",
           "reinspection_defect_verifications",
           "organizations",
-          "subscriptions",
           "users",
+          "inspector_flight_logs",
           "field_sessions",
           "evidence",
           "findings",
@@ -52,8 +47,9 @@ class RuntimePersistenceInventoryTest {
           "maintenance_work_logs",
           "maintenance_reports",
           "maintenance_acceptance_decisions",
-          "payment_transactions",
           "repair_knowledge_chunks",
+          "inspector_profiles",
+          "otp_challenges",
           "service_requests",
           "service_request_messages",
           "service_request_quotes",
@@ -63,22 +59,16 @@ class RuntimePersistenceInventoryTest {
   private static final Set<String> TARGET_APPLICATION_TABLES =
       Set.of(
           "organizations",
-          "subscriptions",
           "users",
           "auth_sessions",
-          "platform_drones",
-          "drone_leases",
           "drones",
           "prospective_customer_registrations",
-          "inspector_partner_applications",
           "drone_registration_applications",
           "reinspection_defect_verifications",
           "asset_categories",
           "assets",
           "asset_documents",
           "inspections",
-          "recurring_inspection_schedules",
-          "schedule_occurrences",
           "field_sessions",
           "evidence",
           "findings",
@@ -94,13 +84,15 @@ class RuntimePersistenceInventoryTest {
           "maintenance_acceptance_decisions",
           "audit_events",
           "notifications",
-          "payment_transactions",
           "repair_knowledge_chunks",
           "service_requests",
           "service_request_messages",
           "service_request_quotes",
           "service_request_occurrences",
-          "inspection_finance_settings");
+          "inspection_finance_settings",
+          "inspector_profiles",
+          "otp_challenges",
+          "inspector_flight_logs");
 
   @Autowired EntityManagerFactory entityManagerFactory;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -132,7 +124,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(35);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

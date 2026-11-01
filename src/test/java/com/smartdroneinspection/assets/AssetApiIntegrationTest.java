@@ -51,8 +51,6 @@ class AssetApiIntegrationTest {
             .build();
     var fixtureHelper = new AssetTestFixture(categories, assets, users, jdbcTemplate);
     fixture = fixtureHelper.create();
-    fixtureHelper.grantEntitlement(fixture.organizationId());
-    fixtureHelper.grantEntitlement(fixture.otherOrganizationId());
   }
 
   @Test
@@ -245,27 +243,6 @@ class AssetApiIntegrationTest {
                 .content(inactiveCategoryBody))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-  }
-
-  @Test
-  void orgAdminCannotCreateAssetWhenSubscriptionIsInactive() throws Exception {
-    jdbcTemplate.update(
-        "UPDATE subscriptions SET status = 'EXPIRED' WHERE organization_id = ?",
-        fixture.organizationId());
-
-    String body =
-        "{\"code\":\"BR-NOSUB\",\"name\":\"Bridge\",\"categoryId\":\""
-            + fixture.categoryId()
-            + "\",\"locationText\":\"District 1\"}";
-
-    mockMvc
-        .perform(
-            post("/api/v1/assets")
-                .with(client(fixture.clientId()))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("SUBSCRIPTION_INACTIVE"));
   }
 
   @Test
