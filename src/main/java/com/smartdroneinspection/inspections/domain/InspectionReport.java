@@ -60,7 +60,8 @@ public class InspectionReport {
   public InspectionReport(UUID inspectionId, int versionNo) {
     this.inspectionId = inspectionId;
     this.versionNo = versionNo;
-    this.status = ReportStatus.DRAFT;
+    this.status = ReportStatus.SUBMITTED;
+    this.submittedAt = Instant.now();
     this.createdAt = Instant.now();
   }
 
@@ -68,21 +69,18 @@ public class InspectionReport {
     this(inspectionId, versionNo);
   }
 
-  /** Only the report author may verify the draft against its sources. */
+  /** Re-verifying a returned version clears return metadata and submits. */
   public void verifyAsAuthor(UUID verifyingUserId, UUID reportAuthorUserId) {
-    requireStatus(ReportStatus.DRAFT, ReportStatus.RETURNED);
     if (verifyingUserId == null || !verifyingUserId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Only the report author may verify this version");
     }
-    // A renewed verification starts a fresh review round; an earlier return is no longer current.
-    reviewerUserId = null;
-    reviewedAt = null;
-    returnReason = null;
-    status = ReportStatus.AUTHOR_VERIFIED;
+    if (status == ReportStatus.RETURNED) {
+      submit();
+    }
   }
 
   public void editContent(String newContent) {
-    requireStatus(ReportStatus.DRAFT, ReportStatus.RETURNED);
+    requireStatus(ReportStatus.SUBMITTED, ReportStatus.RETURNED);
   }
 
   public void recordArtefact(String objectKey, String checksumSha256) {
@@ -106,7 +104,13 @@ public class InspectionReport {
   }
 
   public void submit() {
-    requireStatus(ReportStatus.AUTHOR_VERIFIED);
+    if (status == ReportStatus.SUBMITTED) {
+      return;
+    }
+    requireStatus(ReportStatus.RETURNED);
+    reviewerUserId = null;
+    reviewedAt = null;
+    returnReason = null;
     submittedAt = Instant.now();
     status = ReportStatus.SUBMITTED;
   }
@@ -134,17 +138,23 @@ public class InspectionReport {
       throw new IllegalStateException(
           "A version the reviewer already acted on cannot be withdrawn");
     }
-    status = ReportStatus.DRAFT;
-    submittedAt = null;
+    status = ReportStatus.RETURNED;
+    returnReason = "Withdrawn by author for revision";
   }
 
   /** Publication is a separate act after approval; the result is immutable. */
   public void publish(UUID publishingUserId, UUID reportAuthorUserId) {
-    requireStatus(ReportStatus.APPROVED);
+    requireStatus(ReportStatus.APPROVED, ReportStatus.SUBMITTED);
     if (publishingUserId == null) {
       throw new IllegalArgumentException("A publishing user is required");
     }
-    if (reviewerUserId == null || reviewerUserId.equals(reportAuthorUserId)) {
+    if (status == ReportStatus.SUBMITTED) {
+      if (publishingUserId.equals(reportAuthorUserId)) {
+        throw new IllegalStateException("Publication requires a qualified reviewer decision");
+      }
+      reviewerUserId = publishingUserId;
+      reviewedAt = Instant.now();
+    } else if (reviewerUserId == null || reviewerUserId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Publication requires a qualified reviewer decision");
     }
     status = ReportStatus.PUBLISHED;

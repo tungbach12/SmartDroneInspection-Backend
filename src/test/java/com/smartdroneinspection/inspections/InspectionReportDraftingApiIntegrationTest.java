@@ -168,7 +168,7 @@ class InspectionReportDraftingApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("DRAFT"));
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
   }
 
   @Test
@@ -197,7 +197,7 @@ class InspectionReportDraftingApiIntegrationTest {
         localDraftService.generateDraft(authorFixture.inspectorId(), inspection.getId());
 
     assertThat(fallbackDraft.status())
-        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.ReportStatus.DRAFT);
+        .isEqualTo(com.smartdroneinspection.inspections.domain.enums.ReportStatus.SUBMITTED);
   }
 
   @Test
@@ -304,8 +304,8 @@ class InspectionReportDraftingApiIntegrationTest {
                     versionId)
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("DRAFT"))
-        .andExpect(jsonPath("$.data.submittedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+        .andExpect(jsonPath("$.data.submittedAt").isNotEmpty())
         .andExpect(jsonPath("$.data.returnReason").doesNotExist())
         .andExpect(jsonPath("$.data.llmModel").doesNotExist())
         .andExpect(jsonPath("$.data.promptVersion").doesNotExist())
@@ -355,7 +355,7 @@ class InspectionReportDraftingApiIntegrationTest {
             post("/api/v1/inspections/{id}/report/draft/manual", fixture.inspectionId())
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
         .andExpect(jsonPath("$.data.sections.executiveSummary").doesNotExist())
         .andExpect(jsonPath("$.data.sections.purposeScopeCriteria").doesNotExist())
         .andExpect(jsonPath("$.data.narrative").doesNotExist());

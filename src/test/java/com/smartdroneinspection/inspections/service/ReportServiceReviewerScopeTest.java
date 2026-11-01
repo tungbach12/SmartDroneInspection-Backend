@@ -168,9 +168,9 @@ class ReportServiceReviewerScopeTest {
             null,
             null);
 
-    InspectionReport draft = new InspectionReport(inspectionId, 1, "draft-snap");
-    ReflectionTestUtils.setField(draft, "id", UUID.randomUUID());
-    ReflectionTestUtils.setField(draft, "status", ReportStatus.DRAFT);
+    InspectionReport submitted = new InspectionReport(inspectionId, 1, "sub-snap");
+    ReflectionTestUtils.setField(submitted, "id", UUID.randomUUID());
+    ReflectionTestUtils.setField(submitted, "status", ReportStatus.SUBMITTED);
 
     InspectionReport published = new InspectionReport(inspectionId, 2, "pub-snap");
     ReflectionTestUtils.setField(published, "id", versionId);
@@ -178,7 +178,7 @@ class ReportServiceReviewerScopeTest {
 
     when(userAccess.findActiveUser(customerId)).thenReturn(Optional.of(customer));
     when(versions.findByInspectionIdOrderByVersionNoDesc(inspectionId))
-        .thenReturn(List.of(published, draft));
+        .thenReturn(List.of(published, submitted));
 
     List<InspectionReportResponse> result = reportService.listVersions(customerId, inspectionId);
 
@@ -187,8 +187,9 @@ class ReportServiceReviewerScopeTest {
   }
 
   @Test
-  @DisplayName("CUSTOMER receives FORBIDDEN when attempting to read an unreleased DRAFT version")
-  void customerCannotReadDraftVersion() {
+  @DisplayName(
+      "CUSTOMER receives FORBIDDEN when attempting to read an unreleased SUBMITTED version")
+  void customerCannotReadSubmittedVersion() {
     UserAccess.ActiveUser customer =
         new UserAccess.ActiveUser(
             customerId,
@@ -202,12 +203,12 @@ class ReportServiceReviewerScopeTest {
             null,
             null);
 
-    InspectionReport draft = new InspectionReport(inspectionId, 1, "draft-snap");
-    ReflectionTestUtils.setField(draft, "id", versionId);
-    ReflectionTestUtils.setField(draft, "status", ReportStatus.DRAFT);
+    InspectionReport submitted = new InspectionReport(inspectionId, 1, "sub-snap");
+    ReflectionTestUtils.setField(submitted, "id", versionId);
+    ReflectionTestUtils.setField(submitted, "status", ReportStatus.SUBMITTED);
 
     when(userAccess.findActiveUser(customerId)).thenReturn(Optional.of(customer));
-    when(versions.findById(versionId)).thenReturn(Optional.of(draft));
+    when(versions.findById(versionId)).thenReturn(Optional.of(submitted));
 
     assertThatThrownBy(() -> reportService.getVersion(customerId, inspectionId, versionId))
         .isInstanceOf(BusinessException.class)

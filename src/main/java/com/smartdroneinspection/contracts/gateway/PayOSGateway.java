@@ -19,6 +19,16 @@ public interface PayOSGateway {
       long orderCode, long amount, String description, String returnUrl, String cancelUrl);
 
   /**
+   * Retrieves existing payment link details by orderCode.
+   *
+   * @param orderCode unique numeric transaction identifier
+   * @return payment link details or null if not found
+   */
+  default PayOSPaymentLink getPaymentLink(long orderCode) {
+    return null;
+  }
+
+  /**
    * Resolves the return URL for a specific inspection, substituting configured template variables.
    */
   default String resolveReturnUrl(String inspectionId, long orderCode) {

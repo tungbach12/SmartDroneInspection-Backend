@@ -6,8 +6,6 @@ package com.smartdroneinspection.inspections.domain.enums;
  * approval.
  */
 public enum ReportStatus {
-  DRAFT,
-  AUTHOR_VERIFIED,
   SUBMITTED,
   RETURNED,
   APPROVED,

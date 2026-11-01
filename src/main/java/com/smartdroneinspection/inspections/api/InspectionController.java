@@ -507,12 +507,12 @@ public class InspectionController {
 
   @GetMapping("/report/payment-status")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN', 'INSPECTOR')")
-  public ApiResponse<InspectionReportAcceptancePort.ReportPaymentStatus> getReportPaymentStatus(
+  public ApiResponse<InspectionReportAcceptancePort.PaymentStatusDetails> getReportPaymentStatus(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     if (reportAcceptancePort.isEmpty()) {
       return ApiResponse.success(
-          new InspectionReportAcceptancePort.ReportPaymentStatus(
-              false, false, "NOT_CONFIGURED", null, null, null));
+          new InspectionReportAcceptancePort.PaymentStatusDetails(
+              false, false, "NOT_APPLICABLE", null, null, null));
     }
     return ApiResponse.success(
         reportAcceptancePort.get().getPaymentStatus(actorId(jwt), inspectionId));
