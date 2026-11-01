@@ -2,16 +2,16 @@ spring:
   application:
     name: smartdroneinspection
   mail:
-    host: ${AUTH_OTP_SMTP_HOST:}
-    port: ${AUTH_OTP_SMTP_PORT:587}
+    host: ${AUTH_OTP_SMTP_HOST:127.0.0.1}
+    port: ${AUTH_OTP_SMTP_PORT:11025}
     username: ${AUTH_OTP_SMTP_USERNAME:}
     password: ${AUTH_OTP_SMTP_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: ${AUTH_OTP_SMTP_AUTH:true}
+          auth: ${AUTH_OTP_SMTP_AUTH:false}
           starttls:
-            enable: ${AUTH_OTP_SMTP_STARTTLS:true}
+            enable: ${AUTH_OTP_SMTP_STARTTLS:false}
   servlet:
     multipart:
       max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
@@ -126,10 +126,10 @@ app:
     secure-cookies: ${AUTH_SECURE_COOKIES:false}
     allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1,http://localhost:3002,http://127.0.0.1:3002}
     otp:
-      smtp-host: ${AUTH_OTP_SMTP_HOST:}
+      smtp-host: ${AUTH_OTP_SMTP_HOST:127.0.0.1}
       enabled: ${AUTH_OTP_ENABLED:true}
       challenge-pepper: ${AUTH_OTP_CHALLENGE_PEPPER:}
-      email-from: ${AUTH_OTP_EMAIL_FROM:}
+      email-from: ${AUTH_OTP_EMAIL_FROM:no-reply@smartdroneinspection.vn}
       sms-account-sid: ${TWILIO_ACCOUNT_SID:}
       sms-auth-token: ${TWILIO_AUTH_TOKEN:}
       sms-from-number: ${TWILIO_FROM_NUMBER:}
