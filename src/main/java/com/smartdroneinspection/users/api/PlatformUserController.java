@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/platform/users")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
 public class PlatformUserController {
 
   private final AdminUserService users;
@@ -50,6 +50,25 @@ public class PlatformUserController {
       @AuthenticationPrincipal Jwt jwt,
       @Valid @RequestBody CreateUserRequest body,
       HttpServletRequest request) {
+    List<String> callerRoles = jwt.getClaimAsStringList("roles");
+    boolean isManager =
+        callerRoles != null
+            && callerRoles.contains(com.smartdroneinspection.shared.auth.Roles.MANAGER)
+            && !callerRoles.contains(com.smartdroneinspection.shared.auth.Roles.ADMIN);
+    if (isManager) {
+      if (body.actorZone()
+              != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER
+          || body.organizationId() != null
+          || body.roles() == null
+          || body.roles().size() != 1
+          || !body.roles()
+              .contains(com.smartdroneinspection.users.domain.enums.UserRole.INSPECTOR)) {
+        throw new com.smartdroneinspection.shared.exception.AuthException(
+            org.springframework.http.HttpStatus.FORBIDDEN,
+            "FORBIDDEN",
+            "Platform Manager may only create partner Inspector accounts.");
+      }
+    }
     return ResponseEntity.status(201)
         .cacheControl(CacheControl.noStore())
         .body(
@@ -62,6 +81,7 @@ public class PlatformUserController {
                     correlationId(request))));
   }
 
+  @PreAuthorize("hasRole('ADMIN')")
   @PostMapping("/{userId}/reset-password")
   public ResponseEntity<ApiResponse<ProvisionedUserResponse>> resetPassword(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID userId, HttpServletRequest request) {
@@ -77,6 +97,7 @@ public class PlatformUserController {
                     correlationId(request))));
   }
 
+  @PreAuthorize("hasRole('ADMIN')")
   @PutMapping("/{userId}/roles")
   public ApiResponse<UserResponse> updateRoles(
       @AuthenticationPrincipal Jwt jwt,
@@ -93,6 +114,7 @@ public class PlatformUserController {
             correlationId(request)));
   }
 
+  @PreAuthorize("hasRole('ADMIN')")
   @PatchMapping("/{userId}/status")
   public ApiResponse<UserResponse> updateStatus(
       @AuthenticationPrincipal Jwt jwt,

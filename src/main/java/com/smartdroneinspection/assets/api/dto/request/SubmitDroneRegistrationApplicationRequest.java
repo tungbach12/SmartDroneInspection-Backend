@@ -7,7 +7,7 @@ import java.time.Instant;
 
 public record SubmitDroneRegistrationApplicationRequest(
     @NotBlank @Size(max = 128) String serialNumber,
-    @Size(max = 200) String model,
+    @Size(max = 1000) String model,
     @Size(max = 200) String manufacturer,
     @NotBlank @Size(max = 100) String registrationNumber,
     @NotBlank @Size(max = 1000) String registrationFileKey,

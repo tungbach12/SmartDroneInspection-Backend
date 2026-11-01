@@ -2,6 +2,7 @@ package com.smartdroneinspection.users.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.smartdroneinspection.shared.config.AuthProperties;
+import com.smartdroneinspection.users.service.LoginOtpProperties;
 import java.util.Base64;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -23,7 +24,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 @Configuration
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, LoginOtpProperties.class})
 public class AuthSecurityBeans {
 
   private static final Logger LOG = LoggerFactory.getLogger(AuthSecurityBeans.class);

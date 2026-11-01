@@ -36,7 +36,7 @@ public class InspectorPartnerApplicationController {
   }
 
   @GetMapping("/{applicationId}/license-document")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ResponseEntity<InputStreamResource> licenseDocument(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID applicationId) {
     var content = applications.openLicenseDocument(subject(jwt), applicationId);
@@ -48,14 +48,14 @@ public class InspectorPartnerApplicationController {
   }
 
   @GetMapping("/pending")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<List<InspectorPartnerApplicationResponse>> pending(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(applications.pending(subject(jwt)));
   }
 
   @PostMapping("/{applicationId}/approve")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<InspectorPartnerApprovalResponse> approve(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,
@@ -72,7 +72,7 @@ public class InspectorPartnerApplicationController {
   }
 
   @PostMapping("/{applicationId}/reject")
-  @PreAuthorize("hasRole('" + Roles.ADMIN + "')")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
   public ApiResponse<InspectorPartnerApplicationResponse> reject(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,

@@ -16,30 +16,44 @@ import com.smartdroneinspection.users.security.AuthCrypto;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InspectorPartnerApplicationService {
+  private static final Logger log =
+      LoggerFactory.getLogger(InspectorPartnerApplicationService.class);
+
   private final InspectorPartnerApplicationRepository applications;
   private final UserRepository users;
   private final PasswordEncoder passwords;
   private final SecurityAuditService audit;
   private final InspectorPartnerLicenseDocumentService licenseDocuments;
+  private final ObjectProvider<JavaMailSender> mailSender;
+  private final LoginOtpProperties properties;
 
   public InspectorPartnerApplicationService(
       InspectorPartnerApplicationRepository applications,
       UserRepository users,
       PasswordEncoder passwords,
       SecurityAuditService audit,
-      InspectorPartnerLicenseDocumentService licenseDocuments) {
+      InspectorPartnerLicenseDocumentService licenseDocuments,
+      ObjectProvider<JavaMailSender> mailSender,
+      LoginOtpProperties properties) {
     this.applications = applications;
     this.users = users;
     this.passwords = passwords;
     this.audit = audit;
     this.licenseDocuments = licenseDocuments;
+    this.mailSender = mailSender;
+    this.properties = properties;
   }
 
   @Transactional(readOnly = true)
@@ -119,8 +133,60 @@ public class InspectorPartnerApplicationService {
         ip,
         agent,
         correlationId);
+    sendProvisionedCredentialsEmail(inspector, temporaryPassword);
     return new InspectorPartnerApprovalResponse(
         InspectorPartnerApplicationResponse.from(application), temporaryPassword);
+  }
+
+  private void sendProvisionedCredentialsEmail(User user, String temporaryPassword) {
+    if (properties == null
+        || properties.getEmailFrom() == null
+        || properties.getEmailFrom().isBlank()) {
+      log.warn(
+          "Cannot send provisioned credentials email to {}: email-from is not configured",
+          user.getEmail());
+      return;
+    }
+    JavaMailSender sender = mailSender.getIfAvailable();
+    if (sender == null) {
+      log.warn(
+          "Cannot send provisioned credentials email to {}: JavaMailSender is not available",
+          user.getEmail());
+      return;
+    }
+    try {
+      SimpleMailMessage message = new SimpleMailMessage();
+      message.setFrom(properties.getEmailFrom());
+      message.setTo(user.getEmail());
+      message.setSubject("[SmartDroneInspection] Thông tin tài khoản đăng nhập của bạn");
+      message.setText(
+          "Xin chào "
+              + user.getFullName()
+              + ",\n\n"
+              + "Hồ sơ đối tác của bạn đã được phê duyệt thành công trên hệ thống SmartDroneInspection với vai trò: Kiểm tra viên đối tác (Inspector Partner).\n\n"
+              + "Thông tin đăng nhập tài khoản của bạn:\n"
+              + "- Địa chỉ Email: "
+              + user.getEmail()
+              + "\n"
+              + "- Mật khẩu tạm thời: "
+              + temporaryPassword
+              + "\n\n"
+              + "Đường dẫn đăng nhập: http://localhost:3002/login\n\n"
+              + "Lưu ý an toàn:\n"
+              + "- Bạn phải đổi sang mật khẩu mới trong lần đầu tiên đăng nhập.\n"
+              + "- Tài khoản Inspector sẽ cần xác thực mã OTP gửi về email này trong lần đăng nhập đầu tiên.\n\n"
+              + "Trân trọng,\n"
+              + "Ban Quản trị SmartDroneInspection");
+      log.info("Sending provisioned credentials email to {}", user.getEmail());
+      sender.send(message);
+      log.info("Successfully sent provisioned credentials email to {}", user.getEmail());
+    } catch (Exception ex) {
+      log.error(
+          "Failed to send provisioned credentials email to {}: {}",
+          user.getEmail(),
+          ex.getMessage(),
+          ex);
+    }
   }
 
   @Transactional
@@ -166,9 +232,11 @@ public class InspectorPartnerApplicationService {
                 () ->
                     new AuthException(
                         HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User was not found."));
-    if (admin.getActorZone() != ActorZone.PLATFORM || !admin.roleValues().contains(Roles.ADMIN)) {
+    if (admin.getActorZone() != ActorZone.PLATFORM
+        || (!admin.roleValues().contains(Roles.ADMIN)
+            && !admin.roleValues().contains(Roles.MANAGER))) {
       throw new AuthException(
-          HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "Platform Admin access is required.");
+          HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
     }
   }
 }

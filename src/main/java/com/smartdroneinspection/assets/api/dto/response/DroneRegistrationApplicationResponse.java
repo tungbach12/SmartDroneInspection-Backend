@@ -1,12 +1,16 @@
 package com.smartdroneinspection.assets.api.dto.response;
 
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
+import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.UUID;
 
 public record DroneRegistrationApplicationResponse(
     UUID id,
     UUID inspectorUserId,
+    String inspectorFullName,
+    String inspectorEmail,
+    String inspectorPilotLicenseNumber,
     String serialNumber,
     String model,
     String manufacturer,
@@ -18,14 +22,31 @@ public record DroneRegistrationApplicationResponse(
     String status,
     String reviewNote,
     UUID reviewedByUserId,
+    String reviewerFullName,
     Instant reviewedAt,
     UUID droneId,
     Instant createdAt) {
+
   public static DroneRegistrationApplicationResponse from(
       DroneRegistrationApplication application) {
+    return from(application, null, null);
+  }
+
+  public static DroneRegistrationApplicationResponse from(
+      DroneRegistrationApplication application, UserAccess.ActiveUser inspector) {
+    return from(application, inspector, null);
+  }
+
+  public static DroneRegistrationApplicationResponse from(
+      DroneRegistrationApplication application,
+      UserAccess.ActiveUser inspector,
+      UserAccess.ActiveUser reviewer) {
     return new DroneRegistrationApplicationResponse(
         application.getId(),
         application.getInspectorUserId(),
+        inspector != null ? inspector.fullName() : null,
+        inspector != null ? inspector.email() : null,
+        inspector != null ? inspector.pilotLicenseNumber() : null,
         application.getSerialNumber(),
         application.getModel(),
         application.getManufacturer(),
@@ -37,6 +58,7 @@ public record DroneRegistrationApplicationResponse(
         application.getStatus(),
         application.getReviewNote(),
         application.getReviewedByUserId(),
+        reviewer != null ? reviewer.fullName() : null,
         application.getReviewedAt(),
         application.getDroneId(),
         application.getCreatedAt());

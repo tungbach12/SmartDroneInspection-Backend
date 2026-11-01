@@ -23,6 +23,32 @@ public class InspectorPartnerLicenseDocumentService {
     this.objectStore = objectStore;
   }
 
+  public UploadResponse upload(org.springframework.web.multipart.MultipartFile file) {
+    var validated = EvidenceUploadValidator.validate(file);
+    String key =
+        "inspector-partner-applications/licenses/"
+            + java.util.UUID.randomUUID()
+            + validated.extension();
+    try {
+      requireObjectStore()
+          .put(
+              key,
+              validated.contentType(),
+              validated.content().length,
+              new java.io.ByteArrayInputStream(validated.content()));
+      return new UploadResponse(key);
+    } catch (IOException ex) {
+      throw storageUnavailable();
+    }
+  }
+
+  public void validateReference(String objectKey) {
+    if (objectKey == null || !LICENSE_KEY.matcher(objectKey).matches()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_REFERENCE", "Invalid license file key");
+    }
+  }
+
   public InputStreamContent open(String objectKey) {
     if (objectKey == null || !LICENSE_KEY.matcher(objectKey).matches()) {
       throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "License document not found");
@@ -44,6 +70,8 @@ public class InspectorPartnerLicenseDocumentService {
     return new BusinessException(
         HttpStatus.BAD_GATEWAY, "STORAGE_UNAVAILABLE", "Object storage is unavailable");
   }
+
+  public record UploadResponse(String fileKey) {}
 
   public record InputStreamContent(String contentType, InputStream stream) {}
 }

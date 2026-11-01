@@ -68,10 +68,14 @@ class FullDatabaseSchemaMigrationTest {
             "service_request_quotes",
             "service_request_occurrences",
             "inspection_finance_settings",
+            "login_otp_challenges",
+            "registration_otp_challenges",
+            "password_reset_otp_challenges",
+            "inspector_flight_logs",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(41);
+    assertThat(expected).hasSize(45);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
   }
 
@@ -106,12 +110,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToV16AndCreatesPayOSSupport() {
+  void appliesAllMigrationsUpToLatestAndCreatesPayOSSupport() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(18);
-    assertThat(versions.getLast()).isEqualTo("18");
+    assertThat(versions).hasSize(24);
+    assertThat(versions.getLast()).isEqualTo("24");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -132,6 +136,28 @@ class FullDatabaseSchemaMigrationTest {
               AND table_name = 'service_request_occurrences'
             """,
             String.class);
-    assertThat(columns).contains("payos_order_code", "payment_method");
+    assertThat(columns).contains("payos_order_code", "payos_payment_link_id", "payment_method");
+
+    List<String> otpColumns =
+        jdbcTemplate.queryForList(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'login_otp_challenges'
+            """,
+            String.class);
+    assertThat(otpColumns)
+        .contains(
+            "challenge_hash",
+            "user_id",
+            "client_ip",
+            "code_hash",
+            "code_expires_at",
+            "expires_at",
+            "consumed_at",
+            "failed_attempts",
+            "send_count",
+            "row_version");
   }
 }
