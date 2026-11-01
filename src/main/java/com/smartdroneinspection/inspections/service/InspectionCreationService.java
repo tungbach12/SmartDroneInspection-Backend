@@ -229,6 +229,15 @@ public class InspectionCreationService {
                   () ->
                       new BusinessException(
                           HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    } else if (actor.isInspectorPartner() || actor.hasRole(Roles.INSPECTOR)) {
+      inspection =
+          inspections
+              .findAssignedInspectorInspection(
+                  inspectionId, actor.organizationId(), actor.id(), actor.isInspectorPartner())
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
     } else {
       UUID organizationId = actor.organizationId();
       inspection =
@@ -482,9 +491,12 @@ public class InspectionCreationService {
             .orElse(null);
     Drone drone =
         inspection.getDroneId() != null
-            ? drones
-                .findByIdAndOrganizationId(inspection.getDroneId(), inspection.getOrganizationId())
-                .orElse(null)
+            ? (inspection.isPartnerAssignment()
+                ? drones.findById(inspection.getDroneId()).orElse(null)
+                : drones
+                    .findByIdAndOrganizationId(
+                        inspection.getDroneId(), inspection.getOrganizationId())
+                    .orElse(null))
             : null;
 
     return new InspectionResponse(
