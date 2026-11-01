@@ -201,7 +201,6 @@ public class ServiceRequestOccurrence {
     if (this.inspectorId != null) {
       this.payoutStatus = OccurrencePayoutStatus.PAID;
       this.payoutReference = "AUTO-DISBURSE-" + this.paymentReference;
-      this.payoutRecordedByUserId = managerUserId;
       this.payoutRecordedAt = this.paymentConfirmedAt;
     } else if (this.payoutStatus == OccurrencePayoutStatus.PENDING) {
       this.payoutStatus = OccurrencePayoutStatus.ELIGIBLE;
@@ -247,7 +246,6 @@ public class ServiceRequestOccurrence {
     if (this.inspectorId != null) {
       this.payoutStatus = OccurrencePayoutStatus.PAID;
       this.payoutReference = "AUTO-DISBURSE-" + this.paymentReference;
-      this.payoutRecordedByUserId = null;
       this.payoutRecordedAt = this.paymentConfirmedAt;
     } else if (this.payoutStatus == OccurrencePayoutStatus.PENDING) {
       this.payoutStatus = OccurrencePayoutStatus.ELIGIBLE;
@@ -271,7 +269,6 @@ public class ServiceRequestOccurrence {
       }
       if (this.payoutReference != null && this.payoutReference.startsWith("AUTO-DISBURSE-")) {
         this.payoutReference = reference.trim();
-        this.payoutRecordedByUserId = managerUserId;
         this.payoutRecordedAt = Instant.now();
         this.updatedAt = this.payoutRecordedAt;
         return;
