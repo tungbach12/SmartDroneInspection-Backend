@@ -111,13 +111,16 @@ public class ContractWorkflowController {
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
     ContractWorkflowService.SignedContractFile file =
         workflow.openSignedContract(actorId(jwt), requestId);
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(file.contentType()))
-        .contentLength(file.sizeBytes())
-        .header(
-            HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(file.fileName()).build().toString())
-        .body(new InputStreamResource(file.stream()));
+    ResponseEntity.BodyBuilder builder =
+        ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType(file.contentType()))
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(file.fileName()).build().toString());
+    if (file.sizeBytes() != null) {
+      builder.contentLength(file.sizeBytes());
+    }
+    return builder.body(new InputStreamResource(file.stream()));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/signed-contract")

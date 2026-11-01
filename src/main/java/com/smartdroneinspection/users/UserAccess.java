@@ -10,6 +10,10 @@ public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
 
+  default List<ActiveUser> listActiveInspectorPartners() {
+    return List.of();
+  }
+
   Optional<String> findOrganizationName(UUID organizationId);
 
   Optional<String> findOrganizationCode(UUID organizationId);
