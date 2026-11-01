@@ -136,8 +136,6 @@ class PayOSPaymentIntegrationTest {
     jdbcTemplate.execute("DELETE FROM service_request_occurrences");
     jdbcTemplate.execute("DELETE FROM service_requests");
     jdbcTemplate.execute("DELETE FROM service_request_quotes");
-    jdbcTemplate.execute("DELETE FROM contract_partner_drones");
-    jdbcTemplate.execute("DELETE FROM contract_partner_inspectors");
 
     // Organizations
     orgId = UUID.randomUUID();
@@ -434,9 +432,9 @@ class PayOSPaymentIntegrationTest {
   @DisplayName("Cannot create PayOS payment link before report acceptance (PAYMENT_NOT_DUE)")
   void cannotCreatePaymentLinkBeforeAcceptance() throws Exception {
     ZoneId utc = ZoneId.of("UTC");
-    Instant start = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.HOURS);
+    LocalDate reqDate = LocalDate.now(utc).plusDays(2);
+    Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
     Instant end = start.plus(2, ChronoUnit.HOURS);
-    LocalDate reqDate = start.atZone(utc).toLocalDate();
 
     String reqResp =
         mockMvc
@@ -509,9 +507,9 @@ class PayOSPaymentIntegrationTest {
 
   private PreparedInspection prepareInspectionReadyForPayment() throws Exception {
     ZoneId utc = ZoneId.of("UTC");
-    Instant start = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.HOURS);
+    LocalDate reqDate = LocalDate.now(utc).plusDays(2);
+    Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
     Instant end = start.plus(2, ChronoUnit.HOURS);
-    LocalDate reqDate = start.atZone(utc).toLocalDate();
 
     // 1. Customer creates Service Request
     String reqResp =
