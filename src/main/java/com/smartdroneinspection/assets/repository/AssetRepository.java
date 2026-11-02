@@ -16,6 +16,9 @@ public interface AssetRepository extends JpaRepository<Asset, UUID> {
   @EntityGraph(attributePaths = "documents")
   Optional<Asset> findDetailedByIdAndOrganizationId(UUID id, UUID organizationId);
 
+  @EntityGraph(attributePaths = "documents")
+  Optional<Asset> findDetailedById(UUID id);
+
   Optional<Asset> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)

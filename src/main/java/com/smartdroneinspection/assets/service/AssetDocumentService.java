@@ -155,6 +155,12 @@ public class AssetDocumentService {
             .orElseThrow(
                 () ->
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
+    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
+      return assets
+          .findDetailedById(assetId)
+          .orElseThrow(
+              () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+    }
     if (actor.organizationId() == null) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
     }

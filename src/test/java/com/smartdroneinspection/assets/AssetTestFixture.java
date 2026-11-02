@@ -75,11 +75,10 @@ public final class AssetTestFixture {
     UUID organizationId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'ACTIVE', now(), now())
         """,
         organizationId,
-        label + " organization " + organizationId,
         label + " organization " + organizationId,
         "ORG-" + organizationId);
     return organizationId;
