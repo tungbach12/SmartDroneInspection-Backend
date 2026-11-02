@@ -105,4 +105,57 @@ class WorkOrderReinspectionListenerTest {
     verify(reportVersions).saveAndFlush(report);
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.SUBMITTED);
   }
+
+  @Test
+  @DisplayName(
+      "Multi-round reinspection: unresolved defects move work order to REWORK_REQUIRED, subsequent resolved round moves to SUBMITTED_FOR_ACCEPTANCE")
+  void handlesMultiRoundReinspectionWhenFirstRoundHasUnresolvedDefects() {
+    UUID workOrderId = UUID.randomUUID();
+    UUID reinspectionRound1Id = UUID.randomUUID();
+    UUID reportRound1Id = UUID.randomUUID();
+    UUID reinspectionRound2Id = UUID.randomUUID();
+    UUID reportRound2Id = UUID.randomUUID();
+
+    MaintenanceWorkOrder workOrder =
+        new MaintenanceWorkOrder(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID());
+    ReflectionTestUtils.setField(workOrder, "id", workOrderId);
+    ReflectionTestUtils.setField(workOrder, "status", WorkOrderStatus.REINSPECTION_REQUIRED);
+
+    MaintenanceReportVersion report = new MaintenanceReportVersion(workOrderId, 1, "Work summary");
+    ReflectionTestUtils.setField(report, "status", ReportVersionStatus.RETURNED);
+
+    when(workOrders.findById(workOrderId)).thenReturn(Optional.of(workOrder));
+
+    // Round 1: Inspector marks defect UNRESOLVED (allDefectsResolved = false)
+    listener.onReinspectionReportPublished(
+        new ReinspectionReportPublishedEvent(
+            workOrderId, reinspectionRound1Id, reportRound1Id, false));
+
+    assertThat(workOrder.getReinspectionId()).isEqualTo(reinspectionRound1Id);
+    assertThat(workOrder.getReinspectionReportVersionId()).isEqualTo(reportRound1Id);
+    assertThat(workOrder.getStatus()).isEqualTo(WorkOrderStatus.REWORK_REQUIRED);
+    assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.RETURNED);
+
+    // Maintenance repairs again and requests Round 2 reinspection
+    ReflectionTestUtils.setField(workOrder, "status", WorkOrderStatus.REINSPECTION_REQUIRED);
+    when(reportVersions.findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
+            workOrderId, ReportVersionStatus.RETURNED))
+        .thenReturn(Optional.of(report));
+
+    // Round 2: Inspector marks defect RESOLVED (allDefectsResolved = true)
+    listener.onReinspectionReportPublished(
+        new ReinspectionReportPublishedEvent(
+            workOrderId, reinspectionRound2Id, reportRound2Id, true));
+
+    assertThat(workOrder.getReinspectionId()).isEqualTo(reinspectionRound2Id);
+    assertThat(workOrder.getReinspectionReportVersionId()).isEqualTo(reportRound2Id);
+    assertThat(workOrder.getStatus()).isEqualTo(WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE);
+    assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.SUBMITTED);
+  }
 }

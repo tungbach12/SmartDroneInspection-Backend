@@ -150,6 +150,35 @@ public class ReinspectionVerificationService {
     verification.updateVerification(status, request.newEvidenceId(), request.inspectorNotes());
     ReinspectionDefectVerification saved = verifications.saveAndFlush(verification);
 
+    boolean hasEvidence =
+        request.newEvidenceId() != null
+            || evidences.existsByInspectionIdAndIsDeletedFalse(inspectionId);
+    if (hasEvidence) {
+      if (inspection.getStatus()
+              == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED
+          || inspection.getStatus()
+              == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.IN_PROGRESS) {
+        inspection.moveTo(
+            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
+      }
+      if (inspection.getStatus()
+          == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
+        long pendingAi =
+            findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+                .filter(
+                    f ->
+                        f.getStatus()
+                                == com.smartdroneinspection.inspections.domain.enums.FindingStatus
+                                    .PENDING
+                            && f.getModelName() != null)
+                .count();
+        if (pendingAi == 0) {
+          inspection.confirmFindings();
+        }
+      }
+      inspections.saveAndFlush(inspection);
+    }
+
     Finding sourceFinding = findings.findById(saved.getSourceFindingId()).orElse(null);
     Evidence sourceEvidence =
         sourceFinding != null && sourceFinding.getEvidenceId() != null

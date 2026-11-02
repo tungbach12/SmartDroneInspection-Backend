@@ -22,12 +22,22 @@ public class WorkOrderReinspectionListener {
 
   private final MaintenanceWorkOrderRepository workOrders;
   private final MaintenanceReportVersionRepository reportVersions;
+  private final com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository tasks;
 
   public WorkOrderReinspectionListener(
       MaintenanceWorkOrderRepository workOrders,
       MaintenanceReportVersionRepository reportVersions) {
+    this(workOrders, reportVersions, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public WorkOrderReinspectionListener(
+      MaintenanceWorkOrderRepository workOrders,
+      MaintenanceReportVersionRepository reportVersions,
+      com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository tasks) {
     this.workOrders = workOrders;
     this.reportVersions = reportVersions;
+    this.tasks = tasks;
   }
 
   @ApplicationModuleListener
@@ -61,21 +71,39 @@ public class WorkOrderReinspectionListener {
     }
 
     workOrder.attachReinspection(event.reinspectionId());
-    workOrder.recordReinspectionCompleted(event.reportVersionId());
-    workOrders.saveAndFlush(workOrder);
+    if (event.allDefectsResolved()) {
+      workOrder.recordReinspectionCompleted(event.reportVersionId());
+      workOrders.saveAndFlush(workOrder);
 
-    // Reinstate the returned completion report version so customer can accept
-    reportVersions
-        .findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
-            workOrder.getId(), ReportVersionStatus.RETURNED)
-        .ifPresent(
-            report -> {
-              report.resubmitForReinspectionAcceptance();
-              reportVersions.saveAndFlush(report);
-              log.info(
-                  "Reinstated completion report {} to SUBMITTED for acceptance review",
-                  report.getId());
-            });
+      if (tasks != null) {
+        for (com.smartdroneinspection.maintenance.domain.MaintenanceTask task :
+            tasks.findByWorkOrderIdOrderByTaskNumberAsc(workOrder.getId())) {
+          task.markWorkCompleted();
+          tasks.save(task);
+        }
+        tasks.flush();
+      }
+
+      // Reinstate the returned completion report version so customer can accept
+      reportVersions
+          .findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
+              workOrder.getId(), ReportVersionStatus.RETURNED)
+          .ifPresent(
+              report -> {
+                report.resubmitForReinspectionAcceptance();
+                reportVersions.saveAndFlush(report);
+                log.info(
+                    "Reinstated completion report {} to SUBMITTED for acceptance review",
+                    report.getId());
+              });
+    } else {
+      workOrder.requireReworkAfterFailedReinspection(event.reportVersionId());
+      workOrders.saveAndFlush(workOrder);
+      log.info(
+          "Re-inspection report {} had unresolved defects; work order {} moved to REWORK_REQUIRED for another repair round",
+          event.reportVersionId(),
+          workOrder.getId());
+    }
 
     log.info(
         "Attached re-inspection report {} to work order {}, current status: {}",

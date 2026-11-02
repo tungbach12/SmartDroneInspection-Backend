@@ -510,9 +510,25 @@ public class ReportService {
 
     if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
         && inspection.getWorkOrderId() != null) {
+      boolean allDefectsResolved =
+          defectVerificationsRepo
+              .map(repo -> repo.findByReinspectionId(inspection.getId()))
+              .map(
+                  list ->
+                      !list.isEmpty()
+                          && list.stream()
+                              .allMatch(
+                                  v ->
+                                      v.getResolutionStatus()
+                                          == com.smartdroneinspection.inspections.domain.enums
+                                              .DefectResolutionStatus.RESOLVED))
+              .orElse(true);
       events.publishEvent(
           new ReinspectionReportPublishedEvent(
-              inspection.getWorkOrderId(), inspection.getId(), version.getId()));
+              inspection.getWorkOrderId(),
+              inspection.getId(),
+              version.getId(),
+              allDefectsResolved));
     }
 
     return new ReportPublishedResponse(

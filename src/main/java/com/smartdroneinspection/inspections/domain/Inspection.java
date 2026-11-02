@@ -243,6 +243,9 @@ public class Inspection {
         com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
     inspection.workOrderId = workOrderId;
     inspection.sourceInspectionId = sourceInspectionId;
+    if (inspectorId != null && droneId != null) {
+      inspection.partnerAssignment = true;
+    }
     return inspection;
   }
 

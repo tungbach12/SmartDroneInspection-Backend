@@ -633,6 +633,17 @@ public class MaintenanceExecutionService {
           }
           tasks.flush();
           if (eventPublisher != null) {
+            List<MaintenanceWorkLog> verifiedLogs =
+                workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId());
+            String latestEngineerLog =
+                verifiedLogs.isEmpty()
+                    ? null
+                    : verifiedLogs.get(verifiedLogs.size() - 1).getAsLeftCondition();
+            String combinedNotes =
+                (latestEngineerLog != null && !latestEngineerLog.isBlank()
+                        ? "Bàn giao kỹ sư: " + latestEngineerLog + " | "
+                        : "")
+                    + (request.technicalComments() != null ? request.technicalComments() : "");
             eventPublisher.publishEvent(
                 new ReinspectionRequestedEvent(
                     order.getId(),
@@ -642,7 +653,7 @@ public class MaintenanceExecutionService {
                     order.getSourceReportVersionId(),
                     order.getSourceFindingId(),
                     actorId,
-                    request.technicalComments(),
+                    combinedNotes,
                     Instant.now()));
           }
         }
