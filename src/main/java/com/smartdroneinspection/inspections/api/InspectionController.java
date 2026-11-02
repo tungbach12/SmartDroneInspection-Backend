@@ -505,6 +505,27 @@ public class InspectionController {
         reportAcceptancePort.get().createPayOSPaymentLink(actorId(jwt), inspectionId));
   }
 
+  @PostMapping("/vnpay/create-payment-url")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<InspectionReportAcceptancePort.VnPayCheckoutDetails> createVnPayPaymentUrl(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      HttpServletRequest httpRequest) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    String forwarded = httpRequest.getHeader("X-Forwarded-For");
+    String clientIp =
+        (forwarded != null && !forwarded.isBlank())
+            ? forwarded.split(",")[0].trim()
+            : (httpRequest.getRemoteAddr() != null ? httpRequest.getRemoteAddr() : "127.0.0.1");
+    return ApiResponse.success(
+        reportAcceptancePort.get().createVnPayPaymentLink(actorId(jwt), inspectionId, clientIp));
+  }
+
   @GetMapping("/report/payment-status")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN', 'INSPECTOR')")
   public ApiResponse<InspectionReportAcceptancePort.PaymentStatusDetails> getReportPaymentStatus(

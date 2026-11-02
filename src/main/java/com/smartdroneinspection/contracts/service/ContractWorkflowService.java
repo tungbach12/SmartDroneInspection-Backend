@@ -14,6 +14,7 @@ import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessage
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestOccurrenceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestQuoteResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
+import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
@@ -22,6 +23,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.gateway.PayOSGateway;
+import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
@@ -79,6 +81,7 @@ public class ContractWorkflowService
   private final InspectionFinanceSettingsService financeSettingsService;
   private final Optional<InspectionReportAccess> reportAccess;
   private final PayOSGateway payOSGateway;
+  private final VnPayGateway vnPayGateway;
 
   @org.springframework.beans.factory.annotation.Autowired
   public ContractWorkflowService(
@@ -94,7 +97,8 @@ public class ContractWorkflowService
       Optional<EvidenceObjectStore> objectStore,
       InspectionFinanceSettingsService financeSettingsService,
       Optional<InspectionReportAccess> reportAccess,
-      PayOSGateway payOSGateway) {
+      PayOSGateway payOSGateway,
+      VnPayGateway vnPayGateway) {
     this.requests = requests;
     this.messages = messages;
     this.quotes = quotes;
@@ -108,6 +112,38 @@ public class ContractWorkflowService
     this.financeSettingsService = financeSettingsService;
     this.reportAccess = reportAccess;
     this.payOSGateway = payOSGateway;
+    this.vnPayGateway = vnPayGateway;
+  }
+
+  public ContractWorkflowService(
+      ServiceRequestRepository requests,
+      ServiceRequestMessageRepository messages,
+      ServiceRequestQuoteRepository quotes,
+      ServiceRequestOccurrenceRepository occurrences,
+      AssetRepository assets,
+      UserAccess users,
+      Mf2ActorPolicy actorPolicy,
+      PartnerRegistryService partners,
+      Mf2InspectionAssignment assignment,
+      Optional<EvidenceObjectStore> objectStore,
+      InspectionFinanceSettingsService financeSettingsService,
+      Optional<InspectionReportAccess> reportAccess,
+      PayOSGateway payOSGateway) {
+    this(
+        requests,
+        messages,
+        quotes,
+        occurrences,
+        assets,
+        users,
+        actorPolicy,
+        partners,
+        assignment,
+        objectStore,
+        financeSettingsService,
+        reportAccess,
+        payOSGateway,
+        new DisabledVnPayGatewayDummy());
   }
 
   public ContractWorkflowService(
@@ -808,6 +844,129 @@ public class ContractWorkflowService
     occurrences.saveAndFlush(occurrence);
   }
 
+  /** Customer creates a signed VNPay checkout URL for an occurrence awaiting payment. */
+  @Transactional
+  public VnPayPaymentLinkResponse createVnPayPaymentLink(
+      UUID actorId, UUID requestId, UUID occurrenceId, String clientIp) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    if (!actor.hasRole(Roles.ADMIN) && !actor.hasRole(Roles.MANAGER)) {
+      if (!actor.hasRole(Roles.CUSTOMER)
+          || actor.organizationId() == null
+          || !actor.organizationId().equals(request.getOrganizationId())) {
+        throw forbidden();
+      }
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+
+    if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
+      long existingOrderCode =
+          occurrence.getPayosOrderCode() != null ? occurrence.getPayosOrderCode() : 0L;
+      long paidAmount =
+          occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : 0L;
+      return new VnPayPaymentLinkResponse(
+          existingOrderCode, null, paidAmount, String.valueOf(existingOrderCode));
+    }
+
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_NOT_DUE",
+          "Customer must accept the published report before payment link can be created");
+    }
+    if (occurrence.getCurrency() != null && !"VND".equalsIgnoreCase(occurrence.getCurrency())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "CURRENCY_UNSUPPORTED",
+          "VNPay online checkout is only supported for VND contracts. Currency is "
+              + occurrence.getCurrency());
+    }
+    if (occurrence.getTotalPrice() == null
+        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_INVALID",
+          "Occurrence total price must be greater than zero");
+    }
+
+    long amount = occurrence.getTotalPrice().longValue();
+    long orderCode =
+        (System.currentTimeMillis() % 9000000000L) + 1000000000L + (long) (Math.random() * 10000);
+
+    String description =
+        "Thanh toan dich vu kiem tra SDI OCC "
+            + occurrence.getOccurrenceIndex()
+            + " ma "
+            + orderCode;
+    String returnUrl =
+        occurrence.getInspectionId() != null
+            ? vnPayGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode)
+            : null;
+
+    VnPayGateway.VnPayPaymentLink link =
+        vnPayGateway.createPaymentUrl(orderCode, amount, description, clientIp, returnUrl);
+
+    occurrence.assignVnPayOrder(orderCode);
+    occurrences.saveAndFlush(occurrence);
+
+    return new VnPayPaymentLinkResponse(
+        link.orderCode(), link.checkoutUrl(), link.amount(), link.txnRef());
+  }
+
+  public enum VnPayApplyStatus {
+    CONFIRMED,
+    ALREADY_CONFIRMED,
+    AMOUNT_MISMATCH,
+    NOT_FOUND
+  }
+
+  public record VnPayApplyResult(VnPayApplyStatus status, String inspectionId) {}
+
+  /** Applies verified VNPay Return/IPN payment notification to an occurrence. */
+  @Transactional
+  public VnPayApplyResult applyVnPayPayment(long orderCode, long amountVnd, String transactionNo) {
+    Optional<ServiceRequestOccurrence> opt = occurrences.findWithLockByPayosOrderCode(orderCode);
+    if (opt.isEmpty()) {
+      return new VnPayApplyResult(VnPayApplyStatus.NOT_FOUND, null);
+    }
+    ServiceRequestOccurrence occurrence = opt.get();
+    String inspectionId =
+        occurrence.getInspectionId() != null ? occurrence.getInspectionId().toString() : null;
+
+    if (occurrence.getTotalPrice() == null
+        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.valueOf(amountVnd)) != 0) {
+      return new VnPayApplyResult(VnPayApplyStatus.AMOUNT_MISMATCH, inspectionId);
+    }
+
+    if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
+      return new VnPayApplyResult(VnPayApplyStatus.ALREADY_CONFIRMED, inspectionId);
+    }
+
+    String paymentRef =
+        (transactionNo != null && !transactionNo.isBlank())
+            ? ("VNPAY-" + transactionNo.trim())
+            : ("VNPAY-" + orderCode);
+    occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "VNPAY");
+    occurrences.saveAndFlush(occurrence);
+    return new VnPayApplyResult(VnPayApplyStatus.CONFIRMED, inspectionId);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<String> findInspectionIdByOrderCode(long orderCode) {
+    return occurrences
+        .findByPayosOrderCode(orderCode)
+        .map(ServiceRequestOccurrence::getInspectionId)
+        .filter(java.util.Objects::nonNull)
+        .map(UUID::toString);
+  }
+
   @Override
   @Transactional(readOnly = true)
   public boolean isPaymentDue(UUID inspectionId) {
@@ -876,6 +1035,35 @@ public class ContractWorkflowService
   }
 
   @Override
+  @Transactional
+  public InspectionReportAcceptancePort.VnPayCheckoutDetails createVnPayPaymentLink(
+      UUID actorId, UUID inspectionId, String clientIp) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    ServiceRequest request =
+        requests
+            .findById(occurrence.getRequestId())
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+
+    VnPayPaymentLinkResponse resp =
+        createVnPayPaymentLink(actorId, request.getId(), occurrence.getId(), clientIp);
+    return new InspectionReportAcceptancePort.VnPayCheckoutDetails(
+        resp.orderCode(), resp.amount(), resp.txnRef(), resp.checkoutUrl());
+  }
+
+  @Override
   @Transactional(readOnly = true)
   public InspectionReportAcceptancePort.PaymentStatusDetails getPaymentStatus(
       UUID actorId, UUID inspectionId) {
@@ -895,7 +1083,9 @@ public class ContractWorkflowService
     Long amount =
         occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : null;
     String checkoutUrl = null;
-    if (orderCode != null && orderCode > 0) {
+    if (orderCode != null
+        && orderCode > 0
+        && "PAYOS".equalsIgnoreCase(occurrence.getPaymentMethod())) {
       PayOSGateway.PayOSPaymentLink link = payOSGateway.getPaymentLink(orderCode);
       if (link != null) {
         checkoutUrl = link.checkoutUrl();
@@ -1338,6 +1528,23 @@ public class ContractWorkflowService
     @Override
     public boolean verifyWebhookSignature(
         java.util.Map<String, Object> data, String receivedSignature) {
+      return false;
+    }
+  }
+
+  private static final class DisabledVnPayGatewayDummy implements VnPayGateway {
+    @Override
+    public VnPayPaymentLink createPaymentUrl(
+        long orderCode, long amount, String description, String clientIp, String returnUrl) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_DISABLED",
+          "Online payments via VNPay are not enabled. Use PayOS or corporate wire transfer instead.");
+    }
+
+    @Override
+    public boolean verifySecureHash(
+        java.util.Map<String, String> params, String receivedSecureHash) {
       return false;
     }
   }

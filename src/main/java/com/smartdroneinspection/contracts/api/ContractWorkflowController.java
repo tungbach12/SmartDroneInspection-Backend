@@ -9,8 +9,10 @@ import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayout
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
+import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.service.ContractWorkflowService;
 import com.smartdroneinspection.shared.api.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -208,6 +210,28 @@ public class ContractWorkflowController {
       @PathVariable UUID occurrenceId) {
     return ApiResponse.success(
         workflow.createPayOSPaymentLink(actorId(jwt), requestId, occurrenceId));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/vnpay/create-payment-url")
+  public ApiResponse<VnPayPaymentLinkResponse> createVnPayPaymentUrl(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      HttpServletRequest httpRequest) {
+    String clientIp = extractClientIp(httpRequest);
+    return ApiResponse.success(
+        workflow.createVnPayPaymentLink(actorId(jwt), requestId, occurrenceId, clientIp));
+  }
+
+  private static String extractClientIp(HttpServletRequest request) {
+    if (request == null) {
+      return "127.0.0.1";
+    }
+    String forwarded = request.getHeader("X-Forwarded-For");
+    if (forwarded != null && !forwarded.isBlank()) {
+      return forwarded.split(",")[0].trim();
+    }
+    return request.getRemoteAddr() != null ? request.getRemoteAddr() : "127.0.0.1";
   }
 
   private static UUID actorId(Jwt jwt) {
