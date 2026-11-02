@@ -121,17 +121,13 @@ public class FindingService {
     if (!inspectorFindings.isEmpty()) {
       findings.saveAllAndFlush(inspectorFindings);
     }
-    String snapshot = findingsSnapshotHash(inspectionId);
     if (inspection.getStatus()
             == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
         && inspection.hasFindingsConfirmation()) {
-      if (inspection.hasCurrentFindingsConfirmation(snapshot)) return;
-      rejectLockedFindingEdits(inspectionId);
-      inspection.reopenFindings();
-      inspections.saveAndFlush(inspection);
+      return;
     }
     try {
-      inspection.confirmFindings(snapshot);
+      inspection.confirmFindings();
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INSPECTION_STATE_CONFLICT", ex.getMessage());
@@ -550,13 +546,6 @@ public class FindingService {
       inspection.reopenFindings();
       inspections.saveAndFlush(inspection);
     }
-  }
-
-  String findingsSnapshotHash(UUID inspectionId) {
-    List<Evidence> currentEvidence =
-        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
-    return FindingsSnapshot.hash(
-        currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
   }
 
   private void rejectFinalizedReportFindingEdits(UUID inspectionId) {

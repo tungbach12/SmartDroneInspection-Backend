@@ -161,7 +161,6 @@ class V25TargetSchemaFoundationTest {
                     "reviewer_user_id",
                     "reviewed_at",
                     "return_reason",
-                    "rendered_object_key",
                     "published_at",
                     "created_at")),
             Map.entry(
@@ -272,7 +271,6 @@ class V25TargetSchemaFoundationTest {
                     "status",
                     "author_verified_at",
                     "content_snapshot",
-                    "rendered_object_key",
                     "created_at")),
             Map.entry(
                 "maintenance_acceptance_decisions",
