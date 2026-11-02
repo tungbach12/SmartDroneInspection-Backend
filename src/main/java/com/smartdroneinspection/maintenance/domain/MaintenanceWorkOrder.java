@@ -445,6 +445,20 @@ public class MaintenanceWorkOrder {
     }
   }
 
+  /**
+   * MF4-18: when a re-inspection report finds the defect is still UNRESOLVED or INCONCLUSIVE,
+   * attaches the published re-inspection report and transitions the work order to REWORK_REQUIRED
+   * so the maintenance team can perform another repair cycle and request re-inspection again.
+   */
+  public void requireReworkAfterFailedReinspection(UUID reinspectionReportVersionId) {
+    attachReinspectionReport(reinspectionReportVersionId);
+    if (this.status == WorkOrderStatus.REINSPECTION_REQUIRED
+        || this.status == WorkOrderStatus.SUBMITTED_FOR_ACCEPTANCE) {
+      this.status = WorkOrderStatus.REWORK_REQUIRED;
+      this.updatedAt = Instant.now();
+    }
+  }
+
   public Instant getCreatedAt() {
     return createdAt;
   }

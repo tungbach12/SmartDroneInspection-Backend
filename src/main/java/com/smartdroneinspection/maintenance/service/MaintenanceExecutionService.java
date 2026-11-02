@@ -201,7 +201,9 @@ public class MaintenanceExecutionService {
     Optional<MaintenanceAcceptanceDecision> lastDecision =
         acceptanceDecisions.findFirstByWorkOrderIdOrderByDecidedAtDesc(order.getId());
     if (lastDecision.isPresent()
-        && lastDecision.get().getDecision() == AcceptanceDecisionKind.REWORK_REQUIRED) {
+        && (lastDecision.get().getDecision() == AcceptanceDecisionKind.REWORK_REQUIRED
+            || (lastDecision.get().getDecision() == AcceptanceDecisionKind.REINSPECTION_REQUIRED
+                && order.getReinspectionReportVersionId() != null))) {
       Instant reworkRequestedAt = lastDecision.get().getDecidedAt();
       boolean hasReworkWorkLog =
           workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId()).stream()
@@ -423,11 +425,23 @@ public class MaintenanceExecutionService {
     if (!actorId.equals(order.getReportAuthorUserId())) {
       throw denied("Only the designated report author may open a completion report");
     }
-    int nextVersion =
-        reportVersions
-            .findFirstByWorkOrderIdOrderByVersionNoDesc(order.getId())
-            .map(report -> report.getVersionNo() + 1)
-            .orElse(1);
+    List<MaintenanceReportVersion> existingVersions =
+        reportVersions.findByWorkOrderIdOrderByVersionNoDesc(order.getId());
+    for (MaintenanceReportVersion existing : existingVersions) {
+      if (existing.getStatus() == ReportVersionStatus.SUBMITTED) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "REPORT_ALREADY_SUBMITTED",
+            "A completion report version is already submitted and awaiting review");
+      }
+      if (existing.getStatus() == ReportVersionStatus.DRAFT
+          || existing.getStatus() == ReportVersionStatus.AUTHOR_VERIFIED) {
+        existing.retireUnpublishedDraft();
+        reportVersions.save(existing);
+      }
+    }
+    reportVersions.flush();
+    int nextVersion = existingVersions.isEmpty() ? 1 : existingVersions.get(0).getVersionNo() + 1;
     MaintenanceReportVersion report =
         new MaintenanceReportVersion(order.getId(), nextVersion, request.contentSnapshot());
     reportVersions.saveAndFlush(report);
@@ -439,6 +453,24 @@ public class MaintenanceExecutionService {
   public ReportVersionResponse verifyReport(UUID actorId, UUID workOrderId, int versionNo) {
     MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
     MaintenanceReportVersion report = requireReport(order, versionNo);
+    for (MaintenanceReportVersion other :
+        reportVersions.findByWorkOrderIdOrderByVersionNoDesc(order.getId())) {
+      if (other.getId().equals(report.getId())) {
+        continue;
+      }
+      if (other.getStatus() == ReportVersionStatus.SUBMITTED) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "REPORT_ALREADY_SUBMITTED",
+            "Another completion report version is already submitted and awaiting review");
+      }
+      if (other.getStatus() == ReportVersionStatus.DRAFT
+          || other.getStatus() == ReportVersionStatus.AUTHOR_VERIFIED) {
+        other.retireUnpublishedDraft();
+        reportVersions.save(other);
+      }
+    }
+    reportVersions.flush();
     try {
       report.verifyAsAuthor(actorId, order.getReportAuthorUserId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
@@ -633,6 +665,17 @@ public class MaintenanceExecutionService {
           }
           tasks.flush();
           if (eventPublisher != null) {
+            List<MaintenanceWorkLog> verifiedLogs =
+                workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId());
+            String latestEngineerLog =
+                verifiedLogs.isEmpty()
+                    ? null
+                    : verifiedLogs.get(verifiedLogs.size() - 1).getAsLeftCondition();
+            String combinedNotes =
+                (latestEngineerLog != null && !latestEngineerLog.isBlank()
+                        ? "Bàn giao kỹ sư: " + latestEngineerLog + " | "
+                        : "")
+                    + (request.technicalComments() != null ? request.technicalComments() : "");
             eventPublisher.publishEvent(
                 new ReinspectionRequestedEvent(
                     order.getId(),
@@ -642,7 +685,7 @@ public class MaintenanceExecutionService {
                     order.getSourceReportVersionId(),
                     order.getSourceFindingId(),
                     actorId,
-                    request.technicalComments(),
+                    combinedNotes,
                     Instant.now()));
           }
         }
@@ -733,7 +776,7 @@ public class MaintenanceExecutionService {
         logList.stream()
             .map(MaintenanceWorkLog::getTestReadings)
             .filter(r -> r != null && !r.isBlank())
-            .findFirst()
+            .reduce((first, second) -> second)
             .orElse("Chưa ghi nhận số đo thử nghiệm hiện trường");
 
     String criteria =
@@ -755,7 +798,7 @@ public class MaintenanceExecutionService {
         logList.stream()
             .map(MaintenanceWorkLog::getAsLeftCondition)
             .filter(c -> c != null && !c.isBlank())
-            .findFirst()
+            .reduce((first, second) -> second)
             .orElse("Chưa ghi nhận tình trạng sau sửa chữa");
     checks.add(
         new AcceptanceComplianceResponse.ComplianceCheckItem(

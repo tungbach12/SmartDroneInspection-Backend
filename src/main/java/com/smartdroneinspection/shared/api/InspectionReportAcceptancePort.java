@@ -17,6 +17,12 @@ public interface InspectionReportAcceptancePort {
   /** Creates a PayOS checkout link for the occurrence associated with this inspection. */
   PayOSCheckoutDetails createPayOSPaymentLink(UUID actorId, UUID inspectionId);
 
+  /** Creates a VNPay checkout link for the occurrence associated with this inspection. */
+  default VnPayCheckoutDetails createVnPayPaymentLink(
+      UUID actorId, UUID inspectionId, String clientIp) {
+    throw new UnsupportedOperationException("VNPay payment link creation is not supported");
+  }
+
   /** Retrieves commercial payment, commission, and payout status for the occurrence. */
   default PaymentStatusDetails getPaymentStatus(UUID actorId, UUID inspectionId) {
     return new PaymentStatusDetails(false, false, "NOT_APPLICABLE", null, null, null);
@@ -31,6 +37,8 @@ public interface InspectionReportAcceptancePort {
 
   record PayOSCheckoutDetails(
       long orderCode, long amount, String paymentLinkId, String checkoutUrl, String qrCode) {}
+
+  record VnPayCheckoutDetails(long orderCode, long amount, String txnRef, String checkoutUrl) {}
 
   record PaymentStatusDetails(
       boolean reportAccepted,

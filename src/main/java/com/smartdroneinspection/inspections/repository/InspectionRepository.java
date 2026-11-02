@@ -47,6 +47,8 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   List<Inspection> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
 
+  List<Inspection> findByWorkOrderIdOrderByCreatedAtAsc(UUID workOrderId);
+
   @Query(
       "select i from Inspection i where i.id = :id "
           + "and i.organizationId = :organizationId and i.inspectorId = :inspectorId")

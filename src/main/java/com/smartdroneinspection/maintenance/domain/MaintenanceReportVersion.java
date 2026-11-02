@@ -107,6 +107,13 @@ public class MaintenanceReportVersion {
     this.status = ReportVersionStatus.SUBMITTED;
   }
 
+  public void retireUnpublishedDraft() {
+    if (this.status == ReportVersionStatus.DRAFT
+        || this.status == ReportVersionStatus.AUTHOR_VERIFIED) {
+      this.status = ReportVersionStatus.RETURNED;
+    }
+  }
+
   public void supersede() {
     requireStatus(ReportVersionStatus.APPROVED);
     this.status = ReportVersionStatus.SUPERSEDED;

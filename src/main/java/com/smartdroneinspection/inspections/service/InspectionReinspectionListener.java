@@ -60,6 +60,12 @@ public class InspectionReinspectionListener {
     Inspection sourceInspection =
         findingOpt.flatMap(f -> inspections.findById(f.getInspectionId())).orElse(null);
 
+    java.util.List<Inspection> priorReinspections =
+        event.workOrderId() != null
+            ? inspections.findByWorkOrderIdOrderByCreatedAtAsc(event.workOrderId())
+            : java.util.List.of();
+    int roundNumber = priorReinspections.size() + 1;
+
     Inspection reinspection =
         Inspection.createReinspection(
             event.organizationId(),
@@ -70,16 +76,50 @@ public class InspectionReinspectionListener {
             event.workOrderId(),
             sourceInspection != null ? sourceInspection.getId() : null);
 
+    if (sourceInspection != null && sourceInspection.hasFlightPermit()) {
+      reinspection.recordFlightPermit(
+          sourceInspection.getFlightPermitFileKey(),
+          sourceInspection.getFlightPermitFileName(),
+          Instant.now());
+    }
+
     reinspection = inspections.saveAndFlush(reinspection);
 
-    verifications.saveAndFlush(
-        new ReinspectionDefectVerification(reinspection.getId(), event.sourceFindingId()));
+    ReinspectionDefectVerification verification =
+        new ReinspectionDefectVerification(reinspection.getId(), event.sourceFindingId());
+
+    StringBuilder notesBuilder = new StringBuilder();
+    notesBuilder.append("[Lần kiểm tra lại #").append(roundNumber).append("] ");
+    if (event.technicalComments() != null && !event.technicalComments().isBlank()) {
+      notesBuilder.append("Yêu cầu kiểm tra: ").append(event.technicalComments().trim());
+    } else {
+      notesBuilder.append("Kiểm tra xác minh sau sửa chữa bảo trì.");
+    }
+
+    java.util.List<ReinspectionDefectVerification> priorVerifications =
+        verifications.findBySourceFindingIdOrderByCreatedAtAsc(event.sourceFindingId());
+    int priorIdx = 1;
+    for (ReinspectionDefectVerification prev : priorVerifications) {
+      if (prev.getInspectorNotes() != null && !prev.getInspectorNotes().isBlank()) {
+        notesBuilder
+            .append("\n• Kết quả lần #")
+            .append(priorIdx)
+            .append(" (")
+            .append(prev.getResolutionStatus())
+            .append("): ")
+            .append(prev.getInspectorNotes().trim());
+      }
+      priorIdx++;
+    }
+    verification.setRepairProof(null, notesBuilder.toString());
+    verifications.saveAndFlush(verification);
 
     events.publishEvent(new ReinspectionCreatedEvent(event.workOrderId(), reinspection.getId()));
 
     log.info(
-        "Created linked re-inspection {} in status {}",
+        "Created linked re-inspection {} (round #{}) in status {}",
         reinspection.getId(),
+        roundNumber,
         reinspection.getStatus());
   }
 }

@@ -11,6 +11,9 @@ public interface ReinspectionDefectVerificationRepository
 
   List<ReinspectionDefectVerification> findByReinspectionId(UUID reinspectionId);
 
+  List<ReinspectionDefectVerification> findBySourceFindingIdOrderByCreatedAtAsc(
+      UUID sourceFindingId);
+
   Optional<ReinspectionDefectVerification> findByReinspectionIdAndSourceFindingId(
       UUID reinspectionId, UUID sourceFindingId);
 }

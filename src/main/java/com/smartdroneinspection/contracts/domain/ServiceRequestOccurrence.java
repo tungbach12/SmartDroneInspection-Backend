@@ -218,6 +218,12 @@ public class ServiceRequestOccurrence {
     assignPayOSOrder(orderCode);
   }
 
+  public void assignVnPayOrder(long orderCode) {
+    this.payosOrderCode = orderCode;
+    this.paymentMethod = "VNPAY";
+    this.updatedAt = Instant.now();
+  }
+
   public void confirmOnlinePayment(String reference, BigDecimal amount, String method) {
     if (reference == null || reference.isBlank()) {
       throw new IllegalArgumentException("Payment reference is required");
