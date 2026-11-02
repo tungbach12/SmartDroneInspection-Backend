@@ -2,16 +2,16 @@ package com.smartdroneinspection.users.service;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "app.auth.otp")
+@ConfigurationProperties(prefix = "smartdroneinspection.auth.otp")
 public class LoginOtpProperties {
 
   private boolean enabled = true;
-  private String challengePepper = "";
+  private String challengePepper = "dev-challenge-pepper-smartdrone-32-chars-long";
   private String smsAccountSid = "";
   private String smsAuthToken = "";
   private String smsFromNumber = "";
-  private String emailFrom = "";
-  private String smtpHost = "";
+  private String emailFrom = "no-reply@smartdroneinspection.vn";
+  private String smtpHost = "smtp.gmail.com";
 
   public boolean isEnabled() {
     return enabled;

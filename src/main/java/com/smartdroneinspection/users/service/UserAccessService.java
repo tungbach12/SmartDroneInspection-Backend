@@ -120,6 +120,10 @@ public class UserAccessService implements UserAccess {
     return users
         .findDetailedById(userId)
         .filter(user -> organizationId.equals(user.getOrganizationId()))
+        .filter(
+            user ->
+                !user.roleValues().contains(Roles.CUSTOMER)
+                    && !user.roleValues().contains(Roles.ADMIN))
         .map(UserAccessService::toMember);
   }
 
@@ -127,6 +131,10 @@ public class UserAccessService implements UserAccess {
   @Transactional(readOnly = true)
   public List<WorkforceMember> listWorkforceMembers(UUID organizationId) {
     return users.findWorkforceByOrganizationId(organizationId).stream()
+        .filter(
+            user ->
+                !user.roleValues().contains(Roles.CUSTOMER)
+                    && !user.roleValues().contains(Roles.ADMIN))
         .map(UserAccessService::toMember)
         .toList();
   }

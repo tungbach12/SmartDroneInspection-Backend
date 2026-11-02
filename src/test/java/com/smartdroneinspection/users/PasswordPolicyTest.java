@@ -11,6 +11,12 @@ class PasswordPolicyTest {
   private final PasswordPolicy policy = new PasswordPolicy();
 
   @Test
+  void acceptsValidPasswordWithEightCharsAndComposition() {
+    assertThatCode(() -> policy.validate("HiuT@@123", "pilot@example.com", "A Person"))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   void acceptsLongPassphraseWithoutCompositionRules() {
     assertThatCode(
             () ->
@@ -22,14 +28,19 @@ class PasswordPolicyTest {
   void rejectsShortAndCommonPasswords() {
     assertThatThrownBy(() -> policy.validate("short", "pilot@example.com", "A Person"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> policy.validate("passwordpassword", "pilot@example.com", "A Person"))
+    assertThatThrownBy(() -> policy.validate("password", "pilot@example.com", "A Person"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void rejectsShortPasswordMissingComposition() {
+    assertThatThrownBy(() -> policy.validate("simplepass", "pilot@example.com", "A Person"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void rejectsPasswordContainingEmailIdentity() {
-    assertThatThrownBy(
-            () -> policy.validate("pilot-has-a-long-password", "pilot@example.com", "A Person"))
+    assertThatThrownBy(() -> policy.validate("Pilot@12345", "pilot@example.com", "A Person"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }
