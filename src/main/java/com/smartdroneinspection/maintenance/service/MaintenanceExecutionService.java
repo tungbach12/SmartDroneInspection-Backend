@@ -744,7 +744,7 @@ public class MaintenanceExecutionService {
         logList.stream()
             .map(MaintenanceWorkLog::getTestReadings)
             .filter(r -> r != null && !r.isBlank())
-            .findFirst()
+            .reduce((first, second) -> second)
             .orElse("Chưa ghi nhận số đo thử nghiệm hiện trường");
 
     String criteria =
@@ -766,7 +766,7 @@ public class MaintenanceExecutionService {
         logList.stream()
             .map(MaintenanceWorkLog::getAsLeftCondition)
             .filter(c -> c != null && !c.isBlank())
-            .findFirst()
+            .reduce((first, second) -> second)
             .orElse("Chưa ghi nhận tình trạng sau sửa chữa");
     checks.add(
         new AcceptanceComplianceResponse.ComplianceCheckItem(
