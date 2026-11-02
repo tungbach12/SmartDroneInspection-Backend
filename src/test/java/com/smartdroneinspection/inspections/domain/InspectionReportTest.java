@@ -94,22 +94,18 @@ class InspectionReportTest {
   }
 
   @Test
-  void publishedVersionKeepsItsPdfKeyAndChecksumWhenSuperseded() {
+  void publishedVersionRemainsImmutableWhenSuperseded() {
     InspectionReport version = draft();
     version.reviewBy(reviewer, true, null);
     version.publish(reviewer, author);
-    version.recordArtefact("reports/report-v1.pdf", "a".repeat(64));
 
     assertThat(version.getStatus()).isEqualTo(ReportStatus.PUBLISHED);
     assertThat(version.getPublishedAt()).isNotNull();
     assertThat(version.isImmutable()).isTrue();
-    assertThat(version.getRenderedObjectKey()).isEqualTo("reports/report-v1.pdf");
-    assertThat(version.getRenderedChecksumSha256()).isEqualTo("a".repeat(64));
 
     version.supersede();
     assertThat(version.getStatus()).isEqualTo(ReportStatus.SUPERSEDED);
-    assertThat(version.getRenderedObjectKey()).isEqualTo("reports/report-v1.pdf");
-    assertThat(version.getRenderedChecksumSha256()).isEqualTo("a".repeat(64));
+    assertThat(version.isImmutable()).isTrue();
   }
 
   @Test

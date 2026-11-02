@@ -51,8 +51,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -921,43 +919,29 @@ public class MaintenanceExecutionService {
       }
     }
 
-    String objectKey = report.getRenderedObjectKey();
-    if (objectKey == null || objectKey.isBlank()) {
-      MaintenanceReportRenderContext context = buildRenderContext(order, report);
-      try {
-        byte[] pdf = reportRenderer.render(context, false);
-        objectKey = maintenanceReportObjectKey(report.getId());
-        if (objectStore != null && objectStore.isPresent()) {
-          try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
-            objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
-            if (report.getStatus() == ReportVersionStatus.APPROVED) {
-              report.recordArtefact(objectKey, sha256Hex(pdf));
-              reportVersions.saveAndFlush(report);
-            }
-          } catch (IOException | RuntimeException storeEx) {
-            log.warn(
-                "Could not persist PDF to object store; serving rendered bytes directly: {}",
-                storeEx.getMessage());
-          }
-        }
-        return pdfResponse(pdf, "attachment", documentReference(order, report) + ".pdf");
-      } catch (IOException ex) {
-        throw new BusinessException(
-            HttpStatus.SERVICE_UNAVAILABLE, "REPORT_RENDER_UNAVAILABLE", ex.getMessage());
-      }
-    }
-
+    String objectKey = maintenanceReportObjectKey(report.getId());
     if (objectStore != null && objectStore.isPresent()) {
       try {
         byte[] content = objectStore.get().open(objectKey).readAllBytes();
         return pdfResponse(content, "attachment", documentReference(order, report) + ".pdf");
       } catch (IOException | RuntimeException ex) {
-        log.warn(
-            "Could not read PDF from object store ({}); re-rendering on the fly", ex.getMessage());
+        log.debug(
+            "Stored PDF not found at {} ({}); rendering and storing now",
+            objectKey,
+            ex.getMessage());
       }
     }
     try {
       byte[] pdf = reportRenderer.render(buildRenderContext(order, report), false);
+      if (objectStore != null && objectStore.isPresent()) {
+        try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
+          objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
+        } catch (IOException | RuntimeException storeEx) {
+          log.warn(
+              "Could not persist PDF to object store; serving rendered bytes directly: {}",
+              storeEx.getMessage());
+        }
+      }
       return pdfResponse(pdf, "attachment", documentReference(order, report) + ".pdf");
     } catch (IOException ex) {
       throw new BusinessException(
@@ -977,19 +961,6 @@ public class MaintenanceExecutionService {
         + report.getVersionNo();
   }
 
-  private static String sha256Hex(byte[] bytes) {
-    try {
-      byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
-      StringBuilder hex = new StringBuilder(digest.length * 2);
-      for (byte b : digest) {
-        hex.append(String.format("%02x", b));
-      }
-      return hex.toString();
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException("SHA-256 unavailable", ex);
-    }
-  }
-
   private void storePublishedArtefact(MaintenanceWorkOrder order, MaintenanceReportVersion report) {
     if (reportRenderer == null) {
       return;
@@ -1001,10 +972,7 @@ public class MaintenanceExecutionService {
       if (objectStore != null && objectStore.isPresent()) {
         try (ByteArrayInputStream in = new ByteArrayInputStream(pdf)) {
           objectStore.get().put(objectKey, "application/pdf", pdf.length, in);
-          report.recordArtefact(objectKey, sha256Hex(pdf));
         }
-      } else {
-        report.recordArtefact(objectKey, sha256Hex(pdf));
       }
     } catch (IOException | RuntimeException ex) {
       log.warn("Failed to render or store completion report PDF artifact: {}", ex.getMessage());

@@ -39,10 +39,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -369,13 +366,6 @@ public class ReportService {
     return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
   }
 
-  private String currentFindingsSnapshotHash(UUID inspectionId) {
-    List<Evidence> currentEvidence =
-        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
-    return FindingsSnapshot.hash(
-        currentEvidence, findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId));
-  }
-
   /** A draft created before the latest findings confirmation is stale. */
   private void requireCurrentFindingsConfirmation(Inspection inspection) {
     if (!evidence.existsByInspectionIdAndIsDeletedFalse(inspection.getId())) {
@@ -384,8 +374,7 @@ public class ReportService {
           "ACTIVE_EVIDENCE_REQUIRED",
           "A report draft requires at least one active evidence item");
     }
-    String current = currentFindingsSnapshotHash(inspection.getId());
-    if (!inspection.hasCurrentFindingsConfirmation(current)) {
+    if (!inspection.hasFindingsConfirmation()) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_NOT_CONFIRMED",
@@ -682,7 +671,6 @@ public class ReportService {
           "REPORT_RENDER_UNAVAILABLE",
           "The report document could not be stored; publication did not complete");
     }
-    version.recordArtefact(objectKey, sha256Hex(pdf));
   }
 
   /**
@@ -722,13 +710,13 @@ public class ReportService {
   public ResponseEntity<byte[]> downloadArtefact(UUID actorId, UUID inspectionId, UUID versionId) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
-    String objectKey = version.getRenderedObjectKey();
-    if (objectKey == null || objectKey.isBlank()) {
+    if (!version.isImmutable()) {
       throw new BusinessException(
           HttpStatus.NOT_FOUND,
           "REPORT_ARTEFACT_NOT_FOUND",
           "This report version has no stored document");
     }
+    String objectKey = reportObjectKey(version.getId());
     byte[] content;
     try (InputStream input = requireObjectStore().open(objectKey)) {
       content = input.readAllBytes();
@@ -778,14 +766,6 @@ public class ReportService {
 
   static String reportObjectKey(UUID versionId) {
     return "reports/" + versionId + ".pdf";
-  }
-
-  private static String sha256Hex(byte[] content) {
-    try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException(ex);
-    }
   }
 
   /**
@@ -1609,8 +1589,7 @@ public class ReportService {
                         drone == null ? null : drone.model()))
             .toList(),
         "Application role/organization/separation checks ran; professional qualification was not independently validated.",
-        inspection.getFindingsConfirmedAt(),
-        inspection.getFindingsSnapshotHash());
+        inspection.getFindingsConfirmedAt());
   }
 
   private ReportRenderPort.ReportContext buildRenderReportContext(

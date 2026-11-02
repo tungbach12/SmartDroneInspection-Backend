@@ -18,8 +18,6 @@ import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.MessageDigest;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,8 +107,7 @@ class InspectionReportSectionsApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("FIELD_COMPLETED"))
-        .andExpect(jsonPath("$.data.findingsConfirmedAt").isNotEmpty())
-        .andExpect(jsonPath("$.data.findingsSnapshotHash").isNotEmpty());
+        .andExpect(jsonPath("$.data.findingsConfirmedAt").isNotEmpty());
   }
 
   @Test
@@ -333,7 +330,6 @@ class InspectionReportSectionsApiIntegrationTest {
         .andExpect(content().contentType(MediaType.APPLICATION_PDF));
 
     // A preview is the author's working view: it renders but stores nothing against the version.
-    assertThat(renderedKey(versionId)).isNull();
     assertThat(objectExists(reportObjectKey(versionId))).isFalse();
   }
 
@@ -354,17 +350,15 @@ class InspectionReportSectionsApiIntegrationTest {
   // ------------------------------------------------------------------ MF3-11 deliverable
 
   @Test
-  void publishingStoresTheDocumentAndRecordsAChecksumThatMatchesTheStoredBytes() throws Exception {
+  void publishingStoresTheDocumentInObjectStorage() throws Exception {
     UUID versionId = approvedVersion();
     publish(versionId);
 
-    String objectKey = renderedKey(versionId);
-    assertThat(objectKey).isNotBlank();
+    String objectKey = reportObjectKey(versionId);
     byte[] stored = storedBytes(objectKey);
     assertThat(stored).isNotNull();
     assertThat(new String(stored, 0, 5, java.nio.charset.StandardCharsets.US_ASCII))
         .isEqualTo("%PDF-");
-    assertThat(renderedChecksum(versionId)).isEqualTo(sha256(stored));
   }
 
   @Test
@@ -407,8 +401,7 @@ class InspectionReportSectionsApiIntegrationTest {
   void aRepeatPublishIsRefusedAndLeavesTheFirstArtefactIntact() throws Exception {
     UUID versionId = approvedVersion();
     publish(versionId);
-    byte[] first = storedBytes(renderedKey(versionId));
-    String firstChecksum = renderedChecksum(versionId);
+    byte[] first = storedBytes(reportObjectKey(versionId));
 
     mockMvc
         .perform(
@@ -419,21 +412,20 @@ class InspectionReportSectionsApiIntegrationTest {
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isConflict());
 
-    assertThat(storedBytes(renderedKey(versionId))).isEqualTo(first);
-    assertThat(renderedChecksum(versionId)).isEqualTo(firstChecksum);
+    assertThat(storedBytes(reportObjectKey(versionId))).isEqualTo(first);
   }
 
   @Test
   void publishingAFurtherVersionDoesNotOverwriteTheEarlierArtefact() throws Exception {
     UUID firstVersion = approvedVersion();
     publish(firstVersion);
-    String firstKey = renderedKey(firstVersion);
+    String firstKey = reportObjectKey(firstVersion);
     byte[] firstBytes = storedBytes(firstKey);
 
     UUID secondVersion = approvedVersion();
     publish(secondVersion);
 
-    assertThat(renderedKey(secondVersion)).isNotEqualTo(firstKey);
+    assertThat(reportObjectKey(secondVersion)).isNotEqualTo(firstKey);
     assertThat(storedBytes(firstKey)).isEqualTo(firstBytes);
 
     // The prior published version is now superseded
@@ -731,26 +723,6 @@ class InspectionReportSectionsApiIntegrationTest {
       return true;
     } catch (IOException expectedAbsent) {
       return false;
-    }
-  }
-
-  private String renderedKey(UUID versionId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT rendered_object_key FROM inspection_reports WHERE id = ?", String.class, versionId);
-  }
-
-  private String renderedChecksum(UUID versionId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT rendered_checksum_sha256 FROM inspection_reports WHERE id = ?",
-        String.class,
-        versionId);
-  }
-
-  private static String sha256(byte[] content) {
-    try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
-    } catch (Exception exception) {
-      throw new IllegalStateException(exception);
     }
   }
 

@@ -10,8 +10,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /** One immutable-at-publication version of an inspection report. */
 @Entity
@@ -38,13 +36,6 @@ public class InspectionReport {
 
   @Column(name = "return_reason", length = 2000)
   private String returnReason;
-
-  @Column(name = "rendered_object_key", length = 1000)
-  private String renderedObjectKey;
-
-  @JdbcTypeCode(SqlTypes.CHAR)
-  @Column(name = "rendered_checksum_sha256", length = 64)
-  private String renderedChecksumSha256;
 
   @Column(name = "published_at")
   private Instant publishedAt;
@@ -81,26 +72,6 @@ public class InspectionReport {
 
   public void editContent(String newContent) {
     requireStatus(ReportStatus.SUBMITTED, ReportStatus.RETURNED);
-  }
-
-  public void recordArtefact(String objectKey, String checksumSha256) {
-    requireStatus(ReportStatus.PUBLISHED);
-    if (objectKey == null
-        || objectKey.isBlank()
-        || checksumSha256 == null
-        || checksumSha256.isBlank()) {
-      throw new IllegalArgumentException("A published report requires its object key and checksum");
-    }
-    renderedObjectKey = objectKey;
-    renderedChecksumSha256 = checksumSha256;
-  }
-
-  public String getRenderedObjectKey() {
-    return renderedObjectKey;
-  }
-
-  public String getRenderedChecksumSha256() {
-    return renderedChecksumSha256;
   }
 
   public void submit() {

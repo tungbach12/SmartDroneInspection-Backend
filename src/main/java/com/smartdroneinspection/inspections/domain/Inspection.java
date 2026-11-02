@@ -64,9 +64,6 @@ public class Inspection {
   @Column(name = "findings_confirmed_at")
   private Instant findingsConfirmedAt;
 
-  @Column(name = "findings_snapshot_hash", length = 64)
-  private String findingsSnapshotHash;
-
   @Column(name = "partner_assignment", nullable = false)
   private boolean partnerAssignment;
 
@@ -137,44 +134,26 @@ public class Inspection {
   }
 
   /** MF3-06: the Inspector confirms the reviewed evidence/findings baseline before drafting. */
-  public void confirmFindings(String snapshotHash) {
+  public void confirmFindings() {
     if (status != InspectionStatus.FIELD_COMPLETED) {
       throw new IllegalStateException("Findings can only be confirmed after field completion");
     }
-    if (snapshotHash == null || snapshotHash.isBlank()) {
-      throw new IllegalArgumentException("Findings confirmation requires a snapshot");
-    }
     findingsConfirmedAt = Instant.now();
-    findingsSnapshotHash = snapshotHash;
     updatedAt = findingsConfirmedAt;
   }
 
   /** A pre-submission edit invalidates the reviewed set and returns the inspection to Findings. */
   public void reopenFindings() {
     findingsConfirmedAt = null;
-    findingsSnapshotHash = null;
     updatedAt = Instant.now();
-  }
-
-  public boolean hasCurrentFindingsConfirmation(String snapshotHash) {
-    return (status == InspectionStatus.FIELD_COMPLETED
-            || status == InspectionStatus.UNDER_REVIEW
-            || status == InspectionStatus.COMPLETED)
-        && findingsConfirmedAt != null
-        && findingsSnapshotHash != null
-        && findingsSnapshotHash.equals(snapshotHash);
   }
 
   public Instant getFindingsConfirmedAt() {
     return findingsConfirmedAt;
   }
 
-  public String getFindingsSnapshotHash() {
-    return findingsSnapshotHash;
-  }
-
   public boolean hasFindingsConfirmation() {
-    return findingsConfirmedAt != null && findingsSnapshotHash != null;
+    return findingsConfirmedAt != null;
   }
 
   /** Deprecated transition retained for backwards compatibility. */
