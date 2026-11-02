@@ -1,5 +1,7 @@
 package com.smartdroneinspection.assets.domain;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -68,7 +70,7 @@ public class Asset {
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "inspection_items", columnDefinition = "jsonb", nullable = false)
-  private List<String> inspectionItems = new ArrayList<>();
+  private String inspectionItems = "[]";
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
@@ -116,8 +118,7 @@ public class Asset {
     this.latitude = latitude;
     this.longitude = longitude;
     this.ownershipInformation = ownershipInformation;
-    this.inspectionItems =
-        inspectionItems == null ? new ArrayList<>() : new ArrayList<>(inspectionItems);
+    setInspectionItems(inspectionItems);
     this.status = AssetStatus.ACTIVE;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
@@ -227,7 +228,7 @@ public class Asset {
     if (longitude != null) this.longitude = longitude;
     if (ownershipInformation != null) this.ownershipInformation = ownershipInformation;
     if (inspectionItems != null) {
-      this.inspectionItems = new ArrayList<>(inspectionItems);
+      setInspectionItems(inspectionItems);
     }
     updatedAt = Instant.now();
   }
@@ -242,13 +243,29 @@ public class Asset {
     update(name, description, locationText, latitude, longitude, ownershipInformation, null);
   }
 
+  private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
   public List<String> getInspectionItems() {
-    return inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+    if (inspectionItems == null || inspectionItems.isBlank()) {
+      return List.of();
+    }
+    try {
+      return JSON_MAPPER.readValue(inspectionItems, new TypeReference<List<String>>() {});
+    } catch (Exception e) {
+      return List.of();
+    }
   }
 
-  public void setInspectionItems(List<String> inspectionItems) {
-    this.inspectionItems =
-        inspectionItems == null ? new ArrayList<>() : new ArrayList<>(inspectionItems);
+  public void setInspectionItems(List<String> items) {
+    if (items == null || items.isEmpty()) {
+      this.inspectionItems = "[]";
+    } else {
+      try {
+        this.inspectionItems = JSON_MAPPER.writeValueAsString(items);
+      } catch (Exception e) {
+        this.inspectionItems = "[]";
+      }
+    }
     updatedAt = Instant.now();
   }
 
