@@ -10,8 +10,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * A version of the completion report the team submits for the work performed.
@@ -42,13 +40,6 @@ public class MaintenanceReportVersion {
 
   @Column(name = "content_snapshot", nullable = false, columnDefinition = "text")
   private String contentSnapshot;
-
-  @Column(name = "rendered_object_key", length = 1000)
-  private String renderedObjectKey;
-
-  @JdbcTypeCode(SqlTypes.CHAR)
-  @Column(name = "rendered_checksum_sha256", length = 64)
-  private String renderedChecksumSha256;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -178,26 +169,5 @@ public class MaintenanceReportVersion {
 
   public String getContentSnapshot() {
     return contentSnapshot;
-  }
-
-  /** Records the stored PDF artifact key and SHA-256 checksum for an approved completion report. */
-  public void recordArtefact(String objectKey, String checksumSha256) {
-    requireStatus(ReportVersionStatus.APPROVED);
-    if (objectKey == null
-        || objectKey.isBlank()
-        || checksumSha256 == null
-        || checksumSha256.isBlank()) {
-      throw new IllegalArgumentException("An approved report requires its object key and checksum");
-    }
-    this.renderedObjectKey = objectKey;
-    this.renderedChecksumSha256 = checksumSha256;
-  }
-
-  public String getRenderedObjectKey() {
-    return renderedObjectKey;
-  }
-
-  public String getRenderedChecksumSha256() {
-    return renderedChecksumSha256;
   }
 }

@@ -14,8 +14,7 @@ public record InspectionReportContextResponse(
     DroneContext assignedDrone,
     List<FieldSessionContext> fieldSessions,
     String reviewerQualificationDisclosure,
-    Instant findingsConfirmedAt,
-    String findingsSnapshotHash) {
+    Instant findingsConfirmedAt) {
 
   public InspectionReportContextResponse {
     fieldSessions = fieldSessions == null ? List.of() : List.copyOf(fieldSessions);

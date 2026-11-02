@@ -91,33 +91,4 @@ class MaintenanceReportVersionTest {
     report.submit();
     assertThat(report.getStatus()).isEqualTo(ReportVersionStatus.SUBMITTED);
   }
-
-  @Test
-  void recordsArtefactWhenApproved() {
-    MaintenanceReportVersion report = draft();
-    report.verifyAsAuthor(AUTHOR, AUTHOR);
-    report.submit();
-    report.approveReport();
-
-    report.recordArtefact("reports/m-1.pdf", "sha256-checksum");
-
-    assertThat(report.getRenderedObjectKey()).isEqualTo("reports/m-1.pdf");
-    assertThat(report.getRenderedChecksumSha256()).isEqualTo("sha256-checksum");
-  }
-
-  @Test
-  void recordArtefactRejectsUnapprovedOrBlankInputs() {
-    MaintenanceReportVersion report = draft();
-    assertThatThrownBy(() -> report.recordArtefact("key", "hash"))
-        .isInstanceOf(IllegalStateException.class);
-
-    report.verifyAsAuthor(AUTHOR, AUTHOR);
-    report.submit();
-    report.approveReport();
-
-    assertThatThrownBy(() -> report.recordArtefact(" ", "hash"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> report.recordArtefact("key", " "))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
 }

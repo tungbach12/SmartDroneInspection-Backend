@@ -4,4 +4,4 @@ import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import java.time.Instant;
 
 public record InspectionWorkflowStateResponse(
-    InspectionStatus status, Instant findingsConfirmedAt, String findingsSnapshotHash) {}
+    InspectionStatus status, Instant findingsConfirmedAt) {}
