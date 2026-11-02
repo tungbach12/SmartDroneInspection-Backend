@@ -1134,6 +1134,87 @@ class MaintenanceApiIntegrationTest {
                 .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+
+    // Round 2 repair work log + declare complete + multiple draft versions without violating
+    // uq_maintenance_reports_active
+    createAndVerifyWorkLog(workOrderId, taskId);
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/declare-complete", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("WORK_COMPLETED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("contentSnapshot", "Báo cáo hoàn thành lần 2 (nháp)"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.versionNo").value(2));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports/2/verify", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("AUTHOR_VERIFIED"));
+
+    // Drafting Version 3 while Version 2 is AUTHOR_VERIFIED automatically retires Version 2
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "contentSnapshot",
+                            "Báo cáo hoàn thành lần 2 (chính thức sau bơm áp lực)"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.versionNo").value(3));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports/3/verify", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/reports/3/submit", workOrderId)
+                .with(principal(fixture.reportAuthorId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+
+    // Request Re-inspection a 2nd time, then resume
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/acceptance-decisions", workOrderId)
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision",
+                            "REINSPECTION_REQUIRED",
+                            "technicalComments",
+                            "Yêu cầu bay kiểm tra lại lần 2 để nghiệm thu dứt điểm",
+                            "acceptanceChecklist",
+                            "Đạt 100%",
+                            "testResult",
+                            "2.4 MPa"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.decision").value("REINSPECTION_REQUIRED"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/maintenance/work-orders/{id}/resume-after-rework", workOrderId)
+                .with(principal(fixture.leadId(), "MAINTENANCE_ENGINEER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
   }
 
   private UUID createTask(UUID workOrderId) throws Exception {

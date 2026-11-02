@@ -85,17 +85,34 @@ public class WorkOrderReinspectionListener {
       }
 
       // Reinstate the returned completion report version so customer can accept
-      reportVersions
-          .findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
-              workOrder.getId(), ReportVersionStatus.RETURNED)
-          .ifPresent(
-              report -> {
-                report.resubmitForReinspectionAcceptance();
-                reportVersions.saveAndFlush(report);
-                log.info(
-                    "Reinstated completion report {} to SUBMITTED for acceptance review",
-                    report.getId());
-              });
+      java.util.List<com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion>
+          allReports = reportVersions.findByWorkOrderIdOrderByVersionNoDesc(workOrder.getId());
+      boolean alreadyHasSubmitted =
+          allReports != null
+              && allReports.stream().anyMatch(r -> r.getStatus() == ReportVersionStatus.SUBMITTED);
+      if (!alreadyHasSubmitted && allReports != null) {
+        for (com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion r : allReports) {
+          if (r.getStatus() == ReportVersionStatus.DRAFT
+              || r.getStatus() == ReportVersionStatus.AUTHOR_VERIFIED) {
+            r.retireUnpublishedDraft();
+            reportVersions.save(r);
+          }
+        }
+        reportVersions.flush();
+      }
+      if (!alreadyHasSubmitted) {
+        reportVersions
+            .findFirstByWorkOrderIdAndStatusOrderByVersionNoDesc(
+                workOrder.getId(), ReportVersionStatus.RETURNED)
+            .ifPresent(
+                report -> {
+                  report.resubmitForReinspectionAcceptance();
+                  reportVersions.saveAndFlush(report);
+                  log.info(
+                      "Reinstated completion report {} to SUBMITTED for acceptance review",
+                      report.getId());
+                });
+      }
     } else {
       workOrder.requireReworkAfterFailedReinspection(event.reportVersionId());
       workOrders.saveAndFlush(workOrder);
