@@ -52,17 +52,6 @@ class DroneApiIntegrationTest {
   void setUp() {
     mockMvc = webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
     fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
-    grantEntitlement(fixture.organizationId());
-    grantEntitlement(fixture.otherOrganizationId());
-  }
-
-  private void grantEntitlement(UUID organizationId) {
-    jdbcTemplate.update(
-        """
-        INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at)
-        VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')
-        """,
-        organizationId);
   }
 
   @Test

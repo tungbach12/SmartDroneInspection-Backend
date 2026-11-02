@@ -133,28 +133,6 @@ class ConnectedMainFlowE2eIntegrationTest {
             "reviewer." + UUID.randomUUID() + "@skyview.test",
             "Alice Reviewer");
 
-    log.info(
-        "[FOUNDATION] Step 0.2: Platform Admin activates ENTERPRISE subscription for Organization...");
-    mockMvc
-        .perform(
-            post("/api/v1/platform/organizations/{orgId}/subscriptions", organizationId)
-                .with(principal(platformAdminId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "planCode",
-                            "ENTERPRISE",
-                            "billingPeriodMonths",
-                            12,
-                            "externalReference",
-                            "SUB-E2E-2026",
-                            "reason",
-                            "Annual Enterprise contract activation"))))
-        .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.status").value("ACTIVE"))
-        .andExpect(jsonPath("$.data.planCode").value("ENTERPRISE"));
-
     log.info("[FOUNDATION] Step 0.3: Provisioning Inspector and Maintenance Engineer...");
     UUID inspectorId =
         createUser(
@@ -163,13 +141,13 @@ class ConnectedMainFlowE2eIntegrationTest {
             ActorZone.INSPECTOR_PARTNER,
             "inspector." + UUID.randomUUID() + "@skyview.test",
             "David Inspector");
-    User inspector = users.findDetailedById(inspectorId).orElseThrow();
-    inspector.updatePilotLicense(
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        inspectorId,
         "VN-UAV-PILOT-2026",
         "CLASS_A",
         Instant.now().plus(365, ChronoUnit.DAYS),
         "licenses/pilot-cert.pdf");
-    users.saveAndFlush(inspector);
 
     UUID leadEngineerId =
         createUser(

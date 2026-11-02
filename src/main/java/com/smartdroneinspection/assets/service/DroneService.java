@@ -8,9 +8,7 @@ import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
-import com.smartdroneinspection.subscriptions.SubscriptionEntitlement;
 import com.smartdroneinspection.users.UserAccess;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -21,9 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Organization-owned drone inventory.
  *
  * <p>Every operation derives the tenant from the authenticated actor, never from request data, so a
- * drone belonging to another organization is reported exactly like one that does not exist. Reads
- * stay available to an organization without an active subscription; inventory writes do not,
- * matching the workforce provisioning precedent.
+ * drone belonging to another organization is reported exactly like one that does not exist.
  */
 @Service
 public class DroneService {
@@ -32,19 +28,15 @@ public class DroneService {
 
   private final DroneRepository drones;
   private final UserAccess userAccess;
-  private final SubscriptionEntitlement entitlement;
 
-  public DroneService(
-      DroneRepository drones, UserAccess userAccess, SubscriptionEntitlement entitlement) {
+  public DroneService(DroneRepository drones, UserAccess userAccess) {
     this.drones = drones;
     this.userAccess = userAccess;
-    this.entitlement = entitlement;
   }
 
   @Transactional
   public DroneResponse create(UUID actorId, CreateDroneRequest request) {
     UUID organizationId = requireOrganization(requireActive(actorId));
-    requireEntitled(organizationId);
     requireJsonDocument(
         request.payloadMetadata(), "Payload metadata must be a valid JSON document.");
     String serialNumber = request.serialNumber().trim();
@@ -61,8 +53,6 @@ public class DroneService {
                 request.manufacturer(),
                 request.payloadMetadata(),
                 DroneServiceability.ACTIVE,
-                null,
-                null,
                 request.notes(),
                 request.registrationNumber(),
                 request.registrationFileKey(),
@@ -86,7 +76,6 @@ public class DroneService {
   public DroneResponse updateServiceability(
       UUID actorId, UUID droneId, UpdateDroneServiceabilityRequest request) {
     Drone drone = requireOwnedDrone(actorId, droneId);
-    requireEntitled(drone.getOrganizationId());
     if (drone.getServiceability() == DroneServiceability.RETIRED) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "INVALID_STATE", "Retired drones cannot change serviceability");
@@ -101,7 +90,6 @@ public class DroneService {
       UUID droneId,
       com.smartdroneinspection.assets.api.dto.request.UpdateDroneRegistrationRequest request) {
     Drone drone = requireOwnedDrone(actorId, droneId);
-    requireEntitled(drone.getOrganizationId());
     drone.updateRegistration(
         request.registrationNumber(),
         request.registrationFileKey(),
@@ -130,10 +118,6 @@ public class DroneService {
         .orElseThrow(
             () ->
                 new BusinessException(HttpStatus.NOT_FOUND, "DRONE_NOT_FOUND", NOT_FOUND_MESSAGE));
-  }
-
-  private void requireEntitled(UUID organizationId) {
-    entitlement.requireActive(organizationId, Instant.now());
   }
 
   /** Rejects malformed JSON before it reaches the PostgreSQL jsonb column as an opaque 500. */

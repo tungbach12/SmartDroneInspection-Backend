@@ -10,11 +10,13 @@ import com.smartdroneinspection.users.api.dto.request.UpdateInspectorProfileRequ
 import com.smartdroneinspection.users.api.dto.response.InspectorFlightLogResponse;
 import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.domain.InspectorFlightLog;
+import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorFlightLogRepository;
+import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.service.InspectorPartnerLicenseDocumentService;
 import com.smartdroneinspection.users.service.InspectorProfileService;
@@ -37,7 +39,10 @@ class InspectorProfileServiceTest {
 
   @Mock private UserRepository userRepository;
   @Mock private InspectorFlightLogRepository flightLogRepository;
+  @Mock private InspectorProfileRepository profileRepository;
   @Mock private InspectorPartnerLicenseDocumentService licenseDocumentService;
+
+  private InspectorProfile profile;
 
   private InspectorProfileService service;
   private User inspector;
@@ -47,7 +52,8 @@ class InspectorProfileServiceTest {
   @BeforeEach
   void setUp() {
     service =
-        new InspectorProfileService(userRepository, flightLogRepository, licenseDocumentService);
+        new InspectorProfileService(
+            userRepository, flightLogRepository, profileRepository, licenseDocumentService);
     inspectorId = UUID.randomUUID();
     actorId = UUID.randomUUID();
 
@@ -62,8 +68,9 @@ class InspectorProfileServiceTest {
             ActorZone.INSPECTOR_PARTNER,
             null);
     inspector.addRole(UserRole.INSPECTOR);
-    inspector.setPriorFlightHours(BigDecimal.valueOf(50));
-    inspector.updatePilotLicense(
+    profile = new InspectorProfile(inspectorId);
+    profile.updateFlightExperience(BigDecimal.valueOf(50), null, null, null);
+    profile.updatePilotLicense(
         "VN-UAV-12345",
         "Hạng 2 (2-25kg)",
         LocalDate.of(2025, 1, 10),
@@ -75,6 +82,7 @@ class InspectorProfileServiceTest {
   @Test
   void getProfile_calculatesHoursAndRemainingDaysCorrectly() {
     when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(profile));
 
     InspectorFlightLog log1 =
         new InspectorFlightLog(
@@ -125,6 +133,9 @@ class InspectorProfileServiceTest {
   @Test
   void updateProfile_updatesPersonalAndLicenseAndExperienceFields() {
     when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(profile));
+    when(profileRepository.save(any(InspectorProfile.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
     when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
     when(flightLogRepository.findByInspectorUserIdOrderByFlightDateDesc(inspector.getId()))
         .thenReturn(List.of());
@@ -166,6 +177,9 @@ class InspectorProfileServiceTest {
   @Test
   void uploadLicenseScan_updatesLicenseFileKey() {
     when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(profile));
+    when(profileRepository.save(any(InspectorProfile.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
     when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     MockMultipartFile file =
@@ -213,7 +227,9 @@ class InspectorProfileServiceTest {
   @Test
   void recordAutomaticFlightSession_createsFlightLogAndUpdatesCertifiedModelsAndSpecializations() {
     when(flightLogRepository.existsByFlightCode(any())).thenReturn(false);
-    when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(profile));
+    when(profileRepository.save(any(InspectorProfile.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
     when(flightLogRepository.save(any(InspectorFlightLog.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -230,7 +246,7 @@ class InspectorProfileServiceTest {
         "Hoàn thành chụp nhiệt 3 cánh tuabin");
 
     verify(flightLogRepository).save(any(InspectorFlightLog.class));
-    assertThat(inspector.getCertifiedDroneModels()).contains("Autel EVO Max 4T");
-    assertThat(inspector.getSpecializations()).contains("Năng lượng tái tạo");
+    assertThat(profile.getCertifiedDroneModels()).contains("Autel EVO Max 4T");
+    assertThat(profile.getSpecializations()).contains("Năng lượng tái tạo");
   }
 }

@@ -3,10 +3,11 @@ package com.smartdroneinspection.users.service;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.AuthStep;
-import com.smartdroneinspection.users.domain.LoginOtpChallenge;
+import com.smartdroneinspection.users.domain.OtpChallenge;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.LoginOtpChannel;
-import com.smartdroneinspection.users.repository.LoginOtpChallengeRepository;
+import com.smartdroneinspection.users.domain.enums.OtpChallengePurpose;
+import com.smartdroneinspection.users.repository.OtpChallengeRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
 import java.security.SecureRandom;
@@ -22,13 +23,13 @@ public class LoginOtpService {
 
   private static final long CHALLENGE_TTL_SECONDS = 300;
   private static final SecureRandom RANDOM = new SecureRandom();
-  private final LoginOtpChallengeRepository challenges;
+  private final OtpChallengeRepository challenges;
   private final UserRepository users;
   private final LoginOtpProperties properties;
   private final LoginOtpDelivery delivery;
 
   public LoginOtpService(
-      LoginOtpChallengeRepository challenges,
+      OtpChallengeRepository challenges,
       UserRepository users,
       LoginOtpProperties properties,
       LoginOtpDelivery delivery) {
@@ -65,9 +66,13 @@ public class LoginOtpService {
   @Transactional
   public AuthFlowResponse createChallenge(User user, String clientIp) {
     Instant since = Instant.now().minusSeconds(15 * 60L);
-    if (challenges.countByUserIdAndCreatedAtAfter(user.getId(), since) >= 5
+    if (challenges.countByPurposeAndUserIdAndCreatedAtAfter(
+                OtpChallengePurpose.LOGIN, user.getId(), since)
+            >= 5
         || (clientIp != null
-            && challenges.countByClientIpAndCreatedAtAfter(clientIp, since) >= 20)) {
+            && challenges.countByPurposeAndClientIpAndCreatedAtAfter(
+                    OtpChallengePurpose.LOGIN, clientIp, since)
+                >= 20)) {
       throw new AuthException(
           HttpStatus.TOO_MANY_REQUESTS,
           "OTP_LOGIN_RATE_LIMITED",
@@ -94,7 +99,7 @@ public class LoginOtpService {
     }
     String rawChallenge = AuthCrypto.randomToken();
     challenges.save(
-        new LoginOtpChallenge(
+        OtpChallenge.login(
             hash("challenge:" + rawChallenge),
             user.getId(),
             clientIp,
@@ -104,16 +109,19 @@ public class LoginOtpService {
 
   @Transactional
   public void send(String rawChallenge, LoginOtpChannel channel, String clientIp) {
-    LoginOtpChallenge challenge = requireChallenge(rawChallenge);
+    OtpChallenge challenge = requireChallenge(rawChallenge);
     if (!challengeIpMatches(challenge, clientIp)) {
       throw AuthException.invalidCredentials();
     }
     Instant now = Instant.now();
     if (challenge.getSendCount() == 0) {
       Instant since = now.minusSeconds(15 * 60L);
-      if (challenges.countByUserIdAndCreatedAtAfter(challenge.getUserId(), since) > 5
+      if (challenges.countByPurposeAndUserIdAndCreatedAtAfter(
+                  OtpChallengePurpose.LOGIN, challenge.getUserId(), since)
+              > 5
           || (challenge.getClientIp() != null
-              && challenges.countByClientIpAndCreatedAtAfter(challenge.getClientIp(), since)
+              && challenges.countByPurposeAndClientIpAndCreatedAtAfter(
+                      OtpChallengePurpose.LOGIN, challenge.getClientIp(), since)
                   > 20)) {
         throw new AuthException(
             HttpStatus.TOO_MANY_REQUESTS,
@@ -161,7 +169,7 @@ public class LoginOtpService {
 
   @Transactional(noRollbackFor = AuthException.class)
   public User verify(String rawChallenge, String code, String clientIp) {
-    LoginOtpChallenge challenge = requireChallenge(rawChallenge);
+    OtpChallenge challenge = requireChallenge(rawChallenge);
     if (!challengeIpMatches(challenge, clientIp)) {
       throw AuthException.invalidCredentials();
     }
@@ -191,16 +199,17 @@ public class LoginOtpService {
         && !properties.getSmsFromNumber().isBlank();
   }
 
-  private boolean challengeIpMatches(LoginOtpChallenge challenge, String clientIp) {
+  private boolean challengeIpMatches(OtpChallenge challenge, String clientIp) {
     return challenge.getClientIp() == null || challenge.getClientIp().equals(clientIp);
   }
 
-  private LoginOtpChallenge requireChallenge(String rawChallenge) {
+  private OtpChallenge requireChallenge(String rawChallenge) {
     if (rawChallenge == null || rawChallenge.isBlank()) {
       throw AuthException.invalidCredentials();
     }
     return challenges
-        .findForUpdateByChallengeHash(hash("challenge:" + rawChallenge))
+        .findForUpdateByChallengeHashAndPurpose(
+            hash("challenge:" + rawChallenge), OtpChallengePurpose.LOGIN)
         .filter(challenge -> challenge.activeAt(Instant.now()))
         .orElseThrow(AuthException::invalidCredentials);
   }

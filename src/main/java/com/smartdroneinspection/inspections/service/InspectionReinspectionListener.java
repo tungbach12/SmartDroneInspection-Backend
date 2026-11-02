@@ -68,8 +68,7 @@ public class InspectionReinspectionListener {
             sourceInspection != null ? sourceInspection.getDroneId() : null,
             event.requestedAt() != null ? event.requestedAt() : Instant.now(),
             event.workOrderId(),
-            sourceInspection != null ? sourceInspection.getId() : null,
-            event.sourceReportVersionId());
+            sourceInspection != null ? sourceInspection.getId() : null);
 
     reinspection = inspections.saveAndFlush(reinspection);
 

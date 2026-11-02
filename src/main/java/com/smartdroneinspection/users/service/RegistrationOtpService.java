@@ -1,9 +1,10 @@
 package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.exception.AuthException;
-import com.smartdroneinspection.users.domain.RegistrationOtpChallenge;
+import com.smartdroneinspection.users.domain.OtpChallenge;
 import com.smartdroneinspection.users.domain.enums.LoginOtpChannel;
-import com.smartdroneinspection.users.repository.RegistrationOtpChallengeRepository;
+import com.smartdroneinspection.users.domain.enums.OtpChallengePurpose;
+import com.smartdroneinspection.users.repository.OtpChallengeRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
 import java.security.SecureRandom;
@@ -18,13 +19,13 @@ public class RegistrationOtpService {
   private static final long CHALLENGE_TTL_SECONDS = 600; // 10 minutes
   private static final SecureRandom RANDOM = new SecureRandom();
 
-  private final RegistrationOtpChallengeRepository challenges;
+  private final OtpChallengeRepository challenges;
   private final UserRepository users;
   private final LoginOtpProperties properties;
   private final LoginOtpDelivery delivery;
 
   public RegistrationOtpService(
-      RegistrationOtpChallengeRepository challenges,
+      OtpChallengeRepository challenges,
       UserRepository users,
       LoginOtpProperties properties,
       LoginOtpDelivery delivery) {
@@ -71,7 +72,9 @@ public class RegistrationOtpService {
 
     Instant now = Instant.now();
     Instant since = now.minusSeconds(15 * 60L);
-    if (challenges.countByDestinationAndCreatedAtAfter(normalizedDest, since) >= 5) {
+    if (challenges.countByPurposeAndDestinationAndCreatedAtAfter(
+            OtpChallengePurpose.REGISTRATION, normalizedDest, since)
+        >= 5) {
       throw new AuthException(
           HttpStatus.TOO_MANY_REQUESTS,
           "OTP_SEND_RATE_LIMITED",
@@ -88,8 +91,8 @@ public class RegistrationOtpService {
     String code = String.format("%06d", RANDOM.nextInt(1_000_000));
     String rawChallenge = AuthCrypto.randomToken();
 
-    RegistrationOtpChallenge challenge =
-        new RegistrationOtpChallenge(
+    OtpChallenge challenge =
+        OtpChallenge.registration(
             hash("reg-challenge:" + rawChallenge),
             normalizedDest,
             channel,
@@ -118,9 +121,10 @@ public class RegistrationOtpService {
           "INVALID_OTP",
           "Verification code and challenge token are required.");
     }
-    RegistrationOtpChallenge challenge =
+    OtpChallenge challenge =
         challenges
-            .findByChallengeHash(hash("reg-challenge:" + rawChallenge))
+            .findForUpdateByChallengeHashAndPurpose(
+                hash("reg-challenge:" + rawChallenge), OtpChallengePurpose.REGISTRATION)
             .orElseThrow(
                 () ->
                     new AuthException(

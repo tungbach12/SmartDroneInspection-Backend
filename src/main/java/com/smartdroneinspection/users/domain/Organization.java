@@ -15,26 +15,14 @@ public class Organization {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "legal_name", nullable = false, length = 250)
-  private String legalName;
-
   @Column(name = "display_name", nullable = false, length = 200)
   private String displayName;
 
   @Column(name = "registration_code", nullable = false, unique = true, length = 64)
   private String registrationCode;
 
-  @Column(nullable = false, length = 64)
-  private String timezone;
-
   @Column(nullable = false, length = 24)
   private String status;
-
-  @Column(name = "created_by_user_id")
-  private UUID createdByUserId;
-
-  @Column(name = "row_version", nullable = false)
-  private long rowVersion;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -49,10 +37,8 @@ public class Organization {
   }
 
   public Organization(String name, String code, String description, String status) {
-    this.legalName = name;
     this.displayName = name;
     this.registrationCode = normalizeCode(code);
-    this.timezone = "Asia/Ho_Chi_Minh";
     this.status = status;
     this.createdAt = Instant.now();
     this.updatedAt = createdAt;
@@ -72,16 +58,6 @@ public class Organization {
 
   public String getStatus() {
     return status;
-  }
-
-  public UUID getCreatedByUserId() {
-    return createdByUserId;
-  }
-
-  /** Records the initial Customer as the organization creator, per database-design.md §6.1. */
-  public void attributeToCreator(UUID creatorUserId) {
-    this.createdByUserId = creatorUserId;
-    this.updatedAt = Instant.now();
   }
 
   public void deactivate() {

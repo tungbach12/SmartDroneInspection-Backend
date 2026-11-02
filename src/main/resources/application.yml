@@ -60,17 +60,6 @@ app:
       cancel-url: ${PAYOS_CANCEL_URL:http://localhost:5173/client/reports/{inspectionId}}
       connect-timeout: ${PAYOS_CONNECT_TIMEOUT:5s}
       read-timeout: ${PAYOS_READ_TIMEOUT:15s}
-    paypal:
-      enabled: ${PAYPAL_ENABLED:false}
-      mode: ${PAYPAL_MODE:sandbox}
-      client-id: ${PAYPAL_CLIENT_ID:}
-      client-secret: ${PAYPAL_CLIENT_SECRET:}
-      webhook-id: ${PAYPAL_WEBHOOK_ID:}
-      base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
-      return-url: ${PAYPAL_RETURN_URL:http://localhost:3000/subscription?payment=approved}
-      cancel-url: ${PAYPAL_CANCEL_URL:http://localhost:3000/subscription?payment=cancelled}
-      connect-timeout: ${PAYPAL_CONNECT_TIMEOUT:5s}
-      read-timeout: ${PAYPAL_READ_TIMEOUT:20s}
   evidence:
     max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
   assets:

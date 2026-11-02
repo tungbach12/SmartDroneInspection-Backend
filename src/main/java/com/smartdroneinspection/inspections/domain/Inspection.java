@@ -43,9 +43,6 @@ public class Inspection {
   @Column(name = "flight_permit_file_name", length = 500)
   private String flightPermitFileName;
 
-  @Column(name = "flight_permit_uploaded_at")
-  private Instant flightPermitUploadedAt;
-
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 32)
   private InspectionStatus status;
@@ -69,9 +66,6 @@ public class Inspection {
 
   @Column(name = "findings_snapshot_hash", length = 64)
   private String findingsSnapshotHash;
-
-  @Column(name = "recurring_schedule_id")
-  private UUID recurringScheduleId;
 
   @Column(name = "partner_assignment", nullable = false)
   private boolean partnerAssignment;
@@ -135,7 +129,6 @@ public class Inspection {
     }
     this.flightPermitFileKey = fileKey.trim();
     this.flightPermitFileName = fileName.trim();
-    this.flightPermitUploadedAt = uploadedAt != null ? uploadedAt : Instant.now();
     this.updatedAt = Instant.now();
   }
 
@@ -264,15 +257,13 @@ public class Inspection {
       UUID droneId,
       Instant plannedStartAt,
       UUID workOrderId,
-      UUID sourceInspectionId,
-      UUID sourceReportVersionId) {
+      UUID sourceInspectionId) {
     Inspection inspection =
         new Inspection(organizationId, assetId, inspectorId, droneId, plannedStartAt, null);
     inspection.inspectionType =
         com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
     inspection.workOrderId = workOrderId;
     inspection.sourceInspectionId = sourceInspectionId;
-    inspection.sourceReportVersionId = sourceReportVersionId;
     return inspection;
   }
 
@@ -317,10 +308,6 @@ public class Inspection {
     return flightPermitFileName;
   }
 
-  public Instant getFlightPermitUploadedAt() {
-    return flightPermitUploadedAt;
-  }
-
   public Instant getPlannedStartAt() {
     return plannedStartAt;
   }
@@ -339,14 +326,6 @@ public class Inspection {
 
   public Instant getUpdatedAt() {
     return updatedAt;
-  }
-
-  public UUID getRecurringScheduleId() {
-    return recurringScheduleId;
-  }
-
-  public void setRecurringScheduleId(UUID recurringScheduleId) {
-    this.recurringScheduleId = recurringScheduleId;
   }
 
   public boolean isInspectedBy(UUID candidateInspectorId) {

@@ -24,26 +24,7 @@ class V25TargetSchemaFoundationTest {
   void createsTheTargetColumnContractAcrossAllTargetTables() {
     Map<String, Set<String>> targetColumns =
         Map.ofEntries(
-            Map.entry(
-                "organizations",
-                Set.of(
-                    "legal_name",
-                    "display_name",
-                    "registration_code",
-                    "timezone",
-                    "status",
-                    "created_by_user_id",
-                    "row_version")),
-            Map.entry(
-                "subscriptions",
-                Set.of(
-                    "organization_id",
-                    "plan_code",
-                    "billing_period_months",
-                    "status",
-                    "starts_at",
-                    "ends_at",
-                    "terms_snapshot")),
+            Map.entry("organizations", Set.of("display_name", "registration_code", "status")),
             Map.entry(
                 "users",
                 Set.of(
@@ -52,42 +33,48 @@ class V25TargetSchemaFoundationTest {
                     "full_name",
                     "auth_version",
                     "roles",
+                    "actor_zone")),
+            Map.entry(
+                "inspector_profiles",
+                Set.of(
+                    "user_id",
                     "pilot_license_number",
                     "pilot_license_class",
                     "pilot_license_expires_at",
-                    "pilot_license_file_key")),
+                    "pilot_license_file_key",
+                    "pilot_license_issued_date",
+                    "pilot_license_authority",
+                    "citizen_id",
+                    "date_of_birth",
+                    "address",
+                    "prior_flight_hours",
+                    "certified_drone_models",
+                    "specializations",
+                    "experience_summary",
+                    "notes",
+                    "updated_at")),
+            Map.entry(
+                "otp_challenges",
+                Set.of(
+                    "id",
+                    "purpose",
+                    "challenge_hash",
+                    "user_id",
+                    "destination",
+                    "channel",
+                    "client_ip",
+                    "code_hash",
+                    "code_expires_at",
+                    "expires_at",
+                    "consumed_at",
+                    "failed_attempts",
+                    "send_count",
+                    "last_sent_at",
+                    "created_at",
+                    "row_version")),
             Map.entry(
                 "auth_sessions",
-                Set.of(
-                    "user_id",
-                    "client_type",
-                    "token_hash",
-                    "issued_at",
-                    "expires_at",
-                    "revoked_at")),
-            Map.entry(
-                "platform_drones",
-                Set.of(
-                    "serial_number",
-                    "model",
-                    "manufacturer",
-                    "payload_metadata",
-                    "monthly_rate_usd",
-                    "status")),
-            Map.entry(
-                "drone_leases",
-                Set.of(
-                    "platform_drone_id",
-                    "organization_id",
-                    "customer_drone_id",
-                    "requested_by_user_id",
-                    "lease_period_months",
-                    "monthly_rate_usd",
-                    "agreed_amount_usd",
-                    "status",
-                    "starts_at",
-                    "ends_at",
-                    "reclaimed_at")),
+                Set.of("user_id", "client_type", "token_hash", "expires_at", "revoked_at")),
             Map.entry(
                 "drones",
                 Set.of(
@@ -95,9 +82,6 @@ class V25TargetSchemaFoundationTest {
                     "serial_number",
                     "model",
                     "serviceability",
-                    "ownership_type",
-                    "lease_id",
-                    "lease_expires_at",
                     "registration_number",
                     "registration_file_key",
                     "registration_expires_at")),
@@ -109,17 +93,11 @@ class V25TargetSchemaFoundationTest {
                     "asset_code",
                     "category_id",
                     "location",
-                    "technical_profile",
                     "inspection_items",
                     "status")),
             Map.entry(
                 "asset_documents",
-                Set.of(
-                    "asset_id",
-                    "document_type",
-                    "object_key",
-                    "checksum_sha256",
-                    "uploaded_by_user_id")),
+                Set.of("asset_id", "document_type", "object_key", "checksum_sha256")),
             Map.entry(
                 "inspections",
                 Set.of(
@@ -131,8 +109,6 @@ class V25TargetSchemaFoundationTest {
                     "drone_id",
                     "flight_permit_file_key",
                     "flight_permit_file_name",
-                    "flight_permit_uploaded_at",
-                    "recurring_schedule_id",
                     "status")),
             Map.entry(
                 "field_sessions",
@@ -186,7 +162,6 @@ class V25TargetSchemaFoundationTest {
                     "reviewed_at",
                     "return_reason",
                     "rendered_object_key",
-                    "rendered_checksum_sha256",
                     "published_at",
                     "created_at")),
             Map.entry(
@@ -201,7 +176,6 @@ class V25TargetSchemaFoundationTest {
                     "due_at",
                     "corrective_scope",
                     "acceptance_criteria",
-                    "owner_user_id",
                     "budget_approver_user_id",
                     "team_lead_user_id",
                     "report_author_user_id",
@@ -217,12 +191,8 @@ class V25TargetSchemaFoundationTest {
                     "name",
                     "method",
                     "assigned_engineer_user_id",
-                    "planned_start_at",
-                    "planned_end_at",
-                    "acceptance_criteria",
                     "status",
                     "created_at",
-                    "updated_at",
                     "row_version")),
             Map.entry(
                 "maintenance_team_members",
@@ -293,7 +263,6 @@ class V25TargetSchemaFoundationTest {
                     "test_readings",
                     "status",
                     "created_at",
-                    "updated_at",
                     "row_version")),
             Map.entry(
                 "maintenance_reports",
@@ -304,7 +273,6 @@ class V25TargetSchemaFoundationTest {
                     "author_verified_at",
                     "content_snapshot",
                     "rendered_object_key",
-                    "rendered_checksum_sha256",
                     "created_at")),
             Map.entry(
                 "maintenance_acceptance_decisions",
@@ -314,8 +282,6 @@ class V25TargetSchemaFoundationTest {
                     "reviewer_user_id",
                     "decision",
                     "technical_comments",
-                    "acceptance_checklist",
-                    "test_result",
                     "decided_at")),
             Map.entry(
                 "audit_events",
@@ -329,39 +295,19 @@ class V25TargetSchemaFoundationTest {
             Map.entry(
                 "notifications",
                 Set.of(
-                    "recipient_user_id",
-                    "organization_id",
-                    "event_type",
-                    "aggregate_type",
-                    "aggregate_id",
-                    "created_at")),
+                    "recipient_user_id", "organization_id", "event_type", "channel", "created_at")),
             Map.entry(
-                "recurring_inspection_schedules",
+                "service_request_occurrences",
                 Set.of(
-                    "organization_id",
-                    "asset_id",
-                    "created_by_user_id",
+                    "request_id",
+                    "inspection_id",
                     "inspector_id",
                     "drone_id",
-                    "anchor_date",
-                    "timezone",
-                    "recurrence_unit",
-                    "recurrence_interval",
-                    "duration_seconds",
-                    "reminder_days",
-                    "status")),
-            Map.entry(
-                "schedule_occurrences",
-                Set.of(
-                    "schedule_id",
-                    "organization_id",
-                    "occurrence_index",
-                    "occurrence_key",
-                    "planned_start_at",
-                    "planned_end_at",
-                    "status")));
+                    "status",
+                    "payos_order_code",
+                    "payment_method")));
 
-    assertThat(targetColumns).hasSize(28);
+    assertThat(targetColumns).hasSize(26);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate
@@ -379,6 +325,30 @@ class V25TargetSchemaFoundationTest {
           .as("target columns for table %s", contract.getKey())
           .containsAll(contract.getValue());
     }
+  }
+
+  @Test
+  void removesSupersededAndLegacyOtpTables() {
+    Set<String> actualTables =
+        jdbcTemplate
+            .queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+                String.class)
+            .stream()
+            .collect(Collectors.toSet());
+
+    assertThat(actualTables)
+        .doesNotContain(
+            "subscriptions",
+            "payment_transactions",
+            "platform_drones",
+            "drone_leases",
+            "recurring_inspection_schedules",
+            "schedule_occurrences",
+            "inspector_partner_applications",
+            "login_otp_challenges",
+            "registration_otp_challenges",
+            "password_reset_otp_challenges");
   }
 
   @Test

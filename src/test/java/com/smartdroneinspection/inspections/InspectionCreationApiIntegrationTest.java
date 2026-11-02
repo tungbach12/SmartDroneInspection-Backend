@@ -83,13 +83,6 @@ class InspectionCreationApiIntegrationTest {
         "Other " + otherOrganizationId,
         "ORG-" + otherOrganizationId);
 
-    jdbcTemplate.update(
-        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
-        organizationId);
-    jdbcTemplate.update(
-        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
-        otherOrganizationId);
-
     User admin =
         new User(
             "admin-" + UUID.randomUUID() + "@example.test",
@@ -111,6 +104,7 @@ class InspectionCreationApiIntegrationTest {
             organizationId);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
+    jdbcTemplate.update("INSERT INTO inspector_profiles (user_id) VALUES (?)", inspectorId);
 
     Drone drone = drones.saveAndFlush(new Drone(organizationId, "DJI-M300-" + UUID.randomUUID()));
     droneId = drone.getId();
@@ -324,10 +318,13 @@ class InspectionCreationApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("PILOT_LICENSE_REQUIRED"));
 
     // Inspector self-declares pilot license
-    User inspector = users.findById(inspectorId).orElseThrow();
-    inspector.updatePilotLicense(
-        "VN-UAV-12345", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
-    users.saveAndFlush(inspector);
+    jdbcTemplate.update(
+        "UPDATE inspector_profiles SET pilot_license_number = ?, pilot_license_class = ?, pilot_license_expires_at = ?, pilot_license_file_key = ? WHERE user_id = ?",
+        "VN-UAV-12345",
+        "CLASS_A",
+        Instant.now().plus(365, ChronoUnit.DAYS),
+        "license/key.pdf",
+        inspectorId);
 
     // Inspector uploads flight permit -> status remains SCHEDULED with permit attached
     mockMvc
@@ -340,113 +337,6 @@ class InspectionCreationApiIntegrationTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
         .andExpect(jsonPath("$.data.flightPermitFileName").value("permit.pdf"));
-  }
-
-  @Autowired
-  com.smartdroneinspection.inspections.repository.ScheduleOccurrenceRepository occurrences;
-
-  @Autowired com.smartdroneinspection.inspections.service.InspectionReminderJob reminderJob;
-
-  @Autowired
-  com.smartdroneinspection.notifications.service.InspectionNotificationService
-      inspectionNotifications;
-
-  @Test
-  void orgAdminCreatesRecurringScheduleWithPlainTextScopeAndCompatibleSelfServicePermitFlow()
-      throws Exception {
-    java.time.LocalDateTime anchor =
-        java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)
-            .plusDays(1)
-            .truncatedTo(ChronoUnit.SECONDS);
-
-    String scheduleBody =
-        "{\"assetId\":\""
-            + assetId
-            + "\",\"anchor\":\""
-            + anchor
-            + "\",\"timezone\":\"UTC\","
-            + "\"unit\":\"MONTH\","
-            + "\"interval\":1,"
-            + "\"durationSeconds\":7200,"
-            + "\"reminderDays\":3,"
-            + "\"inspectorId\":\""
-            + inspectorId
-            + "\",\"droneId\":\""
-            + droneId
-            + "\"}";
-
-    var scheduleResult =
-        mockMvc
-            .perform(
-                post("/api/v1/inspection-schedules")
-                    .with(jwtUser(adminId, "ROLE_CUSTOMER"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(scheduleBody))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data.status").value("ACTIVE"))
-            .andExpect(jsonPath("$.data.totalGeneratedOccurrences").value(1))
-            .andReturn();
-
-    UUID scheduleId =
-        UUID.fromString(
-            com.jayway.jsonpath.JsonPath.read(
-                scheduleResult.getResponse().getContentAsString(), "$.data.id"));
-
-    var occurrence = occurrences.findByScheduleIdOrderByOccurrenceIndexAsc(scheduleId).getFirst();
-    UUID inspectionId = occurrence.getInspectionId();
-    var generatedInspection = inspections.findById(inspectionId).orElseThrow();
-    org.assertj.core.api.Assertions.assertThat(generatedInspection.getStatus().name())
-        .isEqualTo("SCHEDULED");
-    org.assertj.core.api.Assertions.assertThat(generatedInspection.getRecurringScheduleId())
-        .isEqualTo(scheduleId);
-
-    inspectionNotifications.recordInspectionAssignment(
-        inspectionId, organizationId, inspectorId, generatedInspection.getPlannedStartAt());
-    mockMvc
-        .perform(
-            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
-                    "/api/v1/notifications")
-                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.items[0].eventType").value("INSPECTION_ASSIGNED"))
-        .andExpect(jsonPath("$.data.items[0].targetPath").value("/inspections/" + inspectionId));
-
-    User inspector = users.findById(inspectorId).orElseThrow();
-    inspector.updatePilotLicense(
-        "VN-UAV-99999", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/rec.pdf");
-    users.saveAndFlush(inspector);
-
-    Drone assignedDrone = drones.findById(droneId).orElseThrow();
-    assignedDrone.updateRegistration(
-        "VN-DRONE-REG-01", "drones/reg-01.pdf", Instant.now().plus(365, ChronoUnit.DAYS));
-    drones.saveAndFlush(assignedDrone);
-
-    MockMultipartFile permitFile =
-        new MockMultipartFile(
-            "file", "recurring-permit.pdf", "application/pdf", "%PDF-1.7".getBytes());
-    mockMvc
-        .perform(
-            MockMvcRequestBuilders.multipart(
-                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
-                .file(permitFile)
-                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
-        .andExpect(jsonPath("$.data.inspectionItems[0]").value("Mố cầu M1"));
-
-    org.assertj.core.api.Assertions.assertThat(
-            reminderJob.processSingleReminder(occurrence.getId(), Instant.now()))
-        .isTrue();
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/" + inspectionId + "/field-sessions")
-                .with(jwtUser(inspectorId, "ROLE_INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"preFlightChecklistNote\":\"Battery, GNSS, propellers checked\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor jwtUser(

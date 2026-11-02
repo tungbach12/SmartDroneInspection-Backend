@@ -5,7 +5,6 @@
       "shared::exception",
       "shared::storage",
       "inspections::spi",
-      "subscriptions::gateway",
       "contracts::gateway",
       "maintenance::spi"
     })

@@ -44,12 +44,6 @@ public class Notification {
   @Column(nullable = false, length = 24)
   private NotificationStatus status;
 
-  @Column(name = "attempt_count", nullable = false)
-  private int attemptCount;
-
-  @Column(name = "last_error_code", length = 96)
-  private String lastErrorCode;
-
   @Column(name = "sent_at")
   private Instant sentAt;
 
@@ -92,7 +86,6 @@ public class Notification {
     this.body = body;
     this.targetPath = targetPath;
     this.deduplicationKey = deduplicationKey;
-    this.attemptCount = 0;
     this.createdAt = Instant.now();
     if (channel == NotificationChannel.IN_APP) {
       this.status = NotificationStatus.SENT;
@@ -159,11 +152,11 @@ public class Notification {
   }
 
   public int getAttemptCount() {
-    return attemptCount;
+    return 0;
   }
 
   public String getLastErrorCode() {
-    return lastErrorCode;
+    return null;
   }
 
   public Instant getSentAt() {

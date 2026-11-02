@@ -80,10 +80,6 @@ class InspectionManagerDispatchApiIntegrationTest {
         """,
         organizationId);
 
-    jdbcTemplate.update(
-        "INSERT INTO subscriptions (organization_id, plan_code, billing_period_months, status, starts_at) VALUES (?, 'ENTERPRISE', 1, 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL '1 hour')",
-        organizationId);
-
     User manager =
         new User(
             "manager-" + UUID.randomUUID() + "@test.org",

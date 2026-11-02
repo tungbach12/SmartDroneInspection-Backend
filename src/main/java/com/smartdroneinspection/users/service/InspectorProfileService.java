@@ -6,8 +6,10 @@ import com.smartdroneinspection.users.api.dto.request.UpdateInspectorProfileRequ
 import com.smartdroneinspection.users.api.dto.response.InspectorFlightLogResponse;
 import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.domain.InspectorFlightLog;
+import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.repository.InspectorFlightLogRepository;
+import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -26,27 +28,32 @@ public class InspectorProfileService {
 
   private final UserRepository userRepository;
   private final InspectorFlightLogRepository flightLogRepository;
+  private final InspectorProfileRepository profileRepository;
   private final InspectorPartnerLicenseDocumentService licenseDocumentService;
 
   public InspectorProfileService(
       UserRepository userRepository,
       InspectorFlightLogRepository flightLogRepository,
+      InspectorProfileRepository profileRepository,
       InspectorPartnerLicenseDocumentService licenseDocumentService) {
     this.userRepository = userRepository;
     this.flightLogRepository = flightLogRepository;
+    this.profileRepository = profileRepository;
     this.licenseDocumentService = licenseDocumentService;
   }
 
   @Transactional(readOnly = true)
   public List<InspectorProfileResponse> listInspectors() {
     List<User> inspectors = userRepository.findAllInspectors();
-    return inspectors.stream().map(this::toProfileResponse).toList();
+    return inspectors.stream()
+        .map(user -> toProfileResponse(user, loadProfile(user.getId())))
+        .toList();
   }
 
   @Transactional(readOnly = true)
   public InspectorProfileResponse getProfile(UUID inspectorUserId) {
     User user = findInspector(inspectorUserId);
-    return toProfileResponse(user);
+    return toProfileResponse(user, loadProfile(inspectorUserId));
   }
 
   public InspectorProfileResponse updateProfile(
@@ -56,13 +63,15 @@ public class InspectorProfileService {
       user.setFullName(request.fullName().trim());
     }
     user.setPhoneNumber(request.phoneNumber() != null ? request.phoneNumber().trim() : null);
-    user.setCitizenId(request.citizenId() != null ? request.citizenId().trim() : null);
-    user.setDateOfBirth(request.dateOfBirth());
-    user.setAddress(request.address() != null ? request.address().trim() : null);
-    user.setNotes(request.notes() != null ? request.notes().trim() : null);
+    InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    profile.updatePersonalDetails(
+        request.citizenId() != null ? request.citizenId().trim() : null,
+        request.dateOfBirth(),
+        request.address() != null ? request.address().trim() : null,
+        request.notes() != null ? request.notes().trim() : null);
 
     // Update Pilot license
-    user.updatePilotLicense(
+    profile.updatePilotLicense(
         request.pilotLicenseNumber() != null ? request.pilotLicenseNumber().trim() : null,
         request.pilotLicenseClass() != null ? request.pilotLicenseClass().trim() : null,
         request.pilotLicenseIssuedDate(),
@@ -71,34 +80,37 @@ public class InspectorProfileService {
         null);
 
     // Update Flight experience
-    if (request.priorFlightHours() != null) {
-      user.setPriorFlightHours(request.priorFlightHours());
-    }
-    user.setCertifiedDroneModels(
-        request.certifiedDroneModels() != null ? request.certifiedDroneModels().trim() : null);
-    user.setSpecializations(
-        request.specializations() != null ? request.specializations().trim() : null);
-    user.setExperienceSummary(
+    profile.updateFlightExperience(
+        request.priorFlightHours(),
+        request.certifiedDroneModels() != null ? request.certifiedDroneModels().trim() : null,
+        request.specializations() != null ? request.specializations().trim() : null,
         request.experienceSummary() != null ? request.experienceSummary().trim() : null);
 
     User saved = userRepository.save(user);
-    return toProfileResponse(saved);
+    profileRepository.save(profile);
+    return toProfileResponse(saved, profile);
   }
 
   public InspectorProfileResponse uploadLicenseScan(
       UUID inspectorUserId, MultipartFile file, UUID actorId) {
     User user = findInspector(inspectorUserId);
     var uploadResponse = licenseDocumentService.upload(file);
-    user.setPilotLicenseFileKey(uploadResponse.fileKey());
-    User saved = userRepository.save(user);
-    return toProfileResponse(saved);
+    InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    profile.setPilotLicenseFileKey(uploadResponse.fileKey());
+    userRepository.save(user);
+    profileRepository.save(profile);
+    return toProfileResponse(user, profile);
   }
 
   @Transactional(readOnly = true)
   public InspectorPartnerLicenseDocumentService.InputStreamContent openLicenseScan(
       UUID inspectorUserId) {
-    User user = findInspector(inspectorUserId);
-    String fileKey = user.getPilotLicenseFileKey();
+    findInspector(inspectorUserId);
+    String fileKey =
+        profileRepository
+            .findById(inspectorUserId)
+            .map(InspectorProfile::getPilotLicenseFileKey)
+            .orElse(null);
     if (fileKey == null || fileKey.isBlank()) {
       throw new BusinessException(
           HttpStatus.NOT_FOUND, "NOT_FOUND", "Bản scan bằng lái của inspector chưa được tải lên");
@@ -189,45 +201,16 @@ public class InspectorProfileService {
             null);
     flightLogRepository.save(log);
 
-    userRepository
-        .findById(inspectorUserId)
-        .ifPresent(
-            user -> {
-              boolean updated = false;
-              if (droneModel != null
-                  && !droneModel.isBlank()
-                  && !"UAV".equalsIgnoreCase(droneModel)) {
-                String current = user.getCertifiedDroneModels();
-                if (current == null || current.isBlank()) {
-                  user.setCertifiedDroneModels(droneModel.trim());
-                  updated = true;
-                } else if (java.util.Arrays.stream(current.split(","))
-                    .map(String::trim)
-                    .noneMatch(m -> m.equalsIgnoreCase(droneModel.trim()))) {
-                  user.setCertifiedDroneModels(current.trim() + ", " + droneModel.trim());
-                  updated = true;
-                }
-              }
-
-              if (inspectionType != null
-                  && !inspectionType.isBlank()
-                  && !"Kiểm tra thực địa".equalsIgnoreCase(inspectionType)) {
-                String current = user.getSpecializations();
-                if (current == null || current.isBlank()) {
-                  user.setSpecializations(inspectionType.trim());
-                  updated = true;
-                } else if (java.util.Arrays.stream(current.split(","))
-                    .map(String::trim)
-                    .noneMatch(s -> s.equalsIgnoreCase(inspectionType.trim()))) {
-                  user.setSpecializations(current.trim() + ", " + inspectionType.trim());
-                  updated = true;
-                }
-              }
-
-              if (updated) {
-                userRepository.save(user);
-              }
-            });
+    InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    if (droneModel != null && !droneModel.isBlank() && !"UAV".equalsIgnoreCase(droneModel)) {
+      profile.addDroneModel(droneModel);
+    }
+    if (inspectionType != null
+        && !inspectionType.isBlank()
+        && !"Kiểm tra thực địa".equalsIgnoreCase(inspectionType)) {
+      profile.addSpecialization(inspectionType);
+    }
+    profileRepository.save(profile);
   }
 
   private User findInspector(UUID inspectorUserId) {
@@ -239,19 +222,29 @@ public class InspectorProfileService {
                     HttpStatus.NOT_FOUND, "NOT_FOUND", "Tài khoản Inspector không tồn tại"));
   }
 
-  private InspectorProfileResponse toProfileResponse(User user) {
+  private InspectorProfile findOrCreateProfile(UUID userId) {
+    return profileRepository
+        .findById(userId)
+        .orElseGet(() -> profileRepository.save(new InspectorProfile(userId)));
+  }
+
+  private InspectorProfile loadProfile(UUID userId) {
+    return profileRepository.findById(userId).orElseGet(() -> new InspectorProfile(userId));
+  }
+
+  private InspectorProfileResponse toProfileResponse(User user, InspectorProfile profile) {
     List<InspectorFlightLog> logs =
         flightLogRepository.findByInspectorUserIdOrderByFlightDateDesc(user.getId());
     int totalMinutes = logs.stream().mapToInt(InspectorFlightLog::getFlightDurationMinutes).sum();
     BigDecimal companyFlightHours =
         BigDecimal.valueOf(totalMinutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-    BigDecimal priorHours = user.getPriorFlightHours();
+    BigDecimal priorHours = profile.getPriorFlightHours();
     BigDecimal totalFlightHours = priorHours.add(companyFlightHours);
 
     String expirationStatus = "UNKNOWN";
     Long remainingDays = null;
-    if (user.getPilotLicenseExpiresAt() != null) {
-      Instant exp = user.getPilotLicenseExpiresAt();
+    if (profile.getPilotLicenseExpiresAt() != null) {
+      Instant exp = profile.getPilotLicenseExpiresAt();
       Instant now = Instant.now();
       long days = ChronoUnit.DAYS.between(now, exp);
       remainingDays = days;
@@ -265,7 +258,7 @@ public class InspectorProfileService {
     }
 
     boolean hasLicenseScan =
-        user.getPilotLicenseFileKey() != null && !user.getPilotLicenseFileKey().isBlank();
+        profile.getPilotLicenseFileKey() != null && !profile.getPilotLicenseFileKey().isBlank();
 
     return new InspectorProfileResponse(
         user.getId(),
@@ -275,16 +268,16 @@ public class InspectorProfileService {
         user.getAvatarUrl(),
         user.getStatus().name(),
         user.getActorZone().name(),
-        user.getCitizenId(),
-        user.getDateOfBirth(),
-        user.getAddress(),
-        user.getNotes(),
-        user.getPilotLicenseNumber(),
-        user.getPilotLicenseClass(),
-        user.getPilotLicenseIssuedDate(),
-        user.getPilotLicenseExpiresAt(),
-        user.getPilotLicenseAuthority(),
-        user.getPilotLicenseFileKey(),
+        profile.getCitizenId(),
+        profile.getDateOfBirth(),
+        profile.getAddress(),
+        profile.getNotes(),
+        profile.getPilotLicenseNumber(),
+        profile.getPilotLicenseClass(),
+        profile.getPilotLicenseIssuedDate(),
+        profile.getPilotLicenseExpiresAt(),
+        profile.getPilotLicenseAuthority(),
+        profile.getPilotLicenseFileKey(),
         hasLicenseScan,
         expirationStatus,
         remainingDays,
@@ -292,11 +285,11 @@ public class InspectorProfileService {
         companyFlightHours,
         totalFlightHours,
         logs.size(),
-        user.getCertifiedDroneModels(),
-        user.getSpecializations(),
-        user.getExperienceSummary(),
+        profile.getCertifiedDroneModels(),
+        profile.getSpecializations(),
+        profile.getExperienceSummary(),
         user.getCreatedAt(),
-        user.getUpdatedAt());
+        profile.getUpdatedAt());
   }
 
   private InspectorFlightLogResponse toFlightLogResponse(InspectorFlightLog log) {

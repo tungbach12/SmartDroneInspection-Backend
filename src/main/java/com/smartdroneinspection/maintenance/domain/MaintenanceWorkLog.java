@@ -57,9 +57,6 @@ public class MaintenanceWorkLog {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
-  @Column(name = "updated_at", nullable = false)
-  private Instant updatedAt;
-
   @Version
   @Column(name = "row_version", nullable = false)
   private long rowVersion;
@@ -75,7 +72,6 @@ public class MaintenanceWorkLog {
     this.hours = requireHours(hours);
     this.status = WorkLogStatus.IN_PROGRESS;
     this.createdAt = Instant.now();
-    this.updatedAt = this.createdAt;
   }
 
   /** MF4-09/10: the engineer records how long the work took and what it produced. */
@@ -98,7 +94,6 @@ public class MaintenanceWorkLog {
     this.hours = requireHours(hours);
     this.asLeftCondition = asLeftCondition;
     this.testReadings = testReadings;
-    this.updatedAt = Instant.now();
   }
 
   /** MF4-11: the engineer submits their own timesheet. Submission is not verification. */
@@ -111,27 +106,23 @@ public class MaintenanceWorkLog {
       throw new IllegalStateException("A submitted work log requires an end time");
     }
     this.status = WorkLogStatus.SUBMITTED;
-    this.updatedAt = Instant.now();
   }
 
   /** MF4-11: the lead verifies the submitted work log; verification is not acceptance. */
   public void verify() {
     requireStatus(WorkLogStatus.SUBMITTED);
     this.status = WorkLogStatus.VERIFIED;
-    this.updatedAt = Instant.now();
   }
 
   /** MF4-11: a change request pauses the log until the change is decided. */
   public void pauseForChange() {
     requireStatus(WorkLogStatus.IN_PROGRESS);
     this.status = WorkLogStatus.PAUSED_FOR_CHANGE;
-    this.updatedAt = Instant.now();
   }
 
   public void resumeAfterChange() {
     requireStatus(WorkLogStatus.PAUSED_FOR_CHANGE);
     this.status = WorkLogStatus.IN_PROGRESS;
-    this.updatedAt = Instant.now();
   }
 
   private void requireStatus(WorkLogStatus expected) {
