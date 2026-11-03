@@ -3,9 +3,15 @@ package com.smartdroneinspection.inspections.api;
 import com.smartdroneinspection.inspections.api.dto.request.AbortFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
+import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.SmartDroneHubFlightReportResponse;
+import com.smartdroneinspection.inspections.api.dto.response.SmartDroneHubMissionResponse;
+import com.smartdroneinspection.inspections.api.dto.response.SmartDroneHubTelemetryResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.service.InspectionDroneHubService;
 import com.smartdroneinspection.inspections.service.InspectionFieldSessionService;
+import com.smartdroneinspection.inspections.spi.SmartDroneHubPort;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -18,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -25,9 +32,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class InspectionFieldSessionController {
 
   private final InspectionFieldSessionService fieldSessions;
+  private final InspectionDroneHubService droneHub;
 
-  public InspectionFieldSessionController(InspectionFieldSessionService fieldSessions) {
+  public InspectionFieldSessionController(
+      InspectionFieldSessionService fieldSessions, InspectionDroneHubService droneHub) {
     this.fieldSessions = fieldSessions;
+    this.droneHub = droneHub;
   }
 
   @GetMapping
@@ -63,6 +73,115 @@ public class InspectionFieldSessionController {
             fieldSessions.complete(subject(jwt), inspectionId, sessionId, request.outcomeNotes())));
   }
 
+  @PostMapping("/{sessionId}/drone-hub/start")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<SmartDroneHubMissionResponse> startDroneHubMission(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId,
+      @RequestParam(defaultValue = "AUTO") String telemetrySource) {
+    return ApiResponse.success(
+        missionResponse(droneHub.start(subject(jwt), inspectionId, sessionId, telemetrySource)));
+  }
+
+  @GetMapping("/{sessionId}/drone-hub/telemetry")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<SmartDroneHubTelemetryResponse> droneHubTelemetry(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(
+        telemetryResponse(droneHub.telemetry(subject(jwt), inspectionId, sessionId)));
+  }
+
+  @GetMapping("/{sessionId}/drone-hub/flight-report")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN', 'CUSTOMER')")
+  public ApiResponse<SmartDroneHubFlightReportResponse> droneHubFlightReport(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(
+        flightReportResponse(droneHub.flightReport(subject(jwt), inspectionId, sessionId)));
+  }
+
+  @PostMapping("/{sessionId}/drone-hub/sync-video")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceResponse> syncDroneHubFlightVideo(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(droneHub.syncFlightVideo(subject(jwt), inspectionId, sessionId));
+  }
+
+  @PostMapping("/{sessionId}/drone-hub/capture")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceResponse> captureDroneHubFrame(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(droneHub.captureSnapshot(subject(jwt), inspectionId, sessionId));
+  }
+
+  private static SmartDroneHubMissionResponse missionResponse(SmartDroneHubPort.Mission value) {
+    return new SmartDroneHubMissionResponse(
+        value.inspectionId(),
+        value.fieldSessionId(),
+        value.missionState(),
+        value.telemetrySource(),
+        value.connected(),
+        value.lastUpdateAt(),
+        value.latitude(),
+        value.longitude(),
+        value.altitudeMeters(),
+        value.groundSpeedMps(),
+        value.headingDeg(),
+        value.batteryPercent(),
+        value.flightMode(),
+        value.armed(),
+        value.currentWaypoint(),
+        value.distanceFlownMeters());
+  }
+
+  private static SmartDroneHubTelemetryResponse telemetryResponse(
+      SmartDroneHubPort.Telemetry value) {
+    return new SmartDroneHubTelemetryResponse(
+        value.inspectionId(),
+        value.fieldSessionId(),
+        value.missionState(),
+        value.telemetrySource(),
+        value.connected(),
+        value.lastUpdateAt(),
+        value.latitude(),
+        value.longitude(),
+        value.altitudeMeters(),
+        value.groundSpeedMps(),
+        value.headingDeg(),
+        value.batteryPercent(),
+        value.flightMode(),
+        value.armed(),
+        value.currentWaypoint(),
+        value.distanceFlownMeters());
+  }
+
+  private static SmartDroneHubFlightReportResponse flightReportResponse(
+      SmartDroneHubPort.FlightReport value) {
+    return new SmartDroneHubFlightReportResponse(
+        value.inspectionId(),
+        value.fieldSessionId(),
+        value.telemetrySource(),
+        value.startedAt(),
+        value.endedAt(),
+        value.durationSeconds(),
+        value.distanceFlownMeters(),
+        value.maxAltitudeMeters(),
+        value.startBatteryPercent(),
+        value.endBatteryPercent(),
+        value.finalState(),
+        value.note(),
+        value.flightTrace() != null ? value.flightTrace() : List.of(),
+        value.flightVideoEvidenceId());
+  }
+
   @PostMapping("/{sessionId}/abort")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FieldSessionResponse> abort(
@@ -84,7 +203,8 @@ public class InspectionFieldSessionController {
         session.getEndedAt(),
         session.getPostponementReason(),
         session.getAbortReason(),
-        session.getOutcomeNotes());
+        session.getOutcomeNotes(),
+        session.getFlightVideoEvidenceId());
   }
 
   private static UUID subject(Jwt jwt) {

@@ -38,5 +38,7 @@ Thumbs.db
 # ai-inference/models/*.pt (committed for team dev execution)
 ai-inference/models/*.onnx
 ai-inference/models/*.old
+__pycache__/
+*.pyc
 .claude/
 node_modules/

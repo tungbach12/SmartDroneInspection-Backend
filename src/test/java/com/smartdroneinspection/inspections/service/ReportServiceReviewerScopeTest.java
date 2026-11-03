@@ -3,11 +3,13 @@ package com.smartdroneinspection.inspections.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
@@ -84,8 +86,8 @@ class ReportServiceReviewerScopeTest {
   }
 
   @Test
-  @DisplayName("MANAGER can review and approve a submitted report version")
-  void managerCanReviewReport() {
+  @DisplayName("MANAGER can review and publish a submitted report version")
+  void managerCanPublishReport() throws java.io.IOException {
     UserAccess.ActiveUser manager =
         new UserAccess.ActiveUser(
             managerId,
@@ -102,6 +104,8 @@ class ReportServiceReviewerScopeTest {
     Inspection inspection =
         new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
     ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    ReflectionTestUtils.setField(inspection, "status", InspectionStatus.UNDER_REVIEW);
+    ReflectionTestUtils.setField(inspection, "findingsConfirmedAt", java.time.Instant.now());
 
     InspectionReport version = new InspectionReport(inspectionId, 1, "snap");
     ReflectionTestUtils.setField(version, "id", versionId);
@@ -112,13 +116,49 @@ class ReportServiceReviewerScopeTest {
     when(versions.findById(versionId)).thenReturn(Optional.of(version));
     when(evidenceService.requireInspectionInScope(managerId, inspectionId)).thenReturn(inspection);
     when(versions.saveAndFlush(version)).thenReturn(version);
+    when(findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId)).thenReturn(List.of());
+    when(versions.findByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED))
+        .thenReturn(List.of());
 
-    InspectionReportResponse response =
-        reportService.reviewVersion(
-            managerId, inspectionId, versionId, true, "Approved for publish");
+    reportService.reviewVersion(managerId, inspectionId, versionId, null, java.util.Locale.ENGLISH);
 
-    assertThat(response.status()).isEqualTo(ReportStatus.APPROVED);
+    assertThat(version.getStatus()).isEqualTo(ReportStatus.PUBLISHED);
+    assertThat(version.getReviewerUserId()).isEqualTo(managerId);
+    assertThat(inspection.getStatus()).isEqualTo(InspectionStatus.COMPLETED);
     verify(versions).saveAndFlush(version);
+    verifyNoInteractions(renderPort, objectStore);
+  }
+
+  @Test
+  @DisplayName("downloadArtefact renders PDF on demand if not yet cached in object store")
+  void downloadArtefactRendersOnDemand() throws java.io.IOException {
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+
+    InspectionReport version = new InspectionReport(inspectionId, 1, "{}");
+    ReflectionTestUtils.setField(version, "id", versionId);
+    ReflectionTestUtils.setField(version, "status", ReportStatus.PUBLISHED);
+
+    when(evidenceService.requireInspectionInScope(managerId, inspectionId)).thenReturn(inspection);
+    when(versions.findById(versionId)).thenReturn(Optional.of(version));
+    when(objectStore.open("reports/" + versionId + ".pdf"))
+        .thenThrow(new java.io.FileNotFoundException());
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(renderPort.render(org.mockito.ArgumentMatchers.any())).thenReturn(new byte[] {1, 2, 3});
+
+    org.springframework.http.ResponseEntity<byte[]> response =
+        reportService.downloadArtefact(managerId, inspectionId, versionId);
+
+    assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+    assertThat(response.getBody()).isEqualTo(new byte[] {1, 2, 3});
+    verify(renderPort).render(org.mockito.ArgumentMatchers.any());
+    verify(objectStore)
+        .put(
+            org.mockito.ArgumentMatchers.eq("reports/" + versionId + ".pdf"),
+            org.mockito.ArgumentMatchers.eq("application/pdf"),
+            org.mockito.ArgumentMatchers.eq(3L),
+            org.mockito.ArgumentMatchers.any());
   }
 
   @Test
@@ -147,7 +187,7 @@ class ReportServiceReviewerScopeTest {
     assertThatThrownBy(
             () ->
                 reportService.reviewVersion(
-                    inspectorId, inspectionId, versionId, true, "Self review"))
+                    inspectorId, inspectionId, versionId, "Self review", java.util.Locale.ENGLISH))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("author cannot review their own report");
   }

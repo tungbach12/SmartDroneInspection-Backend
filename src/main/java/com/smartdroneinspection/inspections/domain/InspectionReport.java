@@ -91,13 +91,17 @@ public class InspectionReport {
     if (reviewerId == null) {
       throw new IllegalArgumentException("A reviewer is required");
     }
-    if (!approve && (reason == null || reason.isBlank())) {
+    if (approve) {
+      throw new IllegalArgumentException(
+          "Reviewer approval directly publishes the report via publish()");
+    }
+    if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("A return requires a reason");
     }
     reviewerUserId = reviewerId;
     reviewedAt = Instant.now();
-    returnReason = approve ? null : reason;
-    status = approve ? ReportStatus.APPROVED : ReportStatus.RETURNED;
+    returnReason = reason;
+    status = ReportStatus.RETURNED;
   }
 
   public void withdraw(UUID actorId, UUID reportAuthorUserId) {
@@ -113,21 +117,17 @@ public class InspectionReport {
     returnReason = "Withdrawn by author for revision";
   }
 
-  /** Publication is a separate act after approval; the result is immutable. */
+  /** Publication is the reviewer's approval decision; the result is immutable. */
   public void publish(UUID publishingUserId, UUID reportAuthorUserId) {
-    requireStatus(ReportStatus.APPROVED, ReportStatus.SUBMITTED);
+    requireStatus(ReportStatus.SUBMITTED);
     if (publishingUserId == null) {
       throw new IllegalArgumentException("A publishing user is required");
     }
-    if (status == ReportStatus.SUBMITTED) {
-      if (publishingUserId.equals(reportAuthorUserId)) {
-        throw new IllegalStateException("Publication requires a qualified reviewer decision");
-      }
-      reviewerUserId = publishingUserId;
-      reviewedAt = Instant.now();
-    } else if (reviewerUserId == null || reviewerUserId.equals(reportAuthorUserId)) {
+    if (publishingUserId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Publication requires a qualified reviewer decision");
     }
+    reviewerUserId = publishingUserId;
+    reviewedAt = Instant.now();
     status = ReportStatus.PUBLISHED;
     publishedAt = Instant.now();
   }

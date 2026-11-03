@@ -2,6 +2,7 @@ package com.smartdroneinspection.inspections.api;
 
 import com.smartdroneinspection.inspections.api.dto.EvidenceMediaTypeFilter;
 import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
+import com.smartdroneinspection.inspections.api.dto.request.AnalyzeVideoRequest;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingHandoffRequest;
@@ -23,6 +24,7 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowS
 import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
+import com.smartdroneinspection.inspections.api.dto.response.VideoAutoDetectResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
@@ -289,6 +291,17 @@ public class InspectionController {
         findingService.analyze(actorId(jwt), inspectionId, evidenceId, replace));
   }
 
+  @PostMapping("/evidence/{evidenceId}/analyze-video")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<VideoAutoDetectResponse> analyzeVideoEvidence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestBody AnalyzeVideoRequest request) {
+    return ApiResponse.success(
+        findingService.analyzeVideo(actorId(jwt), inspectionId, evidenceId, request));
+  }
+
   @PostMapping("/findings/{findingId}/confirmation")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<FindingResponse> confirmFinding(
@@ -458,25 +471,16 @@ public class InspectionController {
 
   @PostMapping("/report/versions/{versionId}/review")
   @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
-  public ApiResponse<InspectionReportResponse> reviewVersion(
+  public ApiResponse<ReportPublishedResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
-      @RequestParam boolean approve,
-      @RequestParam(required = false) String reason) {
-    return ApiResponse.success(
-        reportService.reviewVersion(actorId(jwt), inspectionId, versionId, approve, reason));
-  }
-
-  @PostMapping("/report/versions/{versionId}/publish")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
-  public ApiResponse<ReportPublishedResponse> publishVersion(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID versionId,
+      @RequestParam(required = false) Boolean approve,
+      @RequestParam(required = false) String reason,
       HttpServletRequest request) {
     return ApiResponse.success(
-        reportService.publish(actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
+        reportService.reviewVersion(
+            actorId(jwt), inspectionId, versionId, approve, reason, RequestLocale.from(request)));
   }
 
   @PostMapping("/report/versions/{versionId}/accept")

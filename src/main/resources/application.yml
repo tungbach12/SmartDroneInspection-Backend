@@ -14,8 +14,8 @@ spring:
             enable: ${AUTH_OTP_SMTP_STARTTLS:true}
   servlet:
     multipart:
-      max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
-      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:12MB}
+      max-file-size: ${EVIDENCE_MAX_FILE_SIZE:500MB}
+      max-request-size: ${EVIDENCE_MAX_REQUEST_SIZE:510MB}
   datasource:
     url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdroneinspection}
     username: ${POSTGRES_USER:postgres}
@@ -74,7 +74,7 @@ app:
       locale: ${VNPAY_LOCALE:vn}
       expire-minutes: ${VNPAY_EXPIRE_MINUTES:15}
   evidence:
-    max-file-size: ${EVIDENCE_MAX_FILE_SIZE:10MB}
+    max-file-size: ${EVIDENCE_MAX_FILE_SIZE:500MB}
   assets:
     drone-document-max-file-size: ${DRONE_DOCUMENT_MAX_FILE_SIZE:10MB}
     document-max-file-size: ${ASSET_DOCUMENT_MAX_FILE_SIZE:10MB}
@@ -106,6 +106,10 @@ app:
       model: ${COMPATIBLE_VISION_MODEL:${REPORT_DRAFT_MODEL:}}
       api-key: ${COMPATIBLE_VISION_API_KEY:${REPORT_DRAFT_API_KEY:}}
       timeout: ${COMPATIBLE_VISION_TIMEOUT:${REPORT_DRAFT_TIMEOUT:60s}}
+  smartdronehub:
+    base-url: ${SMARTDRONEHUB_BASE_URL:http://localhost:8090}
+    connect-timeout: ${SMARTDRONEHUB_CONNECT_TIMEOUT:5s}
+    read-timeout: ${SMARTDRONEHUB_READ_TIMEOUT:60s}
   report-draft:
     enabled: ${REPORT_DRAFT_ENABLED:false}
     base-url: ${REPORT_DRAFT_BASE_URL:http://localhost:11434}

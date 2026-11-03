@@ -352,17 +352,9 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
 
     mockMvc
         .perform(
