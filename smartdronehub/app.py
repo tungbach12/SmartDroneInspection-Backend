@@ -360,16 +360,12 @@ async def create_mission(request: MissionCreate) -> dict[str, Any]:
         and active.state in {MissionState.READY, MissionState.IN_FLIGHT, MissionState.RETURNING}
     ]
     if existing and existing.flight_report is None and existing.closed_at is None:
-        if existing.source == source:
-            return {
-                "success": True,
-                "message": "Mission already active",
-                "data": read_telemetry(existing).model_dump(mode="json"),
-            }
-        raise HTTPException(
-            status_code=409,
-            detail="A mission already exists for this field session with a different telemetry source",
-        )
+        existing.source = source
+        return {
+            "success": True,
+            "message": "Mission active",
+            "data": read_telemetry(existing).model_dump(mode="json"),
+        }
     if source == "MAVLINK":
         if not snapshot["connected"]:
             raise HTTPException(status_code=503, detail="No fresh MAVLink telemetry is connected")
