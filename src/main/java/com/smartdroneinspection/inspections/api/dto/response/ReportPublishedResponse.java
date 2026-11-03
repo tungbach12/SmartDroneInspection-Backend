@@ -12,6 +12,8 @@ import java.util.UUID;
 public record ReportPublishedResponse(
     UUID reportVersionId,
     int versionNo,
+    String status,
+    String returnReason,
     Instant publishedAt,
     List<UUID> forwardedFindingIds,
     InspectionStatus inspectionStatus) {}

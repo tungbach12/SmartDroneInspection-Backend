@@ -710,7 +710,6 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "false")
                 .param("reason", rationale)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
@@ -801,14 +800,13 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
   }
 
   @Test
-  void reportApprovalDoesNotRequireSeparateFindingVerdicts() throws Exception {
+  void reportPublicationDoesNotRequireSeparateFindingVerdicts() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();
     UUID findingId = createManualFinding(evidenceId);
@@ -816,7 +814,7 @@ class InspectionReportApiIntegrationTest {
     UUID versionId = createManualDraftVersion();
     verifyAndSubmitVersion(versionId);
 
-    // The reviewer approves the report as a whole, so the finding carries no separate verdict of
+    // The reviewer publishes the report as a whole, so the finding carries no separate verdict of
     // its own: the Inspector's confirmation is the only decision on it.
     assertThat(
             findings
@@ -831,10 +829,11 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
   }
 
   @Test
@@ -928,7 +927,6 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "false")
                 .param("reason", "Clarify the report narrative")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
@@ -972,7 +970,6 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "false")
                 .param("reason", "The east face coverage is not disclosed")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
@@ -987,10 +984,9 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("REPORT_REVIEWER_INVALID"));
+        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
 
     MvcResult returned =
         mockMvc
@@ -1045,20 +1041,11 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
+        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
   }
 
   @Test
@@ -1076,19 +1063,9 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
 
@@ -1175,28 +1152,18 @@ class InspectionReportApiIntegrationTest {
         .isEqualTo(ReportStatus.RETURNED);
   }
 
-  private void reviewAndApproveVersion(UUID versionId) throws Exception {
+  private void reviewAndPublishVersion(UUID versionId) throws Exception {
     mockMvc
         .perform(
             post(
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
-  }
-
-  private void publishVersion(UUID versionId) throws Exception {
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk());
+        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
   }
 
   @Test
@@ -1208,8 +1175,7 @@ class InspectionReportApiIntegrationTest {
     ensureFindingsConfirmed();
     UUID versionId = createManualDraftVersion();
     verifyAndSubmitVersion(versionId);
-    reviewAndApproveVersion(versionId);
-    publishVersion(versionId);
+    reviewAndPublishVersion(versionId);
 
     mockMvc
         .perform(
@@ -1257,8 +1223,7 @@ class InspectionReportApiIntegrationTest {
     ensureFindingsConfirmed();
     UUID versionId = createManualDraftVersion();
     verifyAndSubmitVersion(versionId);
-    reviewAndApproveVersion(versionId);
-    publishVersion(versionId);
+    reviewAndPublishVersion(versionId);
 
     mockMvc
         .perform(
@@ -1441,7 +1406,6 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.outsiderId(), "CUSTOMER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
@@ -1458,27 +1422,18 @@ class InspectionReportApiIntegrationTest {
     UUID versionId = createManualDraftVersion();
     verifyAndSubmitVersion(versionId);
 
-    // No Organization Admin finding decision is required to approve the submitted report.
+    // The reviewer publishes the report in one action; findings are still handed off separately.
     mockMvc
         .perform(
             post(
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
+        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
 
     mockMvc
         .perform(
@@ -1517,8 +1472,8 @@ class InspectionReportApiIntegrationTest {
                 .path("id")
                 .stringValue());
 
-    // Drafting submits the report and moves inspection to UNDER_REVIEW; publication moves to
-    // COMPLETED.
+    // Drafting submits the report and moves inspection to UNDER_REVIEW; reviewer publication moves
+    // it to COMPLETED.
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT status FROM inspections WHERE id = ?",
@@ -1548,21 +1503,12 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .param("approve", "true")
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.versionNo").value(1))
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
+        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
   }
 
   private UUID uploadEvidence() throws Exception {

@@ -224,9 +224,7 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
-    if (latestExisting != null
-        && (latestExisting.getStatus() == ReportStatus.SUBMITTED
-            || latestExisting.getStatus() == ReportStatus.APPROVED)) {
+    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.SUBMITTED) {
       return toResponse(latestExisting, inspection.getInspectorId());
     }
 
@@ -259,9 +257,7 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
-    if (latestExisting != null
-        && (latestExisting.getStatus() == ReportStatus.SUBMITTED
-            || latestExisting.getStatus() == ReportStatus.APPROVED)) {
+    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.SUBMITTED) {
       return toResponse(latestExisting, inspection.getInspectorId());
     }
 
@@ -403,27 +399,52 @@ public class ReportService {
    * author may review, and returning a draft requires a reason.
    */
   @Transactional
-  public InspectionReportResponse reviewVersion(
-      UUID actorId, UUID inspectionId, UUID versionId, boolean approve, String reason) {
+  public ReportPublishedResponse reviewVersion(
+      UUID actorId, UUID inspectionId, UUID versionId, String reason, Locale locale) {
+    return reviewVersion(actorId, inspectionId, versionId, null, reason, locale);
+  }
+
+  @Transactional
+  public ReportPublishedResponse reviewVersion(
+      UUID actorId,
+      UUID inspectionId,
+      UUID versionId,
+      Boolean approve,
+      String reason,
+      Locale locale) {
+    if (Boolean.FALSE.equals(approve)) {
+      if (reason == null || reason.isBlank()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "REPORT_RETURN_REASON_REQUIRED",
+            "A reviewer return requires a reason");
+      }
+    } else if (Boolean.TRUE.equals(approve)
+        || (approve == null && (reason == null || reason.isBlank()))) {
+      return publish(actorId, inspectionId, versionId, locale);
+    }
+
     UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
-    if (!approve && (reason == null || reason.isBlank())) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "REPORT_RETURN_REASON_REQUIRED",
-          "A reviewer return requires a reason");
-    }
     try {
-      version.reviewBy(reviewer.id(), approve, reason);
+      version.reviewBy(reviewer.id(), false, reason);
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_REVIEWER_INVALID", ex.getMessage());
     }
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
-    if (!approve && inspection.getStatus() == InspectionStatus.UNDER_REVIEW) {
+    if (inspection.getStatus() == InspectionStatus.UNDER_REVIEW) {
       inspection.returnToDraft();
       inspections.saveAndFlush(inspection);
     }
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+    versions.saveAndFlush(version);
+    return new ReportPublishedResponse(
+        version.getId(),
+        version.getVersionNo(),
+        version.getStatus().name(),
+        version.getReturnReason(),
+        null,
+        List.of(),
+        inspection.getStatus());
   }
 
   @Transactional
@@ -456,14 +477,11 @@ public class ReportService {
     return toResponse(version, inspection.getInspectorId());
   }
 
-  /** MF3-11/12/13: publish, mark corrective items, and hand the approved findings to MF4. */
+  /**
+   * MF3-09/11/12/13: approve and publish, then make confirmed findings available for MF4 handoff.
+   */
   @Transactional
-  public ReportPublishedResponse publish(UUID actorId, UUID inspectionId, UUID versionId) {
-    return publish(actorId, inspectionId, versionId, Locale.ENGLISH);
-  }
-
-  @Transactional
-  public ReportPublishedResponse publish(
+  private ReportPublishedResponse publish(
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     UserAccess.ActiveUser publisher = requireQualifiedReviewer(actorId, inspectionId);
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
@@ -476,11 +494,8 @@ public class ReportService {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
 
-    // MF3-11: the PDF is the version's deliverable, so it is rendered and stored before the version
-    // can be marked published. A failure here rolls the publish back rather than leaving a
-    // published
-    // version with no artefact.
-    storePublishedArtefact(inspectionId, version, locale);
+    // Record the official report publication independently from PDF export. Rendering and object
+    // storage are deferred until a download is requested, so export failures cannot block review.
     versions.saveAndFlush(version);
 
     // MF3-11: a new published version supersedes any previously published version of this report.
@@ -493,7 +508,7 @@ public class ReportService {
       }
     }
 
-    // MF3-11 ends here: the PDF is stored, checksummed and the version is immutable. Corrective
+    // MF3-11 ends here: the published version is immutable. Corrective
     // action (MF3-12) and the MF4 handoff (MF3-13) are separate later acts, because a published
     // report is a record of observed condition and must not be reopened to carry maintenance
     // planning data.
@@ -534,6 +549,8 @@ public class ReportService {
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),
+        version.getStatus().name(),
+        version.getReturnReason(),
         version.getPublishedAt(),
         List.of(),
         inspection.getStatus());
@@ -591,6 +608,8 @@ public class ReportService {
       return new ReportPublishedResponse(
           version.getId(),
           version.getVersionNo(),
+          version.getStatus().name(),
+          version.getReturnReason(),
           version.getPublishedAt(),
           List.of(),
           inspection.getStatus());
@@ -637,6 +656,8 @@ public class ReportService {
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),
+        version.getStatus().name(),
+        version.getReturnReason(),
         version.getPublishedAt(),
         forwardedFindingIds,
         inspection.getStatus());
@@ -667,26 +688,6 @@ public class ReportService {
         inspection.getStatus().name(),
         reportVersionId,
         findingIdsJson);
-  }
-
-  /**
-   * MF3-11: renders the deliverable, stores it, and records its checksum on the version.
-   *
-   * <p>The object key is derived from the version id, so publishing a later version never
-   * overwrites the bytes stored for an already-published one. The checksum is taken from the bytes
-   * that were stored, so it describes what a later reader would actually download.
-   */
-  private void storePublishedArtefact(UUID inspectionId, InspectionReport version, Locale locale) {
-    byte[] pdf = renderArtefact(inspectionId, version, false, locale);
-    String objectKey = reportObjectKey(version.getId());
-    try (InputStream input = new ByteArrayInputStream(pdf)) {
-      requireObjectStore().put(objectKey, PDF_MEDIA_TYPE, pdf.length, input);
-    } catch (IOException ex) {
-      throw new BusinessException(
-          HttpStatus.SERVICE_UNAVAILABLE,
-          "REPORT_RENDER_UNAVAILABLE",
-          "The report document could not be stored; publication did not complete");
-    }
   }
 
   /**
@@ -730,17 +731,26 @@ public class ReportService {
       throw new BusinessException(
           HttpStatus.NOT_FOUND,
           "REPORT_ARTEFACT_NOT_FOUND",
-          "This report version has no stored document");
+          "Only published reports can be downloaded");
     }
     String objectKey = reportObjectKey(version.getId());
-    byte[] content;
-    try (InputStream input = requireObjectStore().open(objectKey)) {
-      content = input.readAllBytes();
-    } catch (IOException ex) {
-      throw new BusinessException(
-          HttpStatus.NOT_FOUND,
-          "REPORT_ARTEFACT_NOT_FOUND",
-          "This report version has no stored document");
+    byte[] content = null;
+    if (objectStore.isPresent()) {
+      try (InputStream input = objectStore.get().open(objectKey)) {
+        content = input.readAllBytes();
+      } catch (Exception ignored) {
+        // Not yet generated or cached; render on demand
+      }
+    }
+    if (content == null || content.length == 0) {
+      content = renderArtefact(inspectionId, version, false, Locale.ENGLISH);
+      if (objectStore.isPresent()) {
+        try (InputStream input = new ByteArrayInputStream(content)) {
+          objectStore.get().put(objectKey, PDF_MEDIA_TYPE, content.length, input);
+        } catch (Exception ignored) {
+          // Non-blocking cache update
+        }
+      }
     }
     return pdfResponse(content, "attachment", documentReference(version) + ".pdf");
   }
@@ -755,7 +765,7 @@ public class ReportService {
           "REPORT_RENDER_UNAVAILABLE",
           preview
               ? "The report preview could not be produced"
-              : "The report document could not be produced; publication did not complete");
+              : "The report PDF could not be produced; retry the download later");
     }
   }
 

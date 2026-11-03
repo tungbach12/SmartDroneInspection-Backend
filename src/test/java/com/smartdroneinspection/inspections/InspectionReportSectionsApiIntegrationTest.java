@@ -198,7 +198,8 @@ class InspectionReportSectionsApiIntegrationTest {
   void sectionsAreRefusedOnceTheVersionHasLeftAnEditableState() throws Exception {
     UUID versionId = insertDraftVersion();
     jdbcTemplate.update(
-        "UPDATE inspection_reports SET status = 'APPROVED' WHERE id = ?", versionId);
+        "UPDATE inspection_reports SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP WHERE id = ?",
+        versionId);
 
     mockMvc
         .perform(
@@ -350,11 +351,14 @@ class InspectionReportSectionsApiIntegrationTest {
   // ------------------------------------------------------------------ MF3-11 deliverable
 
   @Test
-  void publishingStoresTheDocumentInObjectStorage() throws Exception {
+  void pdfDownloadGeneratesAndCachesTheDocumentOnDemand() throws Exception {
     UUID versionId = approvedVersion();
     publish(versionId);
 
     String objectKey = reportObjectKey(versionId);
+    assertThat(objectExists(objectKey)).isFalse();
+
+    downloadDocument(versionId);
     byte[] stored = storedBytes(objectKey);
     assertThat(stored).isNotNull();
     assertThat(new String(stored, 0, 5, java.nio.charset.StandardCharsets.US_ASCII))
@@ -401,12 +405,13 @@ class InspectionReportSectionsApiIntegrationTest {
   void aRepeatPublishIsRefusedAndLeavesTheFirstArtefactIntact() throws Exception {
     UUID versionId = approvedVersion();
     publish(versionId);
+    downloadDocument(versionId);
     byte[] first = storedBytes(reportObjectKey(versionId));
 
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
@@ -419,11 +424,13 @@ class InspectionReportSectionsApiIntegrationTest {
   void publishingAFurtherVersionDoesNotOverwriteTheEarlierArtefact() throws Exception {
     UUID firstVersion = approvedVersion();
     publish(firstVersion);
+    downloadDocument(firstVersion);
     String firstKey = reportObjectKey(firstVersion);
     byte[] firstBytes = storedBytes(firstKey);
 
     UUID secondVersion = approvedVersion();
     publish(secondVersion);
+    downloadDocument(secondVersion);
 
     assertThat(reportObjectKey(secondVersion)).isNotEqualTo(firstKey);
     assertThat(storedBytes(firstKey)).isEqualTo(firstBytes);
@@ -689,11 +696,12 @@ class InspectionReportSectionsApiIntegrationTest {
     mockMvc
         .perform(
             post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/publish",
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
                 .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
   }
 
   private long countVersions() {
@@ -757,15 +765,6 @@ class InspectionReportSectionsApiIntegrationTest {
                         Map.of("executiveSummary", "Recorded condition assessment."))))
         .andExpect(status().isOk());
     authorVerifyAndSubmit(versionId);
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
-                    fixture.inspectionId(),
-                    versionId)
-                .param("approve", "true")
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk());
     return versionId;
   }
 

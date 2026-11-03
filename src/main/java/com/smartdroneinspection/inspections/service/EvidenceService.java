@@ -49,6 +49,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class EvidenceService {
 
   static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
+  static final long MAX_VIDEO_SIZE_BYTES = 500L * 1024 * 1024;
   private static final int MAX_EVIDENCE_PAGE_SIZE = 100;
   private static final Sort EVIDENCE_ORDER =
       Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
@@ -94,19 +95,6 @@ public class EvidenceService {
       Instant captureTime,
       BigDecimal latitude,
       BigDecimal longitude) {
-
-    Inspection inspection = requireAssignedInspection(actorId, inspectionId);
-    requireEvidenceEditable(inspectionId, inspection);
-    if (fieldSessionId != null) {
-      requireSessionInScope(inspection, fieldSessionId);
-    }
-    String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
-    if (!ALLOWED_TYPES.contains(contentType)) {
-      throw new BusinessException(
-          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-          "EVIDENCE_INVALID",
-          "Unsupported evidence type. Allowed: png, jpeg, webp, tiff, mp4, pdf");
-    }
     byte[] content;
     try {
       content = file.getBytes();
@@ -114,15 +102,54 @@ public class EvidenceService {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "The uploaded file could not be read");
     }
-    if (content.length == 0) {
+    return storeCapturedMedia(
+        actorId,
+        inspectionId,
+        fieldSessionId,
+        file.getOriginalFilename(),
+        file.getContentType(),
+        content,
+        captureTime,
+        latitude,
+        longitude,
+        null);
+  }
+
+  @Transactional
+  public EvidenceResponse storeCapturedMedia(
+      UUID actorId,
+      UUID inspectionId,
+      UUID fieldSessionId,
+      String rawFileName,
+      String rawContentType,
+      byte[] content,
+      Instant captureTime,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String locationDescription) {
+
+    Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    requireEvidenceEditable(inspectionId, inspection);
+    if (fieldSessionId != null) {
+      requireSessionInScope(inspection, fieldSessionId);
+    }
+    String contentType = rawContentType == null ? "" : rawContentType.toLowerCase(Locale.ROOT);
+    if (!ALLOWED_TYPES.contains(contentType)) {
+      throw new BusinessException(
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          "EVIDENCE_INVALID",
+          "Unsupported evidence type. Allowed: png, jpeg, webp, tiff, mp4, pdf");
+    }
+    if (content == null || content.length == 0) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "The uploaded file is empty");
     }
-    if (content.length > MAX_SIZE_BYTES) {
+    long maxAllowedBytes = "video/mp4".equals(contentType) ? MAX_VIDEO_SIZE_BYTES : MAX_SIZE_BYTES;
+    if (content.length > maxAllowedBytes) {
       throw new BusinessException(
           HttpStatus.PAYLOAD_TOO_LARGE,
           "EVIDENCE_TOO_LARGE",
-          "Maximum evidence size is " + (MAX_SIZE_BYTES / (1024 * 1024)) + " MB");
+          "Maximum evidence size is " + (maxAllowedBytes / (1024 * 1024)) + " MB");
     }
     // Report 3 MF3-02 requires corrupt input to be identified with a corrective action. Declared
     // type alone is not proof of content, so image bytes must decode before they are stored.
@@ -165,7 +192,7 @@ public class EvidenceService {
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "Longitude must be between -180 and 180");
     }
 
-    String fileName = sanitizeFileName(file.getOriginalFilename());
+    String fileName = sanitizeFileName(rawFileName);
     Optional<Evidence> sameName =
         evidence.findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(inspectionId, fileName);
     if (sameName.isPresent()) {
@@ -190,6 +217,10 @@ public class EvidenceService {
           "Evidence storage is unavailable");
     }
 
+    String normalizedLocation =
+        locationDescription == null || locationDescription.isBlank()
+            ? null
+            : locationDescription.trim();
     Evidence record =
         new Evidence(
             inspectionId,
@@ -201,7 +232,7 @@ public class EvidenceService {
             captureTime,
             latitude,
             longitude,
-            null,
+            normalizedLocation,
             Instant.now());
     Evidence savedRecord = evidence.saveAndFlush(record);
     syncFindingsConfirmationAfterEvidenceEdit(inspection);
@@ -343,7 +374,6 @@ public class EvidenceService {
         reports.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (report == null) return;
     if (report.getStatus() == ReportStatus.SUBMITTED
-        || report.getStatus() == ReportStatus.APPROVED
         || report.getStatus() == ReportStatus.PUBLISHED
         || report.getStatus() == ReportStatus.SUPERSEDED) {
       throw new BusinessException(

@@ -8,7 +8,6 @@ package com.smartdroneinspection.inspections.domain.enums;
 public enum ReportStatus {
   SUBMITTED,
   RETURNED,
-  APPROVED,
   PUBLISHED,
   SUPERSEDED
 }

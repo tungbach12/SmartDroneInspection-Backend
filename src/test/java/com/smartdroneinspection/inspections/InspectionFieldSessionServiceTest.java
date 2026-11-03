@@ -360,9 +360,9 @@ class InspectionFieldSessionServiceTest {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_uploaded_at, status,
+        INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, status,
           planned_start_at, planned_end_at)
-        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'SCHEDULED', ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', 'SCHEDULED', ?, ?)
         """,
         id,
         organizationId,

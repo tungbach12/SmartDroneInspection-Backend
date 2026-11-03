@@ -94,11 +94,10 @@ public final class InspectionTestFixture {
     UUID organizationId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status)
+        VALUES (?, ?, ?, 'ACTIVE')
         """,
         organizationId,
-        label + " " + organizationId,
         label + " " + organizationId,
         "ORG-" + organizationId);
     return organizationId;

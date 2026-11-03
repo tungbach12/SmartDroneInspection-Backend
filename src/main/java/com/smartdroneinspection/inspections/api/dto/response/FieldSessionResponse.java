@@ -12,4 +12,29 @@ public record FieldSessionResponse(
     Instant endedAt,
     String postponementReason,
     String abortReason,
-    String outcomeNotes) {}
+    String outcomeNotes,
+    UUID flightVideoEvidenceId) {
+
+  public FieldSessionResponse(
+      UUID id,
+      UUID inspectionId,
+      String status,
+      String preFlightChecklistNote,
+      Instant startedAt,
+      Instant endedAt,
+      String postponementReason,
+      String abortReason,
+      String outcomeNotes) {
+    this(
+        id,
+        inspectionId,
+        status,
+        preFlightChecklistNote,
+        startedAt,
+        endedAt,
+        postponementReason,
+        abortReason,
+        outcomeNotes,
+        null);
+  }
+}

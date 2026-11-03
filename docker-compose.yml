@@ -67,6 +67,30 @@ services:
     networks:
       - smartdroneinspection-network
 
+  smartdronehub:
+    build:
+      context: ./smartdronehub
+      dockerfile: Dockerfile
+    image: smartdroneinspection-smartdronehub:latest
+    container_name: smartdroneinspection-smartdronehub
+    restart: unless-stopped
+    environment:
+      MAVLINK_ENABLED: ${SMARTDRONEHUB_MAVLINK_ENABLED:-true}
+      MAVLINK_CONNECTION: ${SMARTDRONEHUB_MAVLINK_CONNECTION:-udpin:0.0.0.0:14551}
+      TELEMETRY_STALE_SECONDS: ${SMARTDRONEHUB_TELEMETRY_STALE_SECONDS:-5}
+      SIMULATION_STEP_SECONDS: ${SMARTDRONEHUB_SIMULATION_STEP_SECONDS:-2}
+    ports:
+      - "${SMARTDRONEHUB_HOST_BIND:-127.0.0.1}:${SMARTDRONEHUB_PORT:-8090}:8090"
+      - "${SMARTDRONEHUB_MAVLINK_HOST_BIND:-0.0.0.0}:${SMARTDRONEHUB_MAVLINK_PORT:-14551}:14551/udp"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+    networks:
+      - smartdroneinspection-network
+
   backend:
     build:
       context: .
@@ -105,6 +129,9 @@ services:
       YOLO_INFERENCE_PREDICT_PATH: ${YOLO_INFERENCE_PREDICT_PATH:-/predict}
       YOLO_INFERENCE_CONNECT_TIMEOUT: ${YOLO_INFERENCE_CONNECT_TIMEOUT:-2s}
       YOLO_INFERENCE_READ_TIMEOUT: ${YOLO_INFERENCE_READ_TIMEOUT:-30s}
+      SMARTDRONEHUB_BASE_URL: ${SMARTDRONEHUB_BASE_URL:-http://smartdronehub:8090}
+      SMARTDRONEHUB_CONNECT_TIMEOUT: ${SMARTDRONEHUB_CONNECT_TIMEOUT:-2s}
+      SMARTDRONEHUB_READ_TIMEOUT: ${SMARTDRONEHUB_READ_TIMEOUT:-5s}
       COMPATIBLE_VISION_ENABLED: ${COMPATIBLE_VISION_ENABLED:-${REPORT_DRAFT_ENABLED:-false}}
       COMPATIBLE_VISION_BASE_URL: ${COMPATIBLE_VISION_BASE_URL:-${REPORT_DRAFT_BASE_URL:-}}
       COMPATIBLE_VISION_MODEL: ${COMPATIBLE_VISION_MODEL:-${REPORT_DRAFT_MODEL:-}}

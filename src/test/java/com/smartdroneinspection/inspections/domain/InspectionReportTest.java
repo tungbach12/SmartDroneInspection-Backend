@@ -34,15 +34,25 @@ class InspectionReportTest {
   }
 
   @Test
-  void reviewerApprovalMovesToApproved() {
+  void reviewerApprovalPublishesReportDirectly() {
     InspectionReport version = draft();
 
-    version.reviewBy(reviewer, true, null);
+    version.publish(reviewer, author);
 
-    assertThat(version.getStatus()).isEqualTo(ReportStatus.APPROVED);
+    assertThat(version.getStatus()).isEqualTo(ReportStatus.PUBLISHED);
     assertThat(version.getReviewerUserId()).isEqualTo(reviewer);
     assertThat(version.getReviewedAt()).isNotNull();
+    assertThat(version.getPublishedAt()).isNotNull();
     assertThat(version.getReturnReason()).isNull();
+  }
+
+  @Test
+  void reviewDoesNotCreateAnIntermediateApprovedStatus() {
+    InspectionReport version = draft();
+
+    assertThatThrownBy(() -> version.reviewBy(reviewer, true, null))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("publishes the report");
   }
 
   @Test
@@ -96,7 +106,6 @@ class InspectionReportTest {
   @Test
   void publishedVersionRemainsImmutableWhenSuperseded() {
     InspectionReport version = draft();
-    version.reviewBy(reviewer, true, null);
     version.publish(reviewer, author);
 
     assertThat(version.getStatus()).isEqualTo(ReportStatus.PUBLISHED);
@@ -111,7 +120,7 @@ class InspectionReportTest {
   @Test
   void reviewIsRejectedWhenTheVersionIsNotSubmitted() {
     InspectionReport version = draft();
-    version.reviewBy(reviewer, true, null); // now APPROVED
+    version.publish(reviewer, author); // now PUBLISHED
     assertThatThrownBy(() -> version.reviewBy(reviewer, true, null))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("expected one of");
