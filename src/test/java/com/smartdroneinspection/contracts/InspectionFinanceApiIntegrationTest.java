@@ -99,8 +99,8 @@ class InspectionFinanceApiIntegrationTest {
     orgId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, 'Finance Test Ltd', 'Finance Ltd', ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status)
+        VALUES (?, 'Finance Ltd', ?, 'ACTIVE')
         """,
         orgId,
         "ORG-" + orgId.toString().substring(0, 18));
@@ -137,7 +137,7 @@ class InspectionFinanceApiIntegrationTest {
         inspectorUserId,
         "VN-UAV-PILOT-2026",
         "CLASS_A",
-        Instant.now().plus(365, ChronoUnit.DAYS),
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
         "licenses/pilot-cert.pdf");
 
     // Register Inspector in Partner Registry
@@ -511,15 +511,8 @@ class InspectionFinanceApiIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
-                    inspectionId,
-                    reportVersionId)
-                .with(principal(managerUserId, "MANAGER")))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
     // -------------------------------------------------------------------------
     // Phase 4: Deliverable Gating, Customer Acceptance, Payment Confirmation & Payout
@@ -627,6 +620,7 @@ class InspectionFinanceApiIntegrationTest {
     assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(updatedOcc.getPaymentReference()).isEqualTo("BANK-TRANSFER-5555");
     assertThat(updatedOcc.getPaymentConfirmedAt()).isNotNull();
+    assertThat(updatedOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
 
     // 4.9 Final deliverable document is now UNLOCKED for Customer!
     mockMvc
@@ -686,6 +680,11 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(jsonPath("$.data.serviceBaseAmount").value(10000000.00))
         .andExpect(jsonPath("$.data.vatAmount").value(1000000.00))
         .andExpect(jsonPath("$.data.paymentStatus").value("PAID"))
+        .andExpect(jsonPath("$.data.invoice.totalPrice").value(11000000.00))
+        .andExpect(jsonPath("$.data.payment.status").value("PAID"))
+        .andExpect(jsonPath("$.data.payment.method").value("MANUAL_WIRE"))
+        .andExpect(jsonPath("$.data.payment.reference").doesNotExist())
+        .andExpect(jsonPath("$.data.payout").doesNotExist())
         .andExpect(jsonPath("$.data.commissionRate").doesNotExist())
         .andExpect(jsonPath("$.data.commissionAmount").doesNotExist())
         .andExpect(jsonPath("$.data.inspectorGrossPayout").doesNotExist())
@@ -709,7 +708,13 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(jsonPath("$.data.tncnRate").value(10.00))
         .andExpect(jsonPath("$.data.tncnAmount").value(850000.00))
         .andExpect(jsonPath("$.data.inspectorNetPayout").value(7650000.00))
-        .andExpect(jsonPath("$.data.payoutStatus").value("PAID"));
+        .andExpect(jsonPath("$.data.payoutStatus").value("PAID"))
+        .andExpect(jsonPath("$.data.invoice.totalPrice").value(11000000.00))
+        .andExpect(jsonPath("$.data.payment.status").value("PAID"))
+        .andExpect(jsonPath("$.data.payment.method").value("MANUAL_WIRE"))
+        .andExpect(jsonPath("$.data.payment.reference").doesNotExist())
+        .andExpect(jsonPath("$.data.payout.inspectorId").value(inspectorUserId.toString()))
+        .andExpect(jsonPath("$.data.payout.status").value("PAID"));
 
     // 5.3 Manager financial view: full transparency
     mockMvc
@@ -728,7 +733,13 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(jsonPath("$.data.tncnAmount").value(850000.00))
         .andExpect(jsonPath("$.data.inspectorNetPayout").value(7650000.00))
         .andExpect(jsonPath("$.data.paymentStatus").value("PAID"))
-        .andExpect(jsonPath("$.data.payoutStatus").value("PAID"));
+        .andExpect(jsonPath("$.data.payoutStatus").value("PAID"))
+        .andExpect(jsonPath("$.data.invoice.totalPrice").value(11000000.00))
+        .andExpect(jsonPath("$.data.payment.status").value("PAID"))
+        .andExpect(jsonPath("$.data.payment.method").value("MANUAL_WIRE"))
+        .andExpect(jsonPath("$.data.payment.reference").value("BANK-TRANSFER-5555"))
+        .andExpect(jsonPath("$.data.payout.inspectorId").value(inspectorUserId.toString()))
+        .andExpect(jsonPath("$.data.payout.reference").value("PAYOUT-BANK-8888"));
 
     // 5.4 Snapshot immutability: Admin updates settlement rates for future work
     mockMvc

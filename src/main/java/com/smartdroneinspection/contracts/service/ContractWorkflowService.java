@@ -1198,7 +1198,8 @@ public class ContractWorkflowService
         netPayout,
         occurrence.getPayoutStatus() != null ? occurrence.getPayoutStatus().name() : null,
         occurrence.getPayoutReference(),
-        requestDescription);
+        requestDescription,
+        occurrence.getPaymentMethod());
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {

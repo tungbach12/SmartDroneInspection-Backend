@@ -38,7 +38,10 @@ public record ServiceRequestOccurrenceResponse(
     Instant paymentConfirmedAt,
     OccurrencePayoutStatus payoutStatus,
     Instant payoutRecordedAt,
-    Instant reportAcceptedAt) {
+    Instant reportAcceptedAt,
+    OccurrenceFinanceResponse.ServiceInvoiceSummary invoice,
+    OccurrenceFinanceResponse.ServicePaymentSummary payment,
+    OccurrenceFinanceResponse.InspectorPayoutSummary payout) {
 
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
     return from(occurrence, null);
@@ -75,6 +78,23 @@ public record ServiceRequestOccurrenceResponse(
         occurrence.getPaymentConfirmedAt(),
         occurrence.getPayoutStatus(),
         occurrence.getPayoutRecordedAt(),
-        occurrence.getReportAcceptedAt());
+        occurrence.getReportAcceptedAt(),
+        new OccurrenceFinanceResponse.ServiceInvoiceSummary(
+            occurrence.getTotalPrice(),
+            occurrence.getVatRate(),
+            occurrence.getCommissionRate(),
+            occurrence.getTncnRate(),
+            occurrence.getReportAcceptedAt()),
+        new OccurrenceFinanceResponse.ServicePaymentSummary(
+            occurrence.getPaymentStatus(),
+            occurrence.getPayosOrderCode(),
+            occurrence.getPaymentMethod(),
+            occurrence.getPaymentReference(),
+            occurrence.getPaymentConfirmedAt()),
+        new OccurrenceFinanceResponse.InspectorPayoutSummary(
+            occurrence.getPayout().getInspectorId(),
+            occurrence.getPayoutStatus(),
+            occurrence.getPayoutReference(),
+            occurrence.getPayoutRecordedAt()));
   }
 }

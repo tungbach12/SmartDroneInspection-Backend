@@ -296,16 +296,23 @@ class V25TargetSchemaFoundationTest {
                     "recipient_user_id", "organization_id", "event_type", "channel", "created_at")),
             Map.entry(
                 "service_request_occurrences",
+                Set.of("request_id", "inspection_id", "inspector_id", "drone_id", "status")),
+            Map.entry(
+                "service_invoices",
+                Set.of("occurrence_id", "total_price", "vat_rate", "report_accepted_at")),
+            Map.entry(
+                "service_payments",
+                Set.of("occurrence_id", "payment_status", "payos_order_code", "payment_method")),
+            Map.entry(
+                "inspector_payouts",
                 Set.of(
-                    "request_id",
-                    "inspection_id",
+                    "occurrence_id",
                     "inspector_id",
-                    "drone_id",
-                    "status",
-                    "payos_order_code",
-                    "payment_method")));
+                    "payout_status",
+                    "payout_reference",
+                    "payout_recorded_at")));
 
-    assertThat(targetColumns).hasSize(26);
+    assertThat(targetColumns).hasSize(29);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate
