@@ -118,8 +118,8 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(25);
-    assertThat(versions.getLast()).isEqualTo("25");
+    assertThat(versions).hasSize(28);
+    assertThat(versions.getLast()).isEqualTo("28");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
