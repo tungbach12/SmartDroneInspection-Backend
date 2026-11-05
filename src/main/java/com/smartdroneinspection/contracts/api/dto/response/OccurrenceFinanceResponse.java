@@ -34,12 +34,58 @@ public record OccurrenceFinanceResponse(
     String payoutReference,
     Instant payoutRecordedAt,
     UUID payoutRecordedByUserId,
-    String accountingDisclaimer) {
+    String accountingDisclaimer,
+    ServiceInvoiceSummary invoice,
+    ServicePaymentSummary payment,
+    InspectorPayoutSummary payout) {
+
+  public record ServiceInvoiceSummary(
+      BigDecimal totalPrice,
+      BigDecimal vatRate,
+      BigDecimal commissionRate,
+      BigDecimal tncnRate,
+      Instant reportAcceptedAt) {}
+
+  public record ServicePaymentSummary(
+      OccurrencePaymentStatus status,
+      Long payosOrderCode,
+      String method,
+      String reference,
+      Instant confirmedAt) {}
+
+  public record InspectorPayoutSummary(
+      UUID inspectorId, OccurrencePayoutStatus status, String reference, Instant recordedAt) {}
 
   private static final String MVP_DISCLAIMER =
       "MVP assumption: Tax base = Inspector gross payout after platform commission and before TNCN. "
           + "Configured TNCN rate is applied to this base. Base, rate, and withholding are snapshotted per occurrence. "
           + "This is a simplified product assumption for MVP and accounting validation, not statutory tax advice.";
+
+  private static ServiceInvoiceSummary invoiceSummary(ServiceRequestOccurrence occurrence) {
+    return new ServiceInvoiceSummary(
+        occurrence.getTotalPrice(),
+        occurrence.getVatRate(),
+        occurrence.getCommissionRate(),
+        occurrence.getTncnRate(),
+        occurrence.getReportAcceptedAt());
+  }
+
+  private static ServicePaymentSummary paymentSummary(ServiceRequestOccurrence occurrence) {
+    return new ServicePaymentSummary(
+        occurrence.getPaymentStatus(),
+        occurrence.getPayosOrderCode(),
+        occurrence.getPaymentMethod(),
+        occurrence.getPaymentReference(),
+        occurrence.getPaymentConfirmedAt());
+  }
+
+  private static InspectorPayoutSummary payoutSummary(ServiceRequestOccurrence occurrence) {
+    return new InspectorPayoutSummary(
+        occurrence.getPayout().getInspectorId(),
+        occurrence.getPayoutStatus(),
+        occurrence.getPayoutReference(),
+        occurrence.getPayoutRecordedAt());
+  }
 
   /** Full financial view for Managers and Admins. */
   public static OccurrenceFinanceResponse forManager(ServiceRequestOccurrence occurrence) {
@@ -70,7 +116,10 @@ public record OccurrenceFinanceResponse(
         occurrence.getPayoutReference(),
         occurrence.getPayoutRecordedAt(),
         occurrence.getPayoutRecordedByUserId(),
-        MVP_DISCLAIMER);
+        MVP_DISCLAIMER,
+        invoiceSummary(occurrence),
+        paymentSummary(occurrence),
+        payoutSummary(occurrence));
   }
 
   /**
@@ -106,6 +155,19 @@ public record OccurrenceFinanceResponse(
         null,
         null,
         null,
+        null,
+        new ServiceInvoiceSummary(
+            occurrence.getTotalPrice(),
+            occurrence.getVatRate(),
+            null,
+            null,
+            occurrence.getReportAcceptedAt()),
+        new ServicePaymentSummary(
+            occurrence.getPaymentStatus(),
+            occurrence.getPayosOrderCode(),
+            occurrence.getPaymentMethod(),
+            null,
+            occurrence.getPaymentConfirmedAt()),
         null);
   }
 
@@ -141,6 +203,14 @@ public record OccurrenceFinanceResponse(
         occurrence.getPayoutReference(),
         occurrence.getPayoutRecordedAt(),
         null,
-        MVP_DISCLAIMER);
+        MVP_DISCLAIMER,
+        invoiceSummary(occurrence),
+        new ServicePaymentSummary(
+            occurrence.getPaymentStatus(),
+            occurrence.getPayosOrderCode(),
+            occurrence.getPaymentMethod(),
+            null,
+            occurrence.getPaymentConfirmedAt()),
+        payoutSummary(occurrence));
   }
 }

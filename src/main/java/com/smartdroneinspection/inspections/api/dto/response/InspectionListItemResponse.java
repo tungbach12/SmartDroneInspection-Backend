@@ -34,7 +34,8 @@ public record InspectionListItemResponse(
     BigDecimal commissionRate,
     BigDecimal commissionAmount,
     BigDecimal inspectorNetPayout,
-    String payoutStatus) {
+    String payoutStatus,
+    String paymentMethod) {
 
   public InspectionListItemResponse(
       UUID id,
@@ -84,6 +85,7 @@ public record InspectionListItemResponse(
         null,
         null,
         null,
+        null,
         null);
   }
 
@@ -129,6 +131,7 @@ public record InspectionListItemResponse(
         null,
         null,
         null,
+        null,
         null);
   }
 
@@ -161,6 +164,7 @@ public record InspectionListItemResponse(
         reportVersionNo,
         pendingAction,
         "INITIAL",
+        null,
         null,
         null,
         null,

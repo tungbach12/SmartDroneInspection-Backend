@@ -141,8 +141,8 @@ class PayOSPaymentIntegrationTest {
     orgId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, 'PayOS Test Corp', 'PayOS Corp', ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status)
+        VALUES (?, 'PayOS Corp', ?, 'ACTIVE')
         """,
         orgId,
         "ORG-" + orgId.toString().substring(0, 18));
@@ -150,8 +150,8 @@ class PayOSPaymentIntegrationTest {
     UUID otherOrgId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, 'Other Org Corp', 'Other Corp', ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status)
+        VALUES (?, 'Other Corp', ?, 'ACTIVE')
         """,
         otherOrgId,
         "ORG-" + otherOrgId.toString().substring(0, 18));
@@ -210,7 +210,7 @@ class PayOSPaymentIntegrationTest {
         inspectorUserId,
         "VN-UAV-PILOT-2026",
         "CLASS_A",
-        Instant.now().plus(365, ChronoUnit.DAYS),
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
         "licenses/pilot-cert.pdf");
 
     // Register Inspector in Partner Registry
@@ -407,6 +407,7 @@ class PayOSPaymentIntegrationTest {
     assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(settledOcc.getPaymentReference()).isEqualTo("PAYOS-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
+    assertThat(settledOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
 
     // 8. Idempotency: Duplicate webhook delivery is a safe no-op returning 200 OK
     mockMvc
@@ -712,16 +713,8 @@ class PayOSPaymentIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
-        .andExpect(status().isOk());
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
-                    inspectionId,
-                    reportVersionId)
-                .with(principal(managerUserId, "MANAGER")))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
     // 12. Customer accepts report
     mockMvc

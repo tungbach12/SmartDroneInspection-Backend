@@ -29,11 +29,14 @@ public interface ServiceRequestOccurrenceRepository
   Optional<ServiceRequestOccurrence> findWithLockByInspectionId(
       @Param("inspectionId") UUID inspectionId);
 
-  Optional<ServiceRequestOccurrence> findByPayosOrderCode(Long payosOrderCode);
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment where payment.payosOrderCode = :payosOrderCode")
+  Optional<ServiceRequestOccurrence> findByPayosOrderCode(
+      @Param("payosOrderCode") Long payosOrderCode);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
-      "select occurrence from ServiceRequestOccurrence occurrence where occurrence.payosOrderCode = :orderCode")
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment where payment.payosOrderCode = :orderCode")
   Optional<ServiceRequestOccurrence> findWithLockByPayosOrderCode(
       @Param("orderCode") Long orderCode);
 

@@ -592,16 +592,8 @@ class VnPayPaymentIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
-        .andExpect(status().isOk());
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
-                    inspectionId,
-                    reportVersionId)
-                .with(principal(managerUserId, "MANAGER")))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
     mockMvc
         .perform(

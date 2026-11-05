@@ -60,6 +60,9 @@ class FullDatabaseSchemaMigrationTest {
             "service_request_messages",
             "service_request_quotes",
             "service_request_occurrences",
+            "service_invoices",
+            "service_payments",
+            "inspector_payouts",
             "inspection_finance_settings",
             "inspector_flight_logs",
             "inspector_profiles",
@@ -67,7 +70,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(37);
+    assertThat(expected).hasSize(40);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -82,6 +85,15 @@ class FullDatabaseSchemaMigrationTest {
             "registration_otp_challenges",
             "password_reset_otp_challenges");
     assertThat(actual).contains("inspector_flight_logs");
+  }
+
+  private void assertColumns(String table, String... expectedColumns) {
+    List<String> columns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?",
+            String.class,
+            table);
+    assertThat(columns).as("columns for %s", table).contains(expectedColumns);
   }
 
   @Test
@@ -118,8 +130,8 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(28);
-    assertThat(versions.getLast()).isEqualTo("28");
+    assertThat(versions).hasSize(29);
+    assertThat(versions.getLast()).isEqualTo("29");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -141,7 +153,25 @@ class FullDatabaseSchemaMigrationTest {
             """,
             String.class);
     assertThat(occurrenceColumns)
-        .contains("request_id", "inspector_id", "drone_id", "payos_order_code", "payment_method");
+        .contains("request_id", "inspector_id", "drone_id", "inspection_id")
+        .doesNotContain(
+            "total_price", "payment_status", "payos_order_code", "payment_method", "payout_status");
+
+    assertColumns(
+        "service_invoices", "occurrence_id", "total_price", "vat_rate", "report_accepted_at");
+    assertColumns(
+        "service_payments",
+        "occurrence_id",
+        "payment_status",
+        "payos_order_code",
+        "payment_method");
+    assertColumns(
+        "inspector_payouts",
+        "occurrence_id",
+        "inspector_id",
+        "payout_status",
+        "payout_reference",
+        "payout_recorded_at");
 
     List<String> otpColumns =
         jdbcTemplate.queryForList(
