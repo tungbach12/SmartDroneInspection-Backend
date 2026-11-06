@@ -8,9 +8,11 @@ import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
+import com.smartdroneinspection.assets.domain.ChecklistTemplate;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.util.Locale;
@@ -27,16 +29,19 @@ public class AssetService {
 
   private final AssetRepository assets;
   private final AssetCategoryRepository categories;
+  private final ChecklistTemplateRepository checklistTemplates;
   private final UserAccess userAccess;
   private final AirspaceAdvisoryService airspaceAdvisory;
 
   public AssetService(
       AssetRepository assets,
       AssetCategoryRepository categories,
+      ChecklistTemplateRepository checklistTemplates,
       UserAccess userAccess,
       AirspaceAdvisoryService airspaceAdvisory) {
     this.assets = assets;
     this.categories = categories;
+    this.checklistTemplates = checklistTemplates;
     this.userAccess = userAccess;
     this.airspaceAdvisory = airspaceAdvisory;
   }
@@ -64,6 +69,19 @@ public class AssetService {
           HttpStatus.CONFLICT, "DUPLICATE_CODE", "Asset code already exists");
     }
 
+    java.util.List<String> defaultCategoryItems =
+        checklistTemplates
+            .findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
+                "CATEGORY_INSPECTION_ITEM", category.getId())
+            .stream()
+            .filter(ChecklistTemplate::isActive)
+            .map(ChecklistTemplate::getLabel)
+            .toList();
+    java.util.List<String> initialInspectionItems =
+        !defaultCategoryItems.isEmpty()
+            ? defaultCategoryItems
+            : (request.inspectionItems() != null ? request.inspectionItems() : java.util.List.of());
+
     Asset asset =
         new Asset(
             organizationId,
@@ -75,7 +93,7 @@ public class AssetService {
             request.latitude(),
             request.longitude(),
             request.ownershipInformation(),
-            request.inspectionItems(),
+            initialInspectionItems,
             actorId);
 
     Asset savedAsset = assets.saveAndFlush(asset);
@@ -140,6 +158,44 @@ public class AssetService {
         request.longitude(),
         request.ownershipInformation(),
         request.inspectionItems());
+    return toResponse(assets.saveAndFlush(asset));
+  }
+
+  @Transactional
+  public AssetResponse updateInspectionItems(
+      UUID actorId, UUID assetId, java.util.List<String> inspectionItems) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    Asset asset;
+    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
+      asset =
+          assets
+              .findById(assetId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+    } else {
+      UUID organizationId = requireOrganization(actor);
+      asset =
+          assets
+              .findByIdAndOrganizationId(assetId, organizationId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+    }
+    if (asset.getStatus() == AssetStatus.RETIRED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
+    }
+    java.util.List<String> sanitized =
+        inspectionItems == null
+            ? java.util.List.of()
+            : inspectionItems.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .toList();
+    asset.setInspectionItems(sanitized);
     return toResponse(assets.saveAndFlush(asset));
   }
 

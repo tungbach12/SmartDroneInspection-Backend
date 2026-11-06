@@ -316,6 +316,11 @@ public class InspectionDroneHubService {
       {-15.0, 15.0, 13.5, 3.2, 135.0, 5},
       {1.5, 14.8, 10.5, 1.2, 180.0, 6}
     };
+    int[] batteries = {98, 97, 95, 93, 92, 90, 89, 88, 86, 85, 84};
+    String[] modes = {
+      "GUIDED", "GUIDED", "GUIDED", "LOITER", "GUIDED", "LOITER", "GUIDED", "GUIDED", "LOITER",
+      "RTL", "LAND"
+    };
     java.util.List<SmartDroneHubPort.FlightTracePoint> pts = new java.util.ArrayList<>();
     for (int i = 0; i < offsets.length; i++) {
       double dx = offsets[i][0];
@@ -329,6 +334,8 @@ public class InspectionDroneHubService {
               offsets[i][2],
               offsets[i][3],
               offsets[i][4],
+              batteries[i],
+              modes[i],
               (int) offsets[i][5],
               t0.plusSeconds(i * 16L)));
     }

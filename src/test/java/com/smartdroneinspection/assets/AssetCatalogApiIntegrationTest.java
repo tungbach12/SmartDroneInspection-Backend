@@ -108,6 +108,52 @@ class AssetCatalogApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
 
+  @Test
+  void adminManagesPreFlightPostFlightAndCategoryChecklistTemplates() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/asset-categories/checklist-templates")
+                .param("type", "PRE_FLIGHT")
+                .with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data[0].templateType").value("PRE_FLIGHT"));
+
+    String createdBody =
+        mockMvc
+            .perform(
+                post("/api/v1/asset-categories/checklist-templates")
+                    .with(admin(fixture.adminId()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        "{\"templateType\":\"CATEGORY_INSPECTION_ITEM\",\"categoryId\":\""
+                            + fixture.categoryId()
+                            + "\",\"label\":\"Curtain wall silicone sealant\",\"sortOrder\":1}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.data.label").value("Curtain wall silicone sealant"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String templateId = com.jayway.jsonpath.JsonPath.read(createdBody, "$.data.id");
+
+    mockMvc
+        .perform(
+            put("/api/v1/asset-categories/checklist-templates/{templateId}", templateId)
+                .with(admin(fixture.adminId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"label\":\"Curtain wall & structural glazing\",\"sortOrder\":2,\"active\":true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.label").value("Curtain wall & structural glazing"));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/asset-categories/checklist-templates/{templateId}", templateId)
+                .with(admin(fixture.adminId())))
+        .andExpect(status().isNoContent());
+  }
+
   private org.springframework.test.web.servlet.request.RequestPostProcessor admin(UUID id) {
     return jwt()
         .jwt(t -> t.subject(id.toString()))
