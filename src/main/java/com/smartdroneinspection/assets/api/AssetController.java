@@ -1,6 +1,7 @@
 package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateAssetRequest;
+import com.smartdroneinspection.assets.api.dto.request.UpdateAssetInspectionItemsRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
@@ -64,6 +65,16 @@ public class AssetController {
       @PathVariable UUID assetId,
       @Valid @RequestBody UpdateAssetRequest request) {
     return ApiResponse.success(assets.update(subject(jwt), assetId, request));
+  }
+
+  @PutMapping("/{assetId}/inspection-items")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  public ApiResponse<AssetResponse> updateInspectionItems(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID assetId,
+      @Valid @RequestBody UpdateAssetInspectionItemsRequest request) {
+    return ApiResponse.success(
+        assets.updateInspectionItems(subject(jwt), assetId, request.inspectionItems()));
   }
 
   @PostMapping("/{assetId}/retire")

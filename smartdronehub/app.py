@@ -80,6 +80,8 @@ class FlightTracePoint(BaseModel):
     altitudeMeters: float | None = None
     groundSpeedMps: float | None = None
     headingDeg: float | None = None
+    batteryPercent: int | None = None
+    flightMode: str | None = None
     waypoint: int | None = None
     recordedAt: datetime
 
@@ -140,6 +142,13 @@ class TelemetryStore:
         kind = msg.get_type()
         with self._lock:
             if kind == "HEARTBEAT":
+                # Ignore GCS (Mission Planner) heartbeats (type=6 / autopilot=8 / srcSystem=255)
+                if (
+                    getattr(msg, "type", 0) == 6
+                    or getattr(msg, "autopilot", 0) == 8
+                    or getattr(msg, "get_srcSystem", lambda: 1)() == 255
+                ):
+                    return
                 self._snapshot["flight_mode"] = mode_name or str(getattr(msg, "custom_mode", "UNKNOWN"))
                 self._snapshot["armed"] = bool(msg.base_mode & 128)
                 self._snapshot["heartbeat_monotonic"] = time.monotonic()
@@ -155,40 +164,130 @@ class TelemetryStore:
                 self._snapshot["last_position"] = (latitude, longitude)
                 self._snapshot["latitude"] = latitude
                 self._snapshot["longitude"] = longitude
-                self._snapshot["altitude_meters"] = msg.relative_alt / 1000.0
-                self._snapshot["ground_speed_mps"] = math.hypot(msg.vx, msg.vy) / 100.0
-                self._snapshot["heading_deg"] = None if msg.hdg == 65535 else msg.hdg / 100.0
+                self._snapshot["altitude_meters"] = round(msg.relative_alt / 1000.0, 2)
+                self._snapshot["ground_speed_mps"] = round(math.hypot(msg.vx, msg.vy) / 100.0, 2)
+                self._snapshot["heading_deg"] = None if msg.hdg == 65535 else round(msg.hdg / 100.0, 1)
             elif kind == "VFR_HUD":
-                self._snapshot["ground_speed_mps"] = float(msg.groundspeed)
-                self._snapshot["heading_deg"] = float(msg.heading)
-                self._snapshot["altitude_meters"] = float(msg.alt)
+                self._snapshot["ground_speed_mps"] = round(float(msg.groundspeed), 2)
+                self._snapshot["heading_deg"] = round(float(msg.heading), 1)
+                if self._snapshot["altitude_meters"] is None:
+                    self._snapshot["altitude_meters"] = round(float(msg.alt), 2)
             elif kind == "SYS_STATUS":
                 self._snapshot["battery_percent"] = None if msg.battery_remaining < 0 else int(msg.battery_remaining)
             elif kind == "MISSION_CURRENT":
                 self._snapshot["current_waypoint"] = int(msg.seq)
             else:
                 return
+            now_dt = utc_now()
             self._snapshot["received_monotonic"] = time.monotonic()
-            self._snapshot["received_at"] = utc_now()
+            self._snapshot["received_at"] = now_dt
+            snap = dict(self._snapshot)
+
+        # Record flight trace directly in the background MAVLink listener thread
+        # so flight path is captured even when the browser tab is in the background!
+        if kind in {"GLOBAL_POSITION_INT", "VFR_HUD", "HEARTBEAT"}:
+            self._record_active_missions(snap, now_dt)
+
+    def _record_active_missions(self, snap: dict[str, Any], now_dt: datetime) -> None:
+        lat = snap.get("latitude")
+        lon = snap.get("longitude")
+        if lat is None or lon is None:
+            return
+        alt = snap.get("altitude_meters")
+        spd = snap.get("ground_speed_mps")
+        hdg = snap.get("heading_deg")
+        bat = snap.get("battery_percent")
+        mode = snap.get("flight_mode")
+        wp = snap.get("current_waypoint")
+        dist_now = float(snap.get("distance_m") or 0.0)
+
+        for mission in list(missions.values()):
+            if (
+                mission.source != "MAVLINK"
+                or mission.flight_report is not None
+                or mission.closed_at is not None
+            ):
+                continue
+            mission.distance_m = max(0.0, dist_now - mission.last_live_distance_m)
+            if alt is not None:
+                mission.max_altitude = max(mission.max_altitude or 0.0, float(alt))
+            if mission.start_battery is None and bat is not None:
+                mission.start_battery = int(bat)
+            if bat is not None:
+                mission.end_battery = int(bat)
+            elapsed_since_last = (
+                (now_dt - mission.flight_trace[-1].recordedAt).total_seconds()
+                if mission.flight_trace
+                else 999.0
+            )
+            if (
+                not mission.flight_trace
+                or abs(mission.flight_trace[-1].latitude - float(lat)) > 1e-6
+                or abs(mission.flight_trace[-1].longitude - float(lon)) > 1e-6
+                or abs((mission.flight_trace[-1].altitudeMeters or 0.0) - float(alt or 0.0)) > 0.4
+                or (elapsed_since_last >= 2.0 and (float(alt or 0.0) > 0.3 or float(spd or 0.0) > 0.2))
+            ):
+                if len(mission.flight_trace) < 500:
+                    mission.flight_trace.append(
+                        FlightTracePoint(
+                            latitude=float(lat),
+                            longitude=float(lon),
+                            altitudeMeters=alt,
+                            groundSpeedMps=spd,
+                            headingDeg=hdg,
+                            batteryPercent=bat,
+                            flightMode=mode,
+                            waypoint=wp,
+                            recordedAt=now_dt,
+                        )
+                    )
 
     def _listen(self) -> None:
-        try:
-            from pymavlink import mavutil
-            link = mavutil.mavlink_connection(MAVLINK_CONNECTION, autoreconnect=True)
-            while not self._stopped.is_set():
-                msg = link.recv_match(blocking=True, timeout=1)
-                if msg is None:
-                    continue
-                mode_name = None
-                if msg.get_type() == "HEARTBEAT":
+        from pymavlink import mavutil
+        while not self._stopped.is_set():
+            link = None
+            try:
+                link = mavutil.mavlink_connection(MAVLINK_CONNECTION, autoreconnect=True)
+                self._error = None
+                last_stream_req = 0.0
+                empty_reads = 0
+                while not self._stopped.is_set():
+                    msg = link.recv_match(blocking=True, timeout=1)
+                    if msg is None:
+                        empty_reads += 1
+                        if MAVLINK_CONNECTION.startswith("tcp:") and empty_reads >= 4:
+                            break
+                        continue
+                    empty_reads = 0
+                    mode_name = None
+                    if msg.get_type() == "HEARTBEAT":
+                        try:
+                            mode_name = mavutil.mode_string_v10(msg)
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                        now_m = time.monotonic()
+                        if now_m - last_stream_req >= 8.0:
+                            try:
+                                link.mav.request_data_stream_send(
+                                    msg.get_srcSystem(),
+                                    msg.get_srcComponent(),
+                                    mavutil.mavlink.MAV_DATA_STREAM_ALL,
+                                    4,
+                                    1,
+                                )
+                                last_stream_req = now_m
+                            except Exception:
+                                pass
+                    self._apply(msg, mode_name)
+            except Exception as exc:  # Keep API available without a GCS connection.
+                self._error = f"MAVLink listener unavailable: {type(exc).__name__}"
+                time.sleep(2.0)
+            finally:
+                if link is not None:
                     try:
-                        mode_name = mavutil.mode_string_v10(msg)
-                    except (AttributeError, TypeError, ValueError):
+                        link.close()
+                    except Exception:
                         pass
-                self._apply(msg, mode_name)
-        except Exception as exc:  # Keep API available without a GCS connection.
-            self._error = f"MAVLink listener unavailable: {type(exc).__name__}"
-            logger.exception("MAVLink listener stopped")
 
 
 class MissionRuntime:
@@ -238,6 +337,27 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def trigger_simulator_orbit_sync() -> None:
+    targets = [
+        "http://172.25.25.94:8095/start-orbit",
+        "http://host.docker.internal:8095/start-orbit",
+        "http://127.0.0.1:8095/start-orbit",
+    ]
+    for url in targets:
+        try:
+            req = urllib.request.Request(url, data=b"", method="POST")
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                if resp.status == 200:
+                    logger.info("Successfully triggered 1-round 3D inspection orbit via %s", url)
+                    return
+        except Exception as exc:
+            logger.debug("Trigger orbit attempt %s failed: %s", url, exc)
+
+
+async def trigger_simulator_orbit() -> None:
+    await asyncio.to_thread(trigger_simulator_orbit_sync)
+
+
 async def simulate_mission(mission: MissionRuntime) -> None:
     """Simulate service telemetry only; inspection items are never a route."""
     mission.state = MissionState.IN_FLIGHT
@@ -265,6 +385,15 @@ async def simulate_mission(mission: MissionRuntime) -> None:
 
 def read_telemetry(mission: MissionRuntime) -> MissionTelemetry:
     snap = telemetry.snapshot()
+    if mission.source != "MAVLINK" and bool(snap["connected"]):
+        mission.source = "MAVLINK"
+        if mission.task and not mission.task.done():
+            mission.task.cancel()
+        mission.flight_trace.clear()
+        mission.distance_m = 0.0
+        mission.last_live_distance_m = float(snap["distance_m"])
+        mission.closed_at = None
+        mission.state = MissionState.IN_FLIGHT
     if mission.source == "MAVLINK":
         connected = bool(snap["connected"])
         state = mission.state
@@ -286,13 +415,20 @@ def read_telemetry(mission: MissionRuntime) -> MissionTelemetry:
         if snap["altitude_meters"] is not None:
             mission.max_altitude = max(mission.max_altitude or 0.0, snap["altitude_meters"])
         if snap["latitude"] is not None and snap["longitude"] is not None:
+            now_dt = snap["received_at"] or utc_now()
+            elapsed_since_last = (
+                (now_dt - mission.flight_trace[-1].recordedAt).total_seconds()
+                if mission.flight_trace
+                else 999.0
+            )
             if (
                 not mission.flight_trace
                 or abs(mission.flight_trace[-1].latitude - float(snap["latitude"])) > 1e-6
                 or abs(mission.flight_trace[-1].longitude - float(snap["longitude"])) > 1e-6
                 or abs((mission.flight_trace[-1].altitudeMeters or 0.0) - float(snap["altitude_meters"] or 0.0)) > 0.5
+                or elapsed_since_last >= 3.0
             ):
-                if len(mission.flight_trace) < 120:
+                if len(mission.flight_trace) < 300:
                     mission.flight_trace.append(
                         FlightTracePoint(
                             latitude=float(snap["latitude"]),
@@ -300,8 +436,10 @@ def read_telemetry(mission: MissionRuntime) -> MissionTelemetry:
                             altitudeMeters=snap["altitude_meters"],
                             groundSpeedMps=snap["ground_speed_mps"],
                             headingDeg=snap["heading_deg"],
+                            batteryPercent=snap["battery_percent"],
+                            flightMode=snap["flight_mode"],
                             waypoint=snap["current_waypoint"],
-                            recordedAt=snap["received_at"] or utc_now(),
+                            recordedAt=now_dt,
                         )
                     )
         return MissionTelemetry(
@@ -361,6 +499,7 @@ async def create_mission(request: MissionCreate) -> dict[str, Any]:
     ]
     if existing and existing.flight_report is None and existing.closed_at is None:
         existing.source = source
+        asyncio.create_task(trigger_simulator_orbit())
         return {
             "success": True,
             "message": "Mission active",
@@ -389,6 +528,7 @@ async def create_mission(request: MissionCreate) -> dict[str, Any]:
         mission.state = MissionState.IN_FLIGHT
         mission.last_live_distance_m = snapshot["distance_m"]
         mission.start_battery = snapshot["battery_percent"]
+        asyncio.create_task(trigger_simulator_orbit())
     missions[mission_key] = mission
     if source == "SIMULATION":
         mission.task = asyncio.create_task(simulate_mission(mission))

@@ -1,8 +1,11 @@
 package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateCategoryRequest;
+import com.smartdroneinspection.assets.api.dto.request.CreateChecklistTemplateRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateCategoryRequest;
+import com.smartdroneinspection.assets.api.dto.request.UpdateChecklistTemplateRequest;
 import com.smartdroneinspection.assets.api.dto.response.CategoryResponse;
+import com.smartdroneinspection.assets.api.dto.response.ChecklistTemplateResponse;
 import com.smartdroneinspection.assets.service.AssetCatalogService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -10,12 +13,14 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,5 +52,43 @@ public class AssetCatalogController {
   public ApiResponse<CategoryResponse> update(
       @PathVariable UUID categoryId, @Valid @RequestBody UpdateCategoryRequest request) {
     return ApiResponse.success(catalog.updateCategory(categoryId, request));
+  }
+
+  @GetMapping("/checklist-templates")
+  @PreAuthorize("isAuthenticated()")
+  public ApiResponse<List<ChecklistTemplateResponse>> listChecklistTemplates(
+      @RequestParam(required = false) String type,
+      @RequestParam(required = false) UUID categoryId) {
+    return ApiResponse.success(catalog.listChecklistTemplates(type, categoryId));
+  }
+
+  @PostMapping("/checklist-templates")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @ResponseStatus(HttpStatus.CREATED)
+  public ApiResponse<ChecklistTemplateResponse> createChecklistTemplate(
+      @org.springframework.security.core.annotation.AuthenticationPrincipal
+          org.springframework.security.oauth2.jwt.Jwt jwt,
+      @Valid @RequestBody CreateChecklistTemplateRequest request) {
+    return ApiResponse.success(catalog.createChecklistTemplate(jwt, request));
+  }
+
+  @PutMapping("/checklist-templates/{templateId}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  public ApiResponse<ChecklistTemplateResponse> updateChecklistTemplate(
+      @org.springframework.security.core.annotation.AuthenticationPrincipal
+          org.springframework.security.oauth2.jwt.Jwt jwt,
+      @PathVariable UUID templateId,
+      @Valid @RequestBody UpdateChecklistTemplateRequest request) {
+    return ApiResponse.success(catalog.updateChecklistTemplate(jwt, templateId, request));
+  }
+
+  @DeleteMapping("/checklist-templates/{templateId}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteChecklistTemplate(
+      @org.springframework.security.core.annotation.AuthenticationPrincipal
+          org.springframework.security.oauth2.jwt.Jwt jwt,
+      @PathVariable UUID templateId) {
+    catalog.deleteChecklistTemplate(jwt, templateId);
   }
 }

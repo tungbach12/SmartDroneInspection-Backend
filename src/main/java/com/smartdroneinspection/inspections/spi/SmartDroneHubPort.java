@@ -82,8 +82,30 @@ public interface SmartDroneHubPort {
       Double altitudeMeters,
       Double groundSpeedMps,
       Double headingDeg,
+      Integer batteryPercent,
+      String flightMode,
       Integer waypoint,
-      java.time.Instant recordedAt) {}
+      java.time.Instant recordedAt) {
+    public FlightTracePoint(
+        double latitude,
+        double longitude,
+        Double altitudeMeters,
+        Double groundSpeedMps,
+        Double headingDeg,
+        Integer waypoint,
+        java.time.Instant recordedAt) {
+      this(
+          latitude,
+          longitude,
+          altitudeMeters,
+          groundSpeedMps,
+          headingDeg,
+          null,
+          null,
+          waypoint,
+          recordedAt);
+    }
+  }
 
   record FlightReport(
       UUID inspectionId,

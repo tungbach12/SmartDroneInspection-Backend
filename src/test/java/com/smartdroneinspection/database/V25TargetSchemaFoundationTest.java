@@ -87,6 +87,9 @@ class V25TargetSchemaFoundationTest {
                     "registration_expires_at")),
             Map.entry("asset_categories", Set.of("code", "name", "active")),
             Map.entry(
+                "checklist_templates",
+                Set.of("template_type", "category_id", "label", "sort_order", "active")),
+            Map.entry(
                 "assets",
                 Set.of(
                     "organization_id",
@@ -312,7 +315,7 @@ class V25TargetSchemaFoundationTest {
                     "payout_reference",
                     "payout_recorded_at")));
 
-    assertThat(targetColumns).hasSize(29);
+    assertThat(targetColumns).hasSize(30);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate

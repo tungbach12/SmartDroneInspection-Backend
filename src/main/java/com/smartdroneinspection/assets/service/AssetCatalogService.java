@@ -1,12 +1,19 @@
 package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateCategoryRequest;
+import com.smartdroneinspection.assets.api.dto.request.CreateChecklistTemplateRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateCategoryRequest;
+import com.smartdroneinspection.assets.api.dto.request.UpdateChecklistTemplateRequest;
 import com.smartdroneinspection.assets.api.dto.response.CategoryResponse;
+import com.smartdroneinspection.assets.api.dto.response.ChecklistTemplateResponse;
 import com.smartdroneinspection.assets.domain.AssetCategory;
+import com.smartdroneinspection.assets.domain.ChecklistTemplate;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
+import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -15,10 +22,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AssetCatalogService {
 
-  private final AssetCategoryRepository categories;
+  private static final Set<String> ALLOWED_TEMPLATE_TYPES =
+      Set.of("CATEGORY_INSPECTION_ITEM", "PRE_FLIGHT", "POST_FLIGHT");
 
-  public AssetCatalogService(AssetCategoryRepository categories) {
+  private final AssetCategoryRepository categories;
+  private final ChecklistTemplateRepository checklistTemplates;
+
+  public AssetCatalogService(
+      AssetCategoryRepository categories, ChecklistTemplateRepository checklistTemplates) {
     this.categories = categories;
+    this.checklistTemplates = checklistTemplates;
   }
 
   @Transactional(readOnly = true)
@@ -28,7 +41,7 @@ public class AssetCatalogService {
 
   @Transactional
   public CategoryResponse createCategory(CreateCategoryRequest request) {
-    if (categories.existsByCode(request.code().trim().toUpperCase(java.util.Locale.ROOT))) {
+    if (categories.existsByCode(request.code().trim().toUpperCase(Locale.ROOT))) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "DUPLICATE_CODE", "Category code already exists");
     }
@@ -45,8 +58,114 @@ public class AssetCatalogService {
     return toResponse(categories.saveAndFlush(category));
   }
 
+  @Transactional(readOnly = true)
+  public List<ChecklistTemplateResponse> listChecklistTemplates(
+      String templateType, UUID categoryId) {
+    List<ChecklistTemplate> rows;
+    if (templateType != null && !templateType.isBlank()) {
+      String normalizedType = normalizeType(templateType);
+      if (categoryId != null) {
+        rows =
+            checklistTemplates.findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
+                normalizedType, categoryId);
+      } else {
+        rows = checklistTemplates.findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(normalizedType);
+      }
+    } else {
+      rows = checklistTemplates.findAllByOrderByTemplateTypeAscSortOrderAscCreatedAtAsc();
+    }
+    return rows.stream().map(this::toTemplateResponse).toList();
+  }
+
+  @Transactional
+  public ChecklistTemplateResponse createChecklistTemplate(
+      org.springframework.security.oauth2.jwt.Jwt jwt, CreateChecklistTemplateRequest request) {
+    String normalizedType = normalizeType(request.templateType());
+    if (!ALLOWED_TEMPLATE_TYPES.contains(normalizedType)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "VALIDATION_FAILED",
+          "Invalid templateType: " + request.templateType());
+    }
+    requireTemplatePermission(jwt, normalizedType);
+    UUID categoryId = request.categoryId();
+    if ("CATEGORY_INSPECTION_ITEM".equals(normalizedType)) {
+      if (categoryId == null) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "VALIDATION_FAILED",
+            "categoryId is required for CATEGORY_INSPECTION_ITEM");
+      }
+      requireCategory(categoryId);
+    } else {
+      categoryId = null;
+    }
+
+    int nextOrder =
+        request.sortOrder() != null
+            ? request.sortOrder()
+            : (categoryId != null
+                    ? checklistTemplates
+                        .findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
+                            normalizedType, categoryId)
+                        .size()
+                    : checklistTemplates
+                        .findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(normalizedType)
+                        .size())
+                + 1;
+
+    ChecklistTemplate created =
+        new ChecklistTemplate(normalizedType, categoryId, request.label(), nextOrder, true);
+    return toTemplateResponse(checklistTemplates.saveAndFlush(created));
+  }
+
+  @Transactional
+  public ChecklistTemplateResponse updateChecklistTemplate(
+      org.springframework.security.oauth2.jwt.Jwt jwt,
+      UUID templateId,
+      UpdateChecklistTemplateRequest request) {
+    ChecklistTemplate template =
+        checklistTemplates.findById(templateId).orElseThrow(() -> notFound(templateId));
+    requireTemplatePermission(jwt, template.getTemplateType());
+    template.update(request.label(), request.sortOrder(), request.active());
+    return toTemplateResponse(checklistTemplates.saveAndFlush(template));
+  }
+
+  @Transactional
+  public void deleteChecklistTemplate(
+      org.springframework.security.oauth2.jwt.Jwt jwt, UUID templateId) {
+    ChecklistTemplate template =
+        checklistTemplates.findById(templateId).orElseThrow(() -> notFound(templateId));
+    requireTemplatePermission(jwt, template.getTemplateType());
+    checklistTemplates.delete(template);
+    checklistTemplates.flush();
+  }
+
+  private void requireTemplatePermission(
+      org.springframework.security.oauth2.jwt.Jwt jwt, String templateType) {
+    if ("CATEGORY_INSPECTION_ITEM".equals(templateType)) {
+      return;
+    }
+    org.springframework.security.core.Authentication auth =
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+            .getAuthentication();
+    boolean isAdmin =
+        auth != null
+            && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    if (!isAdmin) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only Platform Admin can modify Pre-flight and Post-flight checklists");
+    }
+  }
+
   private void requireCategory(UUID categoryId) {
     categories.findById(categoryId).orElseThrow(() -> notFound(categoryId));
+  }
+
+  private static String normalizeType(String value) {
+    return value.trim().toUpperCase(Locale.ROOT);
   }
 
   private BusinessException notFound(UUID id) {
@@ -61,5 +180,15 @@ public class AssetCatalogService {
         category.getName(),
         category.getDescription(),
         category.isActive());
+  }
+
+  private ChecklistTemplateResponse toTemplateResponse(ChecklistTemplate template) {
+    return new ChecklistTemplateResponse(
+        template.getId(),
+        template.getTemplateType(),
+        template.getCategoryId(),
+        template.getLabel(),
+        template.getSortOrder(),
+        template.isActive());
   }
 }
