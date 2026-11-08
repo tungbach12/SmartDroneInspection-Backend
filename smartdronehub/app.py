@@ -445,11 +445,17 @@ def read_telemetry(mission: MissionRuntime) -> MissionTelemetry:
         return MissionTelemetry(
             inspectionId=mission.request.inspectionId, fieldSessionId=mission.request.fieldSessionId,
             missionState=state, telemetrySource="MISSION_PLANNER_MAVLINK", connected=connected,
-            lastUpdateAt=snap["received_at"], latitude=snap["latitude"], longitude=snap["longitude"],
-            altitudeMeters=snap["altitude_meters"], groundSpeedMps=snap["ground_speed_mps"],
-            headingDeg=snap["heading_deg"], batteryPercent=snap["battery_percent"],
-            flightMode=snap["flight_mode"], armed=snap["armed"],
-            currentWaypoint=snap["current_waypoint"], distanceFlownMeters=round(mission.distance_m, 2),
+            lastUpdateAt=snap["received_at"] if connected else None,
+            latitude=snap["latitude"] if connected else None,
+            longitude=snap["longitude"] if connected else None,
+            altitudeMeters=snap["altitude_meters"] if connected else None,
+            groundSpeedMps=snap["ground_speed_mps"] if connected else None,
+            headingDeg=snap["heading_deg"] if connected else None,
+            batteryPercent=snap["battery_percent"] if connected else None,
+            flightMode=snap["flight_mode"] if connected else None,
+            armed=snap["armed"] if connected else None,
+            currentWaypoint=snap["current_waypoint"] if connected else None,
+            distanceFlownMeters=round(mission.distance_m, 2),
         )
     return MissionTelemetry(
         inspectionId=mission.request.inspectionId, fieldSessionId=mission.request.fieldSessionId,
@@ -486,10 +492,9 @@ def health() -> dict[str, Any]:
 async def create_mission(request: MissionCreate) -> dict[str, Any]:
     mission_key = (request.inspectionId, request.fieldSessionId)
     existing = missions.get(mission_key)
-    source = request.telemetrySource
+    explicit_mavlink = request.telemetrySource == "MAVLINK"
+    source = "MAVLINK" if request.telemetrySource == "AUTO" else request.telemetrySource
     snapshot = telemetry.snapshot()
-    if source == "AUTO":
-        source = "MAVLINK" if snapshot["connected"] else "SIMULATION"
     active_missions = [
         active
         for active in missions.values()
@@ -499,14 +504,15 @@ async def create_mission(request: MissionCreate) -> dict[str, Any]:
     ]
     if existing and existing.flight_report is None and existing.closed_at is None:
         existing.source = source
-        asyncio.create_task(trigger_simulator_orbit())
+        if snapshot["connected"]:
+            asyncio.create_task(trigger_simulator_orbit())
         return {
             "success": True,
-            "message": "Mission active",
+            "message": "Mission already active",
             "data": read_telemetry(existing).model_dump(mode="json"),
         }
     if source == "MAVLINK":
-        if not snapshot["connected"]:
+        if explicit_mavlink and not snapshot["connected"]:
             raise HTTPException(status_code=503, detail="No fresh MAVLink telemetry is connected")
         if active_missions:
             raise HTTPException(
@@ -525,10 +531,11 @@ async def create_mission(request: MissionCreate) -> dict[str, Any]:
         )
     mission = MissionRuntime(request, source)
     if source == "MAVLINK":
-        mission.state = MissionState.IN_FLIGHT
+        mission.state = MissionState.IN_FLIGHT if snapshot["connected"] else MissionState.READY
         mission.last_live_distance_m = snapshot["distance_m"]
         mission.start_battery = snapshot["battery_percent"]
-        asyncio.create_task(trigger_simulator_orbit())
+        if snapshot["connected"]:
+            asyncio.create_task(trigger_simulator_orbit())
     missions[mission_key] = mission
     if source == "SIMULATION":
         mission.task = asyncio.create_task(simulate_mission(mission))

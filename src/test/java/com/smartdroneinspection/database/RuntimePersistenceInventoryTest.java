@@ -24,6 +24,7 @@ class RuntimePersistenceInventoryTest {
           "assets",
           "asset_categories",
           "checklist_templates",
+          "inspection_items",
           "asset_documents",
           "auth_sessions",
           "drones",
@@ -71,6 +72,7 @@ class RuntimePersistenceInventoryTest {
           "reinspection_defect_verifications",
           "asset_categories",
           "checklist_templates",
+          "inspection_items",
           "assets",
           "asset_documents",
           "inspections",
@@ -132,7 +134,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(40);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

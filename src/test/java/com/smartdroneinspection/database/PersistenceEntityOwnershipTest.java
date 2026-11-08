@@ -34,6 +34,8 @@ class PersistenceEntityOwnershipTest {
             "checklist_templates",
             "com.smartdroneinspection.assets.domain.ChecklistTemplate"),
         Arguments.of(
+            "assets", "inspection_items", "com.smartdroneinspection.assets.domain.InspectionItem"),
+        Arguments.of(
             "assets", "asset_documents", "com.smartdroneinspection.assets.domain.AssetDocument"),
         Arguments.of(
             "notifications",

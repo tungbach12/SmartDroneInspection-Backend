@@ -9,8 +9,5 @@ public interface ChecklistTemplateRepository extends JpaRepository<ChecklistTemp
 
   List<ChecklistTemplate> findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(String templateType);
 
-  List<ChecklistTemplate> findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
-      String templateType, UUID categoryId);
-
   List<ChecklistTemplate> findAllByOrderByTemplateTypeAscSortOrderAscCreatedAtAsc();
 }

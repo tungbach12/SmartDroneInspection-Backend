@@ -19,9 +19,6 @@ public class ChecklistTemplate {
   @Column(name = "template_type", nullable = false, length = 32)
   private String templateType;
 
-  @Column(name = "category_id")
-  private UUID categoryId;
-
   @Column(nullable = false, length = 300)
   private String label;
 
@@ -43,10 +40,8 @@ public class ChecklistTemplate {
 
   protected ChecklistTemplate() {}
 
-  public ChecklistTemplate(
-      String templateType, UUID categoryId, String label, int sortOrder, boolean active) {
+  public ChecklistTemplate(String templateType, String label, int sortOrder, boolean active) {
     this.templateType = normalizeType(templateType);
-    this.categoryId = categoryId;
     this.label = label.trim();
     this.sortOrder = sortOrder;
     this.active = active;
@@ -60,10 +55,6 @@ public class ChecklistTemplate {
 
   public String getTemplateType() {
     return templateType;
-  }
-
-  public UUID getCategoryId() {
-    return categoryId;
   }
 
   public String getLabel() {

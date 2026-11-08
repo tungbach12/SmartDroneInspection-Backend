@@ -32,19 +32,19 @@ CREATE INDEX ix_checklist_templates_category_order
 -- Seed Pre-flight Safety Checklist templates (Admin-managed)
 INSERT INTO checklist_templates (id, template_type, category_id, label, sort_order, active)
 VALUES
-    ('10000000-0000-0000-0000-000000000001', 'PRE_FLIGHT', NULL, 'Airframe, propellers & gimbal camera intact', 1, TRUE),
-    ('10000000-0000-0000-0000-000000000002', 'PRE_FLIGHT', NULL, 'Battery >= 85%, GPS lock & RTH altitude configured', 2, TRUE),
-    ('10000000-0000-0000-0000-000000000003', 'PRE_FLIGHT', NULL, 'Weather, wind speed & VLOS within safe operating limits', 3, TRUE),
-    ('10000000-0000-0000-0000-000000000004', 'PRE_FLIGHT', NULL, 'Takeoff/landing zone cordoned off & clear of bystanders', 4, TRUE),
-    ('10000000-0000-0000-0000-000000000005', 'PRE_FLIGHT', NULL, 'Flight permit verified & airspace clear for takeoff', 5, TRUE);
+    ('10000000-0000-0000-0000-000000000001', 'PRE_FLIGHT', NULL, 'Drone airframe, propellers & camera gimbal inspected and intact', 1, TRUE),
+    ('10000000-0000-0000-0000-000000000002', 'PRE_FLIGHT', NULL, 'Battery level sufficient, GPS lock acquired & Return-to-Home (RTH) altitude set', 2, TRUE),
+    ('10000000-0000-0000-0000-000000000003', 'PRE_FLIGHT', NULL, 'Weather, wind speed & visual line-of-sight within safe operating limits', 3, TRUE),
+    ('10000000-0000-0000-0000-000000000004', 'PRE_FLIGHT', NULL, 'Takeoff/landing zone secured and clear of bystanders', 4, TRUE),
+    ('10000000-0000-0000-0000-000000000005', 'PRE_FLIGHT', NULL, 'Flight permit verified & surrounding airspace clear for takeoff', 5, TRUE);
 
 -- Seed Post-flight Completion Checklist templates (Admin-managed)
 INSERT INTO checklist_templates (id, template_type, category_id, label, sort_order, active)
 VALUES
-    ('20000000-0000-0000-0000-000000000001', 'POST_FLIGHT', NULL, 'Drone landed safely, motors disarmed & airframe undamaged', 1, TRUE),
-    ('20000000-0000-0000-0000-000000000002', 'POST_FLIGHT', NULL, 'Planned inspection checkpoints & structural angles captured', 2, TRUE),
-    ('20000000-0000-0000-0000-000000000003', 'POST_FLIGHT', NULL, 'Photos, videos & MAVLink flight telemetry saved intact', 3, TRUE),
-    ('20000000-0000-0000-0000-000000000004', 'POST_FLIGHT', NULL, 'Site cleared, safety barriers removed & field area restored', 4, TRUE);
+    ('20000000-0000-0000-0000-000000000001', 'POST_FLIGHT', NULL, 'Drone landed safely, motors disarmed & hardware free of post-flight damage', 1, TRUE),
+    ('20000000-0000-0000-0000-000000000002', 'POST_FLIGHT', NULL, 'All planned structural inspection checkpoints captured', 2, TRUE),
+    ('20000000-0000-0000-0000-000000000003', 'POST_FLIGHT', NULL, 'Captured photos, videos & flight telemetry logs saved intact', 3, TRUE),
+    ('20000000-0000-0000-0000-000000000004', 'POST_FLIGHT', NULL, 'Equipment packed, safety barriers removed & site restored', 4, TRUE);
 
 -- Ensure standardized Building & Tower categories exist
 INSERT INTO asset_categories (id, code, name, description, active, row_version)

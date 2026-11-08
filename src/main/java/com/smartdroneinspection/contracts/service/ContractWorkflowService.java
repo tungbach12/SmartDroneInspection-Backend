@@ -547,6 +547,25 @@ public class ContractWorkflowService
         input.plannedStartAt(),
         input.plannedEndAt(),
         manager.id());
+    if (occurrence.getTotalPrice() == null && request.getAcceptedQuoteVersion() != null) {
+      quotes
+          .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
+          .map(ServiceRequestQuote::getEffectivePrice)
+          .ifPresent(
+              price -> {
+                Optional<InspectionFinanceSettings> currentSettings =
+                    financeSettingsService != null
+                        ? financeSettingsService.findCurrentSettings()
+                        : Optional.empty();
+                if (currentSettings.isPresent() && currentSettings.get().isFullyConfigured()) {
+                  InspectionFinanceSettings s = currentSettings.get();
+                  occurrence.snapshotFinance(
+                      price, s.getVatRate(), s.getCommissionRate(), s.getTncnRate());
+                } else {
+                  occurrence.snapshotFinance(price, null, null, null);
+                }
+              });
+    }
     occurrences.saveAndFlush(occurrence);
     boolean anyPending =
         occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).stream()
