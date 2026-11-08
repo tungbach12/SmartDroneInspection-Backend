@@ -186,11 +186,15 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (!inspection.isInspectedBy(actorId) && !actor.hasRole(Roles.ORG_MANAGER)) {
+    if (!inspection.isInspectedBy(actorId)
+        && !actor.hasRole(Roles.ORG_MANAGER)
+        && !actor.hasRole(Roles.CUSTOMER)
+        && !actor.hasRole(Roles.MANAGER)
+        && !actor.hasRole(Roles.ADMIN)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only the assigned inspector or organization manager can upload the flight permit.");
+          "Only the assigned inspector or manager can upload the flight permit.");
     }
 
     UserAccess.ActiveUser assignedInspector =
@@ -245,6 +249,108 @@ public class InspectionCreationService {
     Asset asset =
         assets.findByIdAndOrganizationId(inspection.getAssetId(), organizationId).orElse(null);
     return toResponse(saved, asset);
+  }
+
+  public record FlightPermitContent(String fileName, String contentType, byte[] bytes) {}
+
+  @Transactional(readOnly = true)
+  public FlightPermitContent openFlightPermit(UUID actorId, UUID inspectionId) {
+    InspectionResponse detail = get(actorId, inspectionId);
+    if (detail.flightPermitFileKey() == null || detail.flightPermitFileKey().isBlank()) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND,
+          "FLIGHT_PERMIT_NOT_FOUND",
+          "No flight permit has been recorded for this inspection.");
+    }
+    String fileName =
+        detail.flightPermitFileName() != null && !detail.flightPermitFileName().isBlank()
+            ? detail.flightPermitFileName()
+            : "flight-permit.pdf";
+    String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+    String contentType =
+        lower.endsWith(".png")
+            ? "image/png"
+            : (lower.endsWith(".jpg") || lower.endsWith(".jpeg"))
+                ? "image/jpeg"
+                : lower.endsWith(".webp") ? "image/webp" : "application/pdf";
+
+    if (objectStore.isPresent()) {
+      try (java.io.InputStream input = objectStore.get().open(detail.flightPermitFileKey())) {
+        byte[] bytes = input.readAllBytes();
+        if (bytes.length > 0) {
+          return new FlightPermitContent(fileName, contentType, bytes);
+        }
+      } catch (Exception ignored) {
+        // Fall through to generated permit summary PDF when seeded key has no stored object
+      }
+    }
+
+    byte[] fallbackPdf = renderFallbackPermitPdf(detail, fileName);
+    return new FlightPermitContent(
+        fileName.endsWith(".pdf") ? fileName : fileName + ".pdf", "application/pdf", fallbackPdf);
+  }
+
+  private byte[] renderFallbackPermitPdf(InspectionResponse detail, String fileName) {
+    String html =
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8" />
+          <style>
+            body { font-family: sans-serif; padding: 32px; color: #111827; }
+            .box { border: 1px solid #d1d5db; border-radius: 8px; padding: 24px; }
+            h1 { font-size: 18px; margin: 0 0 8px 0; color: #0f172a; }
+            p { font-size: 12px; color: #4b5563; margin: 4px 0; }
+            .row { margin-top: 12px; font-size: 13px; }
+            .label { font-weight: bold; color: #374151; }
+          </style>
+        </head>
+        <body>
+          <div class="box">
+            <h1>Flight Permit Record</h1>
+            <p>Recorded mission flight permit document in SmartDroneInspection.</p>
+            <div class="row"><span class="label">Permit File:</span> %s</div>
+            <div class="row"><span class="label">Inspection ID:</span> %s</div>
+            <div class="row"><span class="label">Target Asset:</span> %s</div>
+            <div class="row"><span class="label">Assigned Drone:</span> %s</div>
+          </div>
+        </body>
+        </html>
+        """
+            .formatted(
+                escapeXml(fileName),
+                escapeXml(String.valueOf(detail.id())),
+                escapeXml(detail.assetName() != null ? detail.assetName() : "—"),
+                escapeXml(
+                    detail.droneSerialNumber() != null
+                        ? (detail.droneModel() != null
+                            ? detail.droneModel() + " (" + detail.droneSerialNumber() + ")"
+                            : detail.droneSerialNumber())
+                        : "—"));
+    try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+      com.openhtmltopdf.pdfboxout.PdfRendererBuilder builder =
+          new com.openhtmltopdf.pdfboxout.PdfRendererBuilder();
+      builder.useFastMode();
+      builder.withHtmlContent(html, null);
+      builder.toStream(out);
+      builder.run();
+      return out.toByteArray();
+    } catch (Exception e) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND,
+          "FLIGHT_PERMIT_NOT_FOUND",
+          "Flight permit file could not be loaded.");
+    }
+  }
+
+  private static String escapeXml(String input) {
+    if (input == null) return "";
+    return input
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;");
   }
 
   @Transactional

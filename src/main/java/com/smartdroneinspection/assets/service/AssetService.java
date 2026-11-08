@@ -8,15 +8,18 @@ import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
-import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.assets.domain.InspectionItem;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
+import com.smartdroneinspection.assets.repository.InspectionItemRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -29,19 +32,28 @@ public class AssetService {
 
   private final AssetRepository assets;
   private final AssetCategoryRepository categories;
-  private final ChecklistTemplateRepository checklistTemplates;
+  private final InspectionItemRepository inspectionItems;
   private final UserAccess userAccess;
   private final AirspaceAdvisoryService airspaceAdvisory;
 
   public AssetService(
       AssetRepository assets,
       AssetCategoryRepository categories,
-      ChecklistTemplateRepository checklistTemplates,
+      UserAccess userAccess,
+      AirspaceAdvisoryService airspaceAdvisory) {
+    this(assets, categories, null, userAccess, airspaceAdvisory);
+  }
+
+  @Autowired
+  public AssetService(
+      AssetRepository assets,
+      AssetCategoryRepository categories,
+      InspectionItemRepository inspectionItems,
       UserAccess userAccess,
       AirspaceAdvisoryService airspaceAdvisory) {
     this.assets = assets;
     this.categories = categories;
-    this.checklistTemplates = checklistTemplates;
+    this.inspectionItems = inspectionItems;
     this.userAccess = userAccess;
     this.airspaceAdvisory = airspaceAdvisory;
   }
@@ -69,18 +81,19 @@ public class AssetService {
           HttpStatus.CONFLICT, "DUPLICATE_CODE", "Asset code already exists");
     }
 
-    java.util.List<String> defaultCategoryItems =
-        checklistTemplates
-            .findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
-                "CATEGORY_INSPECTION_ITEM", category.getId())
-            .stream()
-            .filter(ChecklistTemplate::isActive)
-            .map(ChecklistTemplate::getLabel)
-            .toList();
-    java.util.List<String> initialInspectionItems =
+    List<String> defaultCategoryItems =
+        inspectionItems == null
+            ? List.of()
+            : inspectionItems
+                .findByCategoryIdOrderBySortOrderAscCreatedAtAsc(category.getId())
+                .stream()
+                .filter(InspectionItem::isActive)
+                .map(InspectionItem::getLabel)
+                .toList();
+    List<String> initialInspectionItems =
         !defaultCategoryItems.isEmpty()
             ? defaultCategoryItems
-            : (request.inspectionItems() != null ? request.inspectionItems() : java.util.List.of());
+            : (request.inspectionItems() != null ? request.inspectionItems() : List.of());
 
     Asset asset =
         new Asset(
@@ -158,12 +171,13 @@ public class AssetService {
         request.longitude(),
         request.ownershipInformation(),
         request.inspectionItems());
-    return toResponse(assets.saveAndFlush(asset));
+    Asset saved = assets.saveAndFlush(asset);
+    return toResponse(saved);
   }
 
   @Transactional
   public AssetResponse updateInspectionItems(
-      UUID actorId, UUID assetId, java.util.List<String> inspectionItems) {
+      UUID actorId, UUID assetId, List<String> requestedItems) {
     UserAccess.ActiveUser actor = requireActive(actorId);
     Asset asset;
     if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
@@ -186,17 +200,18 @@ public class AssetService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
     }
-    java.util.List<String> sanitized =
-        inspectionItems == null
-            ? java.util.List.of()
-            : inspectionItems.stream()
-                .filter(java.util.Objects::nonNull)
+    List<String> sanitized =
+        requestedItems == null
+            ? List.of()
+            : requestedItems.stream()
+                .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .distinct()
                 .toList();
     asset.setInspectionItems(sanitized);
-    return toResponse(assets.saveAndFlush(asset));
+    Asset saved = assets.saveAndFlush(asset);
+    return toResponse(saved);
   }
 
   private void validateNoFlyZone(java.math.BigDecimal latitude, java.math.BigDecimal longitude) {
@@ -259,6 +274,18 @@ public class AssetService {
   }
 
   private AssetResponse toResponse(Asset asset) {
+    List<String> items = asset.getInspectionItems();
+    if ((items == null || items.isEmpty())
+        && inspectionItems != null
+        && asset.getCategoryId() != null) {
+      items =
+          inspectionItems
+              .findByCategoryIdOrderBySortOrderAscCreatedAtAsc(asset.getCategoryId())
+              .stream()
+              .filter(InspectionItem::isActive)
+              .map(InspectionItem::getLabel)
+              .toList();
+    }
     return new AssetResponse(
         asset.getId(),
         asset.getCode(),
@@ -270,6 +297,6 @@ public class AssetService {
         asset.getStatus().name(),
         asset.getCategoryId(),
         asset.getCreatedAt(),
-        asset.getInspectionItems());
+        items);
   }
 }

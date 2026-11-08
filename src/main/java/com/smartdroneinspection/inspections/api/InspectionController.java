@@ -152,6 +152,24 @@ public class InspectionController {
             actorId(jwt), inspectionId, request.fileKey(), request.fileName(), null, null));
   }
 
+  @GetMapping("/flight-permit/content")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ResponseEntity<byte[]> flightPermitContent(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    InspectionCreationService.FlightPermitContent content =
+        creationService.openFlightPermit(actorId(jwt), inspectionId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(content.contentType()))
+        .contentLength(content.bytes().length)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline()
+                .filename(content.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .build()
+                .toString())
+        .body(content.bytes());
+  }
+
   @PutMapping("/schedule")
   @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>

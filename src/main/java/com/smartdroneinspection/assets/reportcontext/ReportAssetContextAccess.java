@@ -46,7 +46,10 @@ public class ReportAssetContextAccess implements ReportContextAccess {
     Drone drone =
         droneId == null
             ? null
-            : drones.findByIdAndOrganizationId(droneId, organizationId).orElse(null);
+            : drones
+                .findByIdAndOrganizationId(droneId, organizationId)
+                .or(() -> drones.findById(droneId))
+                .orElse(null);
     return Optional.of(
         new Identity(
             users.findOrganizationName(organizationId).orElse(null),

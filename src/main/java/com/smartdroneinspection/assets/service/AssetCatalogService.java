@@ -8,13 +8,18 @@ import com.smartdroneinspection.assets.api.dto.response.CategoryResponse;
 import com.smartdroneinspection.assets.api.dto.response.ChecklistTemplateResponse;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.ChecklistTemplate;
+import com.smartdroneinspection.assets.domain.InspectionItem;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.ChecklistTemplateRepository;
+import com.smartdroneinspection.assets.repository.InspectionItemRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,11 +32,21 @@ public class AssetCatalogService {
 
   private final AssetCategoryRepository categories;
   private final ChecklistTemplateRepository checklistTemplates;
+  private final InspectionItemRepository inspectionItems;
 
   public AssetCatalogService(
       AssetCategoryRepository categories, ChecklistTemplateRepository checklistTemplates) {
+    this(categories, checklistTemplates, null);
+  }
+
+  @Autowired
+  public AssetCatalogService(
+      AssetCategoryRepository categories,
+      ChecklistTemplateRepository checklistTemplates,
+      InspectionItemRepository inspectionItems) {
     this.categories = categories;
     this.checklistTemplates = checklistTemplates;
+    this.inspectionItems = inspectionItems;
   }
 
   @Transactional(readOnly = true)
@@ -61,20 +76,35 @@ public class AssetCatalogService {
   @Transactional(readOnly = true)
   public List<ChecklistTemplateResponse> listChecklistTemplates(
       String templateType, UUID categoryId) {
-    List<ChecklistTemplate> rows;
     if (templateType != null && !templateType.isBlank()) {
       String normalizedType = normalizeType(templateType);
-      if (categoryId != null) {
-        rows =
-            checklistTemplates.findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
-                normalizedType, categoryId);
-      } else {
-        rows = checklistTemplates.findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(normalizedType);
+      if ("CATEGORY_INSPECTION_ITEM".equals(normalizedType)) {
+        if (inspectionItems == null) {
+          return List.of();
+        }
+        List<InspectionItem> items =
+            categoryId != null
+                ? inspectionItems.findByCategoryIdOrderBySortOrderAscCreatedAtAsc(categoryId)
+                : inspectionItems.findAllByOrderByCategoryIdAscSortOrderAscCreatedAtAsc();
+        return items.stream().map(this::toInspectionItemResponse).toList();
       }
-    } else {
-      rows = checklistTemplates.findAllByOrderByTemplateTypeAscSortOrderAscCreatedAtAsc();
+      return checklistTemplates
+          .findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(normalizedType)
+          .stream()
+          .map(this::toTemplateResponse)
+          .toList();
     }
-    return rows.stream().map(this::toTemplateResponse).toList();
+
+    List<ChecklistTemplateResponse> combined = new ArrayList<>();
+    checklistTemplates
+        .findAllByOrderByTemplateTypeAscSortOrderAscCreatedAtAsc()
+        .forEach(t -> combined.add(toTemplateResponse(t)));
+    if (inspectionItems != null) {
+      inspectionItems
+          .findAllByOrderByCategoryIdAscSortOrderAscCreatedAtAsc()
+          .forEach(i -> combined.add(toInspectionItemResponse(i)));
+    }
+    return combined;
   }
 
   @Transactional
@@ -88,8 +118,8 @@ public class AssetCatalogService {
           "Invalid templateType: " + request.templateType());
     }
     requireTemplatePermission(jwt, normalizedType);
-    UUID categoryId = request.categoryId();
     if ("CATEGORY_INSPECTION_ITEM".equals(normalizedType)) {
+      UUID categoryId = request.categoryId();
       if (categoryId == null) {
         throw new BusinessException(
             HttpStatus.BAD_REQUEST,
@@ -97,25 +127,25 @@ public class AssetCatalogService {
             "categoryId is required for CATEGORY_INSPECTION_ITEM");
       }
       requireCategory(categoryId);
-    } else {
-      categoryId = null;
+      int nextOrder =
+          request.sortOrder() != null
+              ? request.sortOrder()
+              : inspectionItems.findByCategoryIdOrderBySortOrderAscCreatedAtAsc(categoryId).size()
+                  + 1;
+      InspectionItem createdItem = new InspectionItem(categoryId, request.label(), nextOrder, true);
+      return toInspectionItemResponse(inspectionItems.saveAndFlush(createdItem));
     }
 
     int nextOrder =
         request.sortOrder() != null
             ? request.sortOrder()
-            : (categoryId != null
-                    ? checklistTemplates
-                        .findByTemplateTypeAndCategoryIdOrderBySortOrderAscCreatedAtAsc(
-                            normalizedType, categoryId)
-                        .size()
-                    : checklistTemplates
-                        .findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(normalizedType)
-                        .size())
+            : checklistTemplates
+                    .findByTemplateTypeOrderBySortOrderAscCreatedAtAsc(normalizedType)
+                    .size()
                 + 1;
 
     ChecklistTemplate created =
-        new ChecklistTemplate(normalizedType, categoryId, request.label(), nextOrder, true);
+        new ChecklistTemplate(normalizedType, request.label(), nextOrder, true);
     return toTemplateResponse(checklistTemplates.saveAndFlush(created));
   }
 
@@ -124,6 +154,15 @@ public class AssetCatalogService {
       org.springframework.security.oauth2.jwt.Jwt jwt,
       UUID templateId,
       UpdateChecklistTemplateRequest request) {
+    if (inspectionItems != null) {
+      Optional<InspectionItem> maybeItem = inspectionItems.findById(templateId);
+      if (maybeItem.isPresent()) {
+        requireTemplatePermission(jwt, "CATEGORY_INSPECTION_ITEM");
+        InspectionItem item = maybeItem.get();
+        item.update(request.label(), request.sortOrder(), request.active());
+        return toInspectionItemResponse(inspectionItems.saveAndFlush(item));
+      }
+    }
     ChecklistTemplate template =
         checklistTemplates.findById(templateId).orElseThrow(() -> notFound(templateId));
     requireTemplatePermission(jwt, template.getTemplateType());
@@ -134,6 +173,15 @@ public class AssetCatalogService {
   @Transactional
   public void deleteChecklistTemplate(
       org.springframework.security.oauth2.jwt.Jwt jwt, UUID templateId) {
+    if (inspectionItems != null) {
+      Optional<InspectionItem> maybeItem = inspectionItems.findById(templateId);
+      if (maybeItem.isPresent()) {
+        requireTemplatePermission(jwt, "CATEGORY_INSPECTION_ITEM");
+        inspectionItems.delete(maybeItem.get());
+        inspectionItems.flush();
+        return;
+      }
+    }
     ChecklistTemplate template =
         checklistTemplates.findById(templateId).orElseThrow(() -> notFound(templateId));
     requireTemplatePermission(jwt, template.getTemplateType());
@@ -186,9 +234,19 @@ public class AssetCatalogService {
     return new ChecklistTemplateResponse(
         template.getId(),
         template.getTemplateType(),
-        template.getCategoryId(),
+        null,
         template.getLabel(),
         template.getSortOrder(),
         template.isActive());
+  }
+
+  private ChecklistTemplateResponse toInspectionItemResponse(InspectionItem item) {
+    return new ChecklistTemplateResponse(
+        item.getId(),
+        "CATEGORY_INSPECTION_ITEM",
+        item.getCategoryId(),
+        item.getLabel(),
+        item.getSortOrder(),
+        item.isActive());
   }
 }
