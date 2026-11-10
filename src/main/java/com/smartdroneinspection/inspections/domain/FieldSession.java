@@ -199,10 +199,14 @@ public class FieldSession {
     return preFlightChecklistNote;
   }
 
+  public boolean hasFlightReport() {
+    return hasPersistedFlightReport();
+  }
+
   public void recordFlightReport(
       String telemetrySource,
-      int durationSeconds,
-      double distanceFlownMeters,
+      Integer durationSeconds,
+      Double distanceFlownMeters,
       Double maxAltitudeMeters,
       Integer startBatteryPercent,
       Integer endBatteryPercent,
@@ -210,10 +214,12 @@ public class FieldSession {
       String note,
       String flightTraceJson) {
     this.telemetrySource = telemetrySource;
-    this.flightDurationSeconds = Math.max(0, durationSeconds);
+    this.flightDurationSeconds = durationSeconds == null ? null : Math.max(0, durationSeconds);
     this.distanceFlownMeters =
-        java.math.BigDecimal.valueOf(Math.max(0.0, distanceFlownMeters))
-            .setScale(2, java.math.RoundingMode.HALF_UP);
+        distanceFlownMeters == null
+            ? null
+            : java.math.BigDecimal.valueOf(Math.max(0.0, distanceFlownMeters))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     this.maxAltitudeMeters =
         maxAltitudeMeters == null
             ? null
@@ -235,7 +241,7 @@ public class FieldSession {
   }
 
   public boolean hasPersistedFlightReport() {
-    return flightDurationSeconds != null && telemetrySource != null;
+    return telemetrySource != null && !"NONE".equals(telemetrySource);
   }
 
   public String getTelemetrySource() {

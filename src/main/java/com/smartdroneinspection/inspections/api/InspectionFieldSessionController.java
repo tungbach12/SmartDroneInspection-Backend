@@ -2,6 +2,7 @@ package com.smartdroneinspection.inspections.api;
 
 import com.smartdroneinspection.inspections.api.dto.request.AbortFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.EndFieldSessionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.ManualFlightDeclarationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.StartFieldSessionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FieldSessionResponse;
@@ -25,7 +26,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/inspections/{inspectionId}/field-sessions")
@@ -82,6 +85,55 @@ public class InspectionFieldSessionController {
       @RequestParam(defaultValue = "AUTO") String telemetrySource) {
     return ApiResponse.success(
         missionResponse(droneHub.start(subject(jwt), inspectionId, sessionId, telemetrySource)));
+  }
+
+  @PostMapping("/{sessionId}/drone-hub/import-log")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<SmartDroneHubFlightReportResponse> importFlightLog(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId,
+      @RequestPart("file") MultipartFile file) {
+    if (file.isEmpty() || file.getSize() > 15L * 1024 * 1024) {
+      throw new com.smartdroneinspection.shared.exception.BusinessException(
+          org.springframework.http.HttpStatus.BAD_REQUEST,
+          "FLIGHT_LOG_SIZE_INVALID",
+          "Select a non-empty flight log no larger than 15 MB.");
+    }
+    try {
+      return ApiResponse.success(
+          flightReportResponse(
+              droneHub.importFlightLog(
+                  subject(jwt),
+                  inspectionId,
+                  sessionId,
+                  file.getOriginalFilename(),
+                  file.getInputStream())));
+    } catch (java.io.IOException ex) {
+      throw new com.smartdroneinspection.shared.exception.BusinessException(
+          org.springframework.http.HttpStatus.BAD_REQUEST,
+          "FLIGHT_LOG_READ_FAILED",
+          "The uploaded flight log could not be read.");
+    }
+  }
+
+  @PostMapping("/{sessionId}/drone-hub/manual-declaration")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<SmartDroneHubFlightReportResponse> declareManualFlight(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId,
+      @Valid @RequestBody ManualFlightDeclarationRequest request) {
+    return ApiResponse.success(
+        flightReportResponse(
+            droneHub.declareManualFlight(
+                subject(jwt),
+                inspectionId,
+                sessionId,
+                request.reasonCode(),
+                request.estimatedDurationMinutes(),
+                request.maxAltitudeMeters(),
+                request.notes())));
   }
 
   @GetMapping("/{sessionId}/drone-hub/telemetry")
@@ -204,7 +256,9 @@ public class InspectionFieldSessionController {
         session.getPostponementReason(),
         session.getAbortReason(),
         session.getOutcomeNotes(),
-        session.getFlightVideoEvidenceId());
+        session.getFlightVideoEvidenceId(),
+        session.getTelemetrySource(),
+        session.hasFlightReport());
   }
 
   private static UUID subject(Jwt jwt) {

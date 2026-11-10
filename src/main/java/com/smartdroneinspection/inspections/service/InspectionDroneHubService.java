@@ -13,8 +13,10 @@ import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
+import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -33,6 +35,7 @@ public class InspectionDroneHubService {
   private final UserAccess userAccess;
   private final SmartDroneHubPort hub;
   private final EvidenceService evidenceService;
+  private final FlightLogParser flightLogParser;
 
   public InspectionDroneHubService(
       InspectionRepository inspections,
@@ -40,7 +43,7 @@ public class InspectionDroneHubService {
       AssetRepository assets,
       UserAccess userAccess,
       SmartDroneHubPort hub) {
-    this(inspections, sessions, assets, userAccess, hub, null);
+    this(inspections, sessions, assets, userAccess, hub, null, null);
   }
 
   @Autowired
@@ -50,13 +53,15 @@ public class InspectionDroneHubService {
       AssetRepository assets,
       UserAccess userAccess,
       SmartDroneHubPort hub,
-      EvidenceService evidenceService) {
+      EvidenceService evidenceService,
+      FlightLogParser flightLogParser) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.assets = assets;
     this.userAccess = userAccess;
     this.hub = hub;
     this.evidenceService = evidenceService;
+    this.flightLogParser = flightLogParser;
   }
 
   @Transactional(readOnly = true)
@@ -95,6 +100,168 @@ public class InspectionDroneHubService {
     return hub.createMission(request);
   }
 
+  @Transactional
+  public SmartDroneHubPort.FlightReport importFlightLog(
+      UUID actorId, UUID inspectionId, UUID sessionId, String fileName, InputStream input) {
+    if (fileName == null || fileName.length() > 255) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "FLIGHT_LOG_FORMAT_UNSUPPORTED",
+          "The flight log filename is invalid.");
+    }
+    Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
+    requireActiveFlightSession(scope);
+    String extension = extension(fileName);
+    List<SmartDroneHubPort.FlightTracePoint> trace =
+        switch (extension) {
+          case "srt" -> flightLogParser.parseSrt(input);
+          case "csv" -> flightLogParser.parseCsv(input);
+          case "kml" -> flightLogParser.parseKml(input);
+          case "gpx" -> flightLogParser.parseGpx(input);
+          default ->
+              throw failure(
+                  HttpStatus.BAD_REQUEST,
+                  "FLIGHT_LOG_FORMAT_UNSUPPORTED",
+                  "Supported flight log formats are SRT, CSV, KML, and GPX.");
+        };
+    var timedPoints = trace.stream().filter(point -> point.recordedAt() != null).toList();
+    Instant firstTime = timedPoints.size() >= 2 ? timedPoints.getFirst().recordedAt() : null;
+    Instant lastTime = timedPoints.size() >= 2 ? timedPoints.getLast().recordedAt() : null;
+    Integer duration =
+        firstTime != null && lastTime != null
+            ? (int) Math.max(0, Duration.between(firstTime, lastTime).getSeconds())
+            : null;
+    Double distance = trace.size() < 2 ? null : 0d;
+    for (int i = 1; i < trace.size(); i++) {
+      var prev = trace.get(i - 1);
+      var next = trace.get(i);
+      distance +=
+          haversineMeters(prev.latitude(), prev.longitude(), next.latitude(), next.longitude());
+    }
+    Double maxAltitude =
+        trace.stream()
+            .map(SmartDroneHubPort.FlightTracePoint::altitudeMeters)
+            .filter(java.util.Objects::nonNull)
+            .max(Double::compareTo)
+            .orElse(null);
+    Integer startBattery =
+        trace.stream()
+            .map(SmartDroneHubPort.FlightTracePoint::batteryPercent)
+            .filter(java.util.Objects::nonNull)
+            .findFirst()
+            .orElse(null);
+    Integer endBattery =
+        trace.stream()
+            .map(SmartDroneHubPort.FlightTracePoint::batteryPercent)
+            .filter(java.util.Objects::nonNull)
+            .reduce((a, b) -> b)
+            .orElse(null);
+    String source = "IMPORTED_LOG_" + extension.toUpperCase(java.util.Locale.ROOT);
+    String proximityWarning = "";
+    var assetOpt =
+        assets.findByIdAndOrganizationId(
+            scope.inspection().getAssetId(), scope.inspection().getOrganizationId());
+    if (assetOpt.isPresent()) {
+      Asset asset = assetOpt.get();
+      if (asset.getLatitude() != null && asset.getLongitude() != null) {
+        double gapMeters =
+            haversineMeters(
+                trace.getFirst().latitude(),
+                trace.getFirst().longitude(),
+                asset.getLatitude().doubleValue(),
+                asset.getLongitude().doubleValue());
+        if (gapMeters > 5000d) {
+          proximityWarning =
+              String.format(
+                  java.util.Locale.ROOT,
+                  " [WARN: First GPS point is %.1f km from registered asset coordinates.]",
+                  gapMeters / 1000d);
+        }
+      }
+    }
+    String note =
+        "Imported flight log: "
+            + safeFileName(fileName)
+            + ". Flight trace parsed from the uploaded "
+            + extension.toUpperCase(java.util.Locale.ROOT)
+            + " file; unavailable telemetry fields are not inferred."
+            + proximityWarning;
+    scope
+        .session()
+        .recordFlightReport(
+            source,
+            duration,
+            distance,
+            maxAltitude,
+            startBattery,
+            endBattery,
+            "UNKNOWN",
+            note,
+            serializeTrace(trace));
+    sessions.saveAndFlush(scope.session());
+    return toPersistedFlightReport(scope.session());
+  }
+
+  @Transactional
+  public SmartDroneHubPort.FlightReport declareManualFlight(
+      UUID actorId,
+      UUID inspectionId,
+      UUID sessionId,
+      String reasonCode,
+      int durationMinutes,
+      Double maxAltitudeMeters,
+      String notes) {
+    Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
+    requireActiveFlightSession(scope);
+    if (!List.of("NO_MAVLINK_SUPPORT", "PROPRIETARY_APP", "TELEMETRY_FAILURE")
+        .contains(reasonCode)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "MANUAL_FLIGHT_REASON_INVALID",
+          "Choose a supported reason for the manual flight declaration.");
+    }
+    if (durationMinutes < 1 || durationMinutes > 720 || notes == null || notes.isBlank()) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "MANUAL_FLIGHT_DECLARATION_INVALID",
+          "Enter a duration from 1 to 720 minutes and a non-empty field note.");
+    }
+    if (maxAltitudeMeters != null
+        && (!Double.isFinite(maxAltitudeMeters)
+            || maxAltitudeMeters < 0
+            || maxAltitudeMeters > 10000)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "MANUAL_FLIGHT_DECLARATION_INVALID",
+          "Maximum altitude must be between 0 and 10000 meters.");
+    }
+    String note =
+        "Manual flight declaration (no telemetry). Reason="
+            + reasonCode
+            + "; estimated duration="
+            + durationMinutes
+            + " minutes"
+            + (maxAltitudeMeters == null
+                ? ""
+                : "; estimated maximum altitude=" + maxAltitudeMeters + " m")
+            + "; Inspector note="
+            + notes.trim();
+    scope
+        .session()
+        .recordFlightReport(
+            "MANUAL_DECLARATION",
+            durationMinutes * 60,
+            null,
+            maxAltitudeMeters,
+            null,
+            null,
+            "UNKNOWN",
+            note,
+            "[]");
+    sessions.saveAndFlush(scope.session());
+    return toPersistedFlightReport(scope.session());
+  }
+
   @Transactional(readOnly = true)
   public SmartDroneHubPort.Telemetry telemetry(UUID actorId, UUID inspectionId, UUID sessionId) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
@@ -119,17 +286,18 @@ public class InspectionDroneHubService {
           "Flight report is available after the active field session is completed or aborted.");
     }
     if (session.hasPersistedFlightReport()
-        && session.getFlightTraceJson() != null
-        && !session.getFlightTraceJson().isBlank()) {
+        && (session.getTelemetrySource().startsWith("IMPORTED_LOG_")
+            || "MANUAL_DECLARATION".equals(session.getTelemetrySource())
+            || (session.getFlightTraceJson() != null
+                && !session.getFlightTraceJson().isBlank()
+                && !"[]".equals(session.getFlightTraceJson())))) {
       return toPersistedFlightReport(session);
     }
     try {
       SmartDroneHubPort.FlightReport report =
           hub.flightReport(inspectionId, sessionId, session.getEndedAt());
       java.util.List<SmartDroneHubPort.FlightTracePoint> trace =
-          report.flightTrace() != null && !report.flightTrace().isEmpty()
-              ? report.flightTrace()
-              : defaultOrbitTrace(scope.inspection(), session.getStartedAt());
+          report.flightTrace() != null ? report.flightTrace() : java.util.List.of();
       session.recordFlightReport(
           report.telemetrySource(),
           report.durationSeconds(),
@@ -145,26 +313,25 @@ public class InspectionDroneHubService {
     } catch (RuntimeException ex) {
       Instant started = session.getStartedAt() != null ? session.getStartedAt() : Instant.now();
       Instant ended = session.getEndedAt() != null ? session.getEndedAt() : Instant.now();
-      int durationSec = (int) Math.max(1L, Duration.between(started, ended).getSeconds());
-      String finalState = FieldSession.ABORTED.equals(session.getStatus()) ? "ABORTED" : "LANDED";
-      String note =
-          "Persisted from field session telemetry log ("
-              + (session.getOutcomeNotes() != null ? session.getOutcomeNotes() : "Completed")
-              + ").";
-      java.util.List<SmartDroneHubPort.FlightTracePoint> trace =
-          defaultOrbitTrace(scope.inspection(), started);
-      session.recordFlightReport(
-          "MISSION_PLANNER_MAVLINK",
+      int durationSec = (int) Math.max(0L, Duration.between(started, ended).getSeconds());
+      String finalState =
+          FieldSession.ABORTED.equals(session.getStatus()) ? "ABORTED" : "NO_FLIGHT";
+      String note = "No MAVLink flight telemetry was recorded for this field session.";
+      return new SmartDroneHubPort.FlightReport(
+          inspectionId,
+          sessionId,
+          "NONE",
+          started,
+          ended,
           durationSec,
-          366.2,
-          40.5,
-          98,
-          84,
+          0.0,
+          null,
+          null,
+          null,
           finalState,
           note,
-          serializeTrace(trace));
-      sessions.saveAndFlush(session);
-      return toPersistedFlightReport(session);
+          java.util.List.of(),
+          session.getFlightVideoEvidenceId());
     }
   }
 
@@ -230,24 +397,42 @@ public class InspectionDroneHubService {
   }
 
   private static SmartDroneHubPort.FlightReport toPersistedFlightReport(FieldSession session) {
+    List<SmartDroneHubPort.FlightTracePoint> trace = deserializeTrace(session.getFlightTraceJson());
+    String source = session.getTelemetrySource();
+    boolean isImported = source != null && source.startsWith("IMPORTED_LOG_");
+    boolean isManual = "MANUAL_DECLARATION".equals(source);
+    Instant startedAt = session.getStartedAt();
+    Instant endedAt = session.getEndedAt();
+    if (isManual) {
+      startedAt = null;
+      endedAt = null;
+    } else if (isImported) {
+      var timed =
+          trace.stream()
+              .map(SmartDroneHubPort.FlightTracePoint::recordedAt)
+              .filter(java.util.Objects::nonNull)
+              .toList();
+      startedAt = timed.size() >= 2 ? timed.getFirst() : null;
+      endedAt = timed.size() >= 2 ? timed.getLast() : null;
+    }
     return new SmartDroneHubPort.FlightReport(
         session.getInspectionId(),
         session.getId(),
-        session.getTelemetrySource(),
-        session.getStartedAt(),
-        session.getEndedAt(),
-        session.getFlightDurationSeconds() != null ? session.getFlightDurationSeconds() : 0,
+        source,
+        startedAt,
+        endedAt,
+        session.getFlightDurationSeconds(),
         session.getDistanceFlownMeters() != null
             ? session.getDistanceFlownMeters().doubleValue()
-            : 0.0,
+            : null,
         session.getMaxAltitudeMeters() != null
             ? session.getMaxAltitudeMeters().doubleValue()
             : null,
         session.getStartBatteryPercent(),
         session.getEndBatteryPercent(),
-        session.getFlightFinalState() != null ? session.getFlightFinalState() : "LANDED",
+        session.getFlightFinalState() != null ? session.getFlightFinalState() : "UNKNOWN",
         session.getFlightReportNote() != null ? session.getFlightReportNote() : "",
-        deserializeTrace(session.getFlightTraceJson()),
+        trace,
         session.getFlightVideoEvidenceId());
   }
 
@@ -287,61 +472,6 @@ public class InspectionDroneHubService {
     return new Scope(inspection, session);
   }
 
-  private java.util.List<SmartDroneHubPort.FlightTracePoint> defaultOrbitTrace(
-      Inspection inspection, Instant baseTime) {
-    double baseLat = 10.762622;
-    double baseLon = 106.660172;
-    if (inspection != null && inspection.getAssetId() != null) {
-      var assetOpt =
-          assets.findByIdAndOrganizationId(inspection.getAssetId(), inspection.getOrganizationId());
-      if (assetOpt.isPresent()) {
-        Asset a = assetOpt.get();
-        if (a.getLatitude() != null && a.getLongitude() != null) {
-          baseLat = a.getLatitude().doubleValue();
-          baseLon = a.getLongitude().doubleValue();
-        }
-      }
-    }
-    Instant t0 = baseTime != null ? baseTime : Instant.now().minusSeconds(180);
-    double[][] offsets = {
-      {-4.5, 15.0, 0.5, 0.0, 180.0, 0},
-      {-4.5, 14.8, 40.5, 1.8, 180.0, 1},
-      {15.0, 15.0, 36.5, 3.6, 225.0, 1},
-      {14.8, 0.0, 32.5, 1.5, 270.0, 2},
-      {15.0, -15.0, 34.5, 3.6, 315.0, 2},
-      {0.0, -14.8, 36.5, 1.5, 0.0, 3},
-      {-15.0, -15.0, 30.5, 3.6, 45.0, 3},
-      {-14.8, 2.5, 26.5, 1.6, 90.0, 4},
-      {-14.8, -3.0, 17.5, 1.4, 90.0, 5},
-      {-15.0, 15.0, 13.5, 3.2, 135.0, 5},
-      {1.5, 14.8, 10.5, 1.2, 180.0, 6}
-    };
-    int[] batteries = {98, 97, 95, 93, 92, 90, 89, 88, 86, 85, 84};
-    String[] modes = {
-      "GUIDED", "GUIDED", "GUIDED", "LOITER", "GUIDED", "LOITER", "GUIDED", "GUIDED", "LOITER",
-      "RTL", "LAND"
-    };
-    java.util.List<SmartDroneHubPort.FlightTracePoint> pts = new java.util.ArrayList<>();
-    for (int i = 0; i < offsets.length; i++) {
-      double dx = offsets[i][0];
-      double dy = offsets[i][1];
-      double lat = baseLat + (dy / 111320.0);
-      double lon = baseLon + (dx / (111320.0 * Math.cos(Math.toRadians(baseLat))));
-      pts.add(
-          new SmartDroneHubPort.FlightTracePoint(
-              Math.round(lat * 1_000_000d) / 1_000_000d,
-              Math.round(lon * 1_000_000d) / 1_000_000d,
-              offsets[i][2],
-              offsets[i][3],
-              offsets[i][4],
-              batteries[i],
-              modes[i],
-              (int) offsets[i][5],
-              t0.plusSeconds(i * 16L)));
-    }
-    return pts;
-  }
-
   private static String serializeTrace(java.util.List<SmartDroneHubPort.FlightTracePoint> trace) {
     if (trace == null || trace.isEmpty()) {
       return "[]";
@@ -349,7 +479,10 @@ public class InspectionDroneHubService {
     try {
       return new tools.jackson.databind.ObjectMapper().writeValueAsString(trace);
     } catch (RuntimeException ex) {
-      return "[]";
+      throw failure(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "FLIGHT_TRACE_SERIALIZATION_FAILED",
+          "The flight trace could not be saved.");
     }
   }
 
@@ -417,6 +550,47 @@ public class InspectionDroneHubService {
           "Telemetry source must be AUTO, MAVLINK, or SIMULATION.");
     }
     return normalized;
+  }
+
+  private static void requireActiveFlightSession(Scope scope) {
+    if (!scope.inspection().hasFlightPermit()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "FLIGHT_PERMIT_REQUIRED",
+          "Upload the mission flight permit before recording flight data.");
+    }
+    if (scope.inspection().getStatus() != InspectionStatus.IN_PROGRESS
+        || !scope.session().isInProgress()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_NOT_IN_PROGRESS",
+          "The field session must be active before recording flight data.");
+    }
+  }
+
+  private static String extension(String fileName) {
+    if (fileName == null) return "";
+    int dot = fileName.lastIndexOf('.');
+    return dot < 0 ? "" : fileName.substring(dot + 1).trim().toLowerCase(java.util.Locale.ROOT);
+  }
+
+  private static String safeFileName(String fileName) {
+    if (fileName == null || fileName.isBlank()) return "uploaded log";
+    String sanitized = fileName.replaceAll("[\\r\\n]", "").replaceAll("[/\\\\]", "_");
+    return sanitized.substring(0, Math.min(120, sanitized.length()));
+  }
+
+  private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+    double earth = 6_371_000d;
+    double dLat = Math.toRadians(lat2 - lat1);
+    double dLon = Math.toRadians(lon2 - lon1);
+    double a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(Math.toRadians(lat1))
+                * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2)
+                * Math.sin(dLon / 2);
+    return 2 * earth * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private static BusinessException failure(HttpStatus status, String code, String detail) {

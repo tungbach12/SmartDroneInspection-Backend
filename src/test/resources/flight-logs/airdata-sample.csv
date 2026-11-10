@@ -1,0 +1,4 @@
+datetime(utc),time(millisecond),latitude,longitude,height_above_takeoff(feet),speed(mph), compass_heading(degrees),battery_percent
+2026-11-10 10:00:00,0,21.0285,105.8542,10,4.47,90,98
+2026-11-10 10:00:05,5000,21.0286,105.8543,20,8.94,95,96
+2026-11-10 10:00:10,10000,21.0287,105.8544,30,0,100,94

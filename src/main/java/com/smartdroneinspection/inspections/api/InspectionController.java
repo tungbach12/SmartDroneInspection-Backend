@@ -442,9 +442,12 @@ public class InspectionController {
   public ApiResponse<InspectionReportResponse> generateDraft(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
+      @RequestBody(required = false) java.util.Map<String, String> body,
       HttpServletRequest request) {
+    String providedSummary = body == null ? null : body.get("summary");
     return ApiResponse.success(
-        reportService.generateDraft(actorId(jwt), inspectionId, RequestLocale.from(request)));
+        reportService.generateDraft(
+            actorId(jwt), inspectionId, RequestLocale.from(request), providedSummary));
   }
 
   /**
@@ -584,7 +587,7 @@ public class InspectionController {
   }
 
   @GetMapping("/report/versions/{versionId}/ai-summary")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<ReportAiSummaryResponse> getAiSummary(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
