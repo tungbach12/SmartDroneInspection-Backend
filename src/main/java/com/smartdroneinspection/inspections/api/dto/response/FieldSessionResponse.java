@@ -13,7 +13,9 @@ public record FieldSessionResponse(
     String postponementReason,
     String abortReason,
     String outcomeNotes,
-    UUID flightVideoEvidenceId) {
+    UUID flightVideoEvidenceId,
+    String telemetrySource,
+    boolean hasFlightReport) {
 
   public FieldSessionResponse(
       UUID id,
@@ -35,6 +37,8 @@ public record FieldSessionResponse(
         postponementReason,
         abortReason,
         outcomeNotes,
-        null);
+        null,
+        null,
+        false);
   }
 }

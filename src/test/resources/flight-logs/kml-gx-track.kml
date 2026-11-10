@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+  <Document>
+    <Placemark><Point><coordinates>1,2,99</coordinates></Point></Placemark>
+    <Placemark><LineString><coordinates>105.8542,21.0285,10 105.8543,21.0286,20</coordinates></LineString></Placemark>
+    <Placemark><gx:Track>
+      <when>2026-11-10T10:00:00Z</when><when>2026-11-10T10:00:05+02:00</when><when></when>
+      <gx:coord>105.8544 21.0287 30</gx:coord><gx:coord>105.8545 21.0288 31</gx:coord><gx:coord>105.8546 21.0289 32</gx:coord>
+    </gx:Track></Placemark>
+  </Document>
+</kml>

@@ -37,6 +37,9 @@ public class InspectionReport {
   @Column(name = "return_reason", length = 2000)
   private String returnReason;
 
+  @Column(name = "summary", columnDefinition = "TEXT")
+  private String summary;
+
   @Column(name = "published_at")
   private Instant publishedAt;
 
@@ -56,8 +59,9 @@ public class InspectionReport {
     this.createdAt = Instant.now();
   }
 
-  public InspectionReport(UUID inspectionId, int versionNo, String contentSnapshot) {
+  public InspectionReport(UUID inspectionId, int versionNo, String summary) {
     this(inspectionId, versionNo);
+    this.summary = summary;
   }
 
   /** Re-verifying a returned version clears return metadata and submits. */
@@ -72,6 +76,9 @@ public class InspectionReport {
 
   public void editContent(String newContent) {
     requireStatus(ReportStatus.SUBMITTED, ReportStatus.RETURNED);
+    if (newContent != null && !newContent.isBlank()) {
+      this.summary = newContent;
+    }
   }
 
   public void submit() {
@@ -181,6 +188,14 @@ public class InspectionReport {
 
   public String getReturnReason() {
     return returnReason;
+  }
+
+  public String getSummary() {
+    return summary;
+  }
+
+  public void setSummary(String summary) {
+    this.summary = summary;
   }
 
   public String getContentSnapshot() {

@@ -55,6 +55,7 @@ public class FindingService {
   private final InspectionRepository inspections;
   private final Optional<AiInferencePort> inference;
   private final UserAccess userAccess;
+  private final Optional<PlatformAiSettingsService> aiSettingsService;
 
   public FindingService(
       EvidenceRepository evidence,
@@ -64,6 +65,27 @@ public class FindingService {
       InspectionRepository inspections,
       Optional<AiInferencePort> inference,
       UserAccess userAccess) {
+    this(
+        evidence,
+        findings,
+        evidenceService,
+        reportVersions,
+        inspections,
+        inference,
+        userAccess,
+        Optional.empty());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public FindingService(
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      EvidenceService evidenceService,
+      InspectionReportRepository reportVersions,
+      InspectionRepository inspections,
+      Optional<AiInferencePort> inference,
+      UserAccess userAccess,
+      Optional<PlatformAiSettingsService> aiSettingsService) {
     this.evidence = evidence;
     this.findings = findings;
     this.evidenceService = evidenceService;
@@ -71,6 +93,7 @@ public class FindingService {
     this.inspections = inspections;
     this.inference = inference;
     this.userAccess = userAccess;
+    this.aiSettingsService = aiSettingsService;
   }
 
   /**
@@ -239,8 +262,11 @@ public class FindingService {
 
     long nextSeq = findings.findMaxFindingCodeNumberByInspectionId(inspectionId) + 1;
     List<Finding> created = new java.util.ArrayList<>();
+    PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
+        aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
+    int autoConfirmedCount = 0;
     for (AiInferencePort.Detection detection : detections) {
-      created.add(
+      Finding createdFinding =
           new Finding(
               inspectionId,
               evidenceId,
@@ -251,7 +277,18 @@ public class FindingService {
               null,
               detection.boundingBox(),
               detection.modelName(),
-              detection.confidence()));
+              detection.confidence());
+      if (aiSettingsService
+          .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
+          .orElse(false)) {
+        createdFinding.confirmByInspector();
+        autoConfirmedCount++;
+      }
+      created.add(createdFinding);
+    }
+    if (autoConfirmedCount > 0) {
+      final int confirmedTotal = autoConfirmedCount;
+      aiSettingsService.ifPresent(s -> s.recordAutoConfirmed(confirmedTotal));
     }
     List<Finding> stored = findings.saveAllAndFlush(created);
     syncFindingsConfirmationAfterEdit(inspection);
@@ -393,8 +430,11 @@ public class FindingService {
         frameFindingResponses = priorForFrame.stream().map(this::toFindingResponse).toList();
       } else {
         List<Finding> frameFindings = new java.util.ArrayList<>();
+        PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
+            aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
+        int frameAutoConfirmed = 0;
         for (AiInferencePort.Detection detection : detections) {
-          frameFindings.add(
+          Finding frameFinding =
               new Finding(
                   inspectionId,
                   savedFrameEvidence.id(),
@@ -405,7 +445,18 @@ public class FindingService {
                   locationDesc,
                   detection.boundingBox(),
                   detection.modelName(),
-                  detection.confidence()));
+                  detection.confidence());
+          if (aiSettingsService
+              .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
+              .orElse(false)) {
+            frameFinding.confirmByInspector();
+            frameAutoConfirmed++;
+          }
+          frameFindings.add(frameFinding);
+        }
+        if (frameAutoConfirmed > 0) {
+          final int confirmedTotal = frameAutoConfirmed;
+          aiSettingsService.ifPresent(s -> s.recordAutoConfirmed(confirmedTotal));
         }
         List<Finding> storedFrameFindings = findings.saveAllAndFlush(frameFindings);
         totalCreatedFindings += storedFrameFindings.size();
@@ -676,6 +727,7 @@ public class FindingService {
     rejectLockedFindingEdits(inspectionId);
     Finding finding = requireFinding(inspectionId, findingId);
     if (finding.isPendingAiSuggestion()) {
+      aiSettingsService.ifPresent(PlatformAiSettingsService::recordRejectedPendingSuggestion);
       findings.deleteByIdAndInspectionId(findingId, inspectionId);
       findings.flush();
       syncFindingsConfirmationAfterEdit(inspection);

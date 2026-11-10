@@ -206,11 +206,17 @@ public class ReportService {
    */
   @Transactional
   public InspectionReportResponse generateDraft(UUID actorId, UUID inspectionId) {
-    return generateDraft(actorId, inspectionId, Locale.ENGLISH);
+    return generateDraft(actorId, inspectionId, Locale.ENGLISH, null);
   }
 
   @Transactional
   public InspectionReportResponse generateDraft(UUID actorId, UUID inspectionId, Locale locale) {
+    return generateDraft(actorId, inspectionId, locale, null);
+  }
+
+  @Transactional
+  public InspectionReportResponse generateDraft(
+      UUID actorId, UUID inspectionId, Locale locale, String providedSummary) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
 
     requireCurrentFindingsConfirmation(inspection);
@@ -228,12 +234,13 @@ public class ReportService {
       return toResponse(latestExisting, inspection.getInspectorId());
     }
 
-    List<Evidence> confirmedEvidence =
-        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
-    List<Finding> confirmedFindings = inspectorFindings(inspectionId);
+    String summaryText =
+        providedSummary != null && !providedSummary.isBlank()
+            ? providedSummary.trim()
+            : generateAiSummaryFromContext(buildDraftContext(inspection, locale)).summary();
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReport version = new InspectionReport(inspectionId, versionNo);
+    InspectionReport version = new InspectionReport(inspectionId, versionNo, summaryText);
     InspectionReport saved = versions.saveAndFlush(version);
     inspection.markUnderReview();
     inspections.saveAndFlush(inspection);
@@ -261,12 +268,11 @@ public class ReportService {
       return toResponse(latestExisting, inspection.getInspectorId());
     }
 
-    List<Evidence> confirmedEvidence =
-        evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
-    List<Finding> confirmedFindings = inspectorFindings(inspectionId);
+    String summaryText =
+        buildDeterministicAiSummary(buildDraftContext(inspection, Locale.ENGLISH)).summary();
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
-    InspectionReport version = new InspectionReport(inspectionId, versionNo);
+    InspectionReport version = new InspectionReport(inspectionId, versionNo, summaryText);
     InspectionReport saved = versions.saveAndFlush(version);
     inspection.markUnderReview();
     inspections.saveAndFlush(inspection);
@@ -318,7 +324,7 @@ public class ReportService {
             request.overallCondition(),
             request.omissionDisclosure());
     try {
-      version.editContent(null);
+      version.editContent(sections.executiveSummary());
     } catch (IllegalStateException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
@@ -892,7 +898,9 @@ public class ReportService {
         version.getReviewedAt() == null ? null : version.getReviewedAt().toString(),
         version.getPublishedAt() == null ? null : version.getPublishedAt().toString(),
         new ReportRenderPort.Sections(
-            sections.executiveSummary(),
+            version.getSummary() != null && !version.getSummary().isBlank()
+                ? version.getSummary()
+                : sections.executiveSummary(),
             purposeScopeCriteria,
             sections.inspectorCoverageAssessment(),
             sections.methodEquipmentConditions(),
@@ -1344,10 +1352,25 @@ public class ReportService {
   public ReportAiSummaryResponse getOrGenerateAiSummary(
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
-    requireVersion(inspectionId, versionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
 
+    ReportDraftPort.DraftContext context = buildDraftContext(inspection, locale);
+    ReportAiSummaryResponse deterministic = buildDeterministicAiSummary(context);
+    if (version.getSummary() != null && !version.getSummary().isBlank()) {
+      return new ReportAiSummaryResponse(
+          version.getSummary(),
+          deterministic.keyHighlights(),
+          deterministic.recommendedActions(),
+          deterministic.overallRisk());
+    }
+
+    return generateAiSummaryFromContext(context);
+  }
+
+  private ReportDraftPort.DraftContext buildDraftContext(Inspection inspection, Locale locale) {
+    UUID inspectionId = inspection.getId();
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
     List<UUID> currentEvidenceIds = confirmedEvidence.stream().map(Evidence::getId).toList();
@@ -1383,77 +1406,75 @@ public class ReportService {
               .toList();
     }
 
-    ReportDraftPort.DraftContext context =
-        new ReportDraftPort.DraftContext(
-            new InspectionSummary(
-                reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
-                inspection.getFlightPermitFileName(),
-                inspection.getPlannedStartAt() == null
-                    ? null
-                    : inspection.getPlannedStartAt().toString(),
-                inspection.getPlannedEndAt() == null
-                    ? null
-                    : inspection.getPlannedEndAt().toString(),
-                droneDisplayReference(reportIdentity, inspection.getDroneId()),
-                inspection.getInspectionType().name()),
-            confirmedFindings.stream()
-                .map(
-                    finding ->
-                        new ReportDraftPort.FindingSummary(
-                            finding.getDefectLabel(),
-                            finding.getSeverity().name(),
-                            finding.getTechnicalNotes(),
-                            finding.getRecommendedAction()))
-                .toList(),
-            confirmedEvidence.stream()
-                .map(
-                    item ->
-                        new ReportDraftPort.EvidenceSummary(
-                            item.getFileName(),
-                            item.getContentType(),
-                            item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
-                            item.getLatitude() == null ? null : item.getLatitude().toPlainString(),
-                            item.getLongitude() == null
-                                ? null
-                                : item.getLongitude().toPlainString(),
-                            item.getFieldSessionId() == null
-                                ? null
-                                : item.getFieldSessionId().toString(),
-                            item.getLocationDescription()))
-                .toList(),
-            detectionFindings.stream()
-                .map(
-                    detection ->
-                        new ReportDraftPort.CandidateSummary(
-                            detection.getId().toString(),
-                            detection.getEvidenceId().toString(),
-                            null,
-                            detection.getModelName(),
-                            null,
-                            detection.getDefectLabel(),
-                            detection.getConfidence() == null
-                                ? null
-                                : detection.getConfidence().toPlainString(),
-                            detection.getBoundingBox(),
-                            detection.getStatus().name()))
-                .toList(),
-            recordedSessions.stream()
-                .map(
-                    session ->
-                        new ReportDraftPort.FieldSessionSummary(
-                            session.getId().toString(),
-                            session.getStatus(),
-                            session.getStartedAt() == null
-                                ? null
-                                : session.getStartedAt().toString(),
-                            session.getEndedAt() == null ? null : session.getEndedAt().toString(),
-                            session.getPreFlightChecklistNote(),
-                            session.getAbortReason(),
-                            droneDisplayReference(reportIdentity, inspection.getDroneId())))
-                .toList(),
-            locale,
-            defectVerificationsList);
+    return new ReportDraftPort.DraftContext(
+        new InspectionSummary(
+            reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
+            inspection.getFlightPermitFileName(),
+            inspection.getPlannedStartAt() == null
+                ? null
+                : inspection.getPlannedStartAt().toString(),
+            inspection.getPlannedEndAt() == null ? null : inspection.getPlannedEndAt().toString(),
+            droneDisplayReference(reportIdentity, inspection.getDroneId()),
+            inspection.getInspectionType() == null
+                ? "INITIAL"
+                : inspection.getInspectionType().name()),
+        confirmedFindings.stream()
+            .map(
+                finding ->
+                    new ReportDraftPort.FindingSummary(
+                        finding.getDefectLabel(),
+                        finding.getSeverity().name(),
+                        finding.getTechnicalNotes(),
+                        finding.getRecommendedAction()))
+            .toList(),
+        confirmedEvidence.stream()
+            .map(
+                item ->
+                    new ReportDraftPort.EvidenceSummary(
+                        item.getFileName(),
+                        item.getContentType(),
+                        item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
+                        item.getLatitude() == null ? null : item.getLatitude().toPlainString(),
+                        item.getLongitude() == null ? null : item.getLongitude().toPlainString(),
+                        item.getFieldSessionId() == null
+                            ? null
+                            : item.getFieldSessionId().toString(),
+                        item.getLocationDescription()))
+            .toList(),
+        detectionFindings.stream()
+            .map(
+                detection ->
+                    new ReportDraftPort.CandidateSummary(
+                        detection.getId().toString(),
+                        detection.getEvidenceId().toString(),
+                        null,
+                        detection.getModelName(),
+                        null,
+                        detection.getDefectLabel(),
+                        detection.getConfidence() == null
+                            ? null
+                            : detection.getConfidence().toPlainString(),
+                        detection.getBoundingBox(),
+                        detection.getStatus().name()))
+            .toList(),
+        recordedSessions.stream()
+            .map(
+                session ->
+                    new ReportDraftPort.FieldSessionSummary(
+                        session.getId().toString(),
+                        session.getStatus(),
+                        session.getStartedAt() == null ? null : session.getStartedAt().toString(),
+                        session.getEndedAt() == null ? null : session.getEndedAt().toString(),
+                        session.getPreFlightChecklistNote(),
+                        session.getAbortReason(),
+                        droneDisplayReference(reportIdentity, inspection.getDroneId())))
+            .toList(),
+        locale,
+        defectVerificationsList);
+  }
 
+  private ReportAiSummaryResponse generateAiSummaryFromContext(
+      ReportDraftPort.DraftContext context) {
     if (draftPort.isPresent()) {
       try {
         ReportDraftPort.AiSummary aiSummary = draftPort.get().summarizeReport(context);
@@ -1700,6 +1721,14 @@ public class ReportService {
   }
 
   private InspectionReportResponse toResponse(InspectionReport version, UUID authorUserId) {
+    String summaryText = version.getSummary();
+    if (summaryText == null || summaryText.isBlank()) {
+      Inspection inspection = inspections.findById(version.getInspectionId()).orElse(null);
+      if (inspection != null) {
+        summaryText =
+            buildDeterministicAiSummary(buildDraftContext(inspection, Locale.ENGLISH)).summary();
+      }
+    }
     return new InspectionReportResponse(
         version.getId(),
         version.getInspectionReportId(),
@@ -1712,6 +1741,7 @@ public class ReportService {
         version.getReturnReason(),
         version.getPublishedAt(),
         version.getCreatedAt(),
+        summaryText,
         null,
         null,
         ReportSectionsResponse.from(ReportSections.EMPTY),
