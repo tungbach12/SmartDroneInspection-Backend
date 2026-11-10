@@ -16,4 +16,29 @@ public record ReinspectionRequestedEvent(
     UUID sourceFindingId,
     UUID reviewerUserId,
     String technicalComments,
-    Instant requestedAt) {}
+    Instant requestedAt,
+    String repairProofUrl) {
+
+  public ReinspectionRequestedEvent(
+      UUID workOrderId,
+      UUID reportVersionId,
+      UUID organizationId,
+      UUID assetId,
+      UUID sourceReportVersionId,
+      UUID sourceFindingId,
+      UUID reviewerUserId,
+      String technicalComments,
+      Instant requestedAt) {
+    this(
+        workOrderId,
+        reportVersionId,
+        organizationId,
+        assetId,
+        sourceReportVersionId,
+        sourceFindingId,
+        reviewerUserId,
+        technicalComments,
+        requestedAt,
+        null);
+  }
+}

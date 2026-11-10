@@ -3,15 +3,18 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.ReinspectionDefectVerification;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
 import com.smartdroneinspection.inspections.spi.RepairCandidate;
 import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,14 +29,25 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
   private final InspectionRepository inspections;
   private final InspectionReportRepository reportVersions;
   private final FindingRepository findings;
+  private final ReinspectionDefectVerificationRepository verifications;
 
   public RepairCandidateAccessAdapter(
       InspectionRepository inspections,
       InspectionReportRepository reportVersions,
       FindingRepository findings) {
+    this(inspections, reportVersions, findings, null);
+  }
+
+  @Autowired
+  public RepairCandidateAccessAdapter(
+      InspectionRepository inspections,
+      InspectionReportRepository reportVersions,
+      FindingRepository findings,
+      ReinspectionDefectVerificationRepository verifications) {
     this.inspections = inspections;
     this.reportVersions = reportVersions;
     this.findings = findings;
+    this.verifications = verifications;
   }
 
   @Override
@@ -57,6 +71,30 @@ public class RepairCandidateAccessAdapter implements RepairCandidateAccess {
         .filter(finding -> finding.isForwardedToMaintenance() && finding.isOfficial())
         .flatMap(finding -> candidateFor(organizationId, finding))
         .filter(candidate -> candidate.reportVersionId().equals(reportVersionId));
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ReinspectionVerificationSummary> findReinspectionVerifications(UUID reinspectionId) {
+    if (reinspectionId == null || verifications == null) {
+      return List.of();
+    }
+    List<ReinspectionDefectVerification> items = verifications.findByReinspectionId(reinspectionId);
+    if (items.isEmpty()) {
+      return List.of();
+    }
+    return items.stream()
+        .map(
+            item -> {
+              Finding src = findings.findById(item.getSourceFindingId()).orElse(null);
+              return new ReinspectionVerificationSummary(
+                  src != null ? src.getDefectLabel() : "Target defect",
+                  src != null && src.getSeverity() != null ? src.getSeverity().name() : "MEDIUM",
+                  item.getResolutionStatus().name(),
+                  item.getNewEvidenceId() != null,
+                  item.getInspectorNotes());
+            })
+        .toList();
   }
 
   private java.util.Optional<RepairCandidate> candidateFor(UUID organizationId, Finding finding) {

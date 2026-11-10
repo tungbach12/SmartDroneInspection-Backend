@@ -97,6 +97,35 @@ public class DroneRegistrationApplication {
     review("REJECTED", reviewerId, note);
   }
 
+  public void resubmit(
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt,
+      String ownershipFileKey,
+      String inspectionFileKey) {
+    if (!"REJECTED".equals(status) && !"APPROVED".equals(status)) {
+      throw new IllegalStateException(
+          "Only rejected or approved applications may be resubmitted or renewed.");
+    }
+    this.model = model;
+    this.manufacturer = manufacturer;
+    this.registrationNumber = registrationNumber.trim();
+    this.registrationFileKey = registrationFileKey.trim();
+    this.registrationExpiresAt = registrationExpiresAt;
+    this.ownershipFileKey = ownershipFileKey.trim();
+    this.inspectionFileKey = inspectionFileKey.trim();
+    this.status = "PENDING";
+    this.reviewNote = null;
+    this.reviewedByUserId = null;
+    this.reviewedAt = null;
+  }
+
+  public void linkExistingDrone(UUID existingDroneId) {
+    this.droneId = existingDroneId;
+  }
+
   private void review(String next, UUID reviewerId, String note) {
     if (!"PENDING".equals(status))
       throw new IllegalStateException("Only pending applications may be reviewed.");

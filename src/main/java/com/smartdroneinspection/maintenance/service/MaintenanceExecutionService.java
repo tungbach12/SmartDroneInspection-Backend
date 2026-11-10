@@ -1,6 +1,8 @@
 package com.smartdroneinspection.maintenance.service;
 
 import com.smartdroneinspection.inspections.spi.ReinspectionRequestedEvent;
+import com.smartdroneinspection.inspections.spi.RepairCandidate;
+import com.smartdroneinspection.inspections.spi.RepairCandidateAccess;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateChangeOrderRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.CreateReportVersionRequest;
 import com.smartdroneinspection.maintenance.api.dto.request.ReconcileCostsRequest;
@@ -44,6 +46,7 @@ import com.smartdroneinspection.maintenance.repository.MaintenanceTaskRepository
 import com.smartdroneinspection.maintenance.repository.MaintenanceTeamMemberRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkLogRepository;
 import com.smartdroneinspection.maintenance.repository.MaintenanceWorkOrderRepository;
+import com.smartdroneinspection.shared.api.RepairKnowledgeLookup;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
@@ -53,12 +56,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -94,6 +101,8 @@ public class MaintenanceExecutionService {
   private final ApplicationEventPublisher eventPublisher;
   private final Optional<EvidenceObjectStore> objectStore;
   private final MaintenanceReportRenderer reportRenderer;
+  private final Optional<RepairKnowledgeLookup> knowledgeLookup;
+  private final Optional<RepairCandidateAccess> repairCandidateAccess;
 
   public MaintenanceExecutionService(
       MaintenanceWorkOrderRepository workOrders,
@@ -110,6 +119,43 @@ public class MaintenanceExecutionService {
       ApplicationEventPublisher eventPublisher,
       Optional<EvidenceObjectStore> objectStore,
       MaintenanceReportRenderer reportRenderer) {
+    this(
+        workOrders,
+        teamMembers,
+        tasks,
+        workLogs,
+        changeOrders,
+        estimates,
+        costLines,
+        reportVersions,
+        acceptanceDecisions,
+        workOrderService,
+        userAccess,
+        eventPublisher,
+        objectStore,
+        reportRenderer,
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  @Autowired
+  public MaintenanceExecutionService(
+      MaintenanceWorkOrderRepository workOrders,
+      MaintenanceTeamMemberRepository teamMembers,
+      MaintenanceTaskRepository tasks,
+      MaintenanceWorkLogRepository workLogs,
+      MaintenanceChangeOrderRepository changeOrders,
+      MaintenanceEstimateVersionRepository estimates,
+      MaintenanceCostLineRepository costLines,
+      MaintenanceReportVersionRepository reportVersions,
+      MaintenanceAcceptanceDecisionRepository acceptanceDecisions,
+      WorkOrderService workOrderService,
+      UserAccess userAccess,
+      ApplicationEventPublisher eventPublisher,
+      Optional<EvidenceObjectStore> objectStore,
+      MaintenanceReportRenderer reportRenderer,
+      Optional<RepairKnowledgeLookup> knowledgeLookup,
+      Optional<RepairCandidateAccess> repairCandidateAccess) {
     this.workOrders = workOrders;
     this.teamMembers = teamMembers;
     this.tasks = tasks;
@@ -124,6 +170,9 @@ public class MaintenanceExecutionService {
     this.eventPublisher = eventPublisher;
     this.objectStore = objectStore;
     this.reportRenderer = reportRenderer;
+    this.knowledgeLookup = knowledgeLookup != null ? knowledgeLookup : Optional.empty();
+    this.repairCandidateAccess =
+        repairCandidateAccess != null ? repairCandidateAccess : Optional.empty();
   }
 
   /** MF4-09: an approved work order is released to the team. */
@@ -265,8 +314,16 @@ public class MaintenanceExecutionService {
     MaintenanceWorkLog log =
         new MaintenanceWorkLog(
             order.getId(), request.taskId(), actorId, startedAt, request.hours());
+    String effectiveReadings = request.testReadings();
+    if (request.repairProofUrl() != null && !request.repairProofUrl().isBlank()) {
+      String marker = "[REPAIR_PROOF:" + request.repairProofUrl().trim() + "]";
+      effectiveReadings =
+          (effectiveReadings == null || effectiveReadings.isBlank())
+              ? marker
+              : effectiveReadings.trim() + " " + marker;
+    }
     log.recordProgress(
-        startedAt, endedAt, request.hours(), request.asLeftCondition(), request.testReadings());
+        startedAt, endedAt, request.hours(), request.asLeftCondition(), effectiveReadings);
     workLogs.saveAndFlush(log);
     return WorkLogResponse.from(log);
   }
@@ -324,6 +381,68 @@ public class MaintenanceExecutionService {
     return workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId()).stream()
         .map(WorkLogResponse::from)
         .toList();
+  }
+
+  /** Uploads a BEFORE_REPAIR or AFTER_REPAIR proof photo to MinIO and returns its API URL. */
+  public Map<String, String> uploadRepairProof(
+      UUID actorId, UUID workOrderId, org.springframework.web.multipart.MultipartFile file) {
+    MaintenanceWorkOrder order = workOrderService.requireWorkOrderInScope(actorId, workOrderId);
+    requireTeamMember(order, actorId);
+    var validated = com.smartdroneinspection.shared.storage.EvidenceUploadValidator.validate(file);
+    String extWithDot =
+        validated.extension().startsWith(".") ? validated.extension() : "." + validated.extension();
+    String fileName = UUID.randomUUID() + extWithDot;
+    String objectKey = "maintenance/" + order.getId() + "/repair-proof/" + fileName;
+    EvidenceObjectStore store =
+        objectStore.orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "OBJECT_STORE_UNAVAILABLE",
+                    "Object storage is not configured"));
+    try {
+      store.put(
+          objectKey,
+          validated.contentType(),
+          validated.content().length,
+          new ByteArrayInputStream(validated.content()));
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY, "STORAGE_FAILURE", "Could not store repair proof photo");
+    }
+    String url = "/api/v1/maintenance/work-orders/" + order.getId() + "/repair-proof/" + fileName;
+    return Map.of("repairProofUrl", url, "fileName", fileName);
+  }
+
+  @Transactional(readOnly = true)
+  public ResponseEntity<byte[]> openRepairProof(UUID actorId, UUID workOrderId, String fileName) {
+    if (fileName == null || !fileName.matches("[a-fA-F0-9\\-]+\\.(jpg|png|webp|pdf)")) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_FILE_NAME", "Invalid repair proof file name");
+    }
+    String objectKey = "maintenance/" + workOrderId + "/repair-proof/" + fileName;
+    EvidenceObjectStore store =
+        objectStore.orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "OBJECT_STORE_UNAVAILABLE",
+                    "Object storage is not configured"));
+    try (var stream = store.open(objectKey)) {
+      byte[] bytes = stream.readAllBytes();
+      String ext = fileName.substring(fileName.lastIndexOf('.'));
+      String contentType =
+          com.smartdroneinspection.shared.storage.EvidenceUploadValidator.contentType(ext);
+      return ResponseEntity.ok()
+          .contentType(MediaType.parseMediaType(contentType))
+          .header(
+              HttpHeaders.CONTENT_DISPOSITION,
+              ContentDisposition.inline().filename(fileName).build().toString())
+          .body(bytes);
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND, "REPAIR_PROOF_NOT_FOUND", "Repair proof file not found");
+    }
   }
 
   /** MF4-12: a change proposal. It authorizes nothing until a decision is recorded. */
@@ -659,11 +778,6 @@ public class MaintenanceExecutionService {
         case REINSPECTION_REQUIRED -> {
           order.requireReinspection(actorId, request.technicalComments());
           report.returnToAuthor(request.technicalComments());
-          for (MaintenanceTask task : tasks.findByWorkOrderIdOrderByTaskNumberAsc(order.getId())) {
-            task.markReworkRequired();
-            tasks.save(task);
-          }
-          tasks.flush();
           if (eventPublisher != null) {
             List<MaintenanceWorkLog> verifiedLogs =
                 workLogs.findByWorkOrderIdOrderByStartedAtAsc(order.getId());
@@ -676,6 +790,14 @@ public class MaintenanceExecutionService {
                         ? "Bàn giao kỹ sư: " + latestEngineerLog + " | "
                         : "")
                     + (request.technicalComments() != null ? request.technicalComments() : "");
+            String latestRepairProofUrl = null;
+            for (int i = verifiedLogs.size() - 1; i >= 0; i--) {
+              WorkLogResponse parsed = WorkLogResponse.from(verifiedLogs.get(i));
+              if (parsed.repairProofUrl() != null && !parsed.repairProofUrl().isBlank()) {
+                latestRepairProofUrl = parsed.repairProofUrl();
+                break;
+              }
+            }
             eventPublisher.publishEvent(
                 new ReinspectionRequestedEvent(
                     order.getId(),
@@ -686,7 +808,8 @@ public class MaintenanceExecutionService {
                     order.getSourceFindingId(),
                     actorId,
                     combinedNotes,
-                    Instant.now()));
+                    Instant.now(),
+                    latestRepairProofUrl));
           }
         }
       }
@@ -768,7 +891,35 @@ public class MaintenanceExecutionService {
             verifiedLogs + "/" + submittedLogs + " nhật ký đã xác minh",
             allLogsVerified ? "PASSED" : "FAILED"));
 
-    // 3. Technical test measurements verification
+    // 3. RAG-grounded technical test measurements verification
+    RepairCandidate sourceCandidate =
+        repairCandidateAccess
+            .flatMap(
+                access ->
+                    access.findRepairCandidate(
+                        order.getOrganizationId(),
+                        order.getSourceReportVersionId(),
+                        order.getSourceFindingId()))
+            .orElse(null);
+    String lookupLabel =
+        sourceCandidate != null ? sourceCandidate.defectLabel() : order.getCorrectiveScope();
+    String lookupNotes =
+        sourceCandidate != null ? sourceCandidate.technicalNotes() : order.getAcceptanceCriteria();
+    RepairKnowledgeLookup.VerificationGuidance ragGuidance =
+        knowledgeLookup
+            .map(lookup -> lookup.lookupVerificationGuidance(lookupLabel, lookupNotes))
+            .orElse(null);
+    List<String> ragStandards =
+        ragGuidance != null && ragGuidance.referenceStandards() != null
+            ? ragGuidance.referenceStandards()
+            : List.of();
+    String ragChecklist =
+        ragGuidance != null
+                && ragGuidance.verificationChecklist() != null
+                && !ragGuidance.verificationChecklist().isBlank()
+            ? ragGuidance.verificationChecklist()
+            : "Chỉ số kỹ thuật đạt chuẩn TCVN / Thiết kế phê duyệt";
+
     boolean hasTestReadings =
         logList.stream()
             .anyMatch(l -> l.getTestReadings() != null && !l.getTestReadings().isBlank());
@@ -779,16 +930,22 @@ public class MaintenanceExecutionService {
             .reduce((first, second) -> second)
             .orElse("Chưa ghi nhận số đo thử nghiệm hiện trường");
 
-    String criteria =
+    String baseCriteria =
         order.getAcceptanceCriteria() != null && !order.getAcceptanceCriteria().isBlank()
             ? order.getAcceptanceCriteria()
-            : "Chỉ số kỹ thuật đạt chuẩn TCVN / Thiết kế phê duyệt";
+            : ragChecklist;
+    String criteriaWithStandards =
+        !ragStandards.isEmpty()
+            ? baseCriteria + " [Quy chuẩn RAG: " + String.join(", ", ragStandards) + "]"
+            : baseCriteria;
+    boolean readingsMeetThreshold =
+        hasTestReadings && evaluateQuantitativeReadings(baseCriteria, sampleReadings);
     checks.add(
         new AcceptanceComplianceResponse.ComplianceCheckItem(
             "Chỉ số kiểm tra hiện trường (Test Readings)",
-            criteria,
+            criteriaWithStandards,
             sampleReadings,
-            hasTestReadings ? "PASSED" : "WARNING"));
+            !hasTestReadings ? "WARNING" : (readingsMeetThreshold ? "PASSED" : "FAILED")));
 
     // 4. As-left condition assessment
     boolean hasAsLeft =
@@ -807,28 +964,98 @@ public class MaintenanceExecutionService {
             sampleAsLeft,
             hasAsLeft ? "PASSED" : "WARNING"));
 
+    // 5. 3-Way Drone Re-inspection Verification check (when a re-inspection is linked)
+    boolean reinspectionFailed = false;
+    if (order.getReinspectionId() != null && repairCandidateAccess.isPresent()) {
+      List<RepairCandidateAccess.ReinspectionVerificationSummary> verifications =
+          repairCandidateAccess.get().findReinspectionVerifications(order.getReinspectionId());
+      if (!verifications.isEmpty()) {
+        long resolvedWithEvidence =
+            verifications.stream()
+                .filter(
+                    v -> "RESOLVED".equalsIgnoreCase(v.resolutionStatus()) && v.hasFreshEvidence())
+                .count();
+        boolean allReinspectedResolved = resolvedWithEvidence == verifications.size();
+        reinspectionFailed = !allReinspectedResolved;
+        checks.add(
+            new AcceptanceComplianceResponse.ComplianceCheckItem(
+                "Đối chiếu tái kiểm định 3 bên bằng Drone (3-Way Re-inspection)",
+                "100% khuyết tật mục tiêu đạt RESOLVED kèm ảnh chụp thực địa mới",
+                resolvedWithEvidence + "/" + verifications.size() + " hạng mục đạt RESOLVED",
+                allReinspectedResolved ? "PASSED" : "FAILED"));
+      }
+    }
+
     int passedCount = (int) checks.stream().filter(c -> "PASSED".equals(c.resultStatus())).count();
+    boolean anyFailed = checks.stream().anyMatch(c -> "FAILED".equals(c.resultStatus()));
     int score = (passedCount * 100) / checks.size();
 
-    String status = score >= 75 ? "COMPLIANT" : (score >= 50 ? "POTENTIAL_RISK" : "NON_COMPLIANT");
+    String status =
+        (!anyFailed && score >= 75)
+            ? "COMPLIANT"
+            : (score >= 50 ? "POTENTIAL_RISK" : "NON_COMPLIANT");
     String recommendation;
     String summary;
+    String stdSuffix = !ragStandards.isEmpty() ? " (" + String.join(", ", ragStandards) + ")" : "";
 
-    if (score >= 75) {
+    if (hasTestReadings && !readingsMeetThreshold) {
+      recommendation = "REWORK_REQUIRED";
+      summary =
+          "Số đo thử nghiệm hiện trường ("
+              + sampleReadings
+              + ") chưa đạt ngưỡng quy chuẩn kỹ thuật yêu cầu"
+              + stdSuffix
+              + ". Khuyến nghị yêu cầu đội thi công xử lý lại (REWORK_REQUIRED).";
+    } else if (reinspectionFailed) {
+      recommendation = "REWORK_REQUIRED";
+      summary =
+          "Kết quả bay tái kiểm định 3 bên ghi nhận còn hạng mục chưa khắc phục triệt để"
+              + stdSuffix
+              + ". Khuyến nghị trả lại đội kỹ sư bảo trì sửa chữa bổ sung (REWORK_REQUIRED).";
+    } else if (!anyFailed && score >= 75) {
       recommendation = "ACCEPTED";
       summary =
-          "Hồ sơ thi công và các chỉ số đo đạc hiện trường đáp ứng đầy đủ tiêu chí kỹ thuật theo quy chuẩn. Khuyến nghị người nghiệm thu độc lập phê duyệt nghiệm thu (ACCEPTED).";
+          "Hồ sơ thi công và các chỉ số đo đạc hiện trường đáp ứng đầy đủ tiêu chí kỹ thuật theo quy chuẩn"
+              + stdSuffix
+              + ". Khuyến nghị người nghiệm thu độc lập phê duyệt nghiệm thu (ACCEPTED).";
     } else if (score >= 50) {
       recommendation = "REWORK_REQUIRED";
       summary =
-          "Các hạng mục thi công cơ bản hoàn thành nhưng thiếu hụt một số chỉ số đo đạc kiểm nghiệm hiện trường. Khuyến nghị yêu cầu đội thi công bổ sung số liệu trước khi nghiệm thu.";
+          "Các hạng mục thi công cơ bản hoàn thành nhưng thiếu hụt một số chỉ số đo đạc kiểm nghiệm hiện trường"
+              + stdSuffix
+              + ". Khuyến nghị yêu cầu đội thi công bổ sung số liệu trước khi nghiệm thu.";
     } else {
       recommendation = "REINSPECTION_REQUIRED";
       summary =
-          "Nhật ký thi công chưa được xác minh đầy đủ hoặc không có kết quả đo đạc kiểm tra. Khuyến nghị kiểm tra kỹ hoặc điều phối chuyến bay Drone tái kiểm định (REINSPECTION_REQUIRED).";
+          "Nhật ký thi công chưa được xác minh đầy đủ hoặc không có kết quả đo đạc kiểm tra"
+              + stdSuffix
+              + ". Khuyến nghị kiểm tra kỹ hoặc điều phối chuyến bay Drone tái kiểm định (REINSPECTION_REQUIRED).";
     }
 
     return new AcceptanceComplianceResponse(score, status, recommendation, summary, checks);
+  }
+
+  private static boolean evaluateQuantitativeReadings(String criteria, String readings) {
+    if (criteria == null || readings == null) {
+      return true;
+    }
+    Pattern thresholdPattern =
+        Pattern.compile(">=\\s*(\\d+(?:\\.\\d+)?)\\s*(%|MPa|um|mm)", Pattern.CASE_INSENSITIVE);
+    Matcher criteriaMatcher = thresholdPattern.matcher(criteria);
+    while (criteriaMatcher.find()) {
+      double minRequired = Double.parseDouble(criteriaMatcher.group(1));
+      String unit = criteriaMatcher.group(2).toLowerCase(Locale.ROOT);
+      Pattern readingPattern =
+          Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*" + Pattern.quote(unit), Pattern.CASE_INSENSITIVE);
+      Matcher readingMatcher = readingPattern.matcher(readings);
+      if (readingMatcher.find()) {
+        double actualValue = Double.parseDouble(readingMatcher.group(1));
+        if (actualValue < minRequired) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   /**

@@ -295,6 +295,7 @@ public class MaintenanceWorkOrder {
       throw new IllegalArgumentException("A re-inspection decision requires a reason");
     }
     this.status = WorkOrderStatus.REINSPECTION_REQUIRED;
+    this.reinspectionReportVersionId = null;
     this.updatedAt = Instant.now();
   }
 
@@ -325,6 +326,10 @@ public class MaintenanceWorkOrder {
   /** MF4-18: re-inspection clears once the verifying inspection is recorded. */
   public void resumeAfterReinspection() {
     requireStatus(WorkOrderStatus.REINSPECTION_REQUIRED);
+    if (this.reinspectionId != null && this.reinspectionReportVersionId == null) {
+      throw new IllegalStateException(
+          "Cannot resume execution while the linked re-inspection report has not been published");
+    }
     this.status = WorkOrderStatus.IN_PROGRESS;
     this.updatedAt = Instant.now();
   }

@@ -15,4 +15,16 @@ public record RecordWorkLogRequest(
     Instant endedAt,
     @NotNull BigDecimal hours,
     String asLeftCondition,
-    String testReadings) {}
+    String testReadings,
+    String repairProofUrl) {
+
+  public RecordWorkLogRequest(
+      UUID taskId,
+      Instant startedAt,
+      Instant endedAt,
+      BigDecimal hours,
+      String asLeftCondition,
+      String testReadings) {
+    this(taskId, startedAt, endedAt, hours, asLeftCondition, testReadings, null);
+  }
+}

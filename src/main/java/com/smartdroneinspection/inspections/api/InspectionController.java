@@ -20,6 +20,7 @@ import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
@@ -60,6 +61,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -514,6 +516,30 @@ public class InspectionController {
       reportAcceptancePort.get().acceptReport(actorId(jwt), inspectionId, versionId);
     }
     return ApiResponse.success(null);
+  }
+
+  @PostMapping("/report/versions/{versionId}/clarification")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<ReportPublishedResponse> requestReportClarification(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId,
+      @RequestParam String reason) {
+    return ApiResponse.success(
+        reportService.requestCustomerClarification(actorId(jwt), inspectionId, versionId, reason));
+  }
+
+  @PostMapping("/reinspections")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @ResponseStatus(HttpStatus.CREATED)
+  public ApiResponse<InspectionResponse> createDirectReinspection(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(required = false) String repairNotes,
+      @RequestParam(required = false) String repairProofUrl) {
+    return ApiResponse.success(
+        reinspectionVerificationService.createDirectReinspection(
+            actorId(jwt), inspectionId, repairNotes, repairProofUrl));
   }
 
   @PostMapping("/payos/create-payment-link")

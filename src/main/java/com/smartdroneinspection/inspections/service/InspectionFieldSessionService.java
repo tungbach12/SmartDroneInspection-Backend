@@ -68,6 +68,17 @@ public class InspectionFieldSessionService {
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
     boolean partnerAssignment = isInspectorPartner(inspectorId);
     UUID organizationId = requireInspectorOrganization(inspectorId, partnerAssignment);
+    userAccess
+        .findActiveUser(inspectorId)
+        .ifPresent(
+            user -> {
+              if (user.pilotLicenseExpiresAt() != null
+                  && !user.pilotLicenseExpiresAt().isAfter(Instant.now())) {
+                throw sessionFailure(
+                    "PILOT_LICENSE_EXPIRED",
+                    "Cannot start field work because the assigned inspector's pilot license has expired.");
+              }
+            });
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
           "PREFLIGHT_CHECKLIST_REQUIRED",

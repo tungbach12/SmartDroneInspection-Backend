@@ -167,6 +167,18 @@ class MaintenanceWorkOrderLifecycleTest {
   }
 
   @Test
+  void cannotResumeAfterReinspectionWhileLinkedReinspectionReportIsPending() {
+    MaintenanceWorkOrder order = awaitingAcceptance();
+    order.requireReinspection(REVIEWER, "Requires independent verification");
+    order.attachReinspection(UUID.randomUUID());
+
+    assertThatThrownBy(order::resumeAfterReinspection)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("re-inspection report has not been published");
+    assertThat(order.getStatus()).isEqualTo(WorkOrderStatus.REINSPECTION_REQUIRED);
+  }
+
+  @Test
   void reconcilesCostsThenCloses() {
     MaintenanceWorkOrder order = awaitingAcceptance();
     order.accept(REVIEWER);

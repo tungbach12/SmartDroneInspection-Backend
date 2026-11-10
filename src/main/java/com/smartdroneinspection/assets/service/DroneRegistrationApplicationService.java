@@ -93,6 +93,57 @@ public class DroneRegistrationApplicationService {
     return DroneRegistrationApplicationResponse.from(application, inspector);
   }
 
+  @Transactional
+  public DroneRegistrationApplicationResponse resubmit(
+      UUID inspectorId,
+      UUID applicationId,
+      SubmitDroneRegistrationApplicationRequest request,
+      String ip,
+      String agent,
+      String correlationId) {
+    requireInspector(inspectorId);
+    DroneRegistrationApplication application =
+        applications.findById(applicationId).orElseThrow(this::notFound);
+    if (!inspectorId.equals(application.getInspectorUserId())) {
+      throw new AuthException(
+          HttpStatus.FORBIDDEN,
+          "NOT_APPLICATION_OWNER",
+          "Only the submitting Inspector can resubmit this application.");
+    }
+    evidenceUploads.validateReference(inspectorId, "REGISTRATION", request.registrationFileKey());
+    evidenceUploads.validateReference(inspectorId, "OWNERSHIP", request.ownershipFileKey());
+    evidenceUploads.validateReference(inspectorId, "INSPECTION", request.inspectionFileKey());
+    if (!request.registrationExpiresAt().isAfter(Instant.now())) {
+      throw new AuthException(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_REGISTRATION_EXPIRED",
+          "Drone registration must be current.");
+    }
+    try {
+      application.resubmit(
+          request.model(),
+          request.manufacturer(),
+          request.registrationNumber(),
+          request.registrationFileKey(),
+          request.registrationExpiresAt(),
+          request.ownershipFileKey(),
+          request.inspectionFileKey());
+    } catch (IllegalStateException ex) {
+      throw new AuthException(HttpStatus.CONFLICT, "RESUBMIT_INVALID", ex.getMessage());
+    }
+    applications.saveAndFlush(application);
+    userAccess.recordSecurityAudit(
+        inspectorId,
+        application.getId(),
+        "DRONE_REGISTRATION_RESUBMITTED",
+        "SUCCESS",
+        ip,
+        agent,
+        correlationId);
+    var inspector = userAccess.findActiveUser(inspectorId).orElse(null);
+    return DroneRegistrationApplicationResponse.from(application, inspector);
+  }
+
   @Transactional(readOnly = true)
   public EvidenceContent openEvidence(UUID reviewerId, UUID applicationId, String type) {
     requireReviewer(reviewerId);
@@ -192,20 +243,43 @@ public class DroneRegistrationApplicationService {
           "DRONE_REGISTRATION_EXPIRED",
           "Drone registration expired before approval.");
     }
-    if (drones.existsBySerialNumberIgnoreCase(application.getSerialNumber())) {
-      throw new AuthException(
-          HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Drone serial is already registered.");
+    Drone drone;
+    if (application.getDroneId() != null) {
+      drone = drones.findById(application.getDroneId()).orElse(null);
+      if (drone != null) {
+        drone.updateRegistration(
+            application.getRegistrationNumber(),
+            application.getRegistrationFileKey(),
+            application.getRegistrationExpiresAt());
+        drone = drones.saveAndFlush(drone);
+      } else {
+        drone =
+            drones.saveAndFlush(
+                Drone.createInspectorOwned(
+                    application.getInspectorUserId(),
+                    application.getSerialNumber(),
+                    application.getModel(),
+                    application.getManufacturer(),
+                    application.getRegistrationNumber(),
+                    application.getRegistrationFileKey(),
+                    application.getRegistrationExpiresAt()));
+      }
+    } else {
+      if (drones.existsBySerialNumberIgnoreCase(application.getSerialNumber())) {
+        throw new AuthException(
+            HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Drone serial is already registered.");
+      }
+      drone =
+          drones.saveAndFlush(
+              Drone.createInspectorOwned(
+                  application.getInspectorUserId(),
+                  application.getSerialNumber(),
+                  application.getModel(),
+                  application.getManufacturer(),
+                  application.getRegistrationNumber(),
+                  application.getRegistrationFileKey(),
+                  application.getRegistrationExpiresAt()));
     }
-    Drone drone =
-        drones.saveAndFlush(
-            Drone.createInspectorOwned(
-                application.getInspectorUserId(),
-                application.getSerialNumber(),
-                application.getModel(),
-                application.getManufacturer(),
-                application.getRegistrationNumber(),
-                application.getRegistrationFileKey(),
-                application.getRegistrationExpiresAt()));
     application.approve(reviewerId, drone.getId());
     applications.saveAndFlush(application);
     userAccess.recordSecurityAudit(

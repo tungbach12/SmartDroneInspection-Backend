@@ -146,6 +146,21 @@ public class InspectionReport {
     status = ReportStatus.SUPERSEDED;
   }
 
+  public void returnForCustomerClarification(UUID customerId, String reason) {
+    requireStatus(ReportStatus.PUBLISHED);
+    if (customerId == null) {
+      throw new IllegalArgumentException("Customer requester ID is required");
+    }
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A clarification request reason is required");
+    }
+    reviewerUserId = customerId;
+    reviewedAt = Instant.now();
+    publishedAt = null;
+    returnReason = "[Yêu cầu làm rõ từ Khách hàng] " + reason.trim();
+    status = ReportStatus.RETURNED;
+  }
+
   public boolean isImmutable() {
     return status == ReportStatus.PUBLISHED || status == ReportStatus.SUPERSEDED;
   }

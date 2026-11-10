@@ -172,7 +172,7 @@ class VnPayPaymentIntegrationTest {
         "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
         inspectorUserId,
         "VN-UAV-PILOT-2026",
-        "CLASS_A",
+        "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
         "licenses/pilot-cert.pdf");
 

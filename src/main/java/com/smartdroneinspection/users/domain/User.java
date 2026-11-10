@@ -180,6 +180,7 @@ public class User {
     updateAccessProfile(
         ActorZone.CUSTOMER_ORGANIZATION, organizationId, List.of(UserRole.CUSTOMER));
     this.status = UserStatus.ACTIVE;
+    this.otpVerified = true;
     this.updatedAt = Instant.now();
   }
 

@@ -141,20 +141,34 @@ public class PartnerRegistryService {
 
   @Transactional
   public void lockEligibleDrone(UUID droneId, UUID inspectorUserId) {
-    drones
-        .findWithLockById(droneId)
-        .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
-        .filter(Drone::isEligibleForAssignment)
-        .filter(
-            value ->
-                value.getRegistrationExpiresAt() == null
-                    || value.getRegistrationExpiresAt().isAfter(Instant.now()))
-        .orElseThrow(
-            () ->
-                failure(
-                    HttpStatus.BAD_REQUEST,
-                    INVALID_PARTNER_DRONE,
-                    "Partner drone is not eligible"));
+    lockEligibleDrone(droneId, inspectorUserId, Instant.now());
+  }
+
+  @Transactional
+  public void lockEligibleDrone(UUID droneId, UUID inspectorUserId, Instant at) {
+    Instant checkTime = at != null ? at : Instant.now();
+    UserAccess.ActiveUser inspector = lockEligibleInspector(inspectorUserId, checkTime);
+    Drone drone =
+        drones
+            .findWithLockById(droneId)
+            .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
+            .filter(Drone::isEligibleForAssignment)
+            .filter(
+                value ->
+                    value.getRegistrationExpiresAt() == null
+                        || value.getRegistrationExpiresAt().isAfter(checkTime))
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.BAD_REQUEST,
+                        INVALID_PARTNER_DRONE,
+                        "Partner drone is not eligible or registration expires before the scheduled mission"));
+    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INSUFFICIENT",
+          "Drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license");
+    }
   }
 
   @Transactional(readOnly = true)
@@ -168,16 +182,31 @@ public class PartnerRegistryService {
 
   @Transactional(readOnly = true)
   public boolean isEligibleDrone(UUID droneId, UUID inspectorUserId) {
-    return isEligibleInspector(inspectorUserId, Instant.now())
-        && drones
-            .findById(droneId)
-            .filter(drone -> inspectorUserId.equals(drone.getInspectorOwnerId()))
-            .filter(Drone::isEligibleForAssignment)
-            .filter(
-                drone ->
-                    drone.getRegistrationExpiresAt() == null
-                        || drone.getRegistrationExpiresAt().isAfter(Instant.now()))
-            .isPresent();
+    return isEligibleDrone(droneId, inspectorUserId, Instant.now());
+  }
+
+  @Transactional(readOnly = true)
+  public boolean isEligibleDrone(UUID droneId, UUID inspectorUserId, Instant at) {
+    Instant checkTime = at != null ? at : Instant.now();
+    UserAccess.ActiveUser inspector =
+        users
+            .findActiveUser(inspectorUserId)
+            .filter(UserAccess.ActiveUser::isInspectorPartner)
+            .filter(user -> user.hasValidPilotLicense(checkTime))
+            .orElse(null);
+    if (inspector == null) {
+      return false;
+    }
+    return drones
+        .findById(droneId)
+        .filter(drone -> inspectorUserId.equals(drone.getInspectorOwnerId()))
+        .filter(Drone::isEligibleForAssignment)
+        .filter(
+            drone ->
+                drone.getRegistrationExpiresAt() == null
+                    || drone.getRegistrationExpiresAt().isAfter(checkTime))
+        .filter(drone -> inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense()))
+        .isPresent();
   }
 
   @Transactional(readOnly = true)

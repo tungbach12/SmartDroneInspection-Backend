@@ -108,6 +108,13 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
                         "INVALID_DRONE",
                         "Partner drone must be approved for the selected Inspector and currently registered"));
 
+    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INSUFFICIENT",
+          "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license");
+    }
+
     if (inspections.hasPlatformPartnerScheduleConflict(
         inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)) {
       throw failure(

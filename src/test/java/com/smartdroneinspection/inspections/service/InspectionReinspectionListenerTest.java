@@ -66,6 +66,9 @@ class InspectionReinspectionListenerTest {
     Inspection sourceInspection = mock(Inspection.class);
     when(sourceInspection.getInspectorId()).thenReturn(inspectorId);
     when(sourceInspection.getDroneId()).thenReturn(droneId);
+    when(sourceInspection.hasFlightPermit()).thenReturn(true);
+    when(sourceInspection.getFlightPermitFileKey()).thenReturn("permits/old-permit.pdf");
+    when(sourceInspection.getFlightPermitFileName()).thenReturn("old-permit.pdf");
     when(inspections.findById(finding.getInspectionId())).thenReturn(Optional.of(sourceInspection));
 
     ReinspectionRequestedEvent event =
@@ -94,6 +97,7 @@ class InspectionReinspectionListenerTest {
     assertThat(saved.getInspectionType()).isEqualTo(InspectionType.RE_INSPECTION);
     assertThat(saved.getWorkOrderId()).isEqualTo(workOrderId);
     assertThat(saved.getSourceReportVersionId()).isEqualTo(event.sourceReportVersionId());
+    assertThat(saved.hasFlightPermit()).isFalse();
 
     ArgumentCaptor<ReinspectionDefectVerification> verifCaptor =
         ArgumentCaptor.forClass(ReinspectionDefectVerification.class);

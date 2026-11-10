@@ -81,4 +81,33 @@ public record InspectionResponse(
         null,
         null);
   }
+
+  public static InspectionResponse from(
+      com.smartdroneinspection.inspections.domain.Inspection inspection) {
+    return new InspectionResponse(
+        inspection.getId(),
+        inspection.getOrganizationId(),
+        inspection.getAssetId(),
+        null,
+        null,
+        null,
+        null,
+        List.of(),
+        inspection.getInspectorId(),
+        null,
+        inspection.getDroneId(),
+        null,
+        null,
+        null,
+        inspection.getFlightPermitFileKey(),
+        inspection.getFlightPermitFileName(),
+        inspection.getPlannedStartAt(),
+        inspection.getPlannedEndAt(),
+        inspection.getStatus().name(),
+        inspection.getCreatedAt(),
+        inspection.getUpdatedAt(),
+        inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
+        inspection.getWorkOrderId(),
+        inspection.getSourceInspectionId());
+  }
 }

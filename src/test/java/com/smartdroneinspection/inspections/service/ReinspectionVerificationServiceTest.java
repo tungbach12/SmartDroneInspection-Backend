@@ -128,6 +128,8 @@ class ReinspectionVerificationServiceTest {
     Inspection inspection =
         new Inspection(orgId, UUID.randomUUID(), actorId, UUID.randomUUID(), null, null);
     ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    inspection.moveTo(
+        com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
 
     ReinspectionDefectVerification verif =
         new ReinspectionDefectVerification(inspectionId, findingId);
@@ -152,6 +154,7 @@ class ReinspectionVerificationServiceTest {
     when(userAccess.findActiveUser(actorId)).thenReturn(Optional.of(actor));
     when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
     when(verifications.findById(verificationId)).thenReturn(Optional.of(verif));
+    when(verifications.findByReinspectionId(inspectionId)).thenReturn(List.of(verif));
     when(evidences.findByIdAndInspectionId(newEvidenceId, inspectionId))
         .thenReturn(Optional.of(evidence));
     when(verifications.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -188,6 +191,8 @@ class ReinspectionVerificationServiceTest {
     Inspection inspection =
         new Inspection(orgId, UUID.randomUUID(), actorId, UUID.randomUUID(), null, null);
     ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    inspection.moveTo(
+        com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
 
     ReinspectionDefectVerification verif =
         new ReinspectionDefectVerification(inspectionId, findingId);
@@ -204,5 +209,146 @@ class ReinspectionVerificationServiceTest {
             () -> service.updateVerification(actorId, inspectionId, verificationId, request))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("Invalid resolution status");
+  }
+
+  @Test
+  @DisplayName("updateVerification rejects when field session is not completed")
+  void updateVerificationRejectsWhenFieldSessionNotCompleted() {
+    UserAccess.ActiveUser actor =
+        new UserAccess.ActiveUser(
+            actorId,
+            Set.of(Roles.INSPECTOR),
+            orgId,
+            "INSPECTOR_PARTNER",
+            "Inspector Guy",
+            "inspector@drone.test",
+            "LIC-123",
+            "CLASS_A",
+            Instant.now().plusSeconds(86400),
+            "lic-key");
+
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), actorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+
+    when(userAccess.findActiveUser(actorId)).thenReturn(Optional.of(actor));
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+
+    UpdateDefectVerificationRequest request =
+        new UpdateDefectVerificationRequest("RESOLVED", UUID.randomUUID(), "Notes");
+
+    assertThatThrownBy(
+            () -> service.updateVerification(actorId, inspectionId, verificationId, request))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Complete the on-site field session");
+  }
+
+  @Test
+  @DisplayName("updateVerification requires fresh evidence when marking defect RESOLVED")
+  void updateVerificationRequiresEvidenceWhenResolved() {
+    UserAccess.ActiveUser actor =
+        new UserAccess.ActiveUser(
+            actorId,
+            Set.of(Roles.INSPECTOR),
+            orgId,
+            "INSPECTOR_PARTNER",
+            "Inspector Guy",
+            "inspector@drone.test",
+            "LIC-123",
+            "CLASS_A",
+            Instant.now().plusSeconds(86400),
+            "lic-key");
+
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), actorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    inspection.moveTo(
+        com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
+
+    ReinspectionDefectVerification verif =
+        new ReinspectionDefectVerification(inspectionId, findingId);
+    ReflectionTestUtils.setField(verif, "id", verificationId);
+
+    when(userAccess.findActiveUser(actorId)).thenReturn(Optional.of(actor));
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(verifications.findById(verificationId)).thenReturn(Optional.of(verif));
+
+    UpdateDefectVerificationRequest request =
+        new UpdateDefectVerificationRequest("RESOLVED", null, "Fixed without photo");
+
+    assertThatThrownBy(
+            () -> service.updateVerification(actorId, inspectionId, verificationId, request))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("fresh re-inspection evidence capture is required");
+  }
+
+  @Test
+  @DisplayName("getVerifications enriches items with RAG reference standards and guidance")
+  void getVerificationsIncludesRagStandardsAndVerificationGuidance() {
+    com.smartdroneinspection.shared.api.RepairKnowledgeLookup lookup =
+        (label, notes) ->
+            new com.smartdroneinspection.shared.api.RepairKnowledgeLookup.VerificationGuidance(
+                List.of("TCVN 9343:2012", "TCVN 9357:2012"),
+                "UPV >= 90%, pull-off >= 1.5 MPa",
+                "Sửa chữa vết nứt bê tông");
+    ReinspectionVerificationService ragService =
+        new ReinspectionVerificationService(
+            verifications,
+            inspections,
+            findings,
+            evidences,
+            reports,
+            userAccess,
+            Optional.of(lookup));
+
+    UserAccess.ActiveUser actor =
+        new UserAccess.ActiveUser(
+            actorId,
+            Set.of(Roles.INSPECTOR),
+            orgId,
+            "INSPECTOR_PARTNER",
+            "Inspector Guy",
+            "inspector@drone.test",
+            "LIC-123",
+            "CLASS_A",
+            Instant.now().plusSeconds(86400),
+            "lic-key");
+
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), actorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+
+    ReinspectionDefectVerification verif =
+        new ReinspectionDefectVerification(inspectionId, findingId);
+    ReflectionTestUtils.setField(verif, "id", verificationId);
+
+    Finding finding =
+        new Finding(
+            UUID.randomUUID(),
+            null,
+            "CRACK-01",
+            "Hairline Concrete Crack",
+            FindingSeverity.HIGH,
+            "Observed on south beam",
+            "Seal crack",
+            null,
+            null,
+            null);
+    ReflectionTestUtils.setField(finding, "id", findingId);
+
+    when(userAccess.findActiveUser(actorId)).thenReturn(Optional.of(actor));
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(verifications.findByReinspectionId(inspectionId)).thenReturn(List.of(verif));
+    when(findings.findAllById(List.of(findingId))).thenReturn(List.of(finding));
+    when(evidences.findAllById(List.of())).thenReturn(List.of());
+
+    List<ReinspectionVerificationResponse> result =
+        ragService.getVerifications(actorId, inspectionId);
+
+    assertThat(result).hasSize(1);
+    assertThat(result.get(0).ragReferenceStandards())
+        .containsExactly("TCVN 9343:2012", "TCVN 9357:2012");
+    assertThat(result.get(0).ragVerificationGuidance())
+        .isEqualTo("UPV >= 90%, pull-off >= 1.5 MPa");
   }
 }

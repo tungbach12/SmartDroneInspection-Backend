@@ -11,8 +11,11 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -262,6 +265,86 @@ public class Drone {
   /** MF2 assignment eligibility; it is not a permit or flight-readiness decision. */
   public boolean isEligibleForAssignment() {
     return serviceability == DroneServiceability.ACTIVE;
+  }
+
+  private static final Pattern MTOW_PATTERN =
+      Pattern.compile(
+          "(?:mtow\\s*[:=]?\\s*|\"mtowKg\"\\s*:\\s*)(\\d+(?:[.,]\\d+)?)\\s*(?:kg)?",
+          Pattern.CASE_INSENSITIVE);
+
+  /**
+   * Resolves Maximum Take-Off Weight (MTOW in kg) from payloadMetadata or structured model text, or
+   * known industrial airframe families per Decree 288/2025/ND-CP Article 4.
+   */
+  public Double resolveMtowKg() {
+    for (String source : new String[] {payloadMetadata, model, notes}) {
+      if (source == null || source.isBlank()) {
+        continue;
+      }
+      Matcher matcher = MTOW_PATTERN.matcher(source);
+      if (matcher.find()) {
+        try {
+          return Double.parseDouble(matcher.group(1).replace(',', '.'));
+        } catch (NumberFormatException ignored) {
+          // continue
+        }
+      }
+    }
+    if (model != null) {
+      String lower = model.toLowerCase(Locale.ROOT);
+      if (lower.contains("matrice 350")
+          || lower.contains("m350")
+          || lower.contains("matrice 300")) {
+        return 9.20;
+      }
+      if (lower.contains("matrice 30") || lower.contains("m30t") || lower.contains("m30")) {
+        return 4.07;
+      }
+      if (lower.contains("wingtra")) {
+        return 4.50;
+      }
+      if (lower.contains("elios 3") && lower.contains("lidar")) {
+        return 2.50;
+      }
+      if (lower.contains("mavic 3") || lower.contains("m3e") || lower.contains("m3t")) {
+        return 1.05;
+      }
+      if (lower.contains("mini 4")) {
+        return 0.249;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Returns true when this airframe is Category 3, 4, or 5 (MTOW >= 2.0 kg) under Decree
+   * 288/2025/ND-CP Article 4 & Article 27, which requires a Class B pilot license.
+   */
+  public boolean requiresClassBLicense() {
+    Double mtow = resolveMtowKg();
+    return mtow != null && mtow >= 2.0;
+  }
+
+  /**
+   * Classifies this airframe into one of the 5 statutory MTOW categories under Article 4 of Decree
+   * 288/2025/ND-CP (`CATEGORY_1` through `CATEGORY_5`).
+   */
+  public String resolveLegalCategory() {
+    Double mtow = resolveMtowKg();
+    double effectiveMtow = mtow != null && mtow > 0 ? mtow : 0.92;
+    if (effectiveMtow < 0.25) {
+      return "CATEGORY_1";
+    }
+    if (effectiveMtow < 2.0) {
+      return "CATEGORY_2";
+    }
+    if (effectiveMtow < 25.0) {
+      return "CATEGORY_3";
+    }
+    if (effectiveMtow < 150.0) {
+      return "CATEGORY_4";
+    }
+    return "CATEGORY_5";
   }
 
   public void changeServiceability(DroneServiceability target) {

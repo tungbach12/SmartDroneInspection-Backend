@@ -109,6 +109,26 @@ public class MaintenanceExecutionController {
     return ApiResponse.success(executionService.recordWork(actorId(jwt), workOrderId, request));
   }
 
+  @PostMapping(
+      path = "/repair-proof",
+      consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasRole('MAINTENANCE_ENGINEER')")
+  public ApiResponse<Map<String, String>> uploadRepairProof(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID workOrderId,
+      @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+    return ApiResponse.success(executionService.uploadRepairProof(actorId(jwt), workOrderId, file));
+  }
+
+  @GetMapping("/repair-proof/{fileName}")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MAINTENANCE_ENGINEER', 'INSPECTOR', 'MANAGER', 'ADMIN')")
+  public ResponseEntity<byte[]> openRepairProof(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID workOrderId,
+      @PathVariable String fileName) {
+    return executionService.openRepairProof(actorId(jwt), workOrderId, fileName);
+  }
+
   @PostMapping("/work-logs/{workLogId}/submit")
   @PreAuthorize("hasRole('MAINTENANCE_ENGINEER')")
   public ApiResponse<WorkLogResponse> submitWorkLog(
