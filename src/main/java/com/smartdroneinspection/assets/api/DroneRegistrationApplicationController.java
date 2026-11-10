@@ -84,6 +84,23 @@ public class DroneRegistrationApplicationController {
             request.getHeader("X-Correlation-ID")));
   }
 
+  @PostMapping("/{applicationId}/resubmit")
+  @PreAuthorize("hasRole('" + Roles.INSPECTOR + "')")
+  public ApiResponse<DroneRegistrationApplicationResponse> resubmit(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID applicationId,
+      @Valid @RequestBody SubmitDroneRegistrationApplicationRequest body,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        applications.resubmit(
+            subject(jwt),
+            applicationId,
+            body,
+            request.getRemoteAddr(),
+            request.getHeader("User-Agent"),
+            request.getHeader("X-Correlation-ID")));
+  }
+
   @GetMapping("/mine")
   @PreAuthorize("hasRole('" + Roles.INSPECTOR + "')")
   public ApiResponse<List<DroneRegistrationApplicationResponse>> mine(

@@ -95,6 +95,13 @@ public class InspectionCreationService {
                         "INVALID_DRONE",
                         "Assigned drone must be active in the organization."));
 
+    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INSUFFICIENT",
+          "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+    }
+
     if (inspections.hasScheduleConflict(
         organizationId,
         inspector.id(),
@@ -212,6 +219,17 @@ public class InspectionCreationService {
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_REQUIRED",
           "The assigned inspector must hold an active, non-expired pilot license.");
+    }
+
+    if (inspection.getDroneId() != null) {
+      Drone assignedDrone = drones.findById(inspection.getDroneId()).orElse(null);
+      if (assignedDrone != null
+          && !assignedInspector.isLicenseClassQualifiedFor(assignedDrone.requiresClassBLicense())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+      }
     }
 
     String effectiveKey = fileKey;
@@ -435,14 +453,42 @@ public class InspectionCreationService {
                         "INVALID_INSPECTOR",
                         "Assigned inspector must be active."));
 
+    Instant checkAt =
+        inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : Instant.now();
+    if (newInspector.pilotLicenseExpiresAt() != null
+        && !newInspector.pilotLicenseExpiresAt().isAfter(checkAt)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_REQUIRED",
+          "The assigned inspector must hold an active, non-expired pilot license.");
+    }
+
     if (newDroneId != null) {
-      drones
-          .findById(newDroneId)
-          .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
-          .orElseThrow(
-              () ->
-                  new BusinessException(
-                      HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active."));
+      Drone newDrone =
+          drones
+              .findById(newDroneId)
+              .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_REQUEST,
+                          "INVALID_DRONE",
+                          "Assigned drone must be active."));
+      if (!newInspector.isLicenseClassQualifiedFor(newDrone.requiresClassBLicense())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+      }
+    } else if (inspection.getDroneId() != null) {
+      Drone currentDrone = drones.findById(inspection.getDroneId()).orElse(null);
+      if (currentDrone != null
+          && !newInspector.isLicenseClassQualifiedFor(currentDrone.requiresClassBLicense())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+      }
     }
 
     inspection.reassign(newInspector.id(), newDroneId);

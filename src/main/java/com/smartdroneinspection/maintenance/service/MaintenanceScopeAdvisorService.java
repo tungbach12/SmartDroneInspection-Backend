@@ -16,6 +16,7 @@ import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.KnowledgeChunkSummary;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.ScopeAdvisorContext;
 import com.smartdroneinspection.maintenance.spi.MaintenanceScopeAdvisorPort.SuggestedScope;
+import com.smartdroneinspection.shared.api.RepairKnowledgeLookup;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
@@ -37,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
  * corrective scope and acceptance criteria for maintenance work orders.
  */
 @Service
-public class MaintenanceScopeAdvisorService {
+public class MaintenanceScopeAdvisorService implements RepairKnowledgeLookup {
 
   private static final Logger log = LoggerFactory.getLogger(MaintenanceScopeAdvisorService.class);
 
@@ -432,5 +433,53 @@ public class MaintenanceScopeAdvisorService {
         taskDtos,
         modelName,
         fallbackApplied);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public VerificationGuidance lookupVerificationGuidance(
+      String defectLabel, String technicalNotes) {
+    String effectiveLabel =
+        defectLabel != null && !defectLabel.isBlank() ? defectLabel : "Khuyết tật kết cấu";
+    String category = mapCategory(effectiveLabel, technicalNotes);
+    String keyword = extractKeyword(effectiveLabel, technicalNotes);
+    List<RepairKnowledgeChunk> chunks = List.of();
+    if (knowledgeRepository != null) {
+      try {
+        chunks = knowledgeRepository.findRelevantChunks(category, keyword, 3);
+      } catch (RuntimeException ex) {
+        log.debug(
+            "Knowledge chunk query unavailable, falling back to deterministic standards: {}",
+            ex.getMessage());
+      }
+    }
+    SuggestedScope fallbackScope =
+        deterministicFallback != null
+            ? deterministicFallback.fallback(effectiveLabel, technicalNotes, null, null)
+            : null;
+
+    List<String> standards = new ArrayList<>();
+    for (RepairKnowledgeChunk chunk : chunks) {
+      if (chunk.getStandardCode() != null
+          && !chunk.getStandardCode().isBlank()
+          && !standards.contains(chunk.getStandardCode())) {
+        standards.add(chunk.getStandardCode());
+      }
+    }
+    if (fallbackScope != null && fallbackScope.referenceStandards() != null) {
+      for (String std : fallbackScope.referenceStandards()) {
+        if (std != null && !std.isBlank() && !standards.contains(std)) {
+          standards.add(std);
+        }
+      }
+    }
+
+    String sourceTitle =
+        !chunks.isEmpty() ? chunks.get(0).getTitle() : ("Tiêu chuẩn nghiệm thu " + category);
+    String checklist =
+        fallbackScope != null && fallbackScope.acceptanceCriteria() != null
+            ? fallbackScope.acceptanceCriteria()
+            : (!chunks.isEmpty() ? chunks.get(0).getContent() : "");
+    return new VerificationGuidance(List.copyOf(standards), checklist, sourceTitle);
   }
 }

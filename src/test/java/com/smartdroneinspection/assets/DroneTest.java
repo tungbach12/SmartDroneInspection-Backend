@@ -40,4 +40,33 @@ class DroneTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("Retired drones cannot change serviceability");
   }
+
+  @Test
+  void resolvesMtowKgAndClassBLicenseRequirementUnderDecree288() {
+    Drone m350 =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "DJI-M350-001",
+            "DJI Matrice 350 RTK (MTOW 9.2 kg)",
+            "DJI",
+            "REG-001",
+            "drones/reg.pdf",
+            java.time.Instant.now().plusSeconds(3600));
+    assertThat(m350.resolveMtowKg()).isEqualTo(9.2);
+    assertThat(m350.requiresClassBLicense()).isTrue();
+    assertThat(m350.resolveLegalCategory()).isEqualTo("CATEGORY_3");
+
+    Drone m3t =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "DJI-M3T-001",
+            "DJI Mavic 3 Thermal (M3T) (MTOW 1.05 kg)",
+            "DJI",
+            "REG-002",
+            "drones/reg2.pdf",
+            java.time.Instant.now().plusSeconds(3600));
+    assertThat(m3t.resolveMtowKg()).isEqualTo(1.05);
+    assertThat(m3t.requiresClassBLicense()).isFalse();
+    assertThat(m3t.resolveLegalCategory()).isEqualTo("CATEGORY_2");
+  }
 }

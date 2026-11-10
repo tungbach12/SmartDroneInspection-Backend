@@ -175,6 +175,33 @@ public interface UserAccess {
           && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
     }
 
+    /**
+     * Checks whether the pilot's license class is qualified for a Category 3+ UAV (MTOW >= 2 kg)
+     * under Decree 288/2025/ND-CP Article 27. Explicit Class A ("CLASS_A", "HANG_A", "HẠNG A") is
+     * restricted to < 2 kg (Category 2 VLOS) and is rejected for MTOW >= 2 kg.
+     */
+    public boolean isLicenseClassQualifiedFor(boolean requiresClassB) {
+      if (!requiresClassB || pilotLicenseClass == null || pilotLicenseClass.isBlank()) {
+        return true;
+      }
+      String norm = pilotLicenseClass.trim().toUpperCase(java.util.Locale.ROOT);
+      if (norm.contains("CLASS_B")
+          || norm.contains("CLASS B")
+          || norm.contains("HẠNG B")
+          || norm.contains("HANG B")
+          || norm.equals("B")) {
+        return true;
+      }
+      if (norm.contains("CLASS_A")
+          || norm.contains("CLASS A")
+          || norm.contains("HẠNG A")
+          || norm.contains("HANG A")
+          || norm.equals("A")) {
+        return false;
+      }
+      return true;
+    }
+
     public boolean isInspectorPartner() {
       return "INSPECTOR_PARTNER".equals(actorZone) && hasRole("INSPECTOR");
     }

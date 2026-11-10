@@ -16,9 +16,26 @@ public record WorkLogResponse(
     BigDecimal hours,
     String asLeftCondition,
     String testReadings,
-    WorkLogStatus status) {
+    WorkLogStatus status,
+    String repairProofUrl) {
+
+  private static final String PROOF_MARKER = "[REPAIR_PROOF:";
 
   public static WorkLogResponse from(MaintenanceWorkLog log) {
+    String rawReadings = log.getTestReadings();
+    String cleanReadings = rawReadings;
+    String proofUrl = null;
+    if (rawReadings != null && rawReadings.contains(PROOF_MARKER)) {
+      int start = rawReadings.indexOf(PROOF_MARKER);
+      int end = rawReadings.indexOf(']', start);
+      if (end > start) {
+        proofUrl = rawReadings.substring(start + PROOF_MARKER.length(), end).trim();
+        cleanReadings = (rawReadings.substring(0, start) + rawReadings.substring(end + 1)).trim();
+        if (cleanReadings.isEmpty()) {
+          cleanReadings = null;
+        }
+      }
+    }
     return new WorkLogResponse(
         log.getId(),
         log.getTaskId(),
@@ -27,7 +44,8 @@ public record WorkLogResponse(
         log.getEndedAt(),
         log.getHours(),
         log.getAsLeftCondition(),
-        log.getTestReadings(),
-        log.getStatus());
+        cleanReadings,
+        log.getStatus(),
+        proofUrl);
   }
 }

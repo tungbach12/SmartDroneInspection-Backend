@@ -13,15 +13,18 @@ import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
+import com.smartdroneinspection.shared.api.RepairKnowledgeLookup;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +38,7 @@ public class ReinspectionVerificationService {
   private final EvidenceRepository evidences;
   private final InspectionReportRepository reports;
   private final UserAccess userAccess;
+  private final Optional<RepairKnowledgeLookup> knowledgeLookup;
 
   public ReinspectionVerificationService(
       ReinspectionDefectVerificationRepository verifications,
@@ -43,12 +47,25 @@ public class ReinspectionVerificationService {
       EvidenceRepository evidences,
       InspectionReportRepository reports,
       UserAccess userAccess) {
+    this(verifications, inspections, findings, evidences, reports, userAccess, Optional.empty());
+  }
+
+  @Autowired
+  public ReinspectionVerificationService(
+      ReinspectionDefectVerificationRepository verifications,
+      InspectionRepository inspections,
+      FindingRepository findings,
+      EvidenceRepository evidences,
+      InspectionReportRepository reports,
+      UserAccess userAccess,
+      Optional<RepairKnowledgeLookup> knowledgeLookup) {
     this.verifications = verifications;
     this.inspections = inspections;
     this.findings = findings;
     this.evidences = evidences;
     this.reports = reports;
     this.userAccess = userAccess;
+    this.knowledgeLookup = knowledgeLookup != null ? knowledgeLookup : Optional.empty();
   }
 
   @Transactional(readOnly = true)
@@ -101,6 +118,16 @@ public class ReinspectionVerificationService {
     Inspection inspection = requireInspection(actorId, inspectionId);
     requireCanEdit(actorId, inspection);
 
+    if (inspection.getStatus()
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED
+        || inspection.getStatus()
+            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.IN_PROGRESS) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_NOT_COMPLETED",
+          "Complete the on-site field session before recording defect verifications");
+    }
+
     reports
         .findFirstByInspectionIdOrderByVersionNoDesc(inspectionId)
         .ifPresent(
@@ -133,11 +160,19 @@ public class ReinspectionVerificationService {
           "Invalid resolution status: " + request.resolutionStatus());
     }
 
+    if (status == DefectResolutionStatus.RESOLVED && request.newEvidenceId() == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_REQUIRED_FOR_RESOLVED",
+          "A fresh re-inspection evidence capture is required to mark a defect as RESOLVED");
+    }
+
     Evidence newEvidence = null;
     if (request.newEvidenceId() != null) {
       newEvidence =
           evidences
               .findByIdAndInspectionId(request.newEvidenceId(), inspectionId)
+              .filter(ev -> !ev.isDeleted())
               .orElseThrow(
                   () ->
                       new BusinessException(
@@ -149,33 +184,32 @@ public class ReinspectionVerificationService {
     verification.updateVerification(status, request.newEvidenceId(), request.inspectorNotes());
     ReinspectionDefectVerification saved = verifications.saveAndFlush(verification);
 
-    boolean hasEvidence =
-        request.newEvidenceId() != null
-            || evidences.existsByInspectionIdAndIsDeletedFalse(inspectionId);
-    if (hasEvidence) {
-      if (inspection.getStatus()
-              == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED
-          || inspection.getStatus()
-              == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.IN_PROGRESS) {
-        inspection.moveTo(
-            com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED);
+    if (inspection.getStatus()
+        == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
+      List<ReinspectionDefectVerification> allItems =
+          verifications.findByReinspectionId(inspectionId);
+      boolean allEvaluated =
+          !allItems.isEmpty()
+              && allItems.stream().allMatch(ReinspectionVerificationService::isEvaluated);
+      boolean hasEvidence =
+          request.newEvidenceId() != null
+              || evidences.existsByInspectionIdAndIsDeletedFalse(inspectionId);
+      long pendingAi =
+          findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+              .filter(
+                  f ->
+                      f.getStatus()
+                              == com.smartdroneinspection.inspections.domain.enums.FindingStatus
+                                  .PENDING
+                          && f.getModelName() != null)
+              .count();
+      if (allEvaluated && hasEvidence && pendingAi == 0) {
+        inspection.confirmFindings();
+        inspections.saveAndFlush(inspection);
+      } else if (inspection.hasFindingsConfirmation()) {
+        inspection.reopenFindings();
+        inspections.saveAndFlush(inspection);
       }
-      if (inspection.getStatus()
-          == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
-        long pendingAi =
-            findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-                .filter(
-                    f ->
-                        f.getStatus()
-                                == com.smartdroneinspection.inspections.domain.enums.FindingStatus
-                                    .PENDING
-                            && f.getModelName() != null)
-                .count();
-        if (pendingAi == 0) {
-          inspection.confirmFindings();
-        }
-      }
-      inspections.saveAndFlush(inspection);
     }
 
     Finding sourceFinding = findings.findById(saved.getSourceFindingId()).orElse(null);
@@ -185,6 +219,71 @@ public class ReinspectionVerificationService {
             : null;
 
     return toResponse(saved, sourceFinding, newEvidence, sourceEvidence);
+  }
+
+  /**
+   * Spawns a linked RE_INSPECTION directly from a published inspection report when the Customer has
+   * completed repair work and requests post-repair verification.
+   */
+  @Transactional
+  public com.smartdroneinspection.inspections.api.dto.response.InspectionResponse
+      createDirectReinspection(
+          UUID actorId,
+          UUID sourceInspectionId,
+          String contractorRepairNotes,
+          String repairProofUrl) {
+    Inspection sourceInspection = requireInspection(actorId, sourceInspectionId);
+    List<Finding> confirmedFindings =
+        findings.findByInspectionIdOrderByCreatedAtAsc(sourceInspectionId).stream()
+            .filter(
+                f ->
+                    f.getStatus()
+                            == com.smartdroneinspection.inspections.domain.enums.FindingStatus
+                                .CONFIRMED
+                        && !f.isDeleted())
+            .toList();
+    if (confirmedFindings.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "NO_CONFIRMED_FINDINGS",
+          "At least one confirmed defect is required to schedule a re-inspection");
+    }
+
+    UUID latestPublishedReportVersionId =
+        reports
+            .findFirstByInspectionIdAndStatus(sourceInspectionId, ReportStatus.PUBLISHED)
+            .map(com.smartdroneinspection.inspections.domain.InspectionReport::getId)
+            .orElse(null);
+
+    Inspection reinspection =
+        Inspection.createReinspection(
+            sourceInspection.getOrganizationId(),
+            sourceInspection.getAssetId(),
+            sourceInspection.getInspectorId(),
+            sourceInspection.getDroneId(),
+            java.time.Instant.now().plusSeconds(3600),
+            null,
+            sourceInspection.getId(),
+            latestPublishedReportVersionId);
+    reinspection = inspections.saveAndFlush(reinspection);
+
+    String handoverNotes =
+        contractorRepairNotes != null && !contractorRepairNotes.isBlank()
+            ? contractorRepairNotes.trim()
+            : "Khách hàng đã hoàn tất sửa chữa khắc phục và yêu cầu bay tái kiểm định nghiệm thu.";
+
+    for (Finding finding : confirmedFindings) {
+      ReinspectionDefectVerification verification =
+          new ReinspectionDefectVerification(reinspection.getId(), finding.getId());
+      verification.setRepairProof(
+          repairProofUrl != null && !repairProofUrl.isBlank() ? repairProofUrl.trim() : null,
+          handoverNotes);
+      verifications.save(verification);
+    }
+    verifications.flush();
+
+    return com.smartdroneinspection.inspections.api.dto.response.InspectionResponse.from(
+        reinspection);
   }
 
   private ReinspectionVerificationResponse toResponse(
@@ -204,16 +303,22 @@ public class ReinspectionVerificationService {
       Finding sourceFinding,
       Evidence newEvidence,
       Evidence sourceEvidence) {
+    String defectLabel = sourceFinding != null ? sourceFinding.getDefectLabel() : null;
+    String technicalNotes = sourceFinding != null ? sourceFinding.getTechnicalNotes() : null;
+    RepairKnowledgeLookup.VerificationGuidance guidance =
+        knowledgeLookup
+            .map(lookup -> lookup.lookupVerificationGuidance(defectLabel, technicalNotes))
+            .orElse(null);
     return new ReinspectionVerificationResponse(
         item.getId(),
         item.getReinspectionId(),
         item.getSourceFindingId(),
         sourceFinding != null ? sourceFinding.getFindingCode() : null,
-        sourceFinding != null ? sourceFinding.getDefectLabel() : null,
+        defectLabel,
         sourceFinding != null && sourceFinding.getSeverity() != null
             ? sourceFinding.getSeverity().name()
             : null,
-        sourceFinding != null ? sourceFinding.getTechnicalNotes() : null,
+        technicalNotes,
         sourceFinding != null ? sourceFinding.getEvidenceId() : null,
         sourceEvidence != null ? sourceEvidence.getObjectKey() : null,
         sourceEvidence != null ? sourceEvidence.getLocationDescription() : null,
@@ -225,6 +330,10 @@ public class ReinspectionVerificationService {
         newEvidence != null ? newEvidence.getObjectKey() : null,
         item.getResolutionStatus().name(),
         item.getInspectorNotes(),
+        guidance != null && guidance.referenceStandards() != null
+            ? guidance.referenceStandards()
+            : List.of(),
+        guidance != null ? guidance.verificationChecklist() : null,
         item.getCreatedAt(),
         item.getUpdatedAt());
   }
@@ -286,5 +395,16 @@ public class ReinspectionVerificationService {
           "FORBIDDEN",
           "Only the assigned inspector or manager can update defect verifications");
     }
+  }
+
+  public static boolean isEvaluated(ReinspectionDefectVerification item) {
+    if (item == null || item.getResolutionStatus() == null) {
+      return false;
+    }
+    if (item.getResolutionStatus() == DefectResolutionStatus.RESOLVED) {
+      return item.getNewEvidenceId() != null;
+    }
+    return item.getNewEvidenceId() != null
+        || (item.getInspectorNotes() != null && !item.getInspectorNotes().isBlank());
   }
 }

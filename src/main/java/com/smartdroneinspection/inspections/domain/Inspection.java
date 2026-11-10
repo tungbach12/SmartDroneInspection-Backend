@@ -177,7 +177,7 @@ public class Inspection {
 
   /** Report returned by reviewer to author for revisions. */
   public void returnToDraft() {
-    if (status != InspectionStatus.UNDER_REVIEW) {
+    if (status != InspectionStatus.UNDER_REVIEW && status != InspectionStatus.COMPLETED) {
       throw new IllegalStateException("Only an inspection under review can be returned to draft");
     }
     status = InspectionStatus.FIELD_COMPLETED;
@@ -237,12 +237,33 @@ public class Inspection {
       Instant plannedStartAt,
       UUID workOrderId,
       UUID sourceInspectionId) {
+    return createReinspection(
+        organizationId,
+        assetId,
+        inspectorId,
+        droneId,
+        plannedStartAt,
+        workOrderId,
+        sourceInspectionId,
+        null);
+  }
+
+  public static Inspection createReinspection(
+      UUID organizationId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      UUID workOrderId,
+      UUID sourceInspectionId,
+      UUID sourceReportVersionId) {
     Inspection inspection =
         new Inspection(organizationId, assetId, inspectorId, droneId, plannedStartAt, null);
     inspection.inspectionType =
         com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
     inspection.workOrderId = workOrderId;
     inspection.sourceInspectionId = sourceInspectionId;
+    inspection.sourceReportVersionId = sourceReportVersionId;
     if (inspectorId != null && droneId != null) {
       inspection.partnerAssignment = true;
     }

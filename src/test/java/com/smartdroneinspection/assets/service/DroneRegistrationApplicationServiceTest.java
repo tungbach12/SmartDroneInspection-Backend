@@ -192,7 +192,7 @@ class DroneRegistrationApplicationServiceTest {
 
     assertThatThrownBy(() -> service.pending(inspectorId))
         .isInstanceOf(AuthException.class)
-        .hasMessageContaining("Platform Admin access is required");
+        .hasMessageContaining("Platform Reviewer access is required");
   }
 
   @Test
@@ -267,6 +267,41 @@ class DroneRegistrationApplicationServiceTest {
             eq(adminId),
             eq(applicationId),
             eq("DRONE_REGISTRATION_REJECTED"),
+            eq("SUCCESS"),
+            any(),
+            any(),
+            any());
+  }
+
+  @Test
+  void resubmitRejectedApplicationResetsStatusToPendingAndAudits() {
+    DroneRegistrationApplication app = sampleApplication();
+    app.reject(adminId, "Blurry inspection scan");
+    when(applications.findById(applicationId)).thenReturn(Optional.of(app));
+    when(applications.saveAndFlush(any(DroneRegistrationApplication.class)))
+        .thenAnswer(inv -> inv.getArgument(0));
+
+    SubmitDroneRegistrationApplicationRequest request =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-APP",
+            "DJI Matrice 350 RTK [MTOW: 9.2 kg]",
+            "DJI",
+            "REG-APP-2",
+            "reg-file",
+            Instant.now().plusSeconds(172800),
+            "owner-file",
+            "insp-file-clear");
+
+    var response =
+        service.resubmit(inspectorId, applicationId, request, "127.0.0.1", "agent", "corr-2");
+    assertThat(response.status()).isEqualTo("PENDING");
+    assertThat(response.reviewNote()).isNull();
+    assertThat(response.registrationNumber()).isEqualTo("REG-APP-2");
+    verify(userAccess)
+        .recordSecurityAudit(
+            eq(inspectorId),
+            eq(applicationId),
+            eq("DRONE_REGISTRATION_RESUBMITTED"),
             eq("SUCCESS"),
             any(),
             any(),

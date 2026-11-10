@@ -155,4 +155,37 @@ class PartnerRegistryServiceTest {
     assertThat(option.id()).isEqualTo(droneId);
     assertThat(option.inspectorOwnerId()).isEqualTo(inspectorId);
   }
+
+  @Test
+  void rejectsClassALicenseWhenDroneRequiresClassBUnderDecree288() {
+    UUID inspectorId = UUID.randomUUID();
+    Drone heavyDrone = mock(Drone.class);
+    when(heavyDrone.getId()).thenReturn(droneId);
+    when(heavyDrone.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(heavyDrone.isEligibleForAssignment()).thenReturn(true);
+    when(heavyDrone.requiresClassBLicense()).thenReturn(true);
+    when(heavyDrone.getRegistrationExpiresAt()).thenReturn(Instant.now().plusSeconds(7200));
+    when(drones.findWithLockById(droneId)).thenReturn(Optional.of(heavyDrone));
+    when(drones.findById(droneId)).thenReturn(Optional.of(heavyDrone));
+
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId,
+                    Set.of(Roles.INSPECTOR),
+                    null,
+                    "INSPECTOR_PARTNER",
+                    "Pilot Class A",
+                    "pilota@example.test",
+                    "LIC-001",
+                    "CLASS_A",
+                    Instant.now().plusSeconds(7200),
+                    "licenses/pilot.pdf")));
+
+    assertThat(service.isEligibleDrone(droneId, inspectorId)).isFalse();
+    assertThatThrownBy(() -> service.lockEligibleDrone(droneId, inspectorId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Class B pilot license");
+  }
 }

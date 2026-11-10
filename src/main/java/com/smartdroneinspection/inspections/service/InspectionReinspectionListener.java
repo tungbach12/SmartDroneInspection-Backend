@@ -74,14 +74,8 @@ public class InspectionReinspectionListener {
             sourceInspection != null ? sourceInspection.getDroneId() : null,
             event.requestedAt() != null ? event.requestedAt() : Instant.now(),
             event.workOrderId(),
-            sourceInspection != null ? sourceInspection.getId() : null);
-
-    if (sourceInspection != null && sourceInspection.hasFlightPermit()) {
-      reinspection.recordFlightPermit(
-          sourceInspection.getFlightPermitFileKey(),
-          sourceInspection.getFlightPermitFileName(),
-          Instant.now());
-    }
+            sourceInspection != null ? sourceInspection.getId() : null,
+            event.sourceReportVersionId());
 
     reinspection = inspections.saveAndFlush(reinspection);
 
@@ -111,7 +105,7 @@ public class InspectionReinspectionListener {
       }
       priorIdx++;
     }
-    verification.setRepairProof(null, notesBuilder.toString());
+    verification.setRepairProof(event.repairProofUrl(), notesBuilder.toString());
     verifications.saveAndFlush(verification);
 
     events.publishEvent(new ReinspectionCreatedEvent(event.workOrderId(), reinspection.getId()));

@@ -136,4 +136,22 @@ class Mf2InspectionAssignmentAdapterTest {
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("conflicts with another active inspection");
   }
+
+  @Test
+  void rejectsAssignmentWhenDroneRequiresClassBAndInspectorOnlyHasClassA() {
+    Drone heavyDrone = mock(Drone.class);
+    when(heavyDrone.getId()).thenReturn(droneId);
+    when(heavyDrone.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(heavyDrone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
+    when(heavyDrone.getRegistrationExpiresAt()).thenReturn(end.plusSeconds(3600));
+    when(heavyDrone.requiresClassBLicense()).thenReturn(true);
+    when(drones.findWithLockById(droneId)).thenReturn(Optional.of(heavyDrone));
+
+    assertThatThrownBy(
+            () ->
+                adapter.assign(
+                    organizationId, assetId, inspectorId, droneId, start, end, managerId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Class B pilot license");
+  }
 }

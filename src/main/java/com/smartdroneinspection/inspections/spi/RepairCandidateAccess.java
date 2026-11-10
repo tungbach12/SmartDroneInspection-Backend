@@ -15,4 +15,15 @@ public interface RepairCandidateAccess {
 
   Optional<RepairCandidate> findRepairCandidate(
       UUID organizationId, UUID reportVersionId, UUID findingId);
+
+  record ReinspectionVerificationSummary(
+      String defectLabel,
+      String severity,
+      String resolutionStatus,
+      boolean hasFreshEvidence,
+      String inspectorNotes) {}
+
+  default List<ReinspectionVerificationSummary> findReinspectionVerifications(UUID reinspectionId) {
+    return List.of();
+  }
 }

@@ -116,6 +116,14 @@ public class WorkOrderReinspectionListener {
     } else {
       workOrder.requireReworkAfterFailedReinspection(event.reportVersionId());
       workOrders.saveAndFlush(workOrder);
+      if (tasks != null) {
+        for (com.smartdroneinspection.maintenance.domain.MaintenanceTask task :
+            tasks.findByWorkOrderIdOrderByTaskNumberAsc(workOrder.getId())) {
+          task.markReworkRequired();
+          tasks.save(task);
+        }
+        tasks.flush();
+      }
       log.info(
           "Re-inspection report {} had unresolved defects; work order {} moved to REWORK_REQUIRED for another repair round",
           event.reportVersionId(),

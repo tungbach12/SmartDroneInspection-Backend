@@ -290,7 +290,7 @@ public class ContractWorkflowService
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_DRONE",
-          "Selected drone must be approved for the selected active partner Inspector");
+          "Selected drone must be approved, have valid registration at the scheduled time, and match the Inspector's pilot license class (Class B required for MTOW >= 2 kg)");
     }
 
     // New inspection services use VND and require all 3 settlement rates to be configured

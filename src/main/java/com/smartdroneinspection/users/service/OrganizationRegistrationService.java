@@ -130,10 +130,13 @@ public class OrganizationRegistrationService {
           new User(
               email,
               fullName,
+              request.phoneNumber() != null ? request.phoneNumber().trim() : null,
+              null,
               passwords.encode(request.password()),
               UserStatus.DISABLED,
               ActorZone.PROSPECT_CUSTOMER,
               null);
+      prospect.setOtpVerified(true);
       prospect.addRole(UserRole.CUSTOMER);
       prospect = users.saveAndFlush(prospect);
       ProspectiveCustomerRegistration registration =
