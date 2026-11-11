@@ -4,19 +4,22 @@ import com.smartdroneinspection.assets.api.dto.request.ReviewDroneRegistrationAp
 import com.smartdroneinspection.assets.api.dto.request.SubmitDroneRegistrationApplicationRequest;
 import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationResponse;
 import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.DroneDocumentConfig;
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
+import com.smartdroneinspection.assets.repository.DroneDocumentConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
-import com.smartdroneinspection.shared.auth.Roles;
+import com.smartdroneinspection.assets.service.DroneEvidenceUploadService.EvidenceContent;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.shared.storage.EvidenceUploadValidator;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
-import java.io.InputStream;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -30,18 +33,96 @@ public class DroneRegistrationApplicationService {
   private final UserAccess userAccess;
   private final Optional<EvidenceObjectStore> objectStore;
   private final DroneEvidenceUploadService evidenceUploads;
+  private final DroneDocumentConfigRepository documentConfigs;
 
   public DroneRegistrationApplicationService(
       DroneRegistrationApplicationRepository applications,
       DroneRepository drones,
       UserAccess userAccess,
       Optional<EvidenceObjectStore> objectStore,
-      DroneEvidenceUploadService evidenceUploads) {
+      DroneEvidenceUploadService evidenceUploads,
+      DroneDocumentConfigRepository documentConfigs) {
     this.applications = applications;
     this.drones = drones;
     this.userAccess = userAccess;
     this.objectStore = objectStore;
     this.evidenceUploads = evidenceUploads;
+    this.documentConfigs = documentConfigs;
+  }
+
+  private Map<String, String> resolveAndValidateDocuments(
+      UUID inspectorId,
+      SubmitDroneRegistrationApplicationRequest request,
+      List<String> fallbackImageKeys) {
+    Map<String, String> docMap =
+        request.documentFiles() != null ? new HashMap<>(request.documentFiles()) : new HashMap<>();
+    if (request.registrationFileKey() != null && !request.registrationFileKey().isBlank()) {
+      docMap.putIfAbsent("REGISTRATION", request.registrationFileKey().trim());
+    }
+    if (request.ownershipFileKey() != null && !request.ownershipFileKey().isBlank()) {
+      docMap.putIfAbsent("OWNERSHIP", request.ownershipFileKey().trim());
+    }
+    if (request.inspectionFileKey() != null && !request.inspectionFileKey().isBlank()) {
+      docMap.putIfAbsent("INSPECTION", request.inspectionFileKey().trim());
+    }
+
+    // Dynamic validation: check required active configs
+    List<DroneDocumentConfig> activeConfigs =
+        documentConfigs.findAllByIsActiveTrueOrderByDisplayOrderAscCreatedAtAsc();
+    if (activeConfigs.isEmpty()) {
+      // Fallback: REGISTRATION and OWNERSHIP are mandatory
+      if (!docMap.containsKey("REGISTRATION") || docMap.get("REGISTRATION").isBlank()) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "MISSING_REQUIRED_DOCUMENT",
+            "Missing required document: REGISTRATION");
+      }
+      if (!docMap.containsKey("OWNERSHIP") || docMap.get("OWNERSHIP").isBlank()) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "MISSING_REQUIRED_DOCUMENT",
+            "Missing required document: OWNERSHIP");
+      }
+    } else {
+      for (DroneDocumentConfig config : activeConfigs) {
+        if (config.isRequired()) {
+          String key = docMap.get(config.getCode());
+          if (key == null || key.isBlank()) {
+            throw new AuthException(
+                HttpStatus.BAD_REQUEST,
+                "MISSING_REQUIRED_DOCUMENT",
+                "Missing required document: "
+                    + config.getTitleVi()
+                    + " ("
+                    + config.getCode()
+                    + ")");
+          }
+        }
+      }
+    }
+
+    // Validate ownership of all uploaded keys
+    for (Map.Entry<String, String> entry : docMap.entrySet()) {
+      if (entry.getValue() != null && !entry.getValue().isBlank()) {
+        evidenceUploads.validateReference(inspectorId, entry.getKey(), entry.getValue());
+      }
+    }
+
+    List<String> images = request.imageFileKeys();
+    if (images == null || images.isEmpty()) {
+      if (fallbackImageKeys == null || fallbackImageKeys.isEmpty()) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST, "MISSING_DRONE_IMAGE", "At least one drone image is required.");
+      }
+    } else {
+      for (String imgKey : images) {
+        if (imgKey != null && !imgKey.isBlank()) {
+          evidenceUploads.validateReference(inspectorId, "DRONE_IMAGE", imgKey);
+        }
+      }
+    }
+
+    return docMap;
   }
 
   @Transactional
@@ -52,9 +133,8 @@ public class DroneRegistrationApplicationService {
       String agent,
       String correlationId) {
     requireInspector(inspectorId);
-    evidenceUploads.validateReference(inspectorId, "REGISTRATION", request.registrationFileKey());
-    evidenceUploads.validateReference(inspectorId, "OWNERSHIP", request.ownershipFileKey());
-    evidenceUploads.validateReference(inspectorId, "INSPECTION", request.inspectionFileKey());
+    Map<String, String> docMap = resolveAndValidateDocuments(inspectorId, request, null);
+
     if (!request.registrationExpiresAt().isAfter(Instant.now())) {
       throw new AuthException(
           HttpStatus.BAD_REQUEST,
@@ -62,25 +142,46 @@ public class DroneRegistrationApplicationService {
           "Drone registration must be current.");
     }
     String serial = request.serialNumber().trim();
-    if (drones.existsBySerialNumberIgnoreCase(serial)
-        || applications.existsBySerialNumberIgnoreCaseAndStatus(serial, "PENDING")) {
+    if (applications.existsBySerialNumberIgnoreCaseAndStatus(serial, "PENDING")) {
       throw new AuthException(
           HttpStatus.CONFLICT,
           "DUPLICATE_SERIAL_NUMBER",
-          "Drone serial is already registered or pending.");
+          "An application for this drone serial is already pending review.");
+    }
+    Optional<Drone> existingDroneOpt = drones.findBySerialNumberIgnoreCase(serial);
+    UUID existingDroneId = null;
+    if (existingDroneOpt.isPresent()) {
+      Drone existingDrone = existingDroneOpt.get();
+      if (!inspectorId.equals(existingDrone.getInspectorOwnerId())) {
+        throw new AuthException(
+            HttpStatus.CONFLICT,
+            "DUPLICATE_SERIAL_NUMBER",
+            "Drone serial is already registered by another organization or inspector.");
+      }
+      existingDroneId = existingDrone.getId();
     }
     var application =
-        applications.saveAndFlush(
-            new DroneRegistrationApplication(
-                inspectorId,
-                serial,
-                request.model(),
-                request.manufacturer(),
-                request.registrationNumber(),
-                request.registrationFileKey(),
-                request.registrationExpiresAt(),
-                request.ownershipFileKey(),
-                request.inspectionFileKey()));
+        new DroneRegistrationApplication(
+            inspectorId,
+            serial,
+            request.model(),
+            request.manufacturer(),
+            request.registrationNumber(),
+            docMap.getOrDefault("REGISTRATION", request.registrationFileKey()),
+            request.registrationExpiresAt(),
+            docMap.getOrDefault("OWNERSHIP", request.ownershipFileKey()),
+            docMap.get("INSPECTION"),
+            docMap,
+            request.maxWindResistanceMps(),
+            request.opticalZoomLevel(),
+            Boolean.TRUE.equals(request.hasThermalCamera()),
+            Boolean.TRUE.equals(request.hasRtk()),
+            request.imageFileKeys(),
+            request.features());
+    if (existingDroneId != null) {
+      application.linkExistingDrone(existingDroneId);
+    }
+    application = applications.saveAndFlush(application);
     userAccess.recordSecurityAudit(
         inspectorId,
         application.getId(),
@@ -110,9 +211,13 @@ public class DroneRegistrationApplicationService {
           "NOT_APPLICATION_OWNER",
           "Only the submitting Inspector can resubmit this application.");
     }
-    evidenceUploads.validateReference(inspectorId, "REGISTRATION", request.registrationFileKey());
-    evidenceUploads.validateReference(inspectorId, "OWNERSHIP", request.ownershipFileKey());
-    evidenceUploads.validateReference(inspectorId, "INSPECTION", request.inspectionFileKey());
+    List<String> fallbackImages = application.getImageFileKeys();
+    Map<String, String> docMap = resolveAndValidateDocuments(inspectorId, request, fallbackImages);
+    List<String> finalImageKeys =
+        (request.imageFileKeys() != null && !request.imageFileKeys().isEmpty())
+            ? request.imageFileKeys()
+            : fallbackImages;
+
     if (!request.registrationExpiresAt().isAfter(Instant.now())) {
       throw new AuthException(
           HttpStatus.BAD_REQUEST,
@@ -124,10 +229,17 @@ public class DroneRegistrationApplicationService {
           request.model(),
           request.manufacturer(),
           request.registrationNumber(),
-          request.registrationFileKey(),
+          docMap.getOrDefault("REGISTRATION", request.registrationFileKey()),
           request.registrationExpiresAt(),
-          request.ownershipFileKey(),
-          request.inspectionFileKey());
+          docMap.getOrDefault("OWNERSHIP", request.ownershipFileKey()),
+          docMap.get("INSPECTION"),
+          docMap,
+          request.maxWindResistanceMps(),
+          request.opticalZoomLevel(),
+          Boolean.TRUE.equals(request.hasThermalCamera()),
+          Boolean.TRUE.equals(request.hasRtk()),
+          finalImageKeys,
+          request.features());
     } catch (IllegalStateException ex) {
       throw new AuthException(HttpStatus.CONFLICT, "RESUBMIT_INVALID", ex.getMessage());
     }
@@ -145,21 +257,75 @@ public class DroneRegistrationApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public EvidenceContent openEvidence(UUID reviewerId, UUID applicationId, String type) {
-    requireReviewer(reviewerId);
+  public EvidenceContent openEvidence(UUID callerId, UUID applicationId, String type) {
     DroneRegistrationApplication application =
         applications.findById(applicationId).orElseThrow(this::notFound);
-    String fileKey =
-        switch (type == null ? "" : type) {
-          case "REGISTRATION" -> application.getRegistrationFileKey();
-          case "OWNERSHIP" -> application.getOwnershipFileKey();
-          case "INSPECTION" -> application.getInspectionFileKey();
-          default ->
-              throw new BusinessException(
-                  HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Unknown evidence type");
-        };
-    if (!DroneEvidenceUploadService.isEvidenceKey(fileKey)) {
+    if (!callerId.equals(application.getInspectorUserId())) {
+      requireReviewer(callerId);
+    }
+    String fileKey = null;
+    if (type != null && type.startsWith("DRONE_IMAGE")) {
+      int idx = 0;
+      if (type.contains("_") && !type.equals("DRONE_IMAGE")) {
+        try {
+          idx = Integer.parseInt(type.substring(type.lastIndexOf('_') + 1));
+        } catch (NumberFormatException ignored) {
+        }
+      }
+      if (application.getImageFileKeys().size() > idx) {
+        fileKey = application.getImageFileKeys().get(idx);
+      }
+    }
+    if (fileKey == null && application.getDocumentFiles() != null) {
+      fileKey = application.getDocumentFiles().get(type);
+    }
+    if (fileKey == null) {
+      fileKey =
+          switch (type == null ? "" : type) {
+            case "REGISTRATION" -> application.getRegistrationFileKey();
+            case "OWNERSHIP" -> application.getOwnershipFileKey();
+            case "INSPECTION" -> application.getInspectionFileKey();
+            default -> null;
+          };
+    }
+    if (fileKey == null || !DroneEvidenceUploadService.isEvidenceKey(fileKey)) {
       throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Evidence document not found");
+    }
+    try {
+      String extension = fileKey.substring(fileKey.lastIndexOf('.') + 1);
+      return new EvidenceContent(
+          EvidenceUploadValidator.contentType(extension),
+          objectStore
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_GATEWAY,
+                          "STORAGE_UNAVAILABLE",
+                          "Object storage is unavailable"))
+              .open(fileKey));
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY, "STORAGE_UNAVAILABLE", "Object storage is unavailable");
+    }
+  }
+
+  @Transactional(readOnly = true)
+  public EvidenceContent openDroneImage(UUID callerId, UUID droneId, int index) {
+    Drone drone =
+        drones
+            .findById(droneId)
+            .orElseThrow(
+                () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Drone not found."));
+    if (drone.getInspectorOwnerId() == null || !callerId.equals(drone.getInspectorOwnerId())) {
+      requireReviewer(callerId);
+    }
+    List<String> keys = drone.getImageFileKeys();
+    if (keys.isEmpty() || index < 0 || index >= keys.size()) {
+      throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Drone image not found.");
+    }
+    String fileKey = keys.get(index);
+    if (!DroneEvidenceUploadService.isEvidenceKey(fileKey)) {
+      throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Drone image not found.");
     }
     try {
       String extension = fileKey.substring(fileKey.lastIndexOf('.') + 1);
@@ -247,22 +413,39 @@ public class DroneRegistrationApplicationService {
     if (application.getDroneId() != null) {
       drone = drones.findById(application.getDroneId()).orElse(null);
       if (drone != null) {
+        drone.updateDetails(application.getModel(), application.getManufacturer());
         drone.updateRegistration(
             application.getRegistrationNumber(),
             application.getRegistrationFileKey(),
             application.getRegistrationExpiresAt());
+        drone.applyCapabilitiesAndDocuments(
+            application.getMaxWindResistanceMps(),
+            application.getOpticalZoomLevel(),
+            application.isHasThermalCamera(),
+            application.isHasRtk(),
+            application.getDocumentFiles(),
+            application.getImageFileKeys(),
+            application.getFeatures());
         drone = drones.saveAndFlush(drone);
       } else {
         drone =
-            drones.saveAndFlush(
-                Drone.createInspectorOwned(
-                    application.getInspectorUserId(),
-                    application.getSerialNumber(),
-                    application.getModel(),
-                    application.getManufacturer(),
-                    application.getRegistrationNumber(),
-                    application.getRegistrationFileKey(),
-                    application.getRegistrationExpiresAt()));
+            Drone.createInspectorOwned(
+                application.getInspectorUserId(),
+                application.getSerialNumber(),
+                application.getModel(),
+                application.getManufacturer(),
+                application.getRegistrationNumber(),
+                application.getRegistrationFileKey(),
+                application.getRegistrationExpiresAt());
+        drone.applyCapabilitiesAndDocuments(
+            application.getMaxWindResistanceMps(),
+            application.getOpticalZoomLevel(),
+            application.isHasThermalCamera(),
+            application.isHasRtk(),
+            application.getDocumentFiles(),
+            application.getImageFileKeys(),
+            application.getFeatures());
+        drone = drones.saveAndFlush(drone);
       }
     } else {
       if (drones.existsBySerialNumberIgnoreCase(application.getSerialNumber())) {
@@ -270,15 +453,23 @@ public class DroneRegistrationApplicationService {
             HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Drone serial is already registered.");
       }
       drone =
-          drones.saveAndFlush(
-              Drone.createInspectorOwned(
-                  application.getInspectorUserId(),
-                  application.getSerialNumber(),
-                  application.getModel(),
-                  application.getManufacturer(),
-                  application.getRegistrationNumber(),
-                  application.getRegistrationFileKey(),
-                  application.getRegistrationExpiresAt()));
+          Drone.createInspectorOwned(
+              application.getInspectorUserId(),
+              application.getSerialNumber(),
+              application.getModel(),
+              application.getManufacturer(),
+              application.getRegistrationNumber(),
+              application.getRegistrationFileKey(),
+              application.getRegistrationExpiresAt());
+      drone.applyCapabilitiesAndDocuments(
+          application.getMaxWindResistanceMps(),
+          application.getOpticalZoomLevel(),
+          application.isHasThermalCamera(),
+          application.isHasRtk(),
+          application.getDocumentFiles(),
+          application.getImageFileKeys(),
+          application.getFeatures());
+      drone = drones.saveAndFlush(drone);
     }
     application.approve(reviewerId, drone.getId());
     applications.saveAndFlush(application);
@@ -299,13 +490,13 @@ public class DroneRegistrationApplicationService {
   public DroneRegistrationApplicationResponse reject(
       UUID reviewerId,
       UUID applicationId,
-      ReviewDroneRegistrationApplicationRequest request,
+      ReviewDroneRegistrationApplicationRequest body,
       String ip,
       String agent,
       String correlationId) {
     requireReviewer(reviewerId);
     DroneRegistrationApplication application = requirePending(applicationId);
-    application.reject(reviewerId, request.reviewNote().trim());
+    application.reject(reviewerId, body.reviewNote().trim());
     applications.saveAndFlush(application);
     userAccess.recordSecurityAudit(
         reviewerId,
@@ -320,36 +511,54 @@ public class DroneRegistrationApplicationService {
     return DroneRegistrationApplicationResponse.from(application, inspector, reviewer);
   }
 
-  public record EvidenceContent(String contentType, InputStream stream) {}
-
-  private AuthException notFound() {
-    return new AuthException(
-        HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Pending application was not found.");
+  private void requireInspector(UUID inspectorId) {
+    UserAccess.ActiveUser actor =
+        userAccess
+            .findActiveUser(inspectorId)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.FORBIDDEN,
+                        "INSPECTOR_PARTNER_REQUIRED",
+                        "An active Inspector partner is required."));
+    if (!actor.isInspectorPartner()) {
+      throw new AuthException(
+          HttpStatus.FORBIDDEN,
+          "INSPECTOR_PARTNER_REQUIRED",
+          "An active Inspector partner is required.");
+    }
   }
 
-  private DroneRegistrationApplication requirePending(UUID id) {
-    return applications.findByIdAndStatus(id, "PENDING").orElseThrow(this::notFound);
-  }
-
-  private UserAccess.ActiveUser requireInspector(UUID id) {
-    return userAccess
-        .findActiveUser(id)
-        .filter(user -> "INSPECTOR_PARTNER".equals(user.actorZone()))
-        .filter(user -> user.hasRole(Roles.INSPECTOR))
-        .orElseThrow(
-            () ->
-                new AuthException(
-                    HttpStatus.FORBIDDEN,
-                    "INSPECTOR_PARTNER_REQUIRED",
-                    "An active Inspector partner is required."));
-  }
-
-  private void requireReviewer(UUID id) {
-    UserAccess.ActiveUser user = userAccess.findActiveUser(id).orElseThrow(() -> notFound());
-    if (!"PLATFORM".equals(user.actorZone())
-        || (!user.hasRole(Roles.ADMIN) && !user.hasRole(Roles.MANAGER))) {
+  private void requireReviewer(UUID reviewerId) {
+    UserAccess.ActiveUser admin =
+        userAccess
+            .findActiveUser(reviewerId)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.FORBIDDEN,
+                        "REVIEWER_REQUIRED",
+                        "Platform Reviewer access is required."));
+    if (!"PLATFORM".equals(admin.actorZone())
+        || (!admin.hasRole("ADMIN") && !admin.hasRole("MANAGER"))) {
       throw new AuthException(
           HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
     }
+  }
+
+  private DroneRegistrationApplication requirePending(UUID applicationId) {
+    return applications
+        .findByIdAndStatus(applicationId, "PENDING")
+        .orElseThrow(
+            () ->
+                new AuthException(
+                    HttpStatus.NOT_FOUND,
+                    "APPLICATION_NOT_FOUND",
+                    "Application not found or not pending review."));
+  }
+
+  private BusinessException notFound() {
+    return new BusinessException(
+        HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Drone registration application not found.");
   }
 }

@@ -10,8 +10,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -65,6 +70,30 @@ public class Drone {
 
   @Column(name = "registration_expires_at")
   private Instant registrationExpiresAt;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "document_files", columnDefinition = "jsonb")
+  private Map<String, String> documentFiles;
+
+  @Column(name = "max_wind_resistance_mps", precision = 4, scale = 1)
+  private BigDecimal maxWindResistanceMps;
+
+  @Column(name = "optical_zoom_level", length = 32)
+  private String opticalZoomLevel;
+
+  @Column(name = "has_thermal_camera", nullable = false)
+  private boolean hasThermalCamera;
+
+  @Column(name = "has_rtk", nullable = false)
+  private boolean hasRtk;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "image_file_keys", columnDefinition = "jsonb")
+  private List<String> imageFileKeys = new ArrayList<>();
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "features", columnDefinition = "jsonb")
+  private List<String> features = new ArrayList<>();
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -246,12 +275,68 @@ public class Drone {
     return registrationExpiresAt;
   }
 
+  public void updateDetails(String model, String manufacturer) {
+    if (model != null) this.model = model;
+    if (manufacturer != null) this.manufacturer = manufacturer;
+    this.updatedAt = Instant.now();
+  }
+
   public void updateRegistration(
       String registrationNumber, String registrationFileKey, Instant registrationExpiresAt) {
     this.registrationNumber = registrationNumber;
     this.registrationFileKey = registrationFileKey;
     this.registrationExpiresAt = registrationExpiresAt;
     this.updatedAt = Instant.now();
+  }
+
+  public void applyCapabilitiesAndDocuments(
+      BigDecimal maxWindResistanceMps,
+      String opticalZoomLevel,
+      boolean hasThermalCamera,
+      boolean hasRtk,
+      Map<String, String> documentFiles,
+      List<String> imageFileKeys,
+      List<String> features) {
+    this.maxWindResistanceMps = maxWindResistanceMps;
+    this.opticalZoomLevel = opticalZoomLevel;
+    this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
+    this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
+    this.hasRtk = hasRtk || this.features.contains("RTK_POSITIONING");
+    this.documentFiles = documentFiles != null ? new HashMap<>(documentFiles) : null;
+    this.imageFileKeys = imageFileKeys != null ? new ArrayList<>(imageFileKeys) : new ArrayList<>();
+    this.updatedAt = Instant.now();
+  }
+
+  public List<String> getFeatures() {
+    return features != null ? features : List.of();
+  }
+
+  public List<String> getImageFileKeys() {
+    return imageFileKeys != null ? imageFileKeys : List.of();
+  }
+
+  public String getPrimaryImageKey() {
+    return (imageFileKeys != null && !imageFileKeys.isEmpty()) ? imageFileKeys.get(0) : null;
+  }
+
+  public Map<String, String> getDocumentFiles() {
+    return documentFiles;
+  }
+
+  public BigDecimal getMaxWindResistanceMps() {
+    return maxWindResistanceMps;
+  }
+
+  public String getOpticalZoomLevel() {
+    return opticalZoomLevel;
+  }
+
+  public boolean isHasThermalCamera() {
+    return hasThermalCamera;
+  }
+
+  public boolean isHasRtk() {
+    return hasRtk;
   }
 
   public Instant getCreatedAt() {

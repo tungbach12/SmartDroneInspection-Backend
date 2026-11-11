@@ -34,6 +34,8 @@ class FullDatabaseSchemaMigrationTest {
             "auth_sessions",
             "prospective_customer_registrations",
             "drone_registration_applications",
+            "drone_document_configs",
+            "drone_feature_configs",
             "drones",
             "asset_categories",
             "checklist_templates",
@@ -62,7 +64,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(32);
+    assertThat(expected).hasSize(34);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -132,8 +134,8 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(33);
-    assertThat(versions.getLast()).isEqualTo("33");
+    assertThat(versions).hasSize(36);
+    assertThat(versions.getLast()).isEqualTo("36");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
