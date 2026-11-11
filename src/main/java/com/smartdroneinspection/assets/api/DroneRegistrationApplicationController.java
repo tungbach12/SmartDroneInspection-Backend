@@ -55,12 +55,26 @@ public class DroneRegistrationApplicationController {
   }
 
   @GetMapping("/{applicationId}/evidence/{type}")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  @PreAuthorize("isAuthenticated()")
   public ResponseEntity<InputStreamResource> evidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,
       @PathVariable String type) {
     var content = applications.openEvidence(subject(jwt), applicationId, type);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(content.contentType()))
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().build().toString())
+        .header(HttpHeaders.CACHE_CONTROL, "no-store")
+        .body(new InputStreamResource(content.stream()));
+  }
+
+  @GetMapping("/drones/{droneId}/image")
+  @PreAuthorize("isAuthenticated()")
+  public ResponseEntity<InputStreamResource> droneImage(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID droneId,
+      @RequestParam(required = false, defaultValue = "0") int index) {
+    var content = applications.openDroneImage(subject(jwt), droneId, index);
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(content.contentType()))
         .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().build().toString())

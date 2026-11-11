@@ -12,6 +12,7 @@ import com.smartdroneinspection.assets.api.dto.request.ReviewDroneRegistrationAp
 import com.smartdroneinspection.assets.api.dto.request.SubmitDroneRegistrationApplicationRequest;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
+import com.smartdroneinspection.assets.repository.DroneDocumentConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -32,6 +33,7 @@ class DroneRegistrationApplicationServiceTest {
   private DroneRegistrationApplicationRepository applications;
   private DroneRepository drones;
   private UserAccess userAccess;
+  private DroneDocumentConfigRepository documentConfigs;
   private DroneRegistrationApplicationService service;
 
   private final UUID inspectorId = UUID.randomUUID();
@@ -44,13 +46,15 @@ class DroneRegistrationApplicationServiceTest {
     applications = mock(DroneRegistrationApplicationRepository.class);
     drones = mock(DroneRepository.class);
     userAccess = mock(UserAccess.class);
+    documentConfigs = mock(DroneDocumentConfigRepository.class);
     service =
         new DroneRegistrationApplicationService(
             applications,
             drones,
             userAccess,
             Optional.of(mock(EvidenceObjectStore.class)),
-            mock(DroneEvidenceUploadService.class));
+            mock(DroneEvidenceUploadService.class),
+            documentConfigs);
 
     when(userAccess.findActiveUser(inspectorId))
         .thenReturn(
@@ -93,7 +97,13 @@ class DroneRegistrationApplicationServiceTest {
             "reg-key",
             Instant.now().plusSeconds(86400),
             "owner-key",
-            "insp-key");
+            "insp-key",
+            null,
+            null,
+            false,
+            false,
+            null,
+            List.of("drone-img-key"));
     DroneEvidenceUploadService evidenceUploads = mock(DroneEvidenceUploadService.class);
     service =
         new DroneRegistrationApplicationService(
@@ -101,7 +111,8 @@ class DroneRegistrationApplicationServiceTest {
             drones,
             userAccess,
             Optional.of(mock(EvidenceObjectStore.class)),
-            evidenceUploads);
+            evidenceUploads,
+            documentConfigs);
     org.mockito.Mockito.doNothing()
         .when(evidenceUploads)
         .validateReference(inspectorId, "REGISTRATION", "reg-key");
@@ -111,6 +122,9 @@ class DroneRegistrationApplicationServiceTest {
     org.mockito.Mockito.doNothing()
         .when(evidenceUploads)
         .validateReference(inspectorId, "INSPECTION", "insp-key");
+    org.mockito.Mockito.doNothing()
+        .when(evidenceUploads)
+        .validateReference(inspectorId, "DRONE_IMAGE", "drone-img-key");
 
     when(drones.existsBySerialNumberIgnoreCase("SN-001")).thenReturn(false);
     when(applications.existsBySerialNumberIgnoreCaseAndStatus("SN-001", "PENDING"))
@@ -140,7 +154,20 @@ class DroneRegistrationApplicationServiceTest {
   void submitRejectsExpiredRegistrationOrDuplicateSerial() {
     SubmitDroneRegistrationApplicationRequest expired =
         new SubmitDroneRegistrationApplicationRequest(
-            "SN-002", "M350", "DJI", "REG-1", "reg", Instant.now().minusSeconds(10), "own", "insp");
+            "SN-002",
+            "M350",
+            "DJI",
+            "REG-1",
+            "reg",
+            Instant.now().minusSeconds(10),
+            "own",
+            "insp",
+            null,
+            null,
+            false,
+            false,
+            null,
+            List.of("img"));
     assertThatThrownBy(() -> service.submit(inspectorId, expired, "ip", "agent", "corr"))
         .isInstanceOf(AuthException.class)
         .hasMessageContaining("Drone registration must be current");
@@ -154,18 +181,108 @@ class DroneRegistrationApplicationServiceTest {
             "reg",
             Instant.now().plusSeconds(1000),
             "own",
-            "insp");
-    when(drones.existsBySerialNumberIgnoreCase("SN-003")).thenReturn(true);
+            "insp",
+            null,
+            null,
+            false,
+            false,
+            null,
+            List.of("img"));
+    Drone otherDrone =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "SN-003",
+            "M350",
+            "DJI",
+            "REG-2",
+            "reg",
+            Instant.now().plusSeconds(1000));
+    when(drones.findBySerialNumberIgnoreCase("SN-003")).thenReturn(Optional.of(otherDrone));
     assertThatThrownBy(() -> service.submit(inspectorId, valid, "ip", "agent", "corr"))
         .isInstanceOf(AuthException.class)
         .hasMessageContaining("already registered");
 
-    when(drones.existsBySerialNumberIgnoreCase("SN-003")).thenReturn(false);
+    when(drones.findBySerialNumberIgnoreCase("SN-003")).thenReturn(Optional.empty());
     when(applications.existsBySerialNumberIgnoreCaseAndStatus("SN-003", "PENDING"))
         .thenReturn(true);
     assertThatThrownBy(() -> service.submit(inspectorId, valid, "ip", "agent", "corr"))
         .isInstanceOf(AuthException.class)
-        .hasMessageContaining("already registered");
+        .hasMessageContaining("already pending review");
+  }
+
+  @Test
+  void submitAllowsUpdatingOwnExistingDrone() {
+    SubmitDroneRegistrationApplicationRequest updateReq =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-OWN",
+            "M350 RTK",
+            "DJI",
+            "REG-OWN",
+            "reg-key",
+            Instant.now().plusSeconds(86400),
+            "owner-key",
+            null,
+            null,
+            null,
+            false,
+            false,
+            null,
+            List.of("drone-img-key"));
+    DroneEvidenceUploadService evidenceUploads = mock(DroneEvidenceUploadService.class);
+    service =
+        new DroneRegistrationApplicationService(
+            applications,
+            drones,
+            userAccess,
+            Optional.of(mock(EvidenceObjectStore.class)),
+            evidenceUploads,
+            documentConfigs);
+    Drone ownDrone =
+        Drone.createInspectorOwned(
+            inspectorId,
+            "SN-OWN",
+            "M350",
+            "DJI",
+            "REG-OLD",
+            "reg-old",
+            Instant.now().plusSeconds(1000));
+    ReflectionTestUtils.setField(ownDrone, "id", droneId);
+    when(drones.findBySerialNumberIgnoreCase("SN-OWN")).thenReturn(Optional.of(ownDrone));
+    when(applications.existsBySerialNumberIgnoreCaseAndStatus("SN-OWN", "PENDING"))
+        .thenReturn(false);
+    when(applications.saveAndFlush(any(DroneRegistrationApplication.class)))
+        .thenAnswer(
+            inv -> {
+              DroneRegistrationApplication app = inv.getArgument(0);
+              ReflectionTestUtils.setField(app, "id", applicationId);
+              return app;
+            });
+
+    var response = service.submit(inspectorId, updateReq, "ip", "agent", "corr");
+    assertThat(response.serialNumber()).isEqualTo("SN-OWN");
+  }
+
+  @Test
+  void submitRequiresAtLeastOneDroneImage() {
+    SubmitDroneRegistrationApplicationRequest noImage =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-NO-IMG",
+            "M350",
+            "DJI",
+            "REG-NO-IMG",
+            "reg",
+            Instant.now().plusSeconds(1000),
+            "own",
+            "insp",
+            null,
+            null,
+            false,
+            false,
+            null,
+            List.of());
+    assertThatThrownBy(() -> service.submit(inspectorId, noImage, "ip", "agent", "corr"))
+        .isInstanceOf(AuthException.class)
+        .hasMessageContaining("At least one drone image is required");
   }
 
   @Test
@@ -319,7 +436,13 @@ class DroneRegistrationApplicationServiceTest {
             "reg-file",
             Instant.now().plusSeconds(86400),
             "owner-file",
-            "insp-file");
+            "insp-file",
+            null,
+            null,
+            null,
+            false,
+            false,
+            List.of("drone-img-key"));
     ReflectionTestUtils.setField(app, "id", applicationId);
     return app;
   }

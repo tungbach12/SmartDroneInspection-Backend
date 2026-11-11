@@ -1,6 +1,7 @@
 package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.response.DroneEvidenceUploadResponse;
+import com.smartdroneinspection.assets.repository.DroneDocumentConfigRepository;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -10,6 +11,7 @@ import com.smartdroneinspection.users.UserAccess;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -22,34 +24,46 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class DroneEvidenceUploadService {
 
-  private static final Set<String> TYPES = Set.of("REGISTRATION", "OWNERSHIP", "INSPECTION");
+  private static final Set<String> DEFAULT_TYPES =
+      Set.of("REGISTRATION", "OWNERSHIP", "INSPECTION", "DRONE_IMAGE");
+  private static final Pattern TYPE_PATTERN = Pattern.compile("^[A-Za-z0-9_]{1,64}$");
   private static final Pattern OBJECT_KEY =
       Pattern.compile(
-          "drone-registration-applications/([0-9a-fA-F-]{36})/evidence/(REGISTRATION|OWNERSHIP|INSPECTION)/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.(pdf|png|jpg|webp))");
+          "drone-registration-applications/([0-9a-fA-F-]{36})/evidence/([A-Za-z0-9_]{1,64})/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.(pdf|png|jpg|webp))");
 
   private final Optional<EvidenceObjectStore> objectStore;
   private final UserAccess userAccess;
+  private final DroneDocumentConfigRepository documentConfigs;
 
   public DroneEvidenceUploadService(
-      Optional<EvidenceObjectStore> objectStore, UserAccess userAccess) {
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      DroneDocumentConfigRepository documentConfigs) {
     this.objectStore = objectStore;
     this.userAccess = userAccess;
+    this.documentConfigs = documentConfigs;
   }
 
   public DroneEvidenceUploadResponse upload(UUID inspectorId, String type, MultipartFile file) {
     requireInspector(inspectorId);
-    if (type == null || !TYPES.contains(type)) {
+    if (type == null || !TYPE_PATTERN.matcher(type).matches()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Invalid evidence type code");
+    }
+    String normalizedType = type.trim().toUpperCase(Locale.ROOT);
+    if (!DEFAULT_TYPES.contains(normalizedType)
+        && !documentConfigs.existsByCodeIgnoreCase(normalizedType)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "VALIDATION_FAILED",
-          "Evidence type must be REGISTRATION, OWNERSHIP, or INSPECTION");
+          "Unknown or unconfigured evidence type: " + type);
     }
     ValidatedUpload upload = EvidenceUploadValidator.validate(file);
     String objectKey =
         "drone-registration-applications/"
             + inspectorId
             + "/evidence/"
-            + type
+            + normalizedType
             + "/"
             + UUID.randomUUID()
             + upload.extension();
@@ -97,13 +111,13 @@ public class DroneEvidenceUploadService {
   }
 
   public static boolean isOwnedKey(UUID inspectorId, String type, String objectKey) {
-    if (inspectorId == null || type == null || !TYPES.contains(type) || objectKey == null) {
+    if (inspectorId == null || type == null || objectKey == null) {
       return false;
     }
     Matcher matcher = OBJECT_KEY.matcher(objectKey);
     return matcher.matches()
         && inspectorId.toString().equalsIgnoreCase(matcher.group(1))
-        && type.equals(matcher.group(2));
+        && type.equalsIgnoreCase(matcher.group(2));
   }
 
   private void requireInspector(UUID inspectorId) {

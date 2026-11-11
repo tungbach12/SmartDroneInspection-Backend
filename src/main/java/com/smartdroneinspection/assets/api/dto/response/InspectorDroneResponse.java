@@ -2,8 +2,11 @@ package com.smartdroneinspection.assets.api.dto.response;
 
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.users.UserAccess;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record InspectorDroneResponse(
@@ -21,7 +24,15 @@ public record InspectorDroneResponse(
     String legalCategory,
     String requiredLicenseClass,
     String registrationExpirationStatus,
-    Long registrationRemainingDays) {
+    Long registrationRemainingDays,
+    BigDecimal maxWindResistanceMps,
+    String opticalZoomLevel,
+    boolean hasThermalCamera,
+    boolean hasRtk,
+    List<String> features,
+    Map<String, String> documentFiles,
+    List<String> imageFileKeys,
+    String primaryImageKey) {
 
   public static InspectorDroneResponse from(Drone drone) {
     return from(drone, null);
@@ -50,6 +61,14 @@ public record InspectorDroneResponse(
         drone.resolveLegalCategory(),
         drone.requiresClassBLicense() ? "CLASS_B" : "CLASS_A",
         expirationStatus,
-        remainingDays);
+        remainingDays,
+        drone.getMaxWindResistanceMps(),
+        drone.getOpticalZoomLevel(),
+        drone.isHasThermalCamera(),
+        drone.isHasRtk(),
+        drone.getFeatures(),
+        drone.getDocumentFiles(),
+        drone.getImageFileKeys(),
+        drone.getPrimaryImageKey());
   }
 }
