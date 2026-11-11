@@ -17,6 +17,13 @@ class ServiceRequestTest {
   }
 
   @Test
+  void monthlyRecurringRequestRequiresAtLeastTwoCountBoundOccurrences() {
+    assertThatThrownBy(() -> recurringRequest(1, null))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("exactly one valid recurrence limit");
+  }
+
+  @Test
   void oneTimeRequestCannotIncludeRecurrenceLimit() {
     assertThatThrownBy(
             () ->
@@ -52,7 +59,7 @@ class ServiceRequestTest {
         LocalTime.of(17, 0),
         ServiceRequest.RequestType.RECURRING,
         "MONTH",
-        1,
+        6,
         count,
         endDate);
   }

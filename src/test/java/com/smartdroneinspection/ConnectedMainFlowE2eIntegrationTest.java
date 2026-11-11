@@ -211,7 +211,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     java.time.ZoneId customerZone = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
     Instant plannedStart =
         java.time.LocalDate.now(customerZone)
-            .plusDays(1)
+            .plusDays(20)
             .atTime(9, 0)
             .atZone(customerZone)
             .toInstant();
