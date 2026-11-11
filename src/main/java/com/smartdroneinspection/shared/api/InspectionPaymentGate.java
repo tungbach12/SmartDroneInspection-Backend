@@ -10,8 +10,8 @@ public interface InspectionPaymentGate {
 
   /**
    * Returns true if the inspection has an associated commercial service occurrence whose customer
-   * payment is not yet confirmed. Returns false for operational inspections, maintenance
-   * re-inspections, or occurrences that have already been paid.
+   * payment is not yet confirmed. Returns false for operational inspections or occurrences that
+   * have already been paid.
    */
   boolean isPaymentDue(UUID inspectionId);
 }

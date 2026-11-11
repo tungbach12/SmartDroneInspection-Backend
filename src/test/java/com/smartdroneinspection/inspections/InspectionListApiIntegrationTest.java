@@ -117,15 +117,6 @@ class InspectionListApiIntegrationTest {
   }
 
   @Test
-  void aMaintenanceEngineerHasNoInspectionList() throws Exception {
-    UUID engineerId = createMaintenanceEngineer();
-
-    mockMvc
-        .perform(get("/api/v1/inspections").with(principal(engineerId, "MAINTENANCE_ENGINEER")))
-        .andExpect(status().isForbidden());
-  }
-
-  @Test
   void pagingIsBoundedAndReportsTheRequestedWindow() throws Exception {
     for (int index = 0; index < 4; index++) {
       createInspection(fixture.organizationId(), fixture.inspectorId());
@@ -297,19 +288,6 @@ class InspectionListApiIntegrationTest {
             null);
     admin.addRole(UserRole.ADMIN);
     return users.saveAndFlush(admin).getId();
-  }
-
-  private UUID createMaintenanceEngineer() {
-    User engineer =
-        new User(
-            "list-engineer-" + UUID.randomUUID() + "@example.test",
-            "List maintenance engineer",
-            null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            fixture.organizationId());
-    engineer.addRole(UserRole.MAINTENANCE_ENGINEER);
-    return users.saveAndFlush(engineer).getId();
   }
 
   private static RequestPostProcessor principal(UUID userId, String role) {

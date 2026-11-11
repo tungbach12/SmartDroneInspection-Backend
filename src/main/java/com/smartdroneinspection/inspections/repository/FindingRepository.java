@@ -47,8 +47,4 @@ public interface FindingRepository extends JpaRepository<Finding, UUID> {
       value = "SELECT * FROM findings WHERE inspection_id = :inspectionId ORDER BY created_at ASC",
       nativeQuery = true)
   List<Finding> findAllByInspectionIdIncludingRemoved(@Param("inspectionId") UUID inspectionId);
-
-  List<Finding> findByForwardedToMaintenanceAtIsNotNull();
-
-  List<Finding> findByInspectionIdAndForwardedToMaintenanceAtIsNotNull(UUID inspectionId);
 }

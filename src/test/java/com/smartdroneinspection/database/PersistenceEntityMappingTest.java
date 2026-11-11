@@ -11,16 +11,6 @@ import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision;
-import com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder;
-import com.smartdroneinspection.maintenance.domain.MaintenanceCostLine;
-import com.smartdroneinspection.maintenance.domain.MaintenanceEstimateVersion;
-import com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion;
-import com.smartdroneinspection.maintenance.domain.MaintenanceTask;
-import com.smartdroneinspection.maintenance.domain.MaintenanceTeamMember;
-import com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog;
-import com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder;
-import com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk;
 import com.smartdroneinspection.notifications.domain.Notification;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.InspectorProfile;
@@ -53,17 +43,7 @@ class PersistenceEntityMappingTest {
           InspectorProfile.class,
           OtpChallenge.class,
           Organization.class,
-          User.class,
-          MaintenanceWorkOrder.class,
-          MaintenanceTask.class,
-          MaintenanceTeamMember.class,
-          MaintenanceEstimateVersion.class,
-          MaintenanceCostLine.class,
-          MaintenanceChangeOrder.class,
-          MaintenanceWorkLog.class,
-          MaintenanceReportVersion.class,
-          MaintenanceAcceptanceDecision.class,
-          RepairKnowledgeChunk.class);
+          User.class);
 
   @Test
   void allFeatureEntitiesBuildValidHibernateMetadataWithoutDatabaseAccess() {

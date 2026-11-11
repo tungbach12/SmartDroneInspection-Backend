@@ -66,49 +66,9 @@ class PersistenceEntityOwnershipTest {
             "inspection_reports",
             "com.smartdroneinspection.inspections.domain.InspectionReport"),
         Arguments.of(
-            "maintenance",
-            "maintenance_work_orders",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceWorkOrder"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_tasks",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceTask"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_team_members",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceTeamMember"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_estimate_versions",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceEstimateVersion"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_cost_lines",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceCostLine"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_change_orders",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceChangeOrder"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_work_logs",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceWorkLog"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_reports",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceReportVersion"),
-        Arguments.of(
-            "maintenance",
-            "maintenance_acceptance_decisions",
-            "com.smartdroneinspection.maintenance.domain.MaintenanceAcceptanceDecision"),
-        Arguments.of(
             "contracts",
             "inspection_finance_settings",
             "com.smartdroneinspection.contracts.domain.InspectionFinanceSettings"),
-        Arguments.of(
-            "maintenance",
-            "repair_knowledge_chunks",
-            "com.smartdroneinspection.maintenance.domain.RepairKnowledgeChunk"),
         Arguments.of(
             "users",
             "inspector_flight_logs",
