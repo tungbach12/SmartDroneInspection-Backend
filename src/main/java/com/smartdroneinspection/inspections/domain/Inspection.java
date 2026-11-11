@@ -52,15 +52,6 @@ public class Inspection {
   private com.smartdroneinspection.inspections.domain.enums.InspectionType inspectionType =
       com.smartdroneinspection.inspections.domain.enums.InspectionType.INITIAL;
 
-  @Column(name = "work_order_id")
-  private UUID workOrderId;
-
-  @Column(name = "source_inspection_id")
-  private UUID sourceInspectionId;
-
-  @Column(name = "source_report_version_id")
-  private UUID sourceReportVersionId;
-
   @Column(name = "findings_confirmed_at")
   private Instant findingsConfirmedAt;
 
@@ -197,12 +188,6 @@ public class Inspection {
     updatedAt = Instant.now();
   }
 
-  /** Deprecated: maintenance handoff operates on findings without mutating inspection status. */
-  @Deprecated
-  public void markRepairPending() {
-    // No-op in 6-status model; inspection concludes at COMPLETED
-  }
-
   /** Concludes the inspection. */
   public void complete() {
     if (status != InspectionStatus.UNDER_REVIEW
@@ -229,66 +214,8 @@ public class Inspection {
     return organizationId;
   }
 
-  public static Inspection createReinspection(
-      UUID organizationId,
-      UUID assetId,
-      UUID inspectorId,
-      UUID droneId,
-      Instant plannedStartAt,
-      UUID workOrderId,
-      UUID sourceInspectionId) {
-    return createReinspection(
-        organizationId,
-        assetId,
-        inspectorId,
-        droneId,
-        plannedStartAt,
-        workOrderId,
-        sourceInspectionId,
-        null);
-  }
-
-  public static Inspection createReinspection(
-      UUID organizationId,
-      UUID assetId,
-      UUID inspectorId,
-      UUID droneId,
-      Instant plannedStartAt,
-      UUID workOrderId,
-      UUID sourceInspectionId,
-      UUID sourceReportVersionId) {
-    Inspection inspection =
-        new Inspection(organizationId, assetId, inspectorId, droneId, plannedStartAt, null);
-    inspection.inspectionType =
-        com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
-    inspection.workOrderId = workOrderId;
-    inspection.sourceInspectionId = sourceInspectionId;
-    inspection.sourceReportVersionId = sourceReportVersionId;
-    if (inspectorId != null && droneId != null) {
-      inspection.partnerAssignment = true;
-    }
-    return inspection;
-  }
-
   public com.smartdroneinspection.inspections.domain.enums.InspectionType getInspectionType() {
     return inspectionType;
-  }
-
-  public UUID getWorkOrderId() {
-    return workOrderId;
-  }
-
-  public UUID getSourceInspectionId() {
-    return sourceInspectionId;
-  }
-
-  public UUID getSourceReportVersionId() {
-    return sourceReportVersionId;
-  }
-
-  public boolean isReinspection() {
-    return inspectionType
-        == com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
   }
 
   public UUID getAssetId() {

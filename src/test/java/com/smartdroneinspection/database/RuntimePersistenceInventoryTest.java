@@ -32,7 +32,6 @@ class RuntimePersistenceInventoryTest {
           "notifications",
           "prospective_customer_registrations",
           "drone_registration_applications",
-          "reinspection_defect_verifications",
           "organizations",
           "users",
           "inspector_flight_logs",
@@ -40,16 +39,6 @@ class RuntimePersistenceInventoryTest {
           "evidence",
           "findings",
           "inspection_reports",
-          "maintenance_work_orders",
-          "maintenance_tasks",
-          "maintenance_team_members",
-          "maintenance_estimate_versions",
-          "maintenance_cost_lines",
-          "maintenance_change_orders",
-          "maintenance_work_logs",
-          "maintenance_reports",
-          "maintenance_acceptance_decisions",
-          "repair_knowledge_chunks",
           "inspector_profiles",
           "otp_challenges",
           "service_requests",
@@ -69,7 +58,6 @@ class RuntimePersistenceInventoryTest {
           "drones",
           "prospective_customer_registrations",
           "drone_registration_applications",
-          "reinspection_defect_verifications",
           "asset_categories",
           "checklist_templates",
           "inspection_items",
@@ -80,18 +68,8 @@ class RuntimePersistenceInventoryTest {
           "evidence",
           "findings",
           "inspection_reports",
-          "maintenance_work_orders",
-          "maintenance_tasks",
-          "maintenance_team_members",
-          "maintenance_estimate_versions",
-          "maintenance_cost_lines",
-          "maintenance_change_orders",
-          "maintenance_work_logs",
-          "maintenance_reports",
-          "maintenance_acceptance_decisions",
           "audit_events",
           "notifications",
-          "repair_knowledge_chunks",
           "service_requests",
           "service_request_messages",
           "service_request_quotes",
@@ -102,6 +80,7 @@ class RuntimePersistenceInventoryTest {
           "inspection_finance_settings",
           "inspector_profiles",
           "otp_challenges",
+          "platform_ai_settings",
           "inspector_flight_logs");
 
   @Autowired EntityManagerFactory entityManagerFactory;
@@ -134,7 +113,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(40);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(30);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

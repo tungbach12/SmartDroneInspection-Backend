@@ -159,7 +159,7 @@ public class ReportDraftClient implements ReportDraftPort {
         Reply with a single JSON object and nothing else, using exactly these keys:
           summary (a concise 2-4 sentence narrative summary of the inspection result and asset condition),
           keyHighlights (JSON array of strings highlighting critical defects, severe findings, or notable conditions),
-          recommendedActions (concise follow-up maintenance recommendations),
+          recommendedActions (concise follow-up recommendations),
           overallRisk (exactly one of: LOW, MEDIUM, HIGH, CRITICAL)
 
         Rules:
@@ -308,20 +308,6 @@ public class ReportDraftClient implements ReportDraftPort {
         builder,
         "Assigned drone reference (not proof of equipment used)",
         inspection.assignedDroneId());
-
-    if (context.defectVerifications() != null && !context.defectVerifications().isEmpty()) {
-      builder.append("\nTarget Defect Verifications (Post-maintenance re-inspection scope):\n");
-      for (var v : context.defectVerifications()) {
-        builder
-            .append("- Target Defect: ")
-            .append(v.defectLabel())
-            .append(" | Resolution Status: ")
-            .append(v.resolutionStatus())
-            .append(" | Inspector Verification Notes: ")
-            .append(v.inspectorNotes() != null ? v.inspectorNotes() : "None recorded")
-            .append("\n");
-      }
-    }
 
     builder.append(
         "\nInspector-confirmed Findings (official findings only; confirmation is not independent validation):\n");

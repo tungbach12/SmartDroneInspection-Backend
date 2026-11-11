@@ -15,7 +15,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
@@ -1049,40 +1048,6 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void publishedFindingsCanBeSelectedForHandoffToMaintenance() throws Exception {
-    UUID evidenceId = uploadEvidence();
-    acceptEvidence();
-    UUID findingId = createManualFinding(evidenceId);
-    ensureFindingsConfirmed();
-    UUID versionId = createManualDraftVersion();
-    verifyAndSubmitVersion(versionId);
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
-        .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("findingIds", List.of(findingId.toString())))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
-        .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId.toString()));
-  }
-
-  @Test
   void inspectorCanWithdrawUnreviewedSubmissionAndEditEvidenceAndFindings() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();
@@ -1164,108 +1129,6 @@ class InspectionReportApiIntegrationTest {
         .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
-  }
-
-  @Test
-  void adminCanBatchForwardSelectedFindingsToMaintenanceWithoutPerFindingDispositions()
-      throws Exception {
-    UUID evidenceId = uploadEvidence();
-    acceptEvidence();
-    UUID findingId1 = createManualFinding(evidenceId);
-    ensureFindingsConfirmed();
-    UUID versionId = createManualDraftVersion();
-    verifyAndSubmitVersion(versionId);
-    reviewAndPublishVersion(versionId);
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("findingIds", java.util.List.of(findingId1.toString())))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
-        .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(findingId1.toString()));
-
-    assertThat(
-            findings
-                .findByIdAndInspectionId(findingId1, fixture.inspectionId())
-                .orElseThrow()
-                .getForwardedToMaintenanceAt())
-        .isNotNull();
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT actor_user_id FROM audit_events "
-                    + "WHERE aggregate_id = ? AND action = 'MF3_MAINTENANCE_HANDOFF'",
-                String.class,
-                fixture.inspectionId()))
-        .isEqualTo(fixture.reviewerId().toString());
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT safe_metadata -> 'forwardedFindingIds' = jsonb_build_array(?::text)::jsonb "
-                    + "AND safe_metadata ->> 'reportVersionId' = ? "
-                    + "FROM audit_events WHERE aggregate_id = ? "
-                    + "AND action = 'MF3_MAINTENANCE_HANDOFF'",
-                Boolean.class,
-                findingId1.toString(),
-                reportVersions.findById(versionId).orElseThrow().getId().toString(),
-                fixture.inspectionId()))
-        .isTrue();
-  }
-
-  @Test
-  void adminCanCompleteWithoutForwardingAnyFindings() throws Exception {
-    UUID evidenceId = uploadEvidence();
-    acceptEvidence();
-    UUID findingId = createManualFinding(evidenceId);
-    ensureFindingsConfirmed();
-    UUID versionId = createManualDraftVersion();
-    verifyAndSubmitVersion(versionId);
-    reviewAndPublishVersion(versionId);
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(Map.of("findingIds", java.util.List.of()))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
-        .andExpect(jsonPath("$.data.forwardedFindingIds").isEmpty());
-
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT forwarded_to_maintenance_at FROM findings WHERE inspection_id = ?",
-                java.sql.Timestamp.class,
-                fixture.inspectionId()))
-        .isNull();
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT safe_metadata -> 'forwardedFindingIds' = '[]'::jsonb "
-                    + "AND safe_metadata ->> 'reportVersionId' = ? "
-                    + "FROM audit_events WHERE aggregate_id = ? "
-                    + "AND action = 'MF3_MAINTENANCE_HANDOFF'",
-                Boolean.class,
-                versionId.toString(),
-                fixture.inspectionId()))
-        .isTrue();
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("findingIds", List.of(findingId.toString())))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("INSPECTION_ALREADY_COMPLETED"));
-    assertThat(findings.findByIdAndInspectionId(findingId, fixture.inspectionId()).orElseThrow())
-        .extracting(Finding::getForwardedToMaintenanceAt)
-        .isNull();
   }
 
   @Test
@@ -1409,43 +1272,6 @@ class InspectionReportApiIntegrationTest {
                 .with(principal(fixture.outsiderId(), "CUSTOMER")))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
-  }
-
-  @Test
-  void reportApprovalIsReportLevelAndFindingsAreForwardedIndividuallyToMaintenance()
-      throws Exception {
-    UUID evidenceId = uploadEvidence();
-    acceptEvidence();
-    UUID repairFindingId = createRepairRequiredManualFinding(evidenceId);
-    UUID noRepairFindingId = createManualFinding(evidenceId);
-    ensureFindingsConfirmed();
-    UUID versionId = createManualDraftVersion();
-    verifyAndSubmitVersion(versionId);
-
-    // The reviewer publishes the report in one action; findings are still handed off separately.
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
-        .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/report/corrective-handoff", fixture.inspectionId())
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("findingIds", List.of(repairFindingId.toString())))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
-        .andExpect(jsonPath("$.data.forwardedFindingIds[0]").value(repairFindingId.toString()));
   }
 
   @Test

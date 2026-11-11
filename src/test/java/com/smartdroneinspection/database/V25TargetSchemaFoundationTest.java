@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -151,7 +152,6 @@ class V25TargetSchemaFoundationTest {
                     "status",
                     "model_name",
                     "confidence",
-                    "forwarded_to_maintenance_at",
                     "is_deleted",
                     "created_at")),
             Map.entry(
@@ -166,124 +166,6 @@ class V25TargetSchemaFoundationTest {
                     "return_reason",
                     "published_at",
                     "created_at")),
-            Map.entry(
-                "maintenance_work_orders",
-                Set.of(
-                    "organization_id",
-                    "asset_id",
-                    "source_report_version_id",
-                    "source_finding_id",
-                    "status",
-                    "priority",
-                    "due_at",
-                    "corrective_scope",
-                    "acceptance_criteria",
-                    "budget_approver_user_id",
-                    "team_lead_user_id",
-                    "report_author_user_id",
-                    "accepting_reviewer_user_id",
-                    "created_at",
-                    "updated_at",
-                    "row_version")),
-            Map.entry(
-                "maintenance_tasks",
-                Set.of(
-                    "work_order_id",
-                    "task_number",
-                    "name",
-                    "method",
-                    "assigned_engineer_user_id",
-                    "status",
-                    "created_at",
-                    "row_version")),
-            Map.entry(
-                "maintenance_team_members",
-                Set.of(
-                    "work_order_id",
-                    "engineer_user_id",
-                    "member_role",
-                    "effective_from",
-                    "effective_until",
-                    "assigned_by_user_id",
-                    "reason",
-                    "active",
-                    "created_at")),
-            Map.entry(
-                "maintenance_estimate_versions",
-                Set.of(
-                    "work_order_id",
-                    "version_no",
-                    "status",
-                    "prepared_by_user_id",
-                    "approved_by_user_id",
-                    "approved_at",
-                    "currency",
-                    "baseline_total",
-                    "assumptions",
-                    "created_at")),
-            Map.entry(
-                "maintenance_cost_lines",
-                Set.of(
-                    "work_order_id",
-                    "estimate_version_id",
-                    "task_id",
-                    "line_kind",
-                    "state",
-                    "description",
-                    "quantity",
-                    "unit",
-                    "unit_rate",
-                    "amount",
-                    "currency",
-                    "entered_by_user_id",
-                    "created_at")),
-            Map.entry(
-                "maintenance_change_orders",
-                Set.of(
-                    "work_order_id",
-                    "change_number",
-                    "reason",
-                    "proposed_delta",
-                    "status",
-                    "requested_by_user_id",
-                    "decided_by_user_id",
-                    "decided_at",
-                    "decision_reason",
-                    "created_at",
-                    "updated_at",
-                    "row_version")),
-            Map.entry(
-                "maintenance_work_logs",
-                Set.of(
-                    "work_order_id",
-                    "task_id",
-                    "engineer_user_id",
-                    "started_at",
-                    "ended_at",
-                    "hours",
-                    "as_left_condition",
-                    "test_readings",
-                    "status",
-                    "created_at",
-                    "row_version")),
-            Map.entry(
-                "maintenance_reports",
-                Set.of(
-                    "work_order_id",
-                    "version_no",
-                    "status",
-                    "author_verified_at",
-                    "content_snapshot",
-                    "created_at")),
-            Map.entry(
-                "maintenance_acceptance_decisions",
-                Set.of(
-                    "work_order_id",
-                    "report_version_id",
-                    "reviewer_user_id",
-                    "decision",
-                    "technical_comments",
-                    "decided_at")),
             Map.entry(
                 "audit_events",
                 Set.of(
@@ -315,7 +197,7 @@ class V25TargetSchemaFoundationTest {
                     "payout_reference",
                     "payout_recorded_at")));
 
-    assertThat(targetColumns).hasSize(31);
+    assertThat(targetColumns).hasSize(22);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate
@@ -356,22 +238,27 @@ class V25TargetSchemaFoundationTest {
             "inspector_partner_applications",
             "login_otp_challenges",
             "registration_otp_challenges",
-            "password_reset_otp_challenges");
+            "password_reset_otp_challenges",
+            "maintenance_work_orders",
+            "maintenance_tasks",
+            "maintenance_team_members",
+            "maintenance_estimate_versions",
+            "maintenance_cost_lines",
+            "maintenance_change_orders",
+            "maintenance_work_logs",
+            "maintenance_reports",
+            "maintenance_acceptance_decisions",
+            "reinspection_defect_verifications",
+            "repair_knowledge_chunks");
   }
 
   @Test
-  void addsAnExplicitWorkOrderStatusCheck() {
-    String statusCheck =
-        jdbcTemplate.queryForObject(
-            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_maintenance_work_orders_status'",
-            String.class);
+  void dropsMaintenanceConstraintsAndTables() {
+    List<String> maintenanceConstraints =
+        jdbcTemplate.queryForList(
+            "SELECT conname FROM pg_constraint WHERE conname LIKE '%maintenance%'", String.class);
 
-    assertThat(statusCheck)
-        .contains("DRAFT")
-        .contains("AWAITING_APPROVAL")
-        .contains("APPROVED")
-        .contains("IN_PROGRESS")
-        .contains("CLOSED");
+    assertThat(maintenanceConstraints).isEmpty();
   }
 
   @Test
@@ -451,7 +338,7 @@ class V25TargetSchemaFoundationTest {
         .contains("MANAGER")
         .contains("CUSTOMER")
         .contains("INSPECTOR")
-        .contains("MAINTENANCE_ENGINEER");
+        .doesNotContain("MAINTENANCE_ENGINEER");
     assertThat(userColumns)
         .doesNotContain("provider_id", "activation_token_hash", "activation_expires_at");
   }

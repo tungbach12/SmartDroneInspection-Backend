@@ -4,11 +4,9 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionListItemResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPageResponse;
-import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
-import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
@@ -54,30 +52,24 @@ public class InspectionListService {
 
   private final InspectionRepository inspections;
   private final InspectionReportRepository reports;
-  private final FindingRepository findings;
   private final UserAccess userAccess;
   private final AssetRepository assets;
   private final Optional<InspectionReportAcceptancePort> reportAcceptancePort;
 
   public InspectionListService(
-      InspectionRepository inspections,
-      InspectionReportRepository reports,
-      FindingRepository findings,
-      UserAccess userAccess) {
-    this(inspections, reports, findings, userAccess, null, Optional.empty());
+      InspectionRepository inspections, InspectionReportRepository reports, UserAccess userAccess) {
+    this(inspections, reports, userAccess, null, Optional.empty());
   }
 
   @Autowired
   public InspectionListService(
       InspectionRepository inspections,
       InspectionReportRepository reports,
-      FindingRepository findings,
       UserAccess userAccess,
       AssetRepository assets,
       Optional<InspectionReportAcceptancePort> reportAcceptancePort) {
     this.inspections = inspections;
     this.reports = reports;
-    this.findings = findings;
     this.userAccess = userAccess;
     this.assets = assets;
     this.reportAcceptancePort =
@@ -162,27 +154,8 @@ public class InspectionListService {
       if (reportStatus == ReportStatus.SUBMITTED) {
         return "REPORT_REVIEW";
       }
-      if (reportStatus == ReportStatus.PUBLISHED && correctivePending(inspection.getId())) {
-        return "CORRECTIVE_DISPOSITION";
-      }
     }
     return "NONE";
-  }
-
-  /**
-   * A published report still needs every official finding forwarded to Maintenance (MF3-13).
-   *
-   * <p>An inspection without official findings is completed when its report is published.
-   */
-  private boolean correctivePending(UUID inspectionId) {
-    List<Finding> official =
-        findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-            .filter(Finding::isOfficial)
-            .toList();
-    if (official.isEmpty()) {
-      return false;
-    }
-    return official.stream().anyMatch(finding -> !finding.isForwardedToMaintenance());
   }
 
   /**
@@ -232,7 +205,6 @@ public class InspectionListService {
         report == null ? null : report.getVersionNo(),
         pendingAction,
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        inspection.getWorkOrderId(),
         objective,
         asset == null ? null : asset.getName(),
         asset == null ? null : asset.getCode(),

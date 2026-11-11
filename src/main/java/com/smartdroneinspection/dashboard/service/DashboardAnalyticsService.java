@@ -4,7 +4,6 @@ import com.smartdroneinspection.dashboard.api.dto.DashboardAnalyticsResponse;
 import com.smartdroneinspection.dashboard.api.dto.DashboardAnalyticsResponse.*;
 import com.smartdroneinspection.users.UserAccess;
 import java.math.BigDecimal;
-import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,7 +15,6 @@ public class DashboardAnalyticsService {
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccess userAccess;
-  private static final DecimalFormat VND_FORMAT = new DecimalFormat("#,###");
 
   public DashboardAnalyticsService(JdbcTemplate jdbcTemplate, UserAccess userAccess) {
     this.jdbcTemplate = jdbcTemplate;
@@ -33,7 +31,6 @@ public class DashboardAnalyticsService {
     boolean isCustomer = actor.hasRole("CUSTOMER");
     boolean isAdminOrManager = actor.hasRole("ADMIN") || actor.hasRole("MANAGER");
     boolean isInspector = actor.hasRole("INSPECTOR");
-    boolean isEngineer = actor.hasRole("MAINTENANCE_ENGINEER");
 
     UUID orgId = actor.organizationId();
 
@@ -46,11 +43,6 @@ public class DashboardAnalyticsService {
     long criticalFindingsCount;
     long mediumFindingsCount;
     long lowFindingsCount;
-    long workOrdersCount;
-    long closedWorkOrdersCount;
-    long inProgressWorkOrdersCount;
-    long totalApprovedEstimateVnd;
-    long totalActualCostVnd;
 
     if (isAdminOrManager) {
       assetsCount = queryCount("SELECT count(*) FROM assets WHERE status != 'RETIRED'");
@@ -68,17 +60,6 @@ public class DashboardAnalyticsService {
               "SELECT count(*) FROM findings WHERE is_deleted = false AND severity = 'MEDIUM'");
       lowFindingsCount =
           queryCount("SELECT count(*) FROM findings WHERE is_deleted = false AND severity = 'LOW'");
-      workOrdersCount = queryCount("SELECT count(*) FROM maintenance_work_orders");
-      closedWorkOrdersCount =
-          queryCount("SELECT count(*) FROM maintenance_work_orders WHERE status = 'CLOSED'");
-      inProgressWorkOrdersCount =
-          queryCount("SELECT count(*) FROM maintenance_work_orders WHERE status = 'IN_PROGRESS'");
-      totalApprovedEstimateVnd =
-          querySum(
-              "SELECT COALESCE(sum(baseline_total), 0) FROM maintenance_estimate_versions WHERE status = 'APPROVED'");
-      totalActualCostVnd =
-          querySum(
-              "SELECT COALESCE(sum(amount), 0) FROM maintenance_cost_lines WHERE state = 'ACTUAL'");
     } else if (isCustomer && orgId != null) {
       assetsCount =
           queryCount(
@@ -109,25 +90,6 @@ public class DashboardAnalyticsService {
           queryCount(
               "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.organization_id = ? AND f.is_deleted = false AND f.severity = 'LOW'",
               orgId);
-      workOrdersCount =
-          queryCount(
-              "SELECT count(*) FROM maintenance_work_orders WHERE organization_id = ?", orgId);
-      closedWorkOrdersCount =
-          queryCount(
-              "SELECT count(*) FROM maintenance_work_orders WHERE organization_id = ? AND status = 'CLOSED'",
-              orgId);
-      inProgressWorkOrdersCount =
-          queryCount(
-              "SELECT count(*) FROM maintenance_work_orders WHERE organization_id = ? AND status = 'IN_PROGRESS'",
-              orgId);
-      totalApprovedEstimateVnd =
-          querySum(
-              "SELECT COALESCE(sum(ev.baseline_total), 0) FROM maintenance_estimate_versions ev JOIN maintenance_work_orders wo ON ev.work_order_id = wo.id WHERE wo.organization_id = ? AND ev.status = 'APPROVED'",
-              orgId);
-      totalActualCostVnd =
-          querySum(
-              "SELECT COALESCE(sum(cl.amount), 0) FROM maintenance_cost_lines cl JOIN maintenance_work_orders wo ON cl.work_order_id = wo.id WHERE wo.organization_id = ? AND cl.state = 'ACTUAL'",
-              orgId);
     } else if (isInspector) {
       assetsCount = 0;
       activeAssetsCount = 0;
@@ -153,12 +115,7 @@ public class DashboardAnalyticsService {
           queryCount(
               "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.inspector_id = ? AND f.is_deleted = false AND f.severity = 'LOW'",
               actorId);
-      workOrdersCount = 0;
-      closedWorkOrdersCount = 0;
-      inProgressWorkOrdersCount = 0;
-      totalApprovedEstimateVnd = 0;
-      totalActualCostVnd = 0;
-    } else { // Engineer
+    } else {
       assetsCount = 0;
       activeAssetsCount = 0;
       inspectionsCount = 0;
@@ -167,29 +124,9 @@ public class DashboardAnalyticsService {
       criticalFindingsCount = 0;
       mediumFindingsCount = 0;
       lowFindingsCount = 0;
-      workOrdersCount =
-          queryCount(
-              "SELECT count(*) FROM maintenance_work_orders wo JOIN maintenance_team_members tm ON wo.id = tm.work_order_id WHERE tm.engineer_user_id = ?",
-              actorId);
-      inProgressWorkOrdersCount =
-          queryCount(
-              "SELECT count(*) FROM maintenance_work_orders wo JOIN maintenance_team_members tm ON wo.id = tm.work_order_id WHERE tm.engineer_user_id = ? AND wo.status = 'IN_PROGRESS'",
-              actorId);
-      closedWorkOrdersCount =
-          queryCount(
-              "SELECT count(*) FROM maintenance_work_orders wo JOIN maintenance_team_members tm ON wo.id = tm.work_order_id WHERE tm.engineer_user_id = ? AND wo.status = 'CLOSED'",
-              actorId);
-      totalApprovedEstimateVnd =
-          querySum(
-              "SELECT COALESCE(sum(ev.baseline_total), 0) FROM maintenance_estimate_versions ev JOIN maintenance_team_members tm ON ev.work_order_id = tm.work_order_id WHERE tm.engineer_user_id = ? AND ev.status = 'APPROVED'",
-              actorId);
-      totalActualCostVnd =
-          querySum(
-              "SELECT COALESCE(sum(cl.amount), 0) FROM maintenance_cost_lines cl JOIN maintenance_team_members tm ON cl.work_order_id = tm.work_order_id WHERE tm.engineer_user_id = ? AND cl.state = 'ACTUAL'",
-              actorId);
     }
 
-    // 2. Build 4 Top KPI Cards
+    // 2. Build inspection KPI cards
     List<DashboardMetricDto> summaryCards = new ArrayList<>();
     if (isCustomer) {
       summaryCards.add(
@@ -219,15 +156,6 @@ public class DashboardAnalyticsService {
               criticalFindingsCount == 0,
               "phát hiện cần xử lý",
               "alert"));
-      summaryCards.add(
-          new DashboardMetricDto(
-              "maintenance",
-              "Lệnh bảo trì",
-              String.valueOf(workOrdersCount),
-              closedWorkOrdersCount + " đã hoàn thành",
-              true,
-              "tiến độ khắc phục công trình",
-              "wrench"));
     } else if (isAdminOrManager) {
       long orgsCount = queryCount("SELECT count(*) FROM organizations");
       summaryCards.add(
@@ -257,15 +185,6 @@ public class DashboardAnalyticsService {
               true,
               "phiên bay toàn nền tảng",
               "plane"));
-      summaryCards.add(
-          new DashboardMetricDto(
-              "work_orders",
-              "Lệnh bảo trì",
-              String.valueOf(workOrdersCount),
-              closedWorkOrdersCount + " đã quyết toán",
-              true,
-              "quy trình khắc phục sự cố",
-              "wrench"));
     } else if (isInspector) {
       summaryCards.add(
           new DashboardMetricDto(
@@ -309,50 +228,6 @@ public class DashboardAnalyticsService {
               true,
               "bàn giao khách hàng",
               "shield"));
-    } else {
-      summaryCards.add(
-          new DashboardMetricDto(
-              "work_orders",
-              "Lệnh công việc",
-              String.valueOf(workOrdersCount),
-              inProgressWorkOrdersCount + " đang thi công",
-              true,
-              "hạng mục được giao",
-              "wrench"));
-      summaryCards.add(
-          new DashboardMetricDto(
-              "tasks",
-              "Hạng mục thi công",
-              String.valueOf(
-                  queryCount(
-                      "SELECT count(*) FROM maintenance_tasks mt JOIN maintenance_team_members tm ON mt.work_order_id = tm.work_order_id WHERE tm.engineer_user_id = ?",
-                      actorId)),
-              "Đã phân rã",
-              true,
-              "theo chuẩn TCVN",
-              "check-circle"));
-      summaryCards.add(
-          new DashboardMetricDto(
-              "hours",
-              "Thời gian thi công",
-              String.valueOf(
-                      querySum(
-                          "SELECT COALESCE(sum(hours), 0) FROM maintenance_work_logs WHERE engineer_user_id = ?",
-                          actorId))
-                  + " h",
-              "Đã xác minh",
-              true,
-              "nhật ký hiện trường",
-              "clock"));
-      summaryCards.add(
-          new DashboardMetricDto(
-              "cost",
-              "Chi phí thực hiện",
-              VND_FORMAT.format(totalActualCostVnd) + " đ",
-              "Đúng dự toán",
-              true,
-              "đối soát thực tế",
-              "wallet"));
     }
 
     // 3. Performance Chart: 12-Month Real Costs vs Approved Estimates or Flight Activity
@@ -414,95 +289,26 @@ public class DashboardAnalyticsService {
               inspYTicks,
               inspMaxVal);
     } else {
-      String monthlyEstimateSql =
-          "SELECT EXTRACT(MONTH FROM ev.created_at)::int AS month, COALESCE(SUM(ev.baseline_total), 0) AS total "
-              + "FROM maintenance_estimate_versions ev "
-              + "JOIN maintenance_work_orders wo ON ev.work_order_id = wo.id "
-              + "WHERE ev.status = 'APPROVED' AND EXTRACT(YEAR FROM ev.created_at) = ? "
-              + (orgId != null && !isAdminOrManager ? "AND wo.organization_id = ? " : "")
-              + "GROUP BY 1";
-
-      String monthlyActualSql =
-          "SELECT EXTRACT(MONTH FROM cl.created_at)::int AS month, COALESCE(SUM(cl.amount), 0) AS total "
-              + "FROM maintenance_cost_lines cl "
-              + "JOIN maintenance_work_orders wo ON cl.work_order_id = wo.id "
-              + "WHERE cl.state = 'ACTUAL' AND EXTRACT(YEAR FROM cl.created_at) = ? "
-              + (orgId != null && !isAdminOrManager ? "AND wo.organization_id = ? " : "")
-              + "GROUP BY 1";
-
-      Map<Integer, Long> monthlyEstimates =
-          queryMonthlyMap(
-              monthlyEstimateSql,
-              orgId != null && !isAdminOrManager
-                  ? new Object[] {currentYear, orgId}
-                  : new Object[] {currentYear});
-      Map<Integer, Long> monthlyActuals =
-          queryMonthlyMap(
-              monthlyActualSql,
-              orgId != null && !isAdminOrManager
-                  ? new Object[] {currentYear, orgId}
-                  : new Object[] {currentYear});
-
-      List<Long> estimateSeries = new ArrayList<>(12);
-      List<Long> actualSeries = new ArrayList<>(12);
-      long runningEstimate = 0;
-      long runningActual = 0;
-
-      for (int m = 1; m <= 12; m++) {
-        runningEstimate += monthlyEstimates.getOrDefault(m, 0L);
-        runningActual += monthlyActuals.getOrDefault(m, 0L);
-        estimateSeries.add(runningEstimate);
-        actualSeries.add(runningActual);
+      List<Long> inspectionSeries = new ArrayList<>(12);
+      List<Long> findingSeries = new ArrayList<>(12);
+      for (int month = 1; month <= 12; month++) {
+        inspectionSeries.add(0L);
+        findingSeries.add(0L);
       }
-
-      long maxData = Math.max(runningEstimate, runningActual);
-      long maxVal = maxData > 0 ? ((maxData / 10_000_000L) + 1) * 10_000_000L : 40_000_000L;
-      if (maxVal < maxData) maxVal = maxData + 5_000_000L;
-
-      List<String> yTicks =
-          List.of(
-              "0",
-              VND_FORMAT.format(maxVal / 4),
-              VND_FORMAT.format(maxVal * 2 / 4),
-              VND_FORMAT.format(maxVal * 3 / 4),
-              VND_FORMAT.format(maxVal));
-
-      String trendBadge;
-      if (totalApprovedEstimateVnd > 0) {
-        int ratio = (int) Math.round((double) totalActualCostVnd / totalApprovedEstimateVnd * 100);
-        trendBadge =
-            "Giải ngân "
-                + ratio
-                + "% ("
-                + VND_FORMAT.format(totalActualCostVnd)
-                + "/"
-                + VND_FORMAT.format(totalApprovedEstimateVnd)
-                + " VND)";
-      } else if (totalActualCostVnd > 0) {
-        trendBadge = "Đã chi " + VND_FORMAT.format(totalActualCostVnd) + " VND";
-      } else {
-        trendBadge = "Chưa phát sinh chi phí";
-      }
-
-      String headlineValue =
-          totalApprovedEstimateVnd > 0
-              ? VND_FORMAT.format(totalApprovedEstimateVnd) + " VND"
-              : (totalActualCostVnd > 0 ? VND_FORMAT.format(totalActualCostVnd) + " VND" : "0 VND");
-
       performanceChart =
           new PerformanceChartDto(
-              "CHI PHÍ BẢO TRÌ & QUYẾT TOÁN THỰC TẾ (VND)",
-              headlineValue,
-              trendBadge,
-              "Dự toán phê duyệt",
+              "Inspection activity (" + currentYear + ")",
+              String.valueOf(inspectionsCount) + " inspections",
+              "Inspection and finding activity",
+              "Inspections",
               "#3758F9",
-              estimateSeries,
-              "Chi phí thực tế",
+              inspectionSeries,
+              "Findings",
               "#13B2E4",
-              actualSeries,
+              findingSeries,
               months,
-              yTicks,
-              maxVal);
+              List.of("0", "1", "2", "3", "4"),
+              4);
     }
 
     // 4. Radial Gauge: Safety & Completion Rate (100% Real from DB)
@@ -533,62 +339,28 @@ public class DashboardAnalyticsService {
               compRate,
               sub);
     } else {
-      int completionRate = 0;
-      if (workOrdersCount > 0) {
-        completionRate = (int) Math.round((double) closedWorkOrdersCount / workOrdersCount * 100);
-      }
-
-      String decisionsSql =
-          "SELECT count(*) as total_decisions, "
-              + "count(*) FILTER (WHERE mad.decision = 'ACCEPTED') as accepted_decisions "
-              + "FROM maintenance_acceptance_decisions mad "
-              + "JOIN maintenance_work_orders wo ON mad.work_order_id = wo.id "
-              + (orgId != null && !isAdminOrManager ? "WHERE wo.organization_id = ?" : "");
-
-      long totalDecisions = 0;
-      long acceptedDecisions = 0;
-      try {
-        List<Map<String, Object>> dRows =
-            orgId != null && !isAdminOrManager
-                ? jdbcTemplate.queryForList(decisionsSql, orgId)
-                : jdbcTemplate.queryForList(decisionsSql);
-        if (!dRows.isEmpty()) {
-          Number td = (Number) dRows.get(0).get("total_decisions");
-          Number ad = (Number) dRows.get(0).get("accepted_decisions");
-          totalDecisions = td != null ? td.longValue() : 0;
-          acceptedDecisions = ad != null ? ad.longValue() : 0;
-        }
-      } catch (Exception ignored) {
-      }
-
-      int acceptRate =
-          totalDecisions > 0
-              ? (int) Math.round((double) acceptedDecisions / totalDecisions * 100)
+      int completed =
+          (int)
+              queryCount(
+                  "SELECT count(*) FROM inspections WHERE status = 'COMPLETED'"
+                      + (orgId != null && !isAdminOrManager ? " AND organization_id = ?" : ""),
+                  orgId != null && !isAdminOrManager ? new Object[] {orgId} : new Object[] {});
+      int completionRate =
+          inspectionsCount > 0
+              ? (int) Math.round((double) completed / inspectionsCount * 100)
               : 100;
-      String acceptValue =
-          totalDecisions > 0
-              ? acceptedDecisions + " / " + totalDecisions + " Nghiệm thu (" + acceptRate + "%)"
-              : "100% Đạt kiểm tra";
-
-      List<RadialSubMetricDto> subMetrics = new ArrayList<>();
-      subMetrics.add(
-          new RadialSubMetricDto(
-              "Khuyết tật đã khắc phục",
-              closedWorkOrdersCount + " / " + Math.max(1, workOrdersCount) + " Lệnh",
-              completionRate));
-      subMetrics.add(
-          new RadialSubMetricDto("Nghiệm thu kỹ thuật đạt chuẩn", acceptValue, acceptRate));
-
       radialGauge =
           new RadialGaugeDto(
-              "Tiến độ Hoàn thành & An toàn",
-              "Tỷ lệ khắc phục sự cố và nghiệm thu kỹ thuật",
+              "Inspection completion",
+              "Published inspection reports",
               completionRate + "%",
-              completionRate >= 80
-                  ? "Đạt chuẩn"
-                  : (completionRate > 0 ? "Đang tiến hành" : "Khởi tạo"),
+              completionRate >= 80 ? "On track" : "In progress",
               completionRate,
-              subMetrics);
+              List.of(
+                  new RadialSubMetricDto(
+                      "Completed inspections",
+                      completed + " / " + Math.max(1, inspectionsCount),
+                      completionRate)));
     }
 
     // 5. Stacked Bar Chart: Defect Severity Distribution across Last 6 Months (100% Real from DB)
@@ -665,7 +437,7 @@ public class DashboardAnalyticsService {
                 new StackedBarSeriesDto("Thấp (Low)", "#12B76A", lowData)),
             Math.max(4, maxMonthTotal + 1));
 
-    // 6. Queue Table: Tailored for Inspector vs Work Orders for Customer/Manager
+    // 6. Recent inspection queue
     QueueTableDto queueTable;
     if (isInspector) {
       List<String> inspHeaders =
@@ -678,7 +450,7 @@ public class DashboardAnalyticsService {
       List<QueueTableRowDto> inspRows = new ArrayList<>();
 
       String inspSql =
-          "SELECT i.id, a.name as asset_name, a.asset_code as asset_code, i.inspection_type, i.status "
+          "SELECT i.id, a.name as asset_name, a.asset_code as asset_code, i.status "
               + "FROM inspections i "
               + "JOIN assets a ON i.asset_id = a.id "
               + "WHERE i.inspector_id = ? "
@@ -688,11 +460,7 @@ public class DashboardAnalyticsService {
       for (Map<String, Object> r : records) {
         String assetName = (String) r.get("asset_name");
         String assetCode = (String) r.get("asset_code");
-        String type = (String) r.get("inspection_type");
-        String obj =
-            "RE_INSPECTION".equals(type)
-                ? "Bay đối soát nghiệm thu"
-                : "Khảo sát bay hiện trường drone";
+        String obj = "Drone inspection";
         String status = (String) r.get("status");
 
         inspRows.add(
@@ -715,70 +483,36 @@ public class DashboardAnalyticsService {
               "/operations/inspections",
               "Xem toàn bộ đợt kiểm tra");
     } else {
-      List<String> headers =
-          List.of("Công trình / Tài sản", "Mã", "Hạng mục", "Trạng thái", "Chi phí / Đơn giá");
+      List<String> headers = List.of("Asset", "Code", "Inspection", "Status", "Action");
       List<QueueTableRowDto> rows = new ArrayList<>();
-
       String sql =
-          "SELECT wo.id, a.name as asset_name, a.asset_code as asset_code, wo.corrective_scope, wo.status, "
-              + "COALESCE(ev.baseline_total, 0) as estimate_total, "
-              + "COALESCE(act.actual_total, 0) as actual_total "
-              + "FROM maintenance_work_orders wo "
-              + "JOIN assets a ON wo.asset_id = a.id "
-              + "LEFT JOIN maintenance_estimate_versions ev ON wo.id = ev.work_order_id AND ev.status = 'APPROVED' "
-              + "LEFT JOIN ( "
-              + "  SELECT work_order_id, SUM(amount) AS actual_total "
-              + "  FROM maintenance_cost_lines "
-              + "  WHERE state = 'ACTUAL' "
-              + "  GROUP BY work_order_id "
-              + ") act ON wo.id = act.work_order_id "
-              + (orgId != null && !isAdminOrManager ? "WHERE wo.organization_id = ? " : "")
-              + "ORDER BY wo.updated_at DESC LIMIT 5";
-
+          "SELECT i.id, a.name AS asset_name, a.asset_code, i.status FROM inspections i JOIN assets a ON i.asset_id = a.id "
+              + (orgId != null && !isAdminOrManager ? "WHERE i.organization_id = ? " : "")
+              + "ORDER BY i.created_at DESC LIMIT 5";
       List<Map<String, Object>> records =
           orgId != null && !isAdminOrManager
               ? jdbcTemplate.queryForList(sql, orgId)
               : jdbcTemplate.queryForList(sql);
-
-      for (Map<String, Object> r : records) {
-        String assetName = (String) r.get("asset_name");
-        String assetCode = (String) r.get("asset_code");
-        String scope = (String) r.get("corrective_scope");
-        if (scope != null && scope.length() > 50) scope = scope.substring(0, 50) + "…";
-        String status = (String) r.get("status");
-        Number estimate = (Number) r.get("estimate_total");
-        Number actual = (Number) r.get("actual_total");
-        long estimateAmt = estimate != null ? estimate.longValue() : 0;
-        long actualAmt = actual != null ? actual.longValue() : 0;
-
-        String costDisplay;
-        if ("CLOSED".equals(status) && actualAmt > 0) {
-          costDisplay = VND_FORMAT.format(actualAmt) + " VND";
-        } else if (estimateAmt > 0) {
-          costDisplay = VND_FORMAT.format(estimateAmt) + " VND";
-        } else {
-          costDisplay = "Chờ dự toán";
-        }
-
+      for (Map<String, Object> row : records) {
+        String status = (String) row.get("status");
         rows.add(
             new QueueTableRowDto(
-                assetName,
-                assetCode,
-                scope != null ? scope : "Sửa chữa khuyết tật kết cấu",
+                (String) row.get("asset_name"),
+                (String) row.get("asset_code"),
+                "Drone inspection",
                 status,
-                costDisplay,
-                "CLOSED".equals(status) ? "positive" : "warning",
-                "/client/maintenance"));
+                "COMPLETED".equals(status) ? "Published" : "In progress",
+                "COMPLETED".equals(status) ? "positive" : "warning",
+                "/operations/inspections/" + row.get("id")));
       }
-
       queueTable =
           new QueueTableDto(
-              "Lệnh bảo trì & Hoạt động kiểm tra thực tế",
-              "Các công trình đang được theo dõi và xử lý trong hệ thống",
+              "Recent inspections",
+              "Inspection activity",
               headers,
               rows,
-              "/client/maintenance",
-              "Xem toàn bộ lệnh bảo trì");
+              "/operations/inspections",
+              "View all inspections");
     }
 
     return new DashboardAnalyticsResponse(
