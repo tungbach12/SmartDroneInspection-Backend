@@ -28,6 +28,8 @@ class RuntimePersistenceInventoryTest {
           "asset_documents",
           "auth_sessions",
           "drones",
+          "drone_document_configs",
+          "drone_feature_configs",
           "inspections",
           "notifications",
           "prospective_customer_registrations",
@@ -56,6 +58,8 @@ class RuntimePersistenceInventoryTest {
           "users",
           "auth_sessions",
           "drones",
+          "drone_document_configs",
+          "drone_feature_configs",
           "prospective_customer_registrations",
           "drone_registration_applications",
           "asset_categories",
@@ -113,7 +117,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(30);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(32);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))
