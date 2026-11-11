@@ -20,6 +20,5 @@ public record FindingResponse(
     FindingStatus status,
     String modelName,
     BigDecimal confidence,
-    Instant forwardedToMaintenanceAt,
     boolean isDeleted,
     Instant createdAt) {}

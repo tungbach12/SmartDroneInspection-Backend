@@ -7,7 +7,7 @@ import java.util.UUID;
 /**
  * MF3-13: published inspection report handed to MF4. The payload carries identifiers and scope only
  * — never evidence bytes or secrets. {@code forwardedFindingIds} contains the confirmed findings
- * the Organization Admin explicitly selected for Maintenance forwarding.
+ * the Organization Admin explicitly selected for follow-up.
  */
 public record ReportPublishedEvent(
     UUID reportId,

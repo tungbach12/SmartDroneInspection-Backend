@@ -49,7 +49,6 @@ class FindingTest {
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
     assertThat(finding.getModelName()).isEqualTo("yolo-v8");
     assertThat(finding.getConfidence()).isEqualByComparingTo("0.91230");
-    assertThat(finding.getForwardedToMaintenanceAt()).isNull();
   }
 
   @Test
@@ -107,22 +106,5 @@ class FindingTest {
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
     assertThat(finding.isOfficial()).isFalse();
-  }
-
-  @Test
-  void forwardingIsRecordedForEachConfirmedFindingOnlyOnce() {
-    Finding finding = detected();
-    assertThatThrownBy(finding::forwardToMaintenance)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("confirmed finding");
-
-    finding.confirmByInspector();
-    finding.forwardToMaintenance();
-
-    assertThat(finding.getForwardedToMaintenanceAt()).isNotNull();
-    assertThat(finding.isForwardedToMaintenance()).isTrue();
-    assertThatThrownBy(finding::forwardToMaintenance)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("already forwarded");
   }
 }

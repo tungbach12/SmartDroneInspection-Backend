@@ -5,7 +5,6 @@
       "shared::exception",
       "shared::storage",
       "inspections::spi",
-      "contracts::gateway",
-      "maintenance::spi"
+      "contracts::gateway"
     })
 package com.smartdroneinspection.infrastructure;

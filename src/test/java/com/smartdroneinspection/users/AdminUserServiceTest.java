@@ -43,7 +43,7 @@ class AdminUserServiceTest {
   @Test
   void flushesUserBeforeRecordingCreationAudit() {
     UUID actorId = UUID.randomUUID();
-    when(users.findByNormalizedEmail("engineer@example.com")).thenReturn(Optional.empty());
+    when(users.findByNormalizedEmail("customer@example.com")).thenReturn(Optional.empty());
     when(passwords.encode(any(String.class))).thenReturn("{argon2}encoded-password");
     when(users.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -51,18 +51,18 @@ class AdminUserServiceTest {
         service.create(
             actorId,
             new CreateUserRequest(
-                "engineer@example.com",
-                "Maintenance Engineer",
+                "customer@example.com",
+                "Customer Manager",
                 ActorZone.CUSTOMER_ORGANIZATION,
                 null,
-                Set.of(UserRole.MAINTENANCE_ENGINEER)),
+                Set.of(UserRole.CUSTOMER)),
             "127.0.0.1",
             "JUnit",
             "test-correlation");
 
     verify(users).saveAndFlush(userCaptor.capture());
     User created = userCaptor.getValue();
-    assertThat(created.roleValues()).containsExactly(UserRole.MAINTENANCE_ENGINEER.value());
+    assertThat(created.roleValues()).containsExactly(UserRole.CUSTOMER.value());
     verify(audit)
         .record(
             eq(actorId),
@@ -72,6 +72,6 @@ class AdminUserServiceTest {
             eq("127.0.0.1"),
             eq("JUnit"),
             eq("test-correlation"));
-    assertThat(response.user().email()).isEqualTo("engineer@example.com");
+    assertThat(response.user().email()).isEqualTo("customer@example.com");
   }
 }
