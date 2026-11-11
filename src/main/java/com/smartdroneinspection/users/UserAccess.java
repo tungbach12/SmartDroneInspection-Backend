@@ -16,6 +16,14 @@ public interface UserAccess {
     return List.of();
   }
 
+  default List<ActiveUser> listActiveInspectors() {
+    return listActiveInspectorPartners();
+  }
+
+  default List<ActiveUser> listActivePlatformManagers() {
+    return List.of();
+  }
+
   Optional<String> findOrganizationName(UUID organizationId);
 
   Optional<String> findOrganizationCode(UUID organizationId);

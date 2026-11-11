@@ -78,13 +78,44 @@ public class UserAccessService implements UserAccess {
   public List<ActiveUser> listActiveInspectorPartners() {
     return users.findActiveInspectorPartners().stream()
         .filter(User::active)
+        .filter(this::isOnboardingApproved)
         .map(this::toActiveUser)
         .filter(ActiveUser::isInspectorPartner)
         .toList();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<ActiveUser> listActiveInspectors() {
+    return users.findAllInspectors().stream()
+        .filter(User::active)
+        .filter(this::isOnboardingApproved)
+        .map(this::toActiveUser)
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<ActiveUser> listActivePlatformManagers() {
+    return users.findAllWithRoles().stream()
+        .filter(User::active)
+        .filter(user -> user.getOrganizationId() == null)
+        .filter(user -> user.roleValues().contains(Roles.MANAGER))
+        .map(this::toActiveUser)
+        .toList();
+  }
+
+  private boolean isOnboardingApproved(User user) {
+    return inspectorProfileRepository
+        .findById(user.getId())
+        .map(profile -> "APPROVED".equalsIgnoreCase(profile.getOnboardingStatus()))
+        .orElse(true);
+  }
+
   private ActiveUser toActiveUser(User user) {
     InspectorProfile profile = inspectorProfileRepository.findById(user.getId()).orElse(null);
+    boolean onboardingApproved =
+        profile == null || "APPROVED".equalsIgnoreCase(profile.getOnboardingStatus());
     return new ActiveUser(
         user.getId(),
         Set.copyOf(user.roleValues()),
@@ -92,10 +123,10 @@ public class UserAccessService implements UserAccess {
         user.getActorZone().name(),
         user.getFullName(),
         user.getEmail(),
-        profile == null ? null : profile.getPilotLicenseNumber(),
-        profile == null ? null : profile.getPilotLicenseClass(),
-        profile == null ? null : profile.getPilotLicenseExpiresAt(),
-        profile == null ? null : profile.getPilotLicenseFileKey());
+        onboardingApproved && profile != null ? profile.getPilotLicenseNumber() : null,
+        onboardingApproved && profile != null ? profile.getPilotLicenseClass() : null,
+        onboardingApproved && profile != null ? profile.getPilotLicenseExpiresAt() : null,
+        onboardingApproved && profile != null ? profile.getPilotLicenseFileKey() : null);
   }
 
   @Override

@@ -59,6 +59,27 @@ public class InspectorProfile {
   @Column(name = "notes", columnDefinition = "text")
   private String notes;
 
+  @Column(name = "onboarding_status", length = 32, nullable = false)
+  private String onboardingStatus = "APPROVED";
+
+  @Column(name = "partner_contract_file_key", length = 1000)
+  private String partnerContractFileKey;
+
+  @Column(name = "partner_contract_sha256", length = 64)
+  private String partnerContractSha256;
+
+  @Column(name = "partner_contract_uploaded_at")
+  private Instant partnerContractUploadedAt;
+
+  @Column(name = "approved_by_user_id")
+  private UUID approvedByUserId;
+
+  @Column(name = "approved_at")
+  private Instant approvedAt;
+
+  @Column(name = "rejection_reason", columnDefinition = "text")
+  private String rejectionReason;
+
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt = Instant.now();
 
@@ -127,6 +148,65 @@ public class InspectorProfile {
 
   public String getNotes() {
     return notes;
+  }
+
+  public String getOnboardingStatus() {
+    return onboardingStatus != null ? onboardingStatus : "APPROVED";
+  }
+
+  public void setOnboardingStatus(String onboardingStatus) {
+    this.onboardingStatus = onboardingStatus;
+    touch();
+  }
+
+  public String getPartnerContractFileKey() {
+    return partnerContractFileKey;
+  }
+
+  public String getPartnerContractSha256() {
+    return partnerContractSha256;
+  }
+
+  public Instant getPartnerContractUploadedAt() {
+    return partnerContractUploadedAt;
+  }
+
+  public UUID getApprovedByUserId() {
+    return approvedByUserId;
+  }
+
+  public Instant getApprovedAt() {
+    return approvedAt;
+  }
+
+  public String getRejectionReason() {
+    return rejectionReason;
+  }
+
+  public void recordSignedPartnerContract(String fileKey, String sha256Hex) {
+    this.partnerContractFileKey = fileKey;
+    this.partnerContractSha256 = sha256Hex;
+    this.partnerContractUploadedAt = Instant.now();
+    if ("REJECTED".equalsIgnoreCase(this.onboardingStatus)) {
+      this.onboardingStatus = "PENDING_REVIEW";
+      this.rejectionReason = null;
+    }
+    touch();
+  }
+
+  public void approveOnboarding(UUID reviewerId) {
+    this.onboardingStatus = "APPROVED";
+    this.approvedByUserId = reviewerId;
+    this.approvedAt = Instant.now();
+    this.rejectionReason = null;
+    touch();
+  }
+
+  public void rejectOnboarding(UUID reviewerId, String reason) {
+    this.onboardingStatus = "REJECTED";
+    this.approvedByUserId = reviewerId;
+    this.rejectionReason = reason;
+    touch();
   }
 
   public Instant getUpdatedAt() {

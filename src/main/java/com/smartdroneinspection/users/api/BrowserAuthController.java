@@ -6,6 +6,7 @@ import static com.smartdroneinspection.users.api.AuthHttpSupport.userAgent;
 
 import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.users.api.dto.request.InitialPasswordChangeRequest;
+import com.smartdroneinspection.users.api.dto.request.InspectorApplicationSubmissionRequest;
 import com.smartdroneinspection.users.api.dto.request.LoginRequest;
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.PasswordChangeRequest;
@@ -130,6 +131,29 @@ public class BrowserAuthController {
             ? org.springframework.http.HttpStatus.ACCEPTED
             : org.springframework.http.HttpStatus.CREATED;
     return ResponseEntity.status(status)
+        .cacheControl(CacheControl.noStore())
+        .body(ApiResponse.success(response));
+  }
+
+  @PostMapping("/register-inspector")
+  @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.GONE)
+  public ApiResponse<Void> registerInspectorDeprecated() {
+    throw new com.smartdroneinspection.shared.exception.BusinessException(
+        org.springframework.http.HttpStatus.GONE,
+        "INSPECTOR_REGISTRATION_REPLACED",
+        "Submit an Inspector application for Manager review. Accounts are created only after approval.");
+  }
+
+  @PostMapping("/registration/inspector-application")
+  public ResponseEntity<
+          ApiResponse<com.smartdroneinspection.users.api.dto.response.InspectorApplicationResponse>>
+      submitInspectorApplication(
+          @Valid @RequestBody InspectorApplicationSubmissionRequest body,
+          HttpServletRequest request) {
+    var response =
+        registration.submitInspectorApplication(
+            body, clientIp(request), userAgent(request), correlationId(request));
+    return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
         .cacheControl(CacheControl.noStore())
         .body(ApiResponse.success(response));
   }

@@ -8,15 +8,21 @@ import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.domain.InspectorFlightLog;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
+import com.smartdroneinspection.users.events.PilotLicenseUpdatedEvent;
 import com.smartdroneinspection.users.repository.InspectorFlightLogRepository;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,16 +36,34 @@ public class InspectorProfileService {
   private final InspectorFlightLogRepository flightLogRepository;
   private final InspectorProfileRepository profileRepository;
   private final InspectorPartnerLicenseDocumentService licenseDocumentService;
+  private final PilotLicenseClassService pilotLicenseClassService;
+  private ApplicationEventPublisher eventPublisher;
+
+  @Autowired
+  public InspectorProfileService(
+      UserRepository userRepository,
+      InspectorFlightLogRepository flightLogRepository,
+      InspectorProfileRepository profileRepository,
+      InspectorPartnerLicenseDocumentService licenseDocumentService,
+      PilotLicenseClassService pilotLicenseClassService) {
+    this.userRepository = userRepository;
+    this.flightLogRepository = flightLogRepository;
+    this.profileRepository = profileRepository;
+    this.licenseDocumentService = licenseDocumentService;
+    this.pilotLicenseClassService = pilotLicenseClassService;
+  }
 
   public InspectorProfileService(
       UserRepository userRepository,
       InspectorFlightLogRepository flightLogRepository,
       InspectorProfileRepository profileRepository,
       InspectorPartnerLicenseDocumentService licenseDocumentService) {
-    this.userRepository = userRepository;
-    this.flightLogRepository = flightLogRepository;
-    this.profileRepository = profileRepository;
-    this.licenseDocumentService = licenseDocumentService;
+    this(userRepository, flightLogRepository, profileRepository, licenseDocumentService, null);
+  }
+
+  @Autowired(required = false)
+  public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
   }
 
   @Transactional(readOnly = true)
@@ -70,16 +94,32 @@ public class InspectorProfileService {
         request.address() != null ? request.address().trim() : null,
         request.notes() != null ? request.notes().trim() : null);
 
-    // Update Pilot license
+    Optional<String> requestedClass =
+        Optional.ofNullable(request.pilotLicenseClass())
+            .map(String::trim)
+            .filter(value -> !value.isEmpty());
+    String existingClass = profile.getPilotLicenseClass();
+    String licenseClass =
+        requestedClass
+            .map(
+                value -> {
+                  if (existingClass != null && existingClass.equalsIgnoreCase(value)) {
+                    return existingClass;
+                  }
+                  if (pilotLicenseClassService == null) {
+                    throw new IllegalStateException(
+                        "Pilot license class catalog is not configured");
+                  }
+                  return pilotLicenseClassService.requireActiveName(value);
+                })
+            .orElse(existingClass);
     profile.updatePilotLicense(
         request.pilotLicenseNumber() != null ? request.pilotLicenseNumber().trim() : null,
-        request.pilotLicenseClass() != null ? request.pilotLicenseClass().trim() : null,
+        licenseClass,
         request.pilotLicenseIssuedDate(),
         request.pilotLicenseExpiresAt(),
         request.pilotLicenseAuthority() != null ? request.pilotLicenseAuthority().trim() : null,
         null);
-
-    // Update Flight experience
     profile.updateFlightExperience(
         request.priorFlightHours(),
         request.certifiedDroneModels() != null ? request.certifiedDroneModels().trim() : null,
@@ -88,6 +128,10 @@ public class InspectorProfileService {
 
     User saved = userRepository.save(user);
     profileRepository.save(profile);
+    if (eventPublisher != null && profile.getPilotLicenseExpiresAt() != null) {
+      eventPublisher.publishEvent(
+          new PilotLicenseUpdatedEvent(inspectorUserId, profile.getPilotLicenseExpiresAt()));
+    }
     return toProfileResponse(saved, profile);
   }
 
@@ -97,7 +141,81 @@ public class InspectorProfileService {
     var uploadResponse = licenseDocumentService.upload(file);
     InspectorProfile profile = findOrCreateProfile(inspectorUserId);
     profile.setPilotLicenseFileKey(uploadResponse.fileKey());
+    if ("REJECTED".equalsIgnoreCase(profile.getOnboardingStatus())) {
+      profile.setOnboardingStatus("PENDING_REVIEW");
+    }
     userRepository.save(user);
+    profileRepository.save(profile);
+    return toProfileResponse(user, profile);
+  }
+
+  public InspectorProfileResponse uploadPartnerContract(
+      UUID inspectorUserId, MultipartFile file, UUID actorId) {
+    var uploadResponse = licenseDocumentService.uploadContract(file);
+    return recordSignedPartnerContract(
+        inspectorUserId, uploadResponse.fileKey(), uploadResponse.sha256Hex(), actorId);
+  }
+
+  public InspectorProfileResponse recordSignedPartnerContract(
+      UUID inspectorUserId, String fileKey, String sha256Hex, UUID actorId) {
+    User user = findInspector(inspectorUserId);
+    InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    profile.recordSignedPartnerContract(fileKey, sha256Hex);
+    profile.approveOnboarding(actorId);
+    userRepository.save(user);
+    profileRepository.save(profile);
+    return toProfileResponse(user, profile);
+  }
+
+  @Transactional(readOnly = true)
+  public InspectorPartnerLicenseDocumentService.InputStreamContent openPartnerContract(
+      UUID inspectorUserId) {
+    findInspector(inspectorUserId);
+    String fileKey =
+        profileRepository
+            .findById(inspectorUserId)
+            .map(InspectorProfile::getPartnerContractFileKey)
+            .orElse(null);
+    if (fileKey == null || fileKey.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND, "NOT_FOUND", "Bản scan hợp đồng đối tác chưa được tải lên");
+    }
+    return licenseDocumentService.openContract(fileKey);
+  }
+
+  @Transactional(readOnly = true)
+  public byte[] generateDraftPartnerContractPdf(UUID inspectorUserId) {
+    User user = findInspector(inspectorUserId);
+    InspectorProfile profile = loadProfile(inspectorUserId);
+    return licenseDocumentService.renderDraftPartnerContractPdf(user, profile);
+  }
+
+  public InspectorProfileResponse approveOnboarding(UUID inspectorUserId, UUID reviewerId) {
+    User user = findInspector(inspectorUserId);
+    InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    boolean hasLicenseScan =
+        profile.getPilotLicenseFileKey() != null && !profile.getPilotLicenseFileKey().isBlank();
+    boolean hasContractScan =
+        profile.getPartnerContractFileKey() != null
+            && !profile.getPartnerContractFileKey().isBlank()
+            && profile.getPartnerContractSha256() != null
+            && !profile.getPartnerContractSha256().isBlank();
+    if (!hasLicenseScan || !hasContractScan) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "ONBOARDING_DOCUMENTS_INCOMPLETE",
+          "Cần có đầy đủ (1) Bản scan Bằng lái và (2) Bản scan Hợp đồng đối tác đã ký (kèm mã băm SHA-256) trước khi phê duyệt kích hoạt Inspector.");
+    }
+    profile.approveOnboarding(reviewerId);
+    profileRepository.save(profile);
+    return toProfileResponse(user, profile);
+  }
+
+  public InspectorProfileResponse rejectOnboarding(
+      UUID inspectorUserId, String reason, UUID reviewerId) {
+    User user = findInspector(inspectorUserId);
+    InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    profile.rejectOnboarding(reviewerId, reason != null ? reason.trim() : null);
     profileRepository.save(profile);
     return toProfileResponse(user, profile);
   }
@@ -179,10 +297,8 @@ public class InspectorProfileService {
     if (flightCode != null && flightLogRepository.existsByFlightCode(flightCode)) {
       return;
     }
-
     java.time.LocalDate resolvedDate = flightDate != null ? flightDate : java.time.LocalDate.now();
     int resolvedDuration = Math.max(1, durationMinutes);
-
     InspectorFlightLog log =
         new InspectorFlightLog(
             inspectorUserId,
@@ -200,7 +316,6 @@ public class InspectorProfileService {
             outcomeNotes,
             null);
     flightLogRepository.save(log);
-
     InspectorProfile profile = findOrCreateProfile(inspectorUserId);
     if (droneModel != null && !droneModel.isBlank() && !"UAV".equalsIgnoreCase(droneModel)) {
       profile.addDroneModel(droneModel);
@@ -236,30 +351,27 @@ public class InspectorProfileService {
     List<InspectorFlightLog> logs =
         flightLogRepository.findByInspectorUserIdOrderByFlightDateDesc(user.getId());
     int totalMinutes = logs.stream().mapToInt(InspectorFlightLog::getFlightDurationMinutes).sum();
-    BigDecimal companyFlightHours =
-        BigDecimal.valueOf(totalMinutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
     BigDecimal priorHours = profile.getPriorFlightHours();
-    BigDecimal totalFlightHours = priorHours.add(companyFlightHours);
-
-    String expirationStatus = "UNKNOWN";
-    Long remainingDays = null;
+    BigDecimal companyHours =
+        BigDecimal.valueOf(totalMinutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+    BigDecimal totalHours = priorHours.add(companyHours).setScale(2, RoundingMode.HALF_UP);
+    int companyFlights = logs.size();
+    String licenseStatus = "UNKNOWN";
+    Long licenseRemainingDays = null;
     if (profile.getPilotLicenseExpiresAt() != null) {
-      Instant exp = profile.getPilotLicenseExpiresAt();
       Instant now = Instant.now();
-      long days = ChronoUnit.DAYS.between(now, exp);
-      remainingDays = days;
-      if (exp.isBefore(now)) {
-        expirationStatus = "EXPIRED";
-      } else if (days <= 60) {
-        expirationStatus = "EXPIRING_SOON";
+      ZoneId vnZone = ZoneId.of("Asia/Ho_Chi_Minh");
+      LocalDate today = now.atZone(vnZone).toLocalDate();
+      LocalDate expiryDate = profile.getPilotLicenseExpiresAt().atZone(vnZone).toLocalDate();
+      long remaining = ChronoUnit.DAYS.between(today, expiryDate);
+      if (profile.getPilotLicenseExpiresAt().isBefore(now) || remaining < 0) {
+        licenseRemainingDays = Math.min(-1L, remaining);
+        licenseStatus = "EXPIRED";
       } else {
-        expirationStatus = "VALID";
+        licenseRemainingDays = remaining;
+        licenseStatus = remaining <= 30 ? "EXPIRING_SOON" : "VALID";
       }
     }
-
-    boolean hasLicenseScan =
-        profile.getPilotLicenseFileKey() != null && !profile.getPilotLicenseFileKey().isBlank();
-
     return new InspectorProfileResponse(
         user.getId(),
         user.getEmail(),
@@ -278,16 +390,25 @@ public class InspectorProfileService {
         profile.getPilotLicenseExpiresAt(),
         profile.getPilotLicenseAuthority(),
         profile.getPilotLicenseFileKey(),
-        hasLicenseScan,
-        expirationStatus,
-        remainingDays,
+        profile.getPilotLicenseFileKey() != null && !profile.getPilotLicenseFileKey().isBlank(),
+        licenseStatus,
+        licenseRemainingDays,
         priorHours,
-        companyFlightHours,
-        totalFlightHours,
-        logs.size(),
+        companyHours,
+        totalHours,
+        companyFlights,
         profile.getCertifiedDroneModels(),
         profile.getSpecializations(),
         profile.getExperienceSummary(),
+        profile.getOnboardingStatus(),
+        profile.getPartnerContractFileKey(),
+        profile.getPartnerContractSha256(),
+        profile.getPartnerContractUploadedAt(),
+        profile.getPartnerContractFileKey() != null
+            && !profile.getPartnerContractFileKey().isBlank(),
+        profile.getApprovedByUserId(),
+        profile.getApprovedAt(),
+        profile.getRejectionReason(),
         user.getCreatedAt(),
         profile.getUpdatedAt());
   }
