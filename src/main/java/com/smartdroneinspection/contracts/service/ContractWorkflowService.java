@@ -3,6 +3,7 @@ package com.smartdroneinspection.contracts.service;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
@@ -39,6 +40,7 @@ import com.smartdroneinspection.users.UserAccess;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -48,9 +50,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -82,8 +87,42 @@ public class ContractWorkflowService
   private final Optional<InspectionReportAccess> reportAccess;
   private final PayOSGateway payOSGateway;
   private final VnPayGateway vnPayGateway;
+  private final JdbcTemplate jdbcTemplate;
 
-  @org.springframework.beans.factory.annotation.Autowired
+  @Autowired
+  public ContractWorkflowService(
+      ServiceRequestRepository requests,
+      ServiceRequestMessageRepository messages,
+      ServiceRequestQuoteRepository quotes,
+      ServiceRequestOccurrenceRepository occurrences,
+      AssetRepository assets,
+      UserAccess users,
+      Mf2ActorPolicy actorPolicy,
+      PartnerRegistryService partners,
+      Mf2InspectionAssignment assignment,
+      Optional<EvidenceObjectStore> objectStore,
+      InspectionFinanceSettingsService financeSettingsService,
+      Optional<InspectionReportAccess> reportAccess,
+      PayOSGateway payOSGateway,
+      VnPayGateway vnPayGateway,
+      JdbcTemplate jdbcTemplate) {
+    this.requests = requests;
+    this.messages = messages;
+    this.quotes = quotes;
+    this.occurrences = occurrences;
+    this.assets = assets;
+    this.users = users;
+    this.actorPolicy = actorPolicy;
+    this.partners = partners;
+    this.assignment = assignment;
+    this.objectStore = objectStore;
+    this.financeSettingsService = financeSettingsService;
+    this.reportAccess = reportAccess;
+    this.payOSGateway = payOSGateway;
+    this.vnPayGateway = vnPayGateway;
+    this.jdbcTemplate = jdbcTemplate;
+  }
+
   public ContractWorkflowService(
       ServiceRequestRepository requests,
       ServiceRequestMessageRepository messages,
@@ -99,20 +138,22 @@ public class ContractWorkflowService
       Optional<InspectionReportAccess> reportAccess,
       PayOSGateway payOSGateway,
       VnPayGateway vnPayGateway) {
-    this.requests = requests;
-    this.messages = messages;
-    this.quotes = quotes;
-    this.occurrences = occurrences;
-    this.assets = assets;
-    this.users = users;
-    this.actorPolicy = actorPolicy;
-    this.partners = partners;
-    this.assignment = assignment;
-    this.objectStore = objectStore;
-    this.financeSettingsService = financeSettingsService;
-    this.reportAccess = reportAccess;
-    this.payOSGateway = payOSGateway;
-    this.vnPayGateway = vnPayGateway;
+    this(
+        requests,
+        messages,
+        quotes,
+        occurrences,
+        assets,
+        users,
+        actorPolicy,
+        partners,
+        assignment,
+        objectStore,
+        financeSettingsService,
+        reportAccess,
+        payOSGateway,
+        vnPayGateway,
+        null);
   }
 
   public ContractWorkflowService(
@@ -143,7 +184,8 @@ public class ContractWorkflowService
         financeSettingsService,
         reportAccess,
         payOSGateway,
-        new DisabledVnPayGatewayDummy());
+        new DisabledVnPayGatewayDummy(),
+        null);
   }
 
   public ContractWorkflowService(
@@ -172,7 +214,9 @@ public class ContractWorkflowService
         objectStore,
         financeSettingsService,
         reportAccess,
-        new DisabledPayOSGatewayDummy());
+        new DisabledPayOSGatewayDummy(),
+        new DisabledVnPayGatewayDummy(),
+        null);
   }
 
   public ContractWorkflowService(
@@ -199,7 +243,9 @@ public class ContractWorkflowService
         objectStore,
         new InspectionFinanceSettingsService(null, users),
         Optional.empty(),
-        new DisabledPayOSGatewayDummy());
+        new DisabledPayOSGatewayDummy(),
+        new DisabledVnPayGatewayDummy(),
+        null);
   }
 
   @Transactional
@@ -212,6 +258,75 @@ public class ContractWorkflowService
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
     LocalTime start = input.windowStart() == null ? LocalTime.of(8, 0) : input.windowStart();
     LocalTime end = input.windowEnd() == null ? LocalTime.of(17, 0) : input.windowEnd();
+    ZoneId customerZone;
+    try {
+      customerZone = ZoneId.of(input.timezone());
+    } catch (java.time.DateTimeException exception) {
+      throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", "Customer timezone is invalid");
+    }
+    LocalDate customerToday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+    LocalDate minimumStartDate = customerToday.plusDays(20);
+    if (input.requestedFrom() == null || input.requestedFrom().isBefore(minimumStartDate)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "REQUEST_TOO_SOON",
+          "The first inspection date must be at least 20 days from today to allow contract and flight-permit processing");
+    }
+
+    LocalDate requestedUntil;
+    if (input.requestType() == RequestType.ONE_TIME) {
+      requestedUntil = input.requestedFrom();
+    } else if (input.occurrenceCount() != null) {
+      if (input.occurrenceCount() < 2 || input.occurrenceCount() > 100) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "A recurring request must contain between 2 and 100 occurrences");
+      }
+      requestedUntil =
+          recurrenceDate(
+              input.recurrenceUnit(),
+              input.recurrenceInterval(),
+              input.requestedFrom(),
+              input.occurrenceCount() - 1);
+    } else if (input.recurrenceEndDate() != null) {
+      requestedUntil = input.recurrenceEndDate();
+      int estimatedCount = 0;
+      for (int index = 0; index < 101; index++) {
+        LocalDate occurrenceDate =
+            recurrenceDate(
+                input.recurrenceUnit(), input.recurrenceInterval(), input.requestedFrom(), index);
+        if (occurrenceDate.isAfter(requestedUntil)) break;
+        estimatedCount++;
+      }
+      if (estimatedCount < 2 || estimatedCount > 100) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "A recurring request must contain between 2 and 100 occurrences before its end date");
+      }
+    } else {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "REQUEST_INVALID",
+          "A recurring request requires an occurrence count or recurrence end date");
+    }
+
+    String description = input.description();
+    if (!StringUtils.hasText(description)) {
+      String cadence =
+          input.requestType() == RequestType.ONE_TIME
+              ? "Inspection"
+              : "Inspection every " + input.recurrenceInterval() + " month(s)";
+      String limit =
+          input.requestType() == RequestType.ONE_TIME
+              ? input.requestedFrom().toString()
+              : input.occurrenceCount() != null
+                  ? input.occurrenceCount() + " occurrence(s)"
+                  : "through " + input.recurrenceEndDate();
+      description = asset.getName() + " · " + cadence + " (" + limit + ")";
+    }
+
     ServiceRequest request;
     try {
       request =
@@ -219,9 +334,9 @@ public class ContractWorkflowService
               actor.organizationId(),
               asset.getId(),
               actor.id(),
-              input.description(),
+              description,
               input.requestedFrom(),
-              input.requestedUntil(),
+              requestedUntil,
               input.timezone(),
               start,
               end,
@@ -230,7 +345,7 @@ public class ContractWorkflowService
               input.recurrenceInterval(),
               input.occurrenceCount(),
               input.recurrenceEndDate());
-    } catch (IllegalArgumentException exception) {
+    } catch (IllegalArgumentException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", exception.getMessage());
     }
     return toResponse(requests.saveAndFlush(request));
@@ -273,13 +388,38 @@ public class ContractWorkflowService
   }
 
   @Transactional
-  public ServiceRequestResponse issueQuote(
+  public ServiceRequestResponse markMessagesRead(UUID actorId, UUID requestId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    List<ServiceRequestMessage> unread =
+        messages.findByRequestIdAndAuthorUserIdNotAndReadAtIsNull(request.getId(), actor.id());
+    if (!unread.isEmpty()) {
+      Instant now = Instant.now();
+      unread.forEach(m -> m.markRead(now));
+      messages.saveAllAndFlush(unread);
+    }
+    return toResponse(request);
+  }
+
+  @Transactional
+  public ServiceRequestResponse saveQuote(
       UUID actorId, UUID requestId, IssueServiceQuoteRequest input) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
-    quotes.findWithLockByRequestId(requestId);
+    ServiceRequestQuote existing = quotes.findWithLockByRequestId(requestId).orElse(null);
+    if (request.getStatus() != ServiceRequest.ServiceRequestStatus.OPEN
+        && request.getStatus() != ServiceRequest.ServiceRequestStatus.QUOTED) {
+      throw failure(HttpStatus.CONFLICT, "QUOTE_LOCKED", "Accepted service terms cannot be edited");
+    }
+    if (existing != null && request.getStatus() == ServiceRequest.ServiceRequestStatus.OPEN) {
+      throw failure(
+          HttpStatus.CONFLICT, "QUOTE_STATE_INVALID", "Request quote state is inconsistent");
+    }
     requireRequestedOccurrenceWindow(
         request, input.firstOccurrenceStartAt(), input.firstOccurrenceEndAt());
+    if (request.getRequestType() == RequestType.RECURRING) {
+      validateRecurringQuoteSchedule(request, input.firstOccurrenceStartAt());
+    }
     if (!partners.isEligibleInspector(input.inspectorId(), input.firstOccurrenceStartAt())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
@@ -293,59 +433,70 @@ public class ContractWorkflowService
           "Selected drone must be approved, have valid registration at the scheduled time, and match the Inspector's pilot license class (Class B required for MTOW >= 2 kg)");
     }
 
-    // New inspection services use VND and require all 3 settlement rates to be configured
-    String currency = input.resolvedCurrency();
-    if ("VND".equalsIgnoreCase(currency)) {
+    // New inspection services use VND and require all 3 settlement rates to be configured.
+    if ("VND".equals(input.resolvedCurrency())) {
       financeSettingsService.requireConfiguredRates();
     }
-
-    quotes.findWithLockByRequestId(requestId);
-    requests.flush();
-    ServiceRequestQuote previous =
-        quotes.findFirstByRequestIdOrderByVersionNoDesc(requestId).orElse(null);
-    int nextVersion = previous == null ? 1 : previous.getVersionNo() + 1;
+    BigDecimal previousPrice = existing == null ? null : existing.getPricePerOccurrenceVnd();
+    ServiceRequest.ServiceRequestStatus previousStatus = request.getStatus();
     ServiceRequestQuote quote;
     try {
-      quote =
-          new ServiceRequestQuote(
-              requestId,
-              nextVersion,
-              input.scopeSnapshot(),
-              input.firstOccurrenceStartAt(),
-              input.firstOccurrenceEndAt(),
-              input.inspectorId(),
-              input.droneId(),
-              currency,
-              input.pricePerOccurrenceVnd(),
-              input.pricePerOccurrenceUsd(),
-              manager.id());
+      if (existing == null) {
+        quote =
+            new ServiceRequestQuote(
+                requestId,
+                input.scopeSnapshot(),
+                input.firstOccurrenceStartAt(),
+                input.firstOccurrenceEndAt(),
+                input.inspectorId(),
+                input.droneId(),
+                input.resolvedPrice(),
+                manager.id());
+        quotes.saveAndFlush(quote);
+      } else {
+        existing.revise(
+            input.scopeSnapshot(),
+            input.firstOccurrenceStartAt(),
+            input.firstOccurrenceEndAt(),
+            input.inspectorId(),
+            input.droneId(),
+            input.resolvedPrice(),
+            manager.id());
+        quote = quotes.saveAndFlush(existing);
+      }
       request.markQuoted();
     } catch (IllegalArgumentException | IllegalStateException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "QUOTE_INVALID", exception.getMessage());
     }
-    quotes.saveAndFlush(quote);
     requests.saveAndFlush(request);
+    recordQuoteAudit(manager, request, quote, previousPrice, previousStatus);
     return toResponse(request);
   }
 
   @Transactional
-  public ServiceRequestResponse acceptQuote(UUID actorId, UUID requestId, Integer versionNo) {
+  public ServiceRequestResponse acceptQuote(
+      UUID actorId, UUID requestId, AcceptServiceQuoteRequest input) {
     UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
     ServiceRequest request = requireCustomerRequestLocked(actor, requestId);
-    quotes.findWithLockByRequestId(requestId);
-    ServiceRequestQuote latest =
+    ServiceRequestQuote quote =
         quotes
-            .findFirstByRequestIdOrderByVersionNoDesc(requestId)
+            .findWithLockByRequestId(requestId)
             .orElseThrow(
                 () ->
                     failure(HttpStatus.CONFLICT, "QUOTE_NOT_FOUND", "There is no quote to accept"));
-    if (versionNo == null || latest.getVersionNo() != versionNo) {
+    long expectedVersion =
+        input == null || input.quoteRowVersion() == null
+            ? quote.getRowVersion()
+            : input.quoteRowVersion();
+    if (quote.getRowVersion() != expectedVersion) {
       throw failure(
-          HttpStatus.CONFLICT, "QUOTE_STALE", "Only the latest quote version can be accepted");
+          HttpStatus.CONFLICT, "QUOTE_STALE", "The quote changed. Review it before accepting.");
     }
     try {
-      request.acceptQuote(latest.getVersionNo(), actor.id());
-      materializeOccurrences(request, latest);
+      request.acceptQuote(quote, actor.id());
+      requests.saveAndFlush(request);
+      recordAcceptedQuoteAudit(actor, request, quote);
+      materializeOccurrences(request, quote);
     } catch (IllegalStateException exception) {
       throw failure(HttpStatus.CONFLICT, "QUOTE_ACCEPTANCE_INVALID", exception.getMessage());
     }
@@ -450,10 +601,7 @@ public class ContractWorkflowService
       request.recordSignedContract(objectKey);
       requests.saveAndFlush(request);
 
-      ServiceRequestQuote acceptedQuote =
-          quotes
-              .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
-              .orElse(null);
+      ServiceRequestQuote acceptedQuote = quotes.findByRequestId(request.getId()).orElse(null);
       materializeOccurrences(request, acceptedQuote);
     } catch (RuntimeException exception) {
       try {
@@ -547,9 +695,9 @@ public class ContractWorkflowService
         input.plannedStartAt(),
         input.plannedEndAt(),
         manager.id());
-    if (occurrence.getTotalPrice() == null && request.getAcceptedQuoteVersion() != null) {
+    if (occurrence.getTotalPrice() == null && request.getAcceptedQuoteId() != null) {
       quotes
-          .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
+          .findByRequestId(request.getId())
           .map(ServiceRequestQuote::getEffectivePrice)
           .ifPresent(
               price -> {
@@ -1226,13 +1374,14 @@ public class ContractWorkflowService
       return;
     }
     if (quote == null) {
-      quote =
-          quotes
-              .findByRequestIdAndVersionNo(request.getId(), request.getAcceptedQuoteVersion())
-              .orElse(null);
+      quote = quotes.findByRequestId(request.getId()).orElse(null);
     }
     if (quote == null) {
       return;
+    }
+
+    if (request.getRequestType() == RequestType.RECURRING) {
+      validateRecurringQuoteSchedule(request, quote.getFirstOccurrenceStartAt());
     }
 
     int count = request.getRequestType() == RequestType.ONE_TIME ? 1 : 0;
@@ -1241,7 +1390,6 @@ public class ContractWorkflowService
     } else if (request.getRequestType() == RequestType.RECURRING) {
       count = estimateOccurrenceCount(request, quote);
     }
-
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalDate();
     LocalTime firstTime = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalTime();
@@ -1293,6 +1441,59 @@ public class ContractWorkflowService
     occurrences.flush();
   }
 
+  private void validateRecurringQuoteSchedule(ServiceRequest request, Instant firstStartAt) {
+    ZoneId zone = ZoneId.of(request.getTimezone());
+    LocalDate firstDate = firstStartAt.atZone(zone).toLocalDate();
+    if ("MONTH".equals(request.getRecurrenceUnit())
+        && !firstDate.equals(request.getRequestedFrom())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The first quoted occurrence must match the customer-requested start date");
+    }
+    if (firstDate.isBefore(request.getRequestedFrom())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The first quoted occurrence cannot be earlier than the requested start date");
+    }
+    LocalDate lastDate =
+        request.getOccurrenceCount() != null
+            ? recurrenceDate(request, request.getRequestedFrom(), request.getOccurrenceCount() - 1)
+            : request.getRecurrenceEndDate();
+    if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The recurring schedule contract term has changed; create a new request with a valid end date");
+    }
+    LocalDate occurrenceEnd = lastDate;
+    if (request.getOccurrenceCount() == null) {
+      occurrenceEnd =
+          firstDate.isAfter(request.getRecurrenceEndDate())
+              ? firstDate
+              : request.getRecurrenceEndDate();
+    }
+    int count = 0;
+    for (int index = 0; index <= 100; index++) {
+      LocalDate date = recurrenceDate(request, firstDate, index);
+      if (date.isAfter(occurrenceEnd)) break;
+      count++;
+      if (count > 100) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The recurring request cannot contain more than 100 inspection occurrences");
+      }
+    }
+    if (count < 2) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The recurring request must contain at least two inspection occurrences");
+    }
+  }
+
   private int estimateOccurrenceCount(ServiceRequest request, ServiceRequestQuote quote) {
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = quote.getFirstOccurrenceStartAt().atZone(zone).toLocalDate();
@@ -1315,8 +1516,17 @@ public class ContractWorkflowService
 
   private LocalDate recurrenceDate(
       ServiceRequest request, LocalDate firstDate, int occurrenceIndex) {
-    int offset = Math.multiplyExact(occurrenceIndex, request.getRecurrenceInterval());
-    return switch (request.getRecurrenceUnit()) {
+    return recurrenceDate(
+        request.getRecurrenceUnit(), request.getRecurrenceInterval(), firstDate, occurrenceIndex);
+  }
+
+  private LocalDate recurrenceDate(
+      String unit, Integer interval, LocalDate firstDate, int occurrenceIndex) {
+    if (unit == null || interval == null || firstDate == null || occurrenceIndex < 0) {
+      throw failure(HttpStatus.BAD_REQUEST, "RECURRENCE_INVALID", "Recurrence cadence is invalid");
+    }
+    int offset = Math.multiplyExact(occurrenceIndex, interval);
+    return switch (unit) {
       case "DAY" -> firstDate.plusDays(offset);
       case "WEEK" -> firstDate.plusWeeks(offset);
       case "MONTH" -> firstDate.plusMonths(offset);
@@ -1404,12 +1614,78 @@ public class ContractWorkflowService
                 "Contract storage is not configured"));
   }
 
+  private void recordQuoteAudit(
+      UserAccess.ActiveUser manager,
+      ServiceRequest request,
+      ServiceRequestQuote quote,
+      java.math.BigDecimal previousPrice,
+      ServiceRequest.ServiceRequestStatus previousStatus) {
+    if (jdbcTemplate == null) {
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        INSERT INTO audit_events
+          (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+           before_status, after_status, aggregate_version, safe_metadata, created_at)
+        VALUES (?, ?, 'MF2_QUOTE_SAVED', 'SERVICE_REQUEST', ?, ?, ?, ?,
+          jsonb_build_object('quoteId', ?::text, 'scopeSnapshot', ?::text,
+            'firstOccurrenceStartAt', ?::text, 'firstOccurrenceEndAt', ?::text,
+            'inspectorId', ?::text, 'droneId', ?::text,
+            'pricePerOccurrenceVnd', ?::text, 'previousPricePerOccurrenceVnd', ?::text,
+            'updatedAt', ?::text), CURRENT_TIMESTAMP)
+        """,
+        request.getOrganizationId(),
+        manager.id(),
+        request.getId(),
+        previousStatus.name(),
+        request.getStatus().name(),
+        quote.getRowVersion(),
+        quote.getId().toString(),
+        quote.getScopeSnapshot(),
+        quote.getFirstOccurrenceStartAt().toString(),
+        quote.getFirstOccurrenceEndAt().toString(),
+        quote.getInspectorId().toString(),
+        quote.getDroneId().toString(),
+        quote.getPricePerOccurrenceVnd().toPlainString(),
+        previousPrice == null ? null : previousPrice.toPlainString(),
+        quote.getUpdatedAt().toString());
+  }
+
+  private void recordAcceptedQuoteAudit(
+      UserAccess.ActiveUser customer, ServiceRequest request, ServiceRequestQuote quote) {
+    if (jdbcTemplate == null) {
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        INSERT INTO audit_events
+          (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+           before_status, after_status, aggregate_version, safe_metadata, created_at)
+        VALUES (?, ?, 'MF2_QUOTE_ACCEPTED', 'SERVICE_REQUEST', ?, 'QUOTED', 'ACCEPTED', ?,
+          jsonb_build_object('quoteId', ?::text, 'acceptedAt', ?::text,
+            'scopeSnapshot', ?::text, 'firstOccurrenceStartAt', ?::text,
+            'firstOccurrenceEndAt', ?::text, 'inspectorId', ?::text,
+            'droneId', ?::text, 'pricePerOccurrenceVnd', ?::text), CURRENT_TIMESTAMP)
+        """,
+        request.getOrganizationId(),
+        customer.id(),
+        request.getId(),
+        quote.getRowVersion(),
+        quote.getId().toString(),
+        request.getAcceptedAt() == null ? null : request.getAcceptedAt().toString(),
+        quote.getScopeSnapshot(),
+        quote.getFirstOccurrenceStartAt().toString(),
+        quote.getFirstOccurrenceEndAt().toString(),
+        quote.getInspectorId().toString(),
+        quote.getDroneId().toString(),
+        quote.getPricePerOccurrenceVnd().toPlainString());
+  }
+
   private ServiceRequestResponse toResponse(ServiceRequest request) {
     return ServiceRequestResponse.from(
         request,
-        quotes.findByRequestIdOrderByVersionNoDesc(request.getId()).stream()
-            .map(ServiceRequestQuoteResponse::from)
-            .toList(),
+        quotes.findByRequestId(request.getId()).map(ServiceRequestQuoteResponse::from).orElse(null),
         occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
             .map(occ -> ServiceRequestOccurrenceResponse.from(occ, request))
             .toList(),

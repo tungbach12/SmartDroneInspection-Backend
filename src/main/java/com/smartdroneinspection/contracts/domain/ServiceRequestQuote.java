@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -18,9 +19,6 @@ public class ServiceRequestQuote {
 
   @Column(name = "request_id", nullable = false)
   private UUID requestId;
-
-  @Column(name = "version_no", nullable = false)
-  private int versionNo;
 
   @Column(name = "scope_snapshot", nullable = false, length = 4000)
   private String scopeSnapshot;
@@ -46,11 +44,20 @@ public class ServiceRequestQuote {
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
+  @Column(name = "updated_at", nullable = false)
+  private Instant updatedAt = Instant.now();
+
+  @Column(name = "updated_by_user_id", nullable = false)
+  private UUID updatedByUserId;
+
+  @Version
+  @Column(name = "row_version", nullable = false)
+  private long rowVersion;
+
   protected ServiceRequestQuote() {}
 
   public ServiceRequestQuote(
       UUID requestId,
-      int versionNo,
       String scopeSnapshot,
       Instant firstOccurrenceStartAt,
       Instant firstOccurrenceEndAt,
@@ -58,8 +65,64 @@ public class ServiceRequestQuote {
       UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       UUID issuedByUserId) {
+    validate(
+        requestId,
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        pricePerOccurrenceVnd,
+        issuedByUserId);
+    this.requestId = requestId;
+    this.scopeSnapshot = scopeSnapshot.trim();
+    this.firstOccurrenceStartAt = firstOccurrenceStartAt;
+    this.firstOccurrenceEndAt = firstOccurrenceEndAt;
+    this.inspectorId = inspectorId;
+    this.droneId = droneId;
+    this.pricePerOccurrenceVnd = normalizePrice(pricePerOccurrenceVnd);
+    this.issuedByUserId = issuedByUserId;
+    this.updatedByUserId = issuedByUserId;
+  }
+
+  public void revise(
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      UUID inspectorId,
+      UUID droneId,
+      BigDecimal pricePerOccurrenceVnd,
+      UUID editorUserId) {
+    validate(
+        requestId,
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        pricePerOccurrenceVnd,
+        editorUserId);
+    this.scopeSnapshot = scopeSnapshot.trim();
+    this.firstOccurrenceStartAt = firstOccurrenceStartAt;
+    this.firstOccurrenceEndAt = firstOccurrenceEndAt;
+    this.inspectorId = inspectorId;
+    this.droneId = droneId;
+    this.pricePerOccurrenceVnd = normalizePrice(pricePerOccurrenceVnd);
+    this.issuedByUserId = editorUserId;
+    this.updatedByUserId = editorUserId;
+    this.updatedAt = Instant.now();
+  }
+
+  private static void validate(
+      UUID requestId,
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      UUID inspectorId,
+      UUID droneId,
+      BigDecimal pricePerOccurrenceVnd,
+      UUID editorUserId) {
     if (requestId == null
-        || versionNo < 1
         || scopeSnapshot == null
         || scopeSnapshot.isBlank()
         || firstOccurrenceStartAt == null
@@ -69,42 +132,13 @@ public class ServiceRequestQuote {
         || droneId == null
         || pricePerOccurrenceVnd == null
         || pricePerOccurrenceVnd.signum() <= 0
-        || issuedByUserId == null) {
+        || editorUserId == null) {
       throw new IllegalArgumentException("Quote fields are invalid");
     }
-    this.requestId = requestId;
-    this.versionNo = versionNo;
-    this.scopeSnapshot = scopeSnapshot.trim();
-    this.firstOccurrenceStartAt = firstOccurrenceStartAt;
-    this.firstOccurrenceEndAt = firstOccurrenceEndAt;
-    this.inspectorId = inspectorId;
-    this.droneId = droneId;
-    this.pricePerOccurrenceVnd = pricePerOccurrenceVnd.setScale(2, RoundingMode.HALF_UP);
-    this.issuedByUserId = issuedByUserId;
   }
 
-  public ServiceRequestQuote(
-      UUID requestId,
-      int versionNo,
-      String scopeSnapshot,
-      Instant firstOccurrenceStartAt,
-      Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
-      String currency,
-      BigDecimal pricePerOccurrenceVnd,
-      BigDecimal pricePerOccurrenceUsd,
-      UUID issuedByUserId) {
-    this(
-        requestId,
-        versionNo,
-        scopeSnapshot,
-        firstOccurrenceStartAt,
-        firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
-        pricePerOccurrenceVnd != null ? pricePerOccurrenceVnd : pricePerOccurrenceUsd,
-        issuedByUserId);
+  private static BigDecimal normalizePrice(BigDecimal value) {
+    return value.setScale(2, RoundingMode.HALF_UP);
   }
 
   public BigDecimal getEffectivePrice() {
@@ -117,10 +151,6 @@ public class ServiceRequestQuote {
 
   public UUID getRequestId() {
     return requestId;
-  }
-
-  public int getVersionNo() {
-    return versionNo;
   }
 
   public String getScopeSnapshot() {
@@ -161,5 +191,17 @@ public class ServiceRequestQuote {
 
   public Instant getCreatedAt() {
     return createdAt;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
+  }
+
+  public UUID getUpdatedByUserId() {
+    return updatedByUserId;
+  }
+
+  public long getRowVersion() {
+    return rowVersion;
   }
 }

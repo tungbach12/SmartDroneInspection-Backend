@@ -9,4 +9,7 @@ public interface ServiceRequestMessageRepository
     extends JpaRepository<ServiceRequestMessage, UUID> {
 
   List<ServiceRequestMessage> findByRequestIdOrderByCreatedAtAscIdAsc(UUID requestId);
+
+  List<ServiceRequestMessage> findByRequestIdAndAuthorUserIdNotAndReadAtIsNull(
+      UUID requestId, UUID authorUserId);
 }

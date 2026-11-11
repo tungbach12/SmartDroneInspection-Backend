@@ -1,5 +1,6 @@
 package com.smartdroneinspection.contracts.api;
 
+import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
@@ -29,6 +30,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -72,21 +74,35 @@ public class ContractWorkflowController {
     return ApiResponse.success(workflow.postMessage(actorId(jwt), requestId, request.body()));
   }
 
+  @PostMapping("/{requestId}/messages/read")
+  public ApiResponse<ServiceRequestResponse> markMessagesRead(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
+    return ApiResponse.success(workflow.markMessagesRead(actorId(jwt), requestId));
+  }
+
+  @PutMapping("/{requestId}/quote")
+  public ApiResponse<ServiceRequestResponse> saveQuote(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody IssueServiceQuoteRequest request) {
+    return ApiResponse.success(workflow.saveQuote(actorId(jwt), requestId, request));
+  }
+
   @PostMapping("/{requestId}/quotes")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<ServiceRequestResponse> issueQuote(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID requestId,
       @Valid @RequestBody IssueServiceQuoteRequest request) {
-    return ApiResponse.success(workflow.issueQuote(actorId(jwt), requestId, request));
+    return ApiResponse.success(workflow.saveQuote(actorId(jwt), requestId, request));
   }
 
   @PostMapping("/{requestId}/accept")
   public ApiResponse<ServiceRequestResponse> acceptQuote(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID requestId,
-      @RequestParam Integer versionNo) {
-    return ApiResponse.success(workflow.acceptQuote(actorId(jwt), requestId, versionNo));
+      @RequestBody(required = false) AcceptServiceQuoteRequest request) {
+    return ApiResponse.success(workflow.acceptQuote(actorId(jwt), requestId, request));
   }
 
   /**

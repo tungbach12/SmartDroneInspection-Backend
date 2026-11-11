@@ -7,7 +7,6 @@ import java.util.UUID;
 
 public record ServiceRequestQuoteResponse(
     UUID id,
-    int versionNo,
     String scopeSnapshot,
     Instant firstOccurrenceStartAt,
     Instant firstOccurrenceEndAt,
@@ -17,12 +16,14 @@ public record ServiceRequestQuoteResponse(
     BigDecimal pricePerOccurrenceVnd,
     BigDecimal pricePerOccurrenceUsd,
     UUID issuedByUserId,
-    Instant createdAt) {
+    Instant createdAt,
+    Instant updatedAt,
+    UUID updatedByUserId,
+    long rowVersion) {
 
   public static ServiceRequestQuoteResponse from(ServiceRequestQuote quote) {
     return new ServiceRequestQuoteResponse(
         quote.getId(),
-        quote.getVersionNo(),
         quote.getScopeSnapshot(),
         quote.getFirstOccurrenceStartAt(),
         quote.getFirstOccurrenceEndAt(),
@@ -32,6 +33,9 @@ public record ServiceRequestQuoteResponse(
         quote.getPricePerOccurrenceVnd(),
         quote.getPricePerOccurrenceUsd(),
         quote.getIssuedByUserId(),
-        quote.getCreatedAt());
+        quote.getCreatedAt(),
+        quote.getUpdatedAt(),
+        quote.getUpdatedByUserId(),
+        quote.getRowVersion());
   }
 }
