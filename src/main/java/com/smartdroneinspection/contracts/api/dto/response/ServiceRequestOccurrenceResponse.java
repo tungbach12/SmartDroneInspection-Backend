@@ -36,6 +36,8 @@ public record ServiceRequestOccurrenceResponse(
     BigDecimal inspectorNetPayout,
     OccurrencePaymentStatus paymentStatus,
     Instant paymentConfirmedAt,
+    java.math.BigDecimal refundedAmount,
+    String refundStatus,
     OccurrencePayoutStatus payoutStatus,
     Instant payoutRecordedAt,
     Instant reportAcceptedAt,
@@ -76,6 +78,8 @@ public record ServiceRequestOccurrenceResponse(
         occurrence.getInspectorNetPayout(),
         occurrence.getPaymentStatus(),
         occurrence.getPaymentConfirmedAt(),
+        occurrence.getRefundedAmount(),
+        occurrence.getRefundStatus(),
         occurrence.getPayoutStatus(),
         occurrence.getPayoutRecordedAt(),
         occurrence.getReportAcceptedAt(),
@@ -95,6 +99,13 @@ public record ServiceRequestOccurrenceResponse(
             occurrence.getPayout().getInspectorId(),
             occurrence.getPayoutStatus(),
             occurrence.getPayoutReference(),
-            occurrence.getPayoutRecordedAt()));
+            occurrence.getPayoutRecordedAt(),
+            occurrence.getPayout().getPayoutRecordedByUserId(),
+            occurrence.isPayoutHeldForRefund(),
+            occurrence.getPayout().getRefundReconciliationReference(),
+            occurrence.getPayout().getRefundReconciliationNote(),
+            occurrence.getPayout().getRefundReconciledByUserId(),
+            occurrence.getPayout().getRefundReconciledAt(),
+            occurrence.getPayout().getFinalPayoutAmount()));
   }
 }

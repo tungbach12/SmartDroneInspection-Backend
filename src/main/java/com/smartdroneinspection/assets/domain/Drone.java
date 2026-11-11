@@ -254,6 +254,27 @@ public class Drone {
     this.updatedAt = Instant.now();
   }
 
+  public void renewRegistration(
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt) {
+    if (serviceability == DroneServiceability.RETIRED) {
+      throw new IllegalStateException("Retired drones cannot renew registration");
+    }
+    if (model != null && !model.isBlank()) {
+      this.model = model;
+    }
+    if (manufacturer != null && !manufacturer.isBlank()) {
+      this.manufacturer = manufacturer;
+    }
+    this.registrationNumber = registrationNumber;
+    this.registrationFileKey = registrationFileKey;
+    this.registrationExpiresAt = registrationExpiresAt;
+    this.updatedAt = Instant.now();
+  }
+
   public Instant getCreatedAt() {
     return createdAt;
   }

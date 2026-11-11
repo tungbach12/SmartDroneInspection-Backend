@@ -401,10 +401,11 @@ class PayOSPaymentIntegrationTest {
         .andExpect(jsonPath("$.code").value("00"))
         .andExpect(jsonPath("$.desc").value("success"));
 
-    // Verify occurrence is now PAID and payout is automatically disbursed (PAID)
+    // Customer payment settles; Inspector payout is only eligible, not automatically disbursed.
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(settledOcc.getPayoutReference()).isNull();
     assertThat(settledOcc.getPaymentReference()).isEqualTo("PAYOS-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(settledOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);

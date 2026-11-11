@@ -1,5 +1,8 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
+import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
@@ -34,6 +37,7 @@ public class InspectionFieldSessionService {
   private final EntityManager entityManager;
   private final ObjectProvider<ReportContextAccess> reportContextAccessProvider;
   private final ApplicationEventPublisher eventPublisher;
+  private final ObjectProvider<DroneRepository> dronesProvider;
 
   private static final String SESSION_SCOPE_DENIED = "SESSION_SCOPE_DENIED";
   private static final String SESSION_NOT_FOUND = "SESSION_NOT_FOUND";
@@ -45,7 +49,24 @@ public class InspectionFieldSessionService {
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
-    this(inspections, sessions, userAccess, entityManager, null, null);
+    this(inspections, sessions, userAccess, entityManager, null, null, null);
+  }
+
+  public InspectionFieldSessionService(
+      InspectionRepository inspections,
+      FieldSessionRepository sessions,
+      UserAccess userAccess,
+      EntityManager entityManager,
+      ObjectProvider<ReportContextAccess> reportContextAccessProvider,
+      ApplicationEventPublisher eventPublisher) {
+    this(
+        inspections,
+        sessions,
+        userAccess,
+        entityManager,
+        reportContextAccessProvider,
+        eventPublisher,
+        null);
   }
 
   @Autowired
@@ -55,13 +76,15 @@ public class InspectionFieldSessionService {
       UserAccess userAccess,
       EntityManager entityManager,
       ObjectProvider<ReportContextAccess> reportContextAccessProvider,
-      ApplicationEventPublisher eventPublisher) {
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<DroneRepository> dronesProvider) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.userAccess = userAccess;
     this.entityManager = entityManager;
     this.reportContextAccessProvider = reportContextAccessProvider;
     this.eventPublisher = eventPublisher;
+    this.dronesProvider = dronesProvider;
   }
 
   @Transactional
@@ -95,6 +118,25 @@ public class InspectionFieldSessionService {
       throw sessionFailure(
           "FLIGHT_PERMIT_REQUIRED",
           "A flight permit must be uploaded before starting the field session.");
+    }
+    if (dronesProvider != null && inspection.getDroneId() != null) {
+      DroneRepository droneRepo = dronesProvider.getIfAvailable();
+      if (droneRepo != null) {
+        Drone drone = droneRepo.findById(inspection.getDroneId()).orElse(null);
+        if (drone != null) {
+          if (drone.getServiceability() != DroneServiceability.ACTIVE) {
+            throw sessionFailure(
+                "INVALID_DRONE",
+                "Cannot start field work because the assigned drone is no longer active.");
+          }
+          if (drone.getRegistrationExpiresAt() != null
+              && !drone.getRegistrationExpiresAt().isAfter(Instant.now())) {
+            throw sessionFailure(
+                "DRONE_REGISTRATION_EXPIRED",
+                "Cannot start field work because the assigned drone registration has expired.");
+          }
+        }
+      }
     }
     if (inspection.getStatus() != InspectionStatus.SCHEDULED
         && inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {

@@ -98,6 +98,7 @@ public class DroneRegistrationApplication {
   }
 
   public void resubmit(
+      String serial,
       String model,
       String manufacturer,
       String registrationNumber,
@@ -108,6 +109,9 @@ public class DroneRegistrationApplication {
     if (!"REJECTED".equals(status) && !"APPROVED".equals(status)) {
       throw new IllegalStateException(
           "Only rejected or approved applications may be resubmitted or renewed.");
+    }
+    if (serial != null && !serial.isBlank()) {
+      this.serialNumber = serial.trim();
     }
     this.model = model;
     this.manufacturer = manufacturer;

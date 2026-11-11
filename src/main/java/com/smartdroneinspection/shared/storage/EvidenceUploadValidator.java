@@ -31,34 +31,41 @@ public final class EvidenceUploadValidator {
     } catch (IOException ex) {
       throw new BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Unreadable file");
     }
-    String declaredType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
+    String declaredType =
+        file.getContentType() == null
+            ? ""
+            : file.getContentType().trim().toLowerCase(java.util.Locale.ROOT);
+    boolean genericOrEmpty =
+        declaredType.isEmpty() || declaredType.equals("application/octet-stream");
     String extension;
     String resolvedContentType;
-    if (startsWith(content, PDF_SIGNATURE)) {
+    if (startsWith(content, PDF_SIGNATURE)
+        && (genericOrEmpty
+            || declaredType.equals("application/pdf")
+            || declaredType.endsWith("/pdf"))) {
       extension = ".pdf";
       resolvedContentType = "application/pdf";
-    } else if (startsWith(content, PNG_SIGNATURE)) {
+    } else if (startsWith(content, PNG_SIGNATURE)
+        && (genericOrEmpty || declaredType.equals("image/png") || declaredType.endsWith("/png"))) {
       extension = ".png";
       resolvedContentType = "image/png";
-    } else if (content.length >= 2 && content[0] == (byte) 0xff && content[1] == (byte) 0xd8) {
+    } else if (content.length >= 3
+        && content[0] == (byte) 0xff
+        && content[1] == (byte) 0xd8
+        && content[2] == (byte) 0xff
+        && (genericOrEmpty
+            || declaredType.equals("image/jpeg")
+            || declaredType.equals("image/jpg")
+            || declaredType.endsWith("/jpeg")
+            || declaredType.endsWith("/jpg"))) {
       extension = ".jpg";
       resolvedContentType = "image/jpeg";
-    } else if (content.length >= 12 && ascii(content, 0, "RIFF") && ascii(content, 8, "WEBP")) {
-      extension = ".webp";
-      resolvedContentType = "image/webp";
-    } else if (declaredType.equals("application/pdf") || declaredType.endsWith("/pdf")) {
-      extension = ".pdf";
-      resolvedContentType = "application/pdf";
-    } else if (declaredType.equals("image/png") || declaredType.endsWith("/png")) {
-      extension = ".png";
-      resolvedContentType = "image/png";
-    } else if (declaredType.equals("image/jpeg")
-        || declaredType.equals("image/jpg")
-        || declaredType.endsWith("/jpeg")
-        || declaredType.endsWith("/jpg")) {
-      extension = ".jpg";
-      resolvedContentType = "image/jpeg";
-    } else if (declaredType.equals("image/webp") || declaredType.endsWith("/webp")) {
+    } else if (content.length >= 12
+        && ascii(content, 0, "RIFF")
+        && ascii(content, 8, "WEBP")
+        && (genericOrEmpty
+            || declaredType.equals("image/webp")
+            || declaredType.endsWith("/webp"))) {
       extension = ".webp";
       resolvedContentType = "image/webp";
     } else {

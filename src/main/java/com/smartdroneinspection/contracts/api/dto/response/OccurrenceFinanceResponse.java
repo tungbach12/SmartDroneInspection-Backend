@@ -28,6 +28,9 @@ public record OccurrenceFinanceResponse(
     OccurrencePaymentStatus paymentStatus,
     String paymentReference,
     BigDecimal paymentAmount,
+    BigDecimal refundedAmount,
+    String refundStatus,
+    java.util.List<RefundSummary> refunds,
     Instant paymentConfirmedAt,
     UUID paymentConfirmedByUserId,
     OccurrencePayoutStatus payoutStatus,
@@ -54,7 +57,25 @@ public record OccurrenceFinanceResponse(
       Instant confirmedAt) {}
 
   public record InspectorPayoutSummary(
-      UUID inspectorId, OccurrencePayoutStatus status, String reference, Instant recordedAt) {}
+      UUID inspectorId,
+      OccurrencePayoutStatus status,
+      String reference,
+      Instant recordedAt,
+      UUID recordedByUserId,
+      boolean heldForRefund,
+      String refundReconciliationReference,
+      String refundReconciliationNote,
+      UUID refundReconciledByUserId,
+      Instant refundReconciledAt,
+      BigDecimal finalPayoutAmount) {}
+
+  public record RefundSummary(
+      java.util.UUID id,
+      BigDecimal amount,
+      String reference,
+      String reason,
+      UUID recordedByUserId,
+      Instant recordedAt) {}
 
   private static final String MVP_DISCLAIMER =
       "MVP assumption: Tax base = Inspector gross payout after platform commission and before TNCN. "
@@ -68,6 +89,31 @@ public record OccurrenceFinanceResponse(
         occurrence.getCommissionRate(),
         occurrence.getTncnRate(),
         occurrence.getReportAcceptedAt());
+  }
+
+  private static java.util.List<RefundSummary> refundSummaries(
+      ServiceRequestOccurrence occurrence) {
+    return occurrence.getRefunds().stream()
+        .map(
+            refund ->
+                new RefundSummary(
+                    refund.getId(),
+                    refund.getAmount(),
+                    refund.getReference(),
+                    refund.getReason(),
+                    refund.getRecordedByUserId(),
+                    refund.getRecordedAt()))
+        .toList();
+  }
+
+  private static java.util.List<RefundSummary> customerRefundSummaries(
+      ServiceRequestOccurrence occurrence) {
+    return occurrence.getRefunds().stream()
+        .map(
+            refund ->
+                new RefundSummary(
+                    refund.getId(), refund.getAmount(), null, null, null, refund.getRecordedAt()))
+        .toList();
   }
 
   private static ServicePaymentSummary paymentSummary(ServiceRequestOccurrence occurrence) {
@@ -84,7 +130,14 @@ public record OccurrenceFinanceResponse(
         occurrence.getPayout().getInspectorId(),
         occurrence.getPayoutStatus(),
         occurrence.getPayoutReference(),
-        occurrence.getPayoutRecordedAt());
+        occurrence.getPayoutRecordedAt(),
+        occurrence.getPayout().getPayoutRecordedByUserId(),
+        occurrence.isPayoutHeldForRefund(),
+        occurrence.getPayout().getRefundReconciliationReference(),
+        occurrence.getPayout().getRefundReconciliationNote(),
+        occurrence.getPayout().getRefundReconciledByUserId(),
+        occurrence.getPayout().getRefundReconciledAt(),
+        occurrence.getPayout().getFinalPayoutAmount());
   }
 
   /** Full financial view for Managers and Admins. */
@@ -110,6 +163,9 @@ public record OccurrenceFinanceResponse(
         occurrence.getPaymentStatus(),
         occurrence.getPaymentReference(),
         occurrence.getPaymentAmount(),
+        occurrence.getRefundedAmount(),
+        occurrence.getRefundStatus(),
+        refundSummaries(occurrence),
         occurrence.getPaymentConfirmedAt(),
         occurrence.getPaymentConfirmedByUserId(),
         occurrence.getPayoutStatus(),
@@ -149,6 +205,9 @@ public record OccurrenceFinanceResponse(
         occurrence.getPaymentStatus(),
         null,
         occurrence.getPaymentAmount(),
+        occurrence.getRefundedAmount(),
+        occurrence.getRefundStatus(),
+        customerRefundSummaries(occurrence),
         occurrence.getPaymentConfirmedAt(),
         null,
         null,
@@ -173,7 +232,7 @@ public record OccurrenceFinanceResponse(
 
   /**
    * Scoped financial view for assigned Inspector: shows full order price, platform commission,
-   * Inspector gross compensation, TNCN withholding, net payout, and auto-disbursement status.
+   * Inspector gross compensation, TNCN withholding, net payout, and attributable payout status.
    */
   public static OccurrenceFinanceResponse forInspector(ServiceRequestOccurrence occurrence) {
     return new OccurrenceFinanceResponse(
@@ -197,6 +256,9 @@ public record OccurrenceFinanceResponse(
         occurrence.getPaymentStatus(),
         null,
         occurrence.getPaymentAmount(),
+        occurrence.getRefundedAmount(),
+        occurrence.getRefundStatus(),
+        refundSummaries(occurrence),
         occurrence.getPaymentConfirmedAt(),
         null,
         occurrence.getPayoutStatus(),

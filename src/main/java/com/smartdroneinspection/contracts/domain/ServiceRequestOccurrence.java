@@ -135,11 +135,7 @@ public class ServiceRequestOccurrence {
     validatePayment(reference, amount);
     payment.confirm(
         reference, payment.getPaymentMethod() != null ? payment.getPaymentMethod() : "MANUAL_WIRE");
-    if (inspectorId != null) {
-      payout.markAutoDisbursed(reference.trim(), payment.getPaymentConfirmedAt());
-    } else {
-      payout.markEligible();
-    }
+    payout.markEligible();
     updatedAt = payment.getPaymentConfirmedAt();
   }
 
@@ -160,12 +156,52 @@ public class ServiceRequestOccurrence {
   public void confirmOnlinePayment(String reference, BigDecimal amount, String method) {
     validatePayment(reference, amount);
     payment.confirm(reference, method);
-    if (inspectorId != null) {
-      payout.markAutoDisbursed(reference.trim(), payment.getPaymentConfirmedAt());
-    } else {
-      payout.markEligible();
-    }
+    payout.markEligible();
     updatedAt = payment.getPaymentConfirmedAt();
+  }
+
+  public ServiceRefund recordRefund(
+      BigDecimal amount, String reference, String reason, UUID managerId) {
+    if (payout.getPayoutStatus() == OccurrencePayoutStatus.PAID) {
+      throw new IllegalStateException(
+          "A refund cannot be recorded after Inspector payout; reconcile the disbursement separately");
+    }
+    ServiceRefund refund =
+        payment.recordRefund(getTotalPrice(), amount, reference, reason, managerId);
+    if (payout.getPayoutStatus() != OccurrencePayoutStatus.PAID) {
+      payout.holdForRefund();
+    }
+    updatedAt = Instant.now();
+    return refund;
+  }
+
+  public boolean isPayoutHeldForRefund() {
+    return payout.isHeldForRefund();
+  }
+
+  public void releasePayoutAfterRefundReconciliation(
+      UUID managerId,
+      BigDecimal finalPayoutAmount,
+      String payoutReference,
+      String reconciliationReference,
+      String note) {
+    payout.reconcileRefund(
+        managerId,
+        finalPayoutAmount,
+        getInspectorNetPayout(),
+        payoutReference,
+        reconciliationReference,
+        note);
+    updatedAt = Instant.now();
+  }
+
+  public void clearUnpaidPaymentOrder(long orderCode, String method) {
+    payment.clearUnpaidGatewayOrder(orderCode, method);
+    updatedAt = Instant.now();
+  }
+
+  public boolean hasActivePaymentOrder(String method) {
+    return payment.hasActiveGatewayOrder(method);
   }
 
   private void validatePayment(String reference, BigDecimal amount) {
@@ -195,8 +231,24 @@ public class ServiceRequestOccurrence {
     if (inspectorId == null) {
       throw new IllegalStateException("No inspector assigned to receive payout");
     }
-    payout.recordPayout(reference);
+    payout.recordPayout(reference, managerUserId, getInspectorNetPayout());
     updatedAt = payout.getPayoutRecordedAt();
+  }
+
+  public void reconcileRefundHold(
+      UUID managerId,
+      BigDecimal finalAmount,
+      String payoutReference,
+      String reconciliationReference,
+      String note) {
+    payout.reconcileRefund(
+        managerId,
+        finalAmount,
+        getInspectorNetPayout(),
+        payoutReference,
+        reconciliationReference,
+        note);
+    updatedAt = Instant.now();
   }
 
   public void assign(UUID inspectorId, UUID droneId, UUID inspectionId, UUID assignedByUserId) {
@@ -354,6 +406,18 @@ public class ServiceRequestOccurrence {
     return getPaymentStatus() == OccurrencePaymentStatus.PAID ? getTotalPrice() : null;
   }
 
+  public BigDecimal getRefundedAmount() {
+    return payment.getRefundedAmount();
+  }
+
+  public String getRefundStatus() {
+    return payment.getRefundStatus();
+  }
+
+  public java.util.List<ServiceRefund> getRefunds() {
+    return payment.getRefunds();
+  }
+
   public UUID getPaymentConfirmedByUserId() {
     return null;
   }
@@ -376,6 +440,10 @@ public class ServiceRequestOccurrence {
 
   public String getPayoutReference() {
     return payout.getPayoutReference();
+  }
+
+  public BigDecimal getFinalPayoutAmount() {
+    return payout.getFinalPayoutAmount();
   }
 
   public UUID getPayoutRecordedByUserId() {

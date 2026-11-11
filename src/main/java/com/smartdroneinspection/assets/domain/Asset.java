@@ -223,7 +223,11 @@ public class Asset {
     validateCoordinates(latitude, longitude);
     if (name != null) this.name = name;
     if (description != null) this.description = description;
-    if (locationText != null) this.locationText = toLocationJson(locationText, latitude, longitude);
+    BigDecimal effectiveLat = latitude != null ? latitude : this.latitude;
+    BigDecimal effectiveLon = longitude != null ? longitude : this.longitude;
+    if (locationText != null) {
+      this.locationText = toLocationJson(locationText, effectiveLat, effectiveLon);
+    }
     if (latitude != null) this.latitude = latitude;
     if (longitude != null) this.longitude = longitude;
     if (ownershipInformation != null) this.ownershipInformation = ownershipInformation;

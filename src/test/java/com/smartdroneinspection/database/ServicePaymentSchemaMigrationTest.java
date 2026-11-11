@@ -46,7 +46,7 @@ class ServicePaymentSchemaMigrationTest {
   @Test
   void createsDedicatedPaymentTablesAndRemovesFinanceColumnsFromOccurrence() {
     jdbcTemplate.queryForObject(
-        "SELECT version FROM flyway_schema_history WHERE version = '29'", String.class);
+        "SELECT version FROM flyway_schema_history WHERE version = '33'", String.class);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('service_invoices', 'service_payments', 'inspector_payouts')",
@@ -64,13 +64,31 @@ class ServicePaymentSchemaMigrationTest {
         "occurrence_id",
         "payment_status",
         "payos_order_code",
-        "payment_method");
+        "payment_method",
+        "refunded_amount",
+        "refund_status");
     assertColumns(
         "inspector_payouts",
         "occurrence_id",
         "payout_status",
         "payout_reference",
-        "payout_recorded_at");
+        "payout_recorded_at",
+        "payout_held_for_refund",
+        "refund_reconciliation_reference",
+        "refund_reconciliation_note",
+        "refund_reconciled_by_user_id",
+        "refund_reconciled_at",
+        "payout_recorded_by_user_id",
+        "final_payout_amount");
+    assertColumns(
+        "service_refunds",
+        "id",
+        "occurrence_id",
+        "amount",
+        "refund_reference",
+        "reason",
+        "recorded_by_user_id",
+        "recorded_at");
   }
 
   @Test
@@ -167,7 +185,7 @@ class ServicePaymentSchemaMigrationTest {
     occurrence.acceptReport();
     occurrence.assignPayOSOrder(9922334455L);
     occurrence.confirmOnlinePayment("PAY-TEST-REF", new BigDecimal("11000000.00"), "PAYOS");
-    occurrence.recordPayout("BANK-TRANSFER-REF", customer.getId());
+    occurrence.recordPayout("BANK-TRANSFER-REF", UUID.randomUUID());
     occurrences.saveAndFlush(occurrence);
 
     UUID occurrenceId = occurrence.getId();

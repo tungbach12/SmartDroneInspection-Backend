@@ -160,8 +160,14 @@ public class AssetService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
     }
-    if (request.latitude() != null && request.longitude() != null) {
-      validateNoFlyZone(request.latitude(), request.longitude());
+    if (request.latitude() != null || request.longitude() != null) {
+      java.math.BigDecimal nextLat =
+          request.latitude() != null ? request.latitude() : asset.getLatitude();
+      java.math.BigDecimal nextLon =
+          request.longitude() != null ? request.longitude() : asset.getLongitude();
+      if (nextLat != null && nextLon != null) {
+        validateNoFlyZone(nextLat, nextLon);
+      }
     }
     asset.update(
         request.name(),

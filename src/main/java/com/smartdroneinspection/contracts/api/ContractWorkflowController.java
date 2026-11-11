@@ -5,7 +5,9 @@ import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePayme
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.PostServiceRequestMessage;
+import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundHoldRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
@@ -182,6 +184,35 @@ public class ContractWorkflowController {
       @Valid @RequestBody ConfirmOccurrencePaymentRequest request) {
     return ApiResponse.success(
         workflow.confirmOccurrencePayment(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/record-refund")
+  public ApiResponse<ServiceRequestResponse> recordOccurrenceRefund(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @Valid @RequestBody RecordOccurrenceRefundRequest request) {
+    return ApiResponse.success(
+        workflow.recordOccurrenceRefund(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/cancel-unpaid-order")
+  public ApiResponse<ServiceRequestResponse> cancelUnpaidPaymentOrder(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId) {
+    return ApiResponse.success(
+        workflow.cancelUnpaidPaymentOrder(actorId(jwt), requestId, occurrenceId));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/reconcile-refund-hold")
+  public ApiResponse<ServiceRequestResponse> reconcileRefundHold(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @Valid @RequestBody ReconcileRefundHoldRequest request) {
+    return ApiResponse.success(
+        workflow.reconcileRefundHold(actorId(jwt), requestId, occurrenceId, request));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/record-payout")

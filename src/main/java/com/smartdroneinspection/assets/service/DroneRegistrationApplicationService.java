@@ -5,6 +5,7 @@ import com.smartdroneinspection.assets.api.dto.request.SubmitDroneRegistrationAp
 import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationResponse;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
+import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -119,8 +120,35 @@ public class DroneRegistrationApplicationService {
           "DRONE_REGISTRATION_EXPIRED",
           "Drone registration must be current.");
     }
+    String serial = request.serialNumber().trim();
+    if (application.getDroneId() != null) {
+      if (!serial.equalsIgnoreCase(application.getSerialNumber())) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "CANNOT_CHANGE_APPROVED_DRONE_SERIAL",
+            "Serial number of an existing approved drone cannot be changed.");
+      }
+      Drone linked = drones.findById(application.getDroneId()).orElse(null);
+      if (linked != null && linked.getServiceability() == DroneServiceability.RETIRED) {
+        throw new AuthException(
+            HttpStatus.CONFLICT, "DRONE_RETIRED", "Retired drones cannot renew registration.");
+      }
+    } else {
+      if (drones.existsBySerialNumberIgnoreCase(serial)) {
+        throw new AuthException(
+            HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Drone serial is already registered.");
+      }
+      if (applications.existsBySerialNumberIgnoreCaseAndStatusAndIdNot(
+          serial, "PENDING", applicationId)) {
+        throw new AuthException(
+            HttpStatus.CONFLICT,
+            "DUPLICATE_SERIAL_NUMBER",
+            "Drone serial is already registered or pending.");
+      }
+    }
     try {
       application.resubmit(
+          serial,
           request.model(),
           request.manufacturer(),
           request.registrationNumber(),
@@ -247,7 +275,13 @@ public class DroneRegistrationApplicationService {
     if (application.getDroneId() != null) {
       drone = drones.findById(application.getDroneId()).orElse(null);
       if (drone != null) {
-        drone.updateRegistration(
+        if (drone.getServiceability() == DroneServiceability.RETIRED) {
+          throw new AuthException(
+              HttpStatus.CONFLICT, "DRONE_RETIRED", "Retired drones cannot renew registration.");
+        }
+        drone.renewRegistration(
+            application.getModel(),
+            application.getManufacturer(),
             application.getRegistrationNumber(),
             application.getRegistrationFileKey(),
             application.getRegistrationExpiresAt());

@@ -12,6 +12,8 @@ public interface ProspectiveCustomerRegistrationRepository
 
   Optional<ProspectiveCustomerRegistration> findByIdAndStatus(UUID id, String status);
 
+  Optional<ProspectiveCustomerRegistration> findByUserId(UUID userId);
+
   boolean existsByOrganizationCodeIgnoreCaseAndStatus(String code, String status);
 
   boolean existsByOrganizationCodeIgnoreCaseAndAssetCodeIgnoreCaseAndStatus(

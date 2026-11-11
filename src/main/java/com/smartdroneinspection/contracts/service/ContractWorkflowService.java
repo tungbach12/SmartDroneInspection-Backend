@@ -7,7 +7,9 @@ import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceReques
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
+import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundHoldRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessageResponse;
@@ -24,6 +26,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.Occurr
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
+import com.smartdroneinspection.contracts.repository.ServiceRefundRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
@@ -82,6 +85,12 @@ public class ContractWorkflowService
   private final Optional<InspectionReportAccess> reportAccess;
   private final PayOSGateway payOSGateway;
   private final VnPayGateway vnPayGateway;
+  private Optional<ServiceRefundRepository> refundRepository = Optional.empty();
+
+  @org.springframework.beans.factory.annotation.Autowired
+  void setRefundRepository(Optional<ServiceRefundRepository> refundRepository) {
+    this.refundRepository = refundRepository != null ? refundRepository : Optional.empty();
+  }
 
   @org.springframework.beans.factory.annotation.Autowired
   public ContractWorkflowService(
@@ -286,7 +295,8 @@ public class ContractWorkflowService
           "INVALID_PARTNER_INSPECTOR",
           "Selected Inspector is not an eligible registered partner");
     }
-    if (!partners.isEligibleDrone(input.droneId(), input.inspectorId())) {
+    if (!partners.isEligibleDrone(
+        input.droneId(), input.inspectorId(), input.firstOccurrenceStartAt())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_DRONE",
@@ -530,7 +540,7 @@ public class ContractWorkflowService
           "Selected Inspector or drone has another assigned contract occurrence during this window");
     }
     partners.lockEligibleInspector(input.inspectorId(), input.plannedStartAt());
-    partners.lockEligibleDrone(input.droneId(), input.inspectorId());
+    partners.lockEligibleDrone(input.droneId(), input.inspectorId(), input.plannedStartAt());
     UUID inspectionId =
         assignment.assign(
             request.getOrganizationId(),
@@ -634,12 +644,16 @@ public class ContractWorkflowService
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
-    if (occurrence.getReportAcceptedAt() == null
-        || occurrence.getPaymentStatus() == OccurrencePaymentStatus.PENDING) {
+    if (occurrence.getReportAcceptedAt() == null) {
       throw failure(
           HttpStatus.CONFLICT,
           "PAYMENT_NOT_DUE",
           "Customer must accept the published report before payment can be confirmed");
+    }
+    boolean alreadyPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
+    if (!alreadyPaid && occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE) {
+      throw failure(
+          HttpStatus.CONFLICT, "PAYMENT_NOT_DUE", "Payment must be due before confirmation");
     }
     if (occurrence.getTotalPrice() != null
         && input.amount().compareTo(occurrence.getTotalPrice()) != 0) {
@@ -654,6 +668,123 @@ public class ContractWorkflowService
       throw failure(HttpStatus.CONFLICT, "PAYMENT_CONFIRMATION_INVALID", ex.getMessage());
     }
     occurrences.saveAndFlush(occurrence);
+    return toResponse(request);
+  }
+
+  /** Records an external refund that has already been transferred by an authorized Manager. */
+  @Transactional
+  public ServiceRequestResponse recordOccurrenceRefund(
+      UUID actorId, UUID requestId, UUID occurrenceId, RecordOccurrenceRefundRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (refundRepository.isPresent()
+        && refundRepository.get().existsByReferenceIgnoreCase(input.refundReference().trim())) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REFUND_REFERENCE_DUPLICATE",
+          "Refund reference has already been recorded");
+    }
+    try {
+      occurrence.recordRefund(
+          input.amount(), input.refundReference(), input.reason(), manager.id());
+      occurrences.saveAndFlush(occurrence);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "REFUND_INVALID", ex.getMessage());
+    }
+    return toResponse(request);
+  }
+
+  /** Manager cancels the saved unpaid gateway order before switching gateway or retrying. */
+  @Transactional
+  public ServiceRequestResponse cancelUnpaidPaymentOrder(
+      UUID actorId, UUID requestId, UUID occurrenceId) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    Long orderCode = occurrence.getPayosOrderCode();
+    String method = occurrence.getPaymentMethod();
+    if (orderCode == null || orderCode <= 0 || method == null || method.isBlank()) {
+      throw failure(
+          HttpStatus.CONFLICT, "PAYMENT_ORDER_NOT_FOUND", "No active payment order is recorded");
+    }
+    if (occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_ORDER_NOT_CANCELLABLE",
+          "Only an unpaid due order can be cancelled");
+    }
+    if ("PAYOS".equalsIgnoreCase(method)) {
+      PayOSGateway.PayOSPaymentLink existing = payOSGateway.getPaymentLink(orderCode);
+      if (existing == null || "PAID".equalsIgnoreCase(existing.status())) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYMENT_ORDER_UNRESOLVED",
+            "PayOS did not confirm the order is unpaid; reconcile gateway status first");
+      }
+      if (!"CANCELLED".equalsIgnoreCase(existing.status())
+          && !payOSGateway.cancelPaymentLink(orderCode)) {
+        throw failure(
+            HttpStatus.BAD_GATEWAY,
+            "PAYMENT_ORDER_CANCEL_FAILED",
+            "PayOS did not confirm order cancellation");
+      }
+    } else if ("VNPAY".equalsIgnoreCase(method)) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_ORDER_UNRESOLVED",
+          "VNPay cancellation cannot be verified automatically; wait for expiry or reconcile with the gateway before clearing the order");
+    } else if (!"MANUAL_WIRE".equalsIgnoreCase(method)) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_METHOD_UNSUPPORTED",
+          "The saved payment method cannot be cancelled through this workflow");
+    }
+    occurrence.clearUnpaidPaymentOrder(orderCode, method);
+    occurrences.saveAndFlush(occurrence);
+    return toResponse(request);
+  }
+
+  /** Manager reconciles held Inspector payout after independently resolving the customer refund. */
+  @Transactional
+  public ServiceRequestResponse reconcileRefundHold(
+      UUID actorId, UUID requestId, UUID occurrenceId, ReconcileRefundHoldRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (!occurrence.isPayoutHeldForRefund()) {
+      throw failure(
+          HttpStatus.CONFLICT, "PAYOUT_NOT_HELD", "Payout is not held for refund reconciliation");
+    }
+    try {
+      occurrence.reconcileRefundHold(
+          manager.id(),
+          input.finalPayoutAmount(),
+          input.payoutReference(),
+          input.reconciliationReference(),
+          input.note());
+      occurrences.saveAndFlush(occurrence);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "REFUND_RECONCILIATION_INVALID", ex.getMessage());
+    }
     return toResponse(request);
   }
 
@@ -676,6 +807,12 @@ public class ContractWorkflowService
           HttpStatus.CONFLICT,
           "PAYOUT_NOT_ELIGIBLE",
           "Inspector payout requires both customer report acceptance and confirmed customer payment");
+    }
+    if (occurrence.isPayoutHeldForRefund()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYOUT_HELD_FOR_REFUND",
+          "Inspector payout is held while a customer refund is recorded and reconciled");
     }
     if (occurrence.getInspectorId() == null) {
       throw failure(
@@ -777,6 +914,12 @@ public class ContractWorkflowService
     long amount = occurrence.getTotalPrice().longValue();
     long orderCode;
     if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
+      if (!"PAYOS".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYMENT_ORDER_ALREADY_OPEN",
+            "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
+      }
       orderCode = occurrence.getPayosOrderCode();
       PayOSGateway.PayOSPaymentLink existing = payOSGateway.getPaymentLink(orderCode);
       if (existing != null && existing.checkoutUrl() != null && !existing.checkoutUrl().isBlank()) {
@@ -787,6 +930,10 @@ public class ContractWorkflowService
             amount,
             existing.paymentLinkId());
       }
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_ORDER_UNRESOLVED",
+          "The existing PayOS order could not be verified as cancelled; contact the platform before retrying.");
     } else {
       orderCode = (System.currentTimeMillis() % 9000000000L) + 1000000000L;
     }
@@ -916,6 +1063,18 @@ public class ContractWorkflowService
     }
 
     long amount = occurrence.getTotalPrice().longValue();
+    if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
+      if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYMENT_ORDER_ALREADY_OPEN",
+            "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
+      }
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYMENT_ORDER_UNRESOLVED",
+          "The existing VNPay order must be settled or cancelled before retrying.");
+    }
     long orderCode =
         (System.currentTimeMillis() % 9000000000L) + 1000000000L + (long) (Math.random() * 10000);
 

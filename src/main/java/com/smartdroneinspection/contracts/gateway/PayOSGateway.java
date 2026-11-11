@@ -28,6 +28,11 @@ public interface PayOSGateway {
     return null;
   }
 
+  /** Cancels an unpaid PayOS link. Returns true only when the gateway confirms cancellation. */
+  default boolean cancelPaymentLink(long orderCode) {
+    return false;
+  }
+
   /**
    * Resolves the return URL for a specific inspection, substituting configured template variables.
    */

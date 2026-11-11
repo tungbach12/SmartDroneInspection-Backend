@@ -482,6 +482,19 @@ public class ReportService {
           "CLARIFICATION_REASON_REQUIRED",
           "Please provide the clarification or revision details");
     }
+    long priorClarifications =
+        versions.findByInspectionIdOrderByVersionNoDesc(inspectionId).stream()
+            .filter(
+                v ->
+                    v.getReturnReason() != null
+                        && v.getReturnReason().contains("[Yêu cầu làm rõ từ Khách hàng]"))
+            .count();
+    if (priorClarifications >= 2) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "MAX_CLARIFICATIONS_EXCEEDED",
+          "Báo cáo đã qua 02 lần yêu cầu làm rõ theo quy định hợp đồng. Vui lòng liên hệ trực tiếp Quản lý nền tảng để đối soát và hòa giải.");
+    }
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
     try {
@@ -793,6 +806,21 @@ public class ReportService {
           "REPORT_ARTEFACT_NOT_FOUND",
           "Only published reports can be downloaded");
     }
+
+    boolean paymentDue = paymentGate.map(gate -> gate.isPaymentDue(inspectionId)).orElse(false);
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isCustomer =
+        actor != null
+            && actor.hasRole(Roles.CUSTOMER)
+            && !actor.hasRole(Roles.ADMIN)
+            && !actor.hasRole(Roles.MANAGER);
+
+    if (isCustomer && paymentDue) {
+      byte[] previewContent = renderArtefact(inspectionId, version, true, Locale.ENGLISH);
+      return pdfResponse(
+          previewContent, "attachment", documentReference(version) + "-unpaid-preview.pdf");
+    }
+
     String objectKey = reportObjectKey(version.getId());
     byte[] content = null;
     if (objectStore.isPresent()) {

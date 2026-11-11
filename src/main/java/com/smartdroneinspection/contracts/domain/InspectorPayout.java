@@ -41,6 +41,27 @@ public class InspectorPayout {
   @Column(name = "payout_recorded_at")
   private Instant payoutRecordedAt;
 
+  @Column(name = "payout_held_for_refund", nullable = false)
+  private boolean heldForRefund;
+
+  @Column(name = "refund_reconciliation_reference", length = 255)
+  private String refundReconciliationReference;
+
+  @Column(name = "refund_reconciliation_note", length = 2000)
+  private String refundReconciliationNote;
+
+  @Column(name = "refund_reconciled_by_user_id")
+  private UUID refundReconciledByUserId;
+
+  @Column(name = "refund_reconciled_at")
+  private Instant refundReconciledAt;
+
+  @Column(name = "payout_recorded_by_user_id")
+  private UUID payoutRecordedByUserId;
+
+  @Column(name = "final_payout_amount", precision = 15, scale = 2)
+  private java.math.BigDecimal finalPayoutAmount;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
@@ -69,31 +90,82 @@ public class InspectorPayout {
     }
   }
 
-  void markAutoDisbursed(String paymentReference, Instant paidAt) {
-    payoutStatus = OccurrencePayoutStatus.PAID;
-    payoutReference = "AUTO-DISBURSE-" + paymentReference;
-    payoutRecordedAt = paidAt;
-    updatedAt = paidAt;
+  void holdForRefund() {
+    heldForRefund = true;
+    if (payoutStatus == OccurrencePayoutStatus.ELIGIBLE) {
+      payoutStatus = OccurrencePayoutStatus.PENDING;
+    }
+    updatedAt = Instant.now();
   }
 
-  void recordPayout(String reference) {
+  void reconcileRefund(
+      UUID managerId,
+      java.math.BigDecimal finalAmount,
+      java.math.BigDecimal originalNetAmount,
+      String payoutReference,
+      String reconciliationReference,
+      String note) {
+    if (!heldForRefund) {
+      throw new IllegalStateException("Payout is not held for refund reconciliation");
+    }
+    if (payoutStatus == OccurrencePayoutStatus.PAID) {
+      throw new IllegalStateException("A recorded payout cannot be reconciled a second time");
+    }
+    if (managerId == null
+        || finalAmount == null
+        || finalAmount.signum() < 0
+        || originalNetAmount == null
+        || finalAmount.compareTo(originalNetAmount) > 0
+        || payoutReference == null
+        || payoutReference.isBlank()
+        || reconciliationReference == null
+        || reconciliationReference.isBlank()
+        || note == null
+        || note.isBlank()) {
+      throw new IllegalArgumentException(
+          "Refund reconciliation requires a non-negative amount within the original net payout, payout reference, reconciliation reference, and note");
+    }
+    heldForRefund = false;
+    refundReconciledByUserId = managerId;
+    refundReconciliationReference = reconciliationReference.trim();
+    refundReconciliationNote = note.trim();
+    refundReconciledAt = Instant.now();
+    finalPayoutAmount = finalAmount.setScale(2, java.math.RoundingMode.HALF_UP);
+    this.payoutReference = payoutReference.trim();
+    payoutRecordedByUserId = managerId;
+    payoutRecordedAt = refundReconciledAt;
+    payoutStatus = OccurrencePayoutStatus.PAID;
+    updatedAt = refundReconciledAt;
+  }
+
+  void recordPayout(String reference, UUID managerId, java.math.BigDecimal originalNetAmount) {
+    if (heldForRefund) {
+      throw new IllegalStateException("Inspector payout is held pending refund reconciliation");
+    }
+    if (managerId == null) {
+      throw new IllegalArgumentException("Payout recorder is required");
+    }
     if (payoutStatus == OccurrencePayoutStatus.PAID) {
       if (reference.trim().equals(payoutReference)) {
-        return;
-      }
-      if (payoutReference != null && payoutReference.startsWith("AUTO-DISBURSE-")) {
-        payoutReference = reference.trim();
-        payoutRecordedAt = Instant.now();
-        updatedAt = payoutRecordedAt;
         return;
       }
       throw new IllegalStateException(
           "Payout was already recorded with reference " + payoutReference);
     }
     payoutStatus = OccurrencePayoutStatus.PAID;
+    finalPayoutAmount = originalNetAmount;
     payoutReference = reference.trim();
+    payoutRecordedByUserId = managerId;
     payoutRecordedAt = Instant.now();
     updatedAt = payoutRecordedAt;
+  }
+
+  boolean isHeldForRefund() {
+    return heldForRefund;
+  }
+
+  public boolean getHeldForRefund() {
+    return heldForRefund;
   }
 
   public UUID getOccurrenceId() {
@@ -114,6 +186,30 @@ public class InspectorPayout {
 
   public Instant getPayoutRecordedAt() {
     return payoutRecordedAt;
+  }
+
+  public java.math.BigDecimal getFinalPayoutAmount() {
+    return finalPayoutAmount;
+  }
+
+  public UUID getPayoutRecordedByUserId() {
+    return payoutRecordedByUserId;
+  }
+
+  public UUID getRefundReconciledByUserId() {
+    return refundReconciledByUserId;
+  }
+
+  public String getRefundReconciliationReference() {
+    return refundReconciliationReference;
+  }
+
+  public String getRefundReconciliationNote() {
+    return refundReconciliationNote;
+  }
+
+  public Instant getRefundReconciledAt() {
+    return refundReconciledAt;
   }
 
   public Instant getCreatedAt() {

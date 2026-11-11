@@ -65,6 +65,7 @@ class FullDatabaseSchemaMigrationTest {
             "service_invoices",
             "service_payments",
             "inspector_payouts",
+            "service_refunds",
             "inspection_finance_settings",
             "inspector_flight_logs",
             "inspector_profiles",
@@ -128,12 +129,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToV25AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV33AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(31);
-    assertThat(versions.getLast()).isEqualTo("31");
+    assertThat(versions).hasSize(33);
+    assertThat(versions.getLast()).isEqualTo("33");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -166,14 +167,28 @@ class FullDatabaseSchemaMigrationTest {
         "occurrence_id",
         "payment_status",
         "payos_order_code",
-        "payment_method");
+        "payment_method",
+        "refunded_amount",
+        "refund_status");
     assertColumns(
         "inspector_payouts",
         "occurrence_id",
         "inspector_id",
         "payout_status",
         "payout_reference",
-        "payout_recorded_at");
+        "payout_recorded_at",
+        "payout_held_for_refund",
+        "refund_reconciliation_reference",
+        "refund_reconciled_by_user_id",
+        "payout_recorded_by_user_id");
+    assertColumns(
+        "service_refunds",
+        "id",
+        "occurrence_id",
+        "amount",
+        "refund_reference",
+        "recorded_by_user_id",
+        "recorded_at");
 
     List<String> otpColumns =
         jdbcTemplate.queryForList(
