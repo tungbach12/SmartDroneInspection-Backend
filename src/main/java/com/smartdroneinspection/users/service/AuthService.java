@@ -9,6 +9,7 @@ import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ClientType;
+import com.smartdroneinspection.users.events.PilotLicenseUpdatedEvent;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -17,6 +18,8 @@ import com.smartdroneinspection.users.security.AuthCrypto;
 import com.smartdroneinspection.users.security.AuthSecurityBeans.AuthSecrets;
 import java.time.Instant;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,8 +39,15 @@ public class AuthService {
   private final SecurityAuditService audit;
   private final LoginOtpService loginOtp;
   private final InspectorProfileRepository inspectorProfiles;
+  private final PilotLicenseClassService pilotLicenseClassService;
   private final com.smartdroneinspection.users.security.GoogleTokenVerifier googleVerifier;
   private final String dummyPasswordHash;
+  private ApplicationEventPublisher eventPublisher;
+
+  @Autowired(required = false)
+  public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
 
   public AuthService(
       UserRepository users,
@@ -51,6 +61,7 @@ public class AuthService {
       SecurityAuditService audit,
       LoginOtpService loginOtp,
       InspectorProfileRepository inspectorProfiles,
+      PilotLicenseClassService pilotLicenseClassService,
       com.smartdroneinspection.users.security.GoogleTokenVerifier googleVerifier) {
     this.users = users;
     this.sessions = sessions;
@@ -63,6 +74,7 @@ public class AuthService {
     this.audit = audit;
     this.loginOtp = loginOtp;
     this.inspectorProfiles = inspectorProfiles;
+    this.pilotLicenseClassService = pilotLicenseClassService;
     this.googleVerifier = googleVerifier;
     this.dummyPasswordHash = passwords.encode(AuthCrypto.randomToken());
   }
@@ -515,13 +527,18 @@ public class AuthService {
                 () -> new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "User not found"));
     InspectorProfile profile =
         inspectorProfiles.findById(userId).orElseGet(() -> new InspectorProfile(userId));
+    String licenseClass = pilotLicenseClassService.requireActiveName(request.licenseClass());
     profile.updatePilotLicense(
         request.licenseNumber().trim(),
-        request.licenseClass() == null ? null : request.licenseClass().trim(),
+        licenseClass,
         request.expiresAt(),
         request.fileKey() == null ? null : request.fileKey().trim());
     users.saveAndFlush(user);
     inspectorProfiles.saveAndFlush(profile);
+    if (eventPublisher != null && profile.getPilotLicenseExpiresAt() != null) {
+      eventPublisher.publishEvent(
+          new PilotLicenseUpdatedEvent(userId, profile.getPilotLicenseExpiresAt()));
+    }
     return toResponse(user, profile);
   }
 

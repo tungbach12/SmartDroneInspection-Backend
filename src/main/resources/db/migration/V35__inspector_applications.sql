@@ -1,0 +1,31 @@
+CREATE TABLE inspector_applications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    normalized_email VARCHAR(320) NOT NULL,
+    email VARCHAR(320) NOT NULL,
+    full_name VARCHAR(200) NOT NULL,
+    phone_number VARCHAR(32),
+    citizen_id VARCHAR(32) NOT NULL,
+    address VARCHAR(500) NOT NULL,
+    pilot_license_number VARCHAR(128) NOT NULL,
+    pilot_license_class VARCHAR(64) NOT NULL,
+    pilot_license_expires_at TIMESTAMPTZ,
+    license_scan_file_key VARCHAR(1000) NOT NULL,
+    password_hash VARCHAR(1024) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING_REVIEW',
+    reviewed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    rejection_reason VARCHAR(1000),
+    notification_state VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    notification_attempts INTEGER NOT NULL DEFAULT 0,
+    cleanup_attempts INTEGER NOT NULL DEFAULT 0,
+    last_notification_error VARCHAR(500),
+    correlation_id VARCHAR(128),
+    approved_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    setup_email_sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_inspector_applications_status CHECK (status IN ('PENDING_REVIEW', 'APPROVED', 'REJECTED')),
+    CONSTRAINT ck_inspector_applications_notification CHECK (notification_state IN ('PENDING', 'SENT'))
+);
+CREATE INDEX ix_inspector_applications_email_status ON inspector_applications (normalized_email, status);
+CREATE INDEX ix_inspector_applications_status_created ON inspector_applications (status, created_at);

@@ -5,6 +5,7 @@ import com.smartdroneinspection.shared.api.CustomerAirspacePolicy;
 import com.smartdroneinspection.shared.api.CustomerAirspaceStatus;
 import com.smartdroneinspection.shared.api.CustomerRegistrationEvent;
 import com.smartdroneinspection.shared.exception.AuthException;
+import com.smartdroneinspection.users.api.dto.request.InspectorRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
@@ -14,6 +15,7 @@ import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -27,6 +29,7 @@ public class OrganizationRegistrationService {
 
   private final OrganizationRepository organizations;
   private final UserRepository users;
+  private final InspectorProfileRepository inspectorProfiles;
   private final ProspectiveCustomerRegistrationRepository prospectiveRegistrations;
   private final org.springframework.context.ApplicationEventPublisher events;
   private final CustomerAirspacePolicy airspace;
@@ -34,6 +37,36 @@ public class OrganizationRegistrationService {
   private final PasswordPolicy passwordPolicy;
   private final SecurityAuditService audit;
   private final RegistrationOtpService registrationOtp;
+  private final PilotLicenseClassService pilotLicenseClasses;
+  private final InspectorApplicationService inspectorApplications;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public OrganizationRegistrationService(
+      OrganizationRepository organizations,
+      UserRepository users,
+      InspectorProfileRepository inspectorProfiles,
+      ProspectiveCustomerRegistrationRepository prospectiveRegistrations,
+      org.springframework.context.ApplicationEventPublisher events,
+      CustomerAirspacePolicy airspace,
+      PasswordEncoder passwords,
+      PasswordPolicy passwordPolicy,
+      SecurityAuditService audit,
+      RegistrationOtpService registrationOtp,
+      PilotLicenseClassService pilotLicenseClasses,
+      InspectorApplicationService inspectorApplications) {
+    this.organizations = organizations;
+    this.users = users;
+    this.inspectorProfiles = inspectorProfiles;
+    this.prospectiveRegistrations = prospectiveRegistrations;
+    this.events = events;
+    this.airspace = airspace;
+    this.passwords = passwords;
+    this.passwordPolicy = passwordPolicy;
+    this.audit = audit;
+    this.registrationOtp = registrationOtp;
+    this.pilotLicenseClasses = pilotLicenseClasses;
+    this.inspectorApplications = inspectorApplications;
+  }
 
   public OrganizationRegistrationService(
       OrganizationRepository organizations,
@@ -45,15 +78,19 @@ public class OrganizationRegistrationService {
       PasswordPolicy passwordPolicy,
       SecurityAuditService audit,
       RegistrationOtpService registrationOtp) {
-    this.organizations = organizations;
-    this.users = users;
-    this.prospectiveRegistrations = prospectiveRegistrations;
-    this.events = events;
-    this.airspace = airspace;
-    this.passwords = passwords;
-    this.passwordPolicy = passwordPolicy;
-    this.audit = audit;
-    this.registrationOtp = registrationOtp;
+    this(
+        organizations,
+        users,
+        null,
+        prospectiveRegistrations,
+        events,
+        airspace,
+        passwords,
+        passwordPolicy,
+        audit,
+        registrationOtp,
+        null,
+        null);
   }
 
   @Transactional
@@ -232,6 +269,131 @@ public class OrganizationRegistrationService {
             customer.getActorZone().name(),
             customer.getOrganizationId()));
   }
+
+  @Transactional
+  public UserResponse registerInspector(
+      InspectorRegistrationRequest request,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    throw new AuthException(
+        HttpStatus.GONE,
+        "INSPECTOR_REGISTRATION_REPLACED",
+        "Use the Inspector application workflow; accounts are created after Manager approval.");
+  }
+
+  @Transactional
+  public com.smartdroneinspection.users.api.dto.response.InspectorApplicationResponse
+      submitInspectorApplication(
+          com.smartdroneinspection.users.api.dto.request.InspectorApplicationSubmissionRequest
+              request,
+          String ipAddress,
+          String userAgent,
+          String correlationId) {
+    if (inspectorApplications == null) {
+      throw new IllegalStateException("Inspector application workflow is not configured");
+    }
+    return inspectorApplications.submit(request, ipAddress, userAgent, correlationId);
+  }
+
+  /* retired direct user creation path
+  @Transactional
+  public UserResponse registerInspector(
+      InspectorRegistrationRequest request,
+      String ipAddress,
+      String userAgent,
+      String correlationId) {
+    String email = User.normalizeEmail(request.email());
+    String fullName = request.fullName().trim();
+
+    if (users.findByNormalizedEmail(email).isPresent()) {
+      throw new AuthException(
+          HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already in use.");
+    }
+    if (pilotLicenseClasses == null) {
+      throw new IllegalStateException("Pilot license class catalog is not configured");
+    }
+    String pilotLicenseClass = pilotLicenseClasses.requireActiveName(request.pilotLicenseClass());
+    passwordPolicy.validate(request.password(), email, fullName);
+    if (registrationOtp.isReady()) {
+      if (request.otpChallengeToken() == null
+          || request.otpChallengeToken().isBlank()
+          || request.otpCode() == null
+          || request.otpCode().isBlank()) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "OTP_REQUIRED",
+            "Mã xác thực OTP là bắt buộc để đăng ký tài khoản.");
+      }
+      registrationOtp.verify(request.otpChallengeToken(), request.otpCode(), email);
+    }
+
+    User inspector =
+        new User(
+            email,
+            fullName,
+            request.phoneNumber() != null && !request.phoneNumber().isBlank()
+                ? request.phoneNumber().trim()
+                : null,
+            null,
+            passwords.encode(request.password()),
+            UserStatus.ACTIVE,
+            ActorZone.INSPECTOR_PARTNER,
+            null);
+    inspector.setOtpVerified(true);
+    inspector.addRole(UserRole.INSPECTOR);
+    inspector = users.saveAndFlush(inspector);
+
+    if (inspectorProfiles != null) {
+      InspectorProfile profile = new InspectorProfile(inspector.getId());
+      profile.setOnboardingStatus("PENDING_REVIEW");
+      profile.updatePersonalDetails(
+          request.citizenId() != null && !request.citizenId().isBlank()
+              ? request.citizenId().trim()
+              : null,
+          null,
+          request.address() != null && !request.address().isBlank()
+              ? request.address().trim()
+              : null,
+          null);
+      if (request.pilotLicenseNumber() != null && !request.pilotLicenseNumber().isBlank()) {
+        profile.updatePilotLicense(
+            request.pilotLicenseNumber().trim(),
+            pilotLicenseClass,
+            request.pilotLicenseExpiresAt(),
+            null);
+      }
+      inspectorProfiles.saveAndFlush(profile);
+    }
+
+    audit.record(
+        null,
+        inspector.getId(),
+        "INSPECTOR_PARTNER_SELF_REGISTRATION",
+        "SUCCESS",
+        ipAddress,
+        userAgent,
+        correlationId);
+
+    return new UserResponse(
+        inspector.getId(),
+        inspector.getEmail(),
+        inspector.getFullName(),
+        inspector.getPhoneNumber(),
+        inspector.getAvatarUrl(),
+        inspector.roleValues(),
+        inspector.getActorZone().name(),
+        inspector.getOrganizationId(),
+        inspector.isVisionFallbackEnabled(),
+        request.pilotLicenseNumber() != null && !request.pilotLicenseNumber().isBlank()
+            ? request.pilotLicenseNumber().trim()
+            : null,
+        pilotLicenseClass,
+        request.pilotLicenseExpiresAt(),
+        null);
+  }
+
+  */
 
   private void validateFirstAsset(
       com.smartdroneinspection.users.api.dto.request.FirstAssetRegistrationRequest firstAsset) {

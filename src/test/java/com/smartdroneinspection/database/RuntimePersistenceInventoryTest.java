@@ -51,6 +51,8 @@ class RuntimePersistenceInventoryTest {
           "maintenance_acceptance_decisions",
           "repair_knowledge_chunks",
           "inspector_profiles",
+          "pilot_license_classes",
+          "inspector_applications",
           "otp_challenges",
           "service_requests",
           "service_request_messages",
@@ -91,6 +93,7 @@ class RuntimePersistenceInventoryTest {
           "maintenance_acceptance_decisions",
           "audit_events",
           "notifications",
+          "platform_ai_settings",
           "repair_knowledge_chunks",
           "service_requests",
           "service_request_messages",
@@ -101,6 +104,8 @@ class RuntimePersistenceInventoryTest {
           "inspector_payouts",
           "inspection_finance_settings",
           "inspector_profiles",
+          "pilot_license_classes",
+          "inspector_applications",
           "otp_challenges",
           "inspector_flight_logs");
 
@@ -134,7 +139,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(40);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(43);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))
