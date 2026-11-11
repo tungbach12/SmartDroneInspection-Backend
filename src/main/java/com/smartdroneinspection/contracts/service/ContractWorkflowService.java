@@ -420,17 +420,20 @@ public class ContractWorkflowService
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.firstOccurrenceStartAt());
     }
-    if (!partners.isEligibleInspector(input.inspectorId(), input.firstOccurrenceStartAt())) {
+    List<Instant> proposedOccurrenceStarts =
+        proposedOccurrenceStarts(request, input.firstOccurrenceStartAt());
+    if (!partners.isEligibleInspectorForAllDates(input.inspectorId(), proposedOccurrenceStarts)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_INSPECTOR",
-          "Selected Inspector is not an eligible registered partner");
+          "Selected Inspector must have a valid partner profile and pilot license for every scheduled occurrence");
     }
-    if (!partners.isEligibleDrone(input.droneId(), input.inspectorId())) {
+    if (!partners.isEligibleDroneForAllDates(
+        input.droneId(), input.inspectorId(), proposedOccurrenceStarts)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_DRONE",
-          "Selected drone must be approved, have valid registration at the scheduled time, and match the Inspector's pilot license class (Class B required for MTOW >= 2 kg)");
+          "Selected drone must remain approved and registered, and the Inspector must remain license-qualified, for every scheduled occurrence");
     }
 
     // New inspection services use VND and require all 3 settlement rates to be configured.
@@ -492,6 +495,7 @@ public class ContractWorkflowService
       throw failure(
           HttpStatus.CONFLICT, "QUOTE_STALE", "The quote changed. Review it before accepting.");
     }
+    validatePartnerEligibilityForQuote(request, quote);
     try {
       request.acceptQuote(quote, actor.id());
       requests.saveAndFlush(request);
@@ -1383,6 +1387,7 @@ public class ContractWorkflowService
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, quote.getFirstOccurrenceStartAt());
     }
+    validatePartnerEligibilityForQuote(request, quote);
 
     int count = request.getRequestType() == RequestType.ONE_TIME ? 1 : 0;
     if (request.getRequestType() == RequestType.RECURRING && request.getOccurrenceCount() != null) {
@@ -1492,6 +1497,59 @@ public class ContractWorkflowService
           "RECURRENCE_INVALID",
           "The recurring request must contain at least two inspection occurrences");
     }
+  }
+
+  private void validatePartnerEligibilityForQuote(
+      ServiceRequest request, ServiceRequestQuote quote) {
+    List<Instant> starts = proposedOccurrenceStarts(request, quote.getFirstOccurrenceStartAt());
+    if (!partners.isEligibleInspectorForAllDates(quote.getInspectorId(), starts)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_PARTNER_INSPECTOR",
+          "The selected Inspector's pilot license must remain valid for every scheduled occurrence");
+    }
+    if (!partners.isEligibleDroneForAllDates(quote.getDroneId(), quote.getInspectorId(), starts)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_PARTNER_DRONE",
+          "The selected drone and Inspector must remain eligible for every scheduled occurrence");
+    }
+  }
+
+  private List<Instant> proposedOccurrenceStarts(ServiceRequest request, Instant quotedStart) {
+    if (request.getRequestType() == RequestType.ONE_TIME) {
+      return List.of(quotedStart);
+    }
+
+    ZoneId zone = ZoneId.of(request.getTimezone());
+    LocalDate firstDate = quotedStart.atZone(zone).toLocalDate();
+    LocalTime firstTime = quotedStart.atZone(zone).toLocalTime();
+    LocalDate lastDate =
+        request.getOccurrenceCount() != null
+            ? recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1)
+            : request.getRecurrenceEndDate();
+    if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The recurring schedule contract term has changed; create a new request with a valid end date");
+    }
+
+    List<Instant> starts = new java.util.ArrayList<>();
+    for (int index = 0; index < 100; index++) {
+      LocalDate date = recurrenceDate(request, firstDate, index);
+      if (date.isAfter(lastDate)) {
+        break;
+      }
+      starts.add(date.atTime(firstTime).atZone(zone).toInstant());
+    }
+    if (starts.isEmpty() || starts.size() > 100) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The recurring request must contain between 2 and 100 inspection occurrences");
+    }
+    return List.copyOf(starts);
   }
 
   private int estimateOccurrenceCount(ServiceRequest request, ServiceRequestQuote quote) {

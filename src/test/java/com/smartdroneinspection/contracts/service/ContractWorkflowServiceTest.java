@@ -119,6 +119,8 @@ class ContractWorkflowServiceTest {
                 new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), null, "Manager")));
     when(partners.isEligibleInspector(eq(inspectorId), any(Instant.class))).thenReturn(true);
     when(partners.isEligibleDrone(droneId, inspectorId)).thenReturn(true);
+    when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(true);
+    when(partners.isEligibleDroneForAllDates(eq(droneId), eq(inspectorId), any())).thenReturn(true);
     when(quotes.findWithLockByRequestId(any())).thenReturn(Optional.empty());
   }
 
@@ -247,6 +249,137 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void rejectsRecurringQuoteWhenPilotLicenseExpiresBeforeLastOccurrence() {
+    UUID requestId = UUID.randomUUID();
+    LocalDate requestedFrom = LocalDate.of(2026, 12, 4);
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            requestedFrom,
+            LocalDate.of(2028, 6, 4),
+            "Asia/Ho_Chi_Minh",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "MONTH",
+            6,
+            4,
+            null);
+    setRequestId(request, requestId);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
+    when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(false);
+
+    assertThatThrownBy(
+            () ->
+                service.saveQuote(
+                    managerId,
+                    requestId,
+                    quote(
+                        Instant.parse("2026-12-04T01:00:00Z"),
+                        Instant.parse("2026-12-04T03:00:00Z"))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(
+            "valid partner profile and pilot license for every scheduled occurrence");
+    verify(quotes, never()).saveAndFlush(any(ServiceRequestQuote.class));
+    verify(requests, never()).saveAndFlush(any(ServiceRequest.class));
+  }
+
+  @Test
+  void acceptsRecurringQuoteWhenInspectorLicenseCoversEveryOccurrence() {
+    UUID requestId = UUID.randomUUID();
+    LocalDate requestedFrom = LocalDate.of(2026, 12, 4);
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            requestedFrom,
+            LocalDate.of(2028, 6, 4),
+            "Asia/Ho_Chi_Minh",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "MONTH",
+            6,
+            4,
+            null);
+    setRequestId(request, requestId);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
+    when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(true);
+    when(partners.isEligibleDroneForAllDates(eq(droneId), eq(inspectorId), any())).thenReturn(true);
+    when(quotes.saveAndFlush(any(ServiceRequestQuote.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(requests.saveAndFlush(any(ServiceRequest.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    service.saveQuote(
+        managerId,
+        requestId,
+        quote(Instant.parse("2026-12-04T01:00:00Z"), Instant.parse("2026-12-04T03:00:00Z")));
+
+    ArgumentCaptor<ServiceRequestQuote> captor = ArgumentCaptor.forClass(ServiceRequestQuote.class);
+    verify(quotes).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().getRequestId()).isEqualTo(requestId);
+    ArgumentCaptor<List<Instant>> startsCaptor = ArgumentCaptor.forClass(List.class);
+    verify(partners).isEligibleInspectorForAllDates(eq(inspectorId), startsCaptor.capture());
+    assertThat(startsCaptor.getValue())
+        .containsExactly(
+            Instant.parse("2026-12-04T01:00:00Z"),
+            Instant.parse("2027-06-04T01:00:00Z"),
+            Instant.parse("2027-12-04T01:00:00Z"),
+            Instant.parse("2028-06-04T01:00:00Z"));
+  }
+
+  @Test
+  void rejectsAcceptingRecurringQuoteIfPilotLicenseExpiresBeforeLastOccurrence() {
+    UUID requestId = UUID.randomUUID();
+    LocalDate requestedFrom = LocalDate.of(2026, 12, 4);
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            requestedFrom,
+            LocalDate.of(2028, 6, 4),
+            "Asia/Ho_Chi_Minh",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "MONTH",
+            6,
+            4,
+            null);
+    request.markQuoted();
+    setRequestId(request, requestId);
+    ServiceRequestQuote currentQuote =
+        quoteEntity(
+            requestId,
+            Instant.parse("2026-12-04T01:00:00Z"),
+            Instant.parse("2026-12-04T03:00:00Z"));
+    ReflectionTestUtils.setField(currentQuote, "rowVersion", 3L);
+    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.of(currentQuote));
+    when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(false);
+
+    assertThatThrownBy(
+            () -> service.acceptQuote(customerId, requestId, new AcceptServiceQuoteRequest(3L)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("pilot license must remain valid for every scheduled occurrence");
+    verify(requests, never()).saveAndFlush(any(ServiceRequest.class));
+    verify(occurrences, never()).save(any(ServiceRequestOccurrence.class));
+  }
+
+  @Test
   void managerCreatesSingleQuoteForOpenRequest() {
     UUID requestId = UUID.randomUUID();
     ServiceRequest request =
@@ -318,6 +451,8 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     ReflectionTestUtils.setField(currentQuote, "rowVersion", 3L);
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.of(currentQuote));
+    when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(true);
+    when(partners.isEligibleDroneForAllDates(eq(droneId), eq(inspectorId), any())).thenReturn(true);
 
     assertThatThrownBy(
             () -> service.acceptQuote(customerId, requestId, new AcceptServiceQuoteRequest(2L)))

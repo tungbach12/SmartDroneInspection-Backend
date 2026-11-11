@@ -181,6 +181,20 @@ public class PartnerRegistryService {
   }
 
   @Transactional(readOnly = true)
+  public boolean isEligibleInspectorForAllDates(
+      UUID inspectorUserId, List<Instant> scheduledStarts) {
+    if (scheduledStarts == null || scheduledStarts.isEmpty()) {
+      return false;
+    }
+    UserAccess.ActiveUser inspector =
+        users
+            .findActiveUser(inspectorUserId)
+            .filter(UserAccess.ActiveUser::isInspectorPartner)
+            .orElse(null);
+    return inspector != null && scheduledStarts.stream().allMatch(inspector::hasValidPilotLicense);
+  }
+
+  @Transactional(readOnly = true)
   public boolean isEligibleDrone(UUID droneId, UUID inspectorUserId) {
     return isEligibleDrone(droneId, inspectorUserId, Instant.now());
   }
@@ -207,6 +221,39 @@ public class PartnerRegistryService {
                     || drone.getRegistrationExpiresAt().isAfter(checkTime))
         .filter(drone -> inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense()))
         .isPresent();
+  }
+
+  @Transactional(readOnly = true)
+  public boolean isEligibleDroneForAllDates(
+      UUID droneId, UUID inspectorUserId, List<Instant> scheduledStarts) {
+    if (scheduledStarts == null || scheduledStarts.isEmpty()) {
+      return false;
+    }
+    Drone drone =
+        drones
+            .findById(droneId)
+            .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
+            .filter(Drone::isEligibleForAssignment)
+            .orElse(null);
+    UserAccess.ActiveUser inspector =
+        users
+            .findActiveUser(inspectorUserId)
+            .filter(UserAccess.ActiveUser::isInspectorPartner)
+            .orElse(null);
+    if (drone == null || inspector == null) {
+      return false;
+    }
+    boolean droneClassQualified =
+        inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense());
+    if (!droneClassQualified) {
+      return false;
+    }
+    return scheduledStarts.stream()
+        .allMatch(
+            start ->
+                inspector.hasValidPilotLicense(start)
+                    && (drone.getRegistrationExpiresAt() == null
+                        || drone.getRegistrationExpiresAt().isAfter(start)));
   }
 
   @Transactional(readOnly = true)
