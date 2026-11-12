@@ -57,10 +57,10 @@ class FullDatabaseSchemaMigrationTest {
             "service_payments",
             "inspector_payouts",
             "inspection_finance_settings",
+            "platform_ai_settings",
             "inspector_flight_logs",
             "inspector_profiles",
             "otp_challenges",
-            "platform_ai_settings",
             "event_publication",
             "flyway_schema_history");
 
@@ -130,12 +130,20 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsUpToV33AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV39AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(36);
-    assertThat(versions.getLast()).isEqualTo("36");
+    assertThat(versions).hasSize(39);
+    assertThat(versions.getLast()).isEqualTo("39");
+
+    String recurrenceConstraint =
+        jdbcTemplate.queryForObject(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_service_requests_recurrence'",
+            String.class);
+    assertThat(recurrenceConstraint)
+        .contains(
+            "MONTH", "120", "DAY", "WEEK", "occurrence_count >= 2", "occurrence_count <= 100");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -176,6 +184,23 @@ class FullDatabaseSchemaMigrationTest {
         "payout_status",
         "payout_reference",
         "payout_recorded_at");
+
+    List<String> quoteColumns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'service_request_quotes'",
+            String.class);
+    assertThat(quoteColumns)
+        .contains("request_id", "updated_at", "updated_by_user_id", "row_version")
+        .doesNotContain("version_no");
+
+    List<String> requestColumns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'service_requests'",
+            String.class);
+    assertThat(requestColumns)
+        .contains(
+            "accepted_quote_id", "accepted_at", "accepted_by_user_id", "accepted_terms_snapshot")
+        .doesNotContain("accepted_quote_version");
 
     List<String> otpColumns =
         jdbcTemplate.queryForList(

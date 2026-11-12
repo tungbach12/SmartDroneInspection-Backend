@@ -71,7 +71,8 @@ class VnPayWebhookAndGatewayTest {
             null,
             Optional.empty(),
             null,
-            vnPayGateway);
+            vnPayGateway,
+            null);
     VnPayWebhookController controller = new VnPayWebhookController(vnPayGateway, workflowService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
