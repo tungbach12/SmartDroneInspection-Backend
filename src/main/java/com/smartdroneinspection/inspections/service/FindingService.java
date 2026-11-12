@@ -847,7 +847,6 @@ public class FindingService {
         finding.getStatus(),
         finding.getModelName(),
         finding.getConfidence(),
-        finding.getForwardedToMaintenanceAt(),
         finding.isDeleted(),
         finding.getCreatedAt());
   }

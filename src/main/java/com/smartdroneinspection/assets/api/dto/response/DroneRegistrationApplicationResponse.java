@@ -2,7 +2,10 @@ package com.smartdroneinspection.assets.api.dto.response;
 
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
 import com.smartdroneinspection.users.UserAccess;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record DroneRegistrationApplicationResponse(
@@ -20,6 +23,13 @@ public record DroneRegistrationApplicationResponse(
     Instant registrationExpiresAt,
     String ownershipFileKey,
     String inspectionFileKey,
+    Map<String, String> documentFiles,
+    List<String> imageFileKeys,
+    BigDecimal maxWindResistanceMps,
+    String opticalZoomLevel,
+    boolean hasThermalCamera,
+    boolean hasRtk,
+    List<String> features,
     String status,
     String reviewNote,
     UUID reviewedByUserId,
@@ -57,6 +67,13 @@ public record DroneRegistrationApplicationResponse(
         application.getRegistrationExpiresAt(),
         application.getOwnershipFileKey(),
         application.getInspectionFileKey(),
+        application.getDocumentFiles(),
+        application.getImageFileKeys(),
+        application.getMaxWindResistanceMps(),
+        application.getOpticalZoomLevel(),
+        application.isHasThermalCamera(),
+        application.isHasRtk(),
+        application.getFeatures(),
         application.getStatus(),
         application.getReviewNote(),
         application.getReviewedByUserId(),

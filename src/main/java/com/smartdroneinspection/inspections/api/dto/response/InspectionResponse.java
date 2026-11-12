@@ -28,7 +28,6 @@ public record InspectionResponse(
     Instant createdAt,
     Instant updatedAt,
     String inspectionType,
-    UUID workOrderId,
     UUID sourceInspectionId) {
 
   public InspectionResponse {
@@ -78,7 +77,6 @@ public record InspectionResponse(
         createdAt,
         updatedAt,
         "INITIAL",
-        null,
         null);
   }
 
@@ -107,7 +105,6 @@ public record InspectionResponse(
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        inspection.getWorkOrderId(),
-        inspection.getSourceInspectionId());
+        null);
   }
 }

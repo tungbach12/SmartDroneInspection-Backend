@@ -34,6 +34,8 @@ class FullDatabaseSchemaMigrationTest {
             "auth_sessions",
             "prospective_customer_registrations",
             "drone_registration_applications",
+            "drone_document_configs",
+            "drone_feature_configs",
             "drones",
             "asset_categories",
             "checklist_templates",
@@ -45,19 +47,8 @@ class FullDatabaseSchemaMigrationTest {
             "evidence",
             "findings",
             "inspection_reports",
-            "maintenance_work_orders",
-            "maintenance_tasks",
-            "maintenance_team_members",
-            "maintenance_estimate_versions",
-            "maintenance_cost_lines",
-            "maintenance_change_orders",
-            "maintenance_work_logs",
-            "maintenance_reports",
-            "maintenance_acceptance_decisions",
             "audit_events",
             "notifications",
-            "reinspection_defect_verifications",
-            "repair_knowledge_chunks",
             "service_requests",
             "service_request_messages",
             "service_request_quotes",
@@ -73,7 +64,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(43);
+    assertThat(expected).hasSize(34);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -86,7 +77,18 @@ class FullDatabaseSchemaMigrationTest {
             "inspector_partner_applications",
             "login_otp_challenges",
             "registration_otp_challenges",
-            "password_reset_otp_challenges");
+            "password_reset_otp_challenges",
+            "maintenance_work_orders",
+            "maintenance_tasks",
+            "maintenance_team_members",
+            "maintenance_estimate_versions",
+            "maintenance_cost_lines",
+            "maintenance_change_orders",
+            "maintenance_work_logs",
+            "maintenance_reports",
+            "maintenance_acceptance_decisions",
+            "reinspection_defect_verifications",
+            "repair_knowledge_chunks");
     assertThat(actual).contains("inspector_flight_logs");
   }
 
@@ -124,17 +126,16 @@ class FullDatabaseSchemaMigrationTest {
             "ix_notifications_recipient_status",
             "uq_users_id_organization",
             "uq_assets_id_organization");
-    assertThat(constraints)
-        .contains("fk_inspections_asset_tenant", "fk_maintenance_work_orders_asset_tenant");
+    assertThat(constraints).contains("fk_inspections_asset_tenant");
   }
 
   @Test
-  void appliesAllMigrationsThroughV35AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV39AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(35);
-    assertThat(versions.getLast()).isEqualTo("35");
+    assertThat(versions).hasSize(39);
+    assertThat(versions.getLast()).isEqualTo("39");
 
     String recurrenceConstraint =
         jdbcTemplate.queryForObject(

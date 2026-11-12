@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.smartdroneinspection.assets.repository.DroneDocumentConfigRepository;
 import com.smartdroneinspection.assets.service.DroneEvidenceUploadService;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -32,7 +33,11 @@ class DroneEvidenceUploadServiceTest {
     UserAccess users = org.mockito.Mockito.mock(UserAccess.class);
     UUID inspectorId = UUID.randomUUID();
     when(users.findActiveUser(inspectorId)).thenReturn(Optional.of(activeInspector(inspectorId)));
-    var service = new DroneEvidenceUploadService(Optional.of(store), users);
+    var service =
+        new DroneEvidenceUploadService(
+            Optional.of(store),
+            users,
+            org.mockito.Mockito.mock(DroneDocumentConfigRepository.class));
 
     var response = service.upload(inspectorId, "OWNERSHIP", file(PDF));
 
@@ -59,7 +64,11 @@ class DroneEvidenceUploadServiceTest {
             Optional.of(
                 new UserAccess.ActiveUser(
                     userId, Set.of("CUSTOMER"), null, "CUSTOMER_ORGANIZATION")));
-    var service = new DroneEvidenceUploadService(Optional.of(store), users);
+    var service =
+        new DroneEvidenceUploadService(
+            Optional.of(store),
+            users,
+            org.mockito.Mockito.mock(DroneDocumentConfigRepository.class));
 
     assertThatThrownBy(() -> service.upload(userId, "OWNERSHIP", file(PDF)))
         .isInstanceOf(AuthException.class);
@@ -71,7 +80,9 @@ class DroneEvidenceUploadServiceTest {
     EvidenceObjectStore store = org.mockito.Mockito.mock(EvidenceObjectStore.class);
     var service =
         new DroneEvidenceUploadService(
-            Optional.of(store), org.mockito.Mockito.mock(UserAccess.class));
+            Optional.of(store),
+            org.mockito.Mockito.mock(UserAccess.class),
+            org.mockito.Mockito.mock(DroneDocumentConfigRepository.class));
 
     assertThatThrownBy(() -> service.upload(UUID.randomUUID(), "OTHER", file(PDF)))
         .isInstanceOf(AuthException.class);
@@ -84,7 +95,11 @@ class DroneEvidenceUploadServiceTest {
     UserAccess users = org.mockito.Mockito.mock(UserAccess.class);
     UUID inspectorId = UUID.randomUUID();
     when(users.findActiveUser(inspectorId)).thenReturn(Optional.of(activeInspector(inspectorId)));
-    var service = new DroneEvidenceUploadService(Optional.of(store), users);
+    var service =
+        new DroneEvidenceUploadService(
+            Optional.of(store),
+            users,
+            org.mockito.Mockito.mock(DroneDocumentConfigRepository.class));
 
     assertThatThrownBy(
             () ->
@@ -92,7 +107,7 @@ class DroneEvidenceUploadServiceTest {
                     inspectorId,
                     "REGISTRATION",
                     new MockMultipartFile(
-                        "file", "fake.pdf", "application/pdf", new byte[] {1, 2, 3})))
+                        "file", "fake.exe", "application/octet-stream", new byte[] {1, 2, 3})))
         .isInstanceOf(BusinessException.class);
     verifyNoInteractions(store);
   }
@@ -137,7 +152,11 @@ class DroneEvidenceUploadServiceTest {
             + inspectorId
             + "/evidence/REGISTRATION/00000000-0000-0000-0000-000000000001.pdf";
     when(store.open(key)).thenReturn(new ByteArrayInputStream(PDF));
-    var service = new DroneEvidenceUploadService(Optional.of(store), users);
+    var service =
+        new DroneEvidenceUploadService(
+            Optional.of(store),
+            users,
+            org.mockito.Mockito.mock(DroneDocumentConfigRepository.class));
 
     var content = service.open(adminId, key);
 

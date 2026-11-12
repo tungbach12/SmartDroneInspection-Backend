@@ -30,6 +30,8 @@ public interface DroneRepository extends JpaRepository<Drone, UUID> {
 
   boolean existsBySerialNumberIgnoreCase(String serialNumber);
 
+  Optional<Drone> findBySerialNumberIgnoreCase(String serialNumber);
+
   boolean existsByInspectorOwnerIdAndSerialNumber(UUID inspectorOwnerId, String serialNumber);
 
   List<Drone> findByOrganizationIdAndServiceabilityOrderBySerialNumberAsc(
