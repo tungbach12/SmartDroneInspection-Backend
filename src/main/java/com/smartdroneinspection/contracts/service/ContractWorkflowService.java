@@ -4,12 +4,15 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CancelOccurrenceRefundRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.InitiateOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
-import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundHoldRequest;
+import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocationRequest;
+import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
-import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessageResponse;
@@ -26,6 +29,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.Occurr
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
+import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRefundRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
@@ -86,10 +90,16 @@ public class ContractWorkflowService
   private final PayOSGateway payOSGateway;
   private final VnPayGateway vnPayGateway;
   private Optional<ServiceRefundRepository> refundRepository = Optional.empty();
+  private Optional<InspectorReceivableRepository> receivables = Optional.empty();
 
   @org.springframework.beans.factory.annotation.Autowired
   void setRefundRepository(Optional<ServiceRefundRepository> refundRepository) {
     this.refundRepository = refundRepository != null ? refundRepository : Optional.empty();
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  void setReceivables(Optional<InspectorReceivableRepository> receivables) {
+    this.receivables = receivables != null ? receivables : Optional.empty();
   }
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -671,42 +681,161 @@ public class ContractWorkflowService
     return toResponse(request);
   }
 
-  /** Records an external refund that has already been transferred by an authorized Manager. */
   @Transactional
-  public ServiceRequestResponse recordOccurrenceRefund(
-      UUID actorId, UUID requestId, UUID occurrenceId, RecordOccurrenceRefundRequest input) {
+  public ServiceRequestResponse initiateOccurrenceRefund(
+      UUID actorId, UUID requestId, UUID occurrenceId, InitiateOccurrenceRefundRequest input) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
-    ServiceRequestOccurrence occurrence =
-        occurrences
-            .findWithLockById(occurrenceId)
-            .filter(value -> requestId.equals(value.getRequestId()))
-            .orElseThrow(
-                () ->
-                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    ServiceRequestOccurrence occurrence = requireOccurrenceLocked(requestId, occurrenceId);
     if (refundRepository.isPresent()
-        && refundRepository.get().existsByReferenceIgnoreCase(input.refundReference().trim())) {
+        && refundRepository
+            .get()
+            .existsByRequestReferenceIgnoreCase(input.requestReference().trim())) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REFUND_REQUEST_REFERENCE_DUPLICATE",
+          "Refund request reference has already been used");
+    }
+    try {
+      occurrence.initiateRefund(
+          input.amount(),
+          input.requestReference(),
+          input.reason(),
+          input.inspectorReceivableAmount(),
+          input.platformAbsorbedAmount(),
+          manager.id());
+      occurrences.saveAndFlush(occurrence);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "REFUND_INITIATION_INVALID", ex.getMessage());
+    }
+    return toResponse(request);
+  }
+
+  @Transactional
+  public ServiceRequestResponse completeOccurrenceRefund(
+      UUID actorId,
+      UUID requestId,
+      UUID occurrenceId,
+      UUID refundId,
+      CompleteOccurrenceRefundRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence = requireOccurrenceLocked(requestId, occurrenceId);
+    if (refundRepository.isPresent()
+        && refundRepository.get().existsByReferenceIgnoreCase(input.externalReference().trim())) {
       throw failure(
           HttpStatus.CONFLICT,
           "REFUND_REFERENCE_DUPLICATE",
-          "Refund reference has already been recorded");
+          "Refund transfer reference has already been recorded");
     }
     try {
-      occurrence.recordRefund(
-          input.amount(),
+      occurrence.completeRefund(
+          refundId,
           input.inspectorPayoutReduction(),
           input.platformCommissionAdjustment(),
           input.vatAdjustment(),
           input.tncnAdjustment(),
           input.platformAbsorbedAmount(),
-          input.refundReference(),
-          input.reason(),
-          manager.id());
+          input.externalReference(),
+          manager.id(),
+          requireReceivables());
       occurrences.saveAndFlush(occurrence);
     } catch (IllegalArgumentException | IllegalStateException ex) {
-      throw failure(HttpStatus.CONFLICT, "REFUND_INVALID", ex.getMessage());
+      throw failure(HttpStatus.CONFLICT, "REFUND_COMPLETION_INVALID", ex.getMessage());
     }
     return toResponse(request);
+  }
+
+  @Transactional
+  public ServiceRequestResponse cancelOccurrenceRefund(
+      UUID actorId,
+      UUID requestId,
+      UUID occurrenceId,
+      UUID refundId,
+      CancelOccurrenceRefundRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence = requireOccurrenceLocked(requestId, occurrenceId);
+    try {
+      occurrence.cancelRefund(refundId, input.reason(), manager.id());
+      occurrences.saveAndFlush(occurrence);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "REFUND_CANCELLATION_INVALID", ex.getMessage());
+    }
+    return toResponse(request);
+  }
+
+  @Transactional
+  public ServiceRequestResponse reconcileRefundAllocation(
+      UUID actorId,
+      UUID requestId,
+      UUID occurrenceId,
+      UUID refundId,
+      ReconcileRefundAllocationRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence = requireOccurrenceLocked(requestId, occurrenceId);
+    try {
+      occurrence.reconcileRefundAllocation(
+          refundId,
+          input.inspectorReceivableAmount(),
+          input.platformAbsorbedPlanAmount(),
+          input.inspectorPayoutReduction(),
+          input.platformCommissionAdjustment(),
+          input.vatAdjustment(),
+          input.tncnAdjustment(),
+          input.platformAbsorbedAmount(),
+          manager.id(),
+          input.reconciliationReference(),
+          input.note(),
+          requireReceivables());
+      occurrences.saveAndFlush(occurrence);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "REFUND_ALLOCATION_INVALID", ex.getMessage());
+    }
+    return toResponse(request);
+  }
+
+  @Transactional
+  public ServiceRequestResponse recordInspectorReceivableRecovery(
+      UUID actorId,
+      UUID requestId,
+      UUID occurrenceId,
+      UUID receivableId,
+      RecordInspectorReceivableRecoveryRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence = requireOccurrenceLocked(requestId, occurrenceId);
+    try {
+      occurrence.recordReceivableRecovery(
+          receivableId,
+          input.amount(),
+          input.externalReference(),
+          input.note(),
+          manager.id(),
+          requireReceivables());
+      occurrences.saveAndFlush(occurrence);
+    } catch (IllegalArgumentException | IllegalStateException ex) {
+      throw failure(HttpStatus.CONFLICT, "RECEIVABLE_RECOVERY_INVALID", ex.getMessage());
+    }
+    return toResponse(request);
+  }
+
+  private ServiceRequestOccurrence requireOccurrenceLocked(UUID requestId, UUID occurrenceId) {
+    return occurrences
+        .findWithLockById(occurrenceId)
+        .filter(value -> requestId.equals(value.getRequestId()))
+        .orElseThrow(
+            () -> failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+  }
+
+  private InspectorReceivableRepository requireReceivables() {
+    return receivables.orElseThrow(
+        () ->
+            failure(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "RECEIVABLES_UNAVAILABLE",
+                "Inspector receivables are not configured"));
   }
 
   /** Manager cancels the saved unpaid gateway order before switching gateway or retrying. */
@@ -765,42 +894,6 @@ public class ContractWorkflowService
     return toResponse(request);
   }
 
-  /** Manager reconciles held Inspector payout after independently resolving the customer refund. */
-  @Transactional
-  public ServiceRequestResponse reconcileRefundHold(
-      UUID actorId, UUID requestId, UUID occurrenceId, ReconcileRefundHoldRequest input) {
-    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
-    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
-    ServiceRequestOccurrence occurrence =
-        occurrences
-            .findWithLockById(occurrenceId)
-            .filter(value -> requestId.equals(value.getRequestId()))
-            .orElseThrow(
-                () ->
-                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
-    if (!occurrence.isPayoutHeldForRefund()) {
-      throw failure(
-          HttpStatus.CONFLICT, "PAYOUT_NOT_HELD", "Payout is not held for refund reconciliation");
-    }
-    try {
-      occurrence.reconcileRefundHold(
-          manager.id(),
-          input.finalPayoutAmount(),
-          input.payoutReference(),
-          input.reconciliationReference(),
-          input.note(),
-          input.inspectorPayoutReduction(),
-          input.platformCommissionAdjustment(),
-          input.vatAdjustment(),
-          input.tncnAdjustment(),
-          input.platformAbsorbedAmount());
-      occurrences.saveAndFlush(occurrence);
-    } catch (IllegalArgumentException | IllegalStateException ex) {
-      throw failure(HttpStatus.CONFLICT, "REFUND_RECONCILIATION_INVALID", ex.getMessage());
-    }
-    return toResponse(request);
-  }
-
   /** Manager manually records external bank transfer payout to the assigned Inspector. */
   @Transactional
   public ServiceRequestResponse recordOccurrencePayout(
@@ -855,7 +948,7 @@ public class ContractWorkflowService
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
-      return OccurrenceFinanceResponse.forManager(occurrence);
+      return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
     }
     if (actor.hasRole(Roles.CUSTOMER)
         && actor.organizationId() != null

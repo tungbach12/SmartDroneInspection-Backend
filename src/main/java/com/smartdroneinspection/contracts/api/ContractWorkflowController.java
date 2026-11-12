@@ -1,13 +1,16 @@
 package com.smartdroneinspection.contracts.api;
 
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CancelOccurrenceRefundRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.InitiateOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.PostServiceRequestMessage;
-import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundHoldRequest;
+import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocationRequest;
+import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
-import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
@@ -186,14 +189,61 @@ public class ContractWorkflowController {
         workflow.confirmOccurrencePayment(actorId(jwt), requestId, occurrenceId, request));
   }
 
-  @PostMapping("/{requestId}/occurrences/{occurrenceId}/record-refund")
-  public ApiResponse<ServiceRequestResponse> recordOccurrenceRefund(
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/refunds")
+  public ApiResponse<ServiceRequestResponse> initiateOccurrenceRefund(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID requestId,
       @PathVariable UUID occurrenceId,
-      @Valid @RequestBody RecordOccurrenceRefundRequest request) {
+      @Valid @RequestBody InitiateOccurrenceRefundRequest request) {
     return ApiResponse.success(
-        workflow.recordOccurrenceRefund(actorId(jwt), requestId, occurrenceId, request));
+        workflow.initiateOccurrenceRefund(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/refunds/{refundId}/complete")
+  public ApiResponse<ServiceRequestResponse> completeOccurrenceRefund(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @PathVariable UUID refundId,
+      @Valid @RequestBody CompleteOccurrenceRefundRequest request) {
+    return ApiResponse.success(
+        workflow.completeOccurrenceRefund(
+            actorId(jwt), requestId, occurrenceId, refundId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/refunds/{refundId}/cancel")
+  public ApiResponse<ServiceRequestResponse> cancelOccurrenceRefund(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @PathVariable UUID refundId,
+      @Valid @RequestBody CancelOccurrenceRefundRequest request) {
+    return ApiResponse.success(
+        workflow.cancelOccurrenceRefund(actorId(jwt), requestId, occurrenceId, refundId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/refunds/{refundId}/reconcile-allocation")
+  public ApiResponse<ServiceRequestResponse> reconcileRefundAllocation(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @PathVariable UUID refundId,
+      @Valid @RequestBody ReconcileRefundAllocationRequest request) {
+    return ApiResponse.success(
+        workflow.reconcileRefundAllocation(
+            actorId(jwt), requestId, occurrenceId, refundId, request));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/receivables/{receivableId}/recover")
+  public ApiResponse<ServiceRequestResponse> recordReceivableRecovery(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @PathVariable UUID receivableId,
+      @Valid @RequestBody RecordInspectorReceivableRecoveryRequest request) {
+    return ApiResponse.success(
+        workflow.recordInspectorReceivableRecovery(
+            actorId(jwt), requestId, occurrenceId, receivableId, request));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/cancel-unpaid-order")
@@ -203,16 +253,6 @@ public class ContractWorkflowController {
       @PathVariable UUID occurrenceId) {
     return ApiResponse.success(
         workflow.cancelUnpaidPaymentOrder(actorId(jwt), requestId, occurrenceId));
-  }
-
-  @PostMapping("/{requestId}/occurrences/{occurrenceId}/reconcile-refund-hold")
-  public ApiResponse<ServiceRequestResponse> reconcileRefundHold(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID requestId,
-      @PathVariable UUID occurrenceId,
-      @Valid @RequestBody ReconcileRefundHoldRequest request) {
-    return ApiResponse.success(
-        workflow.reconcileRefundHold(actorId(jwt), requestId, occurrenceId, request));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/record-payout")

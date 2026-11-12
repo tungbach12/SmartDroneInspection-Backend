@@ -31,6 +31,7 @@ public record OccurrenceFinanceResponse(
     BigDecimal refundedAmount,
     String refundStatus,
     java.util.List<RefundSummary> refunds,
+    java.util.List<InspectorReceivableSummary> inspectorReceivables,
     Instant paymentConfirmedAt,
     UUID paymentConfirmedByUserId,
     OccurrencePayoutStatus payoutStatus,
@@ -56,6 +57,24 @@ public record OccurrenceFinanceResponse(
       String reference,
       Instant confirmedAt) {}
 
+  public record InspectorReceivableSummary(
+      UUID id,
+      UUID refundId,
+      BigDecimal assessedAmount,
+      BigDecimal recoveredAmount,
+      BigDecimal outstandingAmount,
+      String sourceReference,
+      String reason,
+      java.util.List<InspectorReceivableRecoverySummary> recoveries) {}
+
+  public record InspectorReceivableRecoverySummary(
+      UUID id,
+      BigDecimal amount,
+      String externalReference,
+      String note,
+      UUID recordedByUserId,
+      Instant recordedAt) {}
+
   public record InspectorPayoutSummary(
       UUID inspectorId,
       OccurrencePayoutStatus status,
@@ -63,15 +82,22 @@ public record OccurrenceFinanceResponse(
       Instant recordedAt,
       UUID recordedByUserId,
       boolean heldForRefund,
-      String refundReconciliationReference,
-      String refundReconciliationNote,
-      UUID refundReconciledByUserId,
-      Instant refundReconciledAt,
       BigDecimal finalPayoutAmount) {}
 
   public record RefundSummary(
       java.util.UUID id,
       BigDecimal amount,
+      String status,
+      String requestReference,
+      BigDecimal inspectorReceivableAmount,
+      BigDecimal platformAbsorbedPlanAmount,
+      UUID initiatedByUserId,
+      Instant initiatedAt,
+      UUID completedByUserId,
+      Instant completedAt,
+      UUID cancelledByUserId,
+      Instant cancelledAt,
+      String cancellationReason,
       BigDecimal inspectorPayoutReduction,
       BigDecimal platformCommissionAdjustment,
       BigDecimal vatAdjustment,
@@ -100,6 +126,34 @@ public record OccurrenceFinanceResponse(
         occurrence.getReportAcceptedAt());
   }
 
+  private static java.util.List<InspectorReceivableSummary> receivableSummaries(
+      ServiceRequestOccurrence occurrence,
+      com.smartdroneinspection.contracts.repository.InspectorReceivableRepository receivables) {
+    return receivables.findAllByOccurrenceId(occurrence.getId()).stream()
+        .map(
+            receivable ->
+                new InspectorReceivableSummary(
+                    receivable.getId(),
+                    receivable.getRefundId(),
+                    receivable.getAssessedAmount(),
+                    receivable.getRecoveredAmount(),
+                    receivable.getOutstandingAmount(),
+                    receivable.getSourceReference(),
+                    receivable.getReason(),
+                    receivable.getRecoveries().stream()
+                        .map(
+                            recovery ->
+                                new InspectorReceivableRecoverySummary(
+                                    recovery.getId(),
+                                    recovery.getAmount(),
+                                    recovery.getExternalReference(),
+                                    recovery.getNote(),
+                                    recovery.getRecordedByUserId(),
+                                    recovery.getRecordedAt()))
+                        .toList()))
+        .toList();
+  }
+
   private static java.util.List<RefundSummary> refundSummaries(
       ServiceRequestOccurrence occurrence) {
     return occurrence.getRefunds().stream()
@@ -108,6 +162,17 @@ public record OccurrenceFinanceResponse(
                 new RefundSummary(
                     refund.getId(),
                     refund.getAmount(),
+                    refund.getStatus().name(),
+                    refund.getRequestReference(),
+                    refund.getInspectorReceivableAmount(),
+                    refund.getPlatformAbsorbedPlanAmount(),
+                    refund.getInitiatedByUserId(),
+                    refund.getInitiatedAt(),
+                    refund.getCompletedByUserId(),
+                    refund.getCompletedAt(),
+                    refund.getCancelledByUserId(),
+                    refund.getCancelledAt(),
+                    refund.getCancellationReason(),
                     refund.getInspectorPayoutReduction(),
                     refund.getPlatformCommissionAdjustment(),
                     refund.getVatAdjustment(),
@@ -132,6 +197,17 @@ public record OccurrenceFinanceResponse(
                 new RefundSummary(
                     refund.getId(),
                     refund.getAmount(),
+                    refund.getStatus().name(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
                     null,
                     null,
                     null,
@@ -165,15 +241,13 @@ public record OccurrenceFinanceResponse(
         occurrence.getPayoutRecordedAt(),
         occurrence.getPayout().getPayoutRecordedByUserId(),
         occurrence.isPayoutHeldForRefund(),
-        occurrence.getPayout().getRefundReconciliationReference(),
-        occurrence.getPayout().getRefundReconciliationNote(),
-        occurrence.getPayout().getRefundReconciledByUserId(),
-        occurrence.getPayout().getRefundReconciledAt(),
         occurrence.getPayout().getFinalPayoutAmount());
   }
 
   /** Full financial view for Managers and Admins. */
-  public static OccurrenceFinanceResponse forManager(ServiceRequestOccurrence occurrence) {
+  public static OccurrenceFinanceResponse forManager(
+      ServiceRequestOccurrence occurrence,
+      com.smartdroneinspection.contracts.repository.InspectorReceivableRepository receivables) {
     return new OccurrenceFinanceResponse(
         occurrence.getId(),
         occurrence.getRequestId(),
@@ -198,6 +272,7 @@ public record OccurrenceFinanceResponse(
         occurrence.getRefundedAmount(),
         occurrence.getRefundStatus(),
         refundSummaries(occurrence),
+        receivableSummaries(occurrence, receivables),
         occurrence.getPaymentConfirmedAt(),
         occurrence.getPaymentConfirmedByUserId(),
         occurrence.getPayoutStatus(),
@@ -240,6 +315,7 @@ public record OccurrenceFinanceResponse(
         occurrence.getRefundedAmount(),
         occurrence.getRefundStatus(),
         customerRefundSummaries(occurrence),
+        java.util.List.of(),
         occurrence.getPaymentConfirmedAt(),
         null,
         null,
@@ -291,6 +367,7 @@ public record OccurrenceFinanceResponse(
         occurrence.getRefundedAmount(),
         occurrence.getRefundStatus(),
         refundSummaries(occurrence),
+        java.util.List.of(),
         occurrence.getPaymentConfirmedAt(),
         null,
         occurrence.getPayoutStatus(),

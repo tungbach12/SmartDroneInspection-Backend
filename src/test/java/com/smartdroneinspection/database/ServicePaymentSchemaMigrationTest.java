@@ -97,6 +97,38 @@ class ServicePaymentSchemaMigrationTest {
         "tncn_adjustment",
         "platform_absorbed_amount",
         "recorded_by_user_id",
+        "recorded_at",
+        "request_reference",
+        "inspector_receivable_amount",
+        "platform_absorbed_plan_amount",
+        "refund_status",
+        "initiated_by_user_id",
+        "initiated_at",
+        "completed_by_user_id",
+        "completed_at",
+        "cancelled_by_user_id",
+        "cancelled_at",
+        "cancellation_reason");
+    assertColumns(
+        "inspector_receivables",
+        "id",
+        "refund_id",
+        "occurrence_id",
+        "inspector_id",
+        "assessed_amount",
+        "source_reference",
+        "reason",
+        "recorded_by_user_id",
+        "recorded_at",
+        "row_version");
+    assertColumns(
+        "inspector_receivable_recoveries",
+        "id",
+        "receivable_id",
+        "amount",
+        "external_reference",
+        "note",
+        "recorded_by_user_id",
         "recorded_at");
   }
 

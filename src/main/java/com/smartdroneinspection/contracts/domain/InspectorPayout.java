@@ -44,18 +44,6 @@ public class InspectorPayout {
   @Column(name = "payout_held_for_refund", nullable = false)
   private boolean heldForRefund;
 
-  @Column(name = "refund_reconciliation_reference", length = 255)
-  private String refundReconciliationReference;
-
-  @Column(name = "refund_reconciliation_note", length = 2000)
-  private String refundReconciliationNote;
-
-  @Column(name = "refund_reconciled_by_user_id")
-  private UUID refundReconciledByUserId;
-
-  @Column(name = "refund_reconciled_at")
-  private Instant refundReconciledAt;
-
   @Column(name = "payout_recorded_by_user_id")
   private UUID payoutRecordedByUserId;
 
@@ -90,6 +78,15 @@ public class InspectorPayout {
     }
   }
 
+  void releaseRefundHold() {
+    if (payoutStatus == OccurrencePayoutStatus.PAID) return;
+    heldForRefund = false;
+    if (payoutStatus == OccurrencePayoutStatus.PENDING) {
+      payoutStatus = OccurrencePayoutStatus.ELIGIBLE;
+    }
+    updatedAt = Instant.now();
+  }
+
   void holdForRefund() {
     if (heldForRefund) {
       throw new IllegalStateException("Existing refund allocation must be reconciled first");
@@ -99,46 +96,6 @@ public class InspectorPayout {
       payoutStatus = OccurrencePayoutStatus.PENDING;
     }
     updatedAt = Instant.now();
-  }
-
-  void reconcileRefund(
-      UUID managerId,
-      java.math.BigDecimal finalAmount,
-      java.math.BigDecimal originalNetAmount,
-      String payoutReference,
-      String reconciliationReference,
-      String note) {
-    if (!heldForRefund) {
-      throw new IllegalStateException("Payout is not held for refund reconciliation");
-    }
-    if (payoutStatus == OccurrencePayoutStatus.PAID) {
-      throw new IllegalStateException("A recorded payout cannot be reconciled a second time");
-    }
-    if (managerId == null
-        || finalAmount == null
-        || finalAmount.signum() < 0
-        || originalNetAmount == null
-        || finalAmount.compareTo(originalNetAmount) > 0
-        || payoutReference == null
-        || payoutReference.isBlank()
-        || reconciliationReference == null
-        || reconciliationReference.isBlank()
-        || note == null
-        || note.isBlank()) {
-      throw new IllegalArgumentException(
-          "Refund reconciliation requires a non-negative amount within the original net payout, payout reference, reconciliation reference, and note");
-    }
-    heldForRefund = false;
-    refundReconciledByUserId = managerId;
-    refundReconciliationReference = reconciliationReference.trim();
-    refundReconciliationNote = note.trim();
-    refundReconciledAt = Instant.now();
-    finalPayoutAmount = finalAmount.setScale(2, java.math.RoundingMode.HALF_UP);
-    this.payoutReference = payoutReference.trim();
-    payoutRecordedByUserId = managerId;
-    payoutRecordedAt = refundReconciledAt;
-    payoutStatus = OccurrencePayoutStatus.PAID;
-    updatedAt = refundReconciledAt;
   }
 
   void recordPayout(String reference, UUID managerId, java.math.BigDecimal originalNetAmount) {
@@ -197,22 +154,6 @@ public class InspectorPayout {
 
   public UUID getPayoutRecordedByUserId() {
     return payoutRecordedByUserId;
-  }
-
-  public UUID getRefundReconciledByUserId() {
-    return refundReconciledByUserId;
-  }
-
-  public String getRefundReconciliationReference() {
-    return refundReconciliationReference;
-  }
-
-  public String getRefundReconciliationNote() {
-    return refundReconciliationNote;
-  }
-
-  public Instant getRefundReconciledAt() {
-    return refundReconciledAt;
   }
 
   public Instant getCreatedAt() {

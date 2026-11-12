@@ -15,6 +15,7 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
@@ -1366,7 +1367,7 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  void refundLedgerCapsCumulativeRefundAndHoldsPayoutUntilManagerReconciles() {
+  void refundInitiationHoldsPayoutBeforeTransferThenCompletesAndAllowsActualPayout() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
     UUID inspectionId = UUID.randomUUID();
@@ -1395,67 +1396,32 @@ class ContractWorkflowServiceTest {
     occurrence.confirmOnlinePayment("PAYOS-REFUND-TEST", new BigDecimal("11000000.00"), "PAYOS");
 
     ServiceRefund partial =
-        occurrence.recordRefund(
+        occurrence.initiateRefund(
             new BigDecimal("2500000.00"),
-            new BigDecimal("1000000.00"),
-            new BigDecimal("250000.00"),
-            new BigDecimal("250000.00"),
-            new BigDecimal("100000.00"),
-            new BigDecimal("900000.00"),
             "REFUND-001",
             "Service partially cancelled before execution",
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
             managerId);
-    assertThat(partial.getRecordedByUserId()).isEqualTo(managerId);
-    assertThat(occurrence.getRefundedAmount()).isEqualByComparingTo("2500000.00");
-    assertThat(occurrence.getRefundStatus()).isEqualTo("PARTIAL");
+    ReflectionTestUtils.setField(partial, "id", UUID.randomUUID());
+    assertThat(partial.getInitiatedByUserId()).isEqualTo(managerId);
+    assertThat(partial.getStatus()).isEqualTo(ServiceRefund.RefundStatus.INITIATED);
+    assertThat(occurrence.getRefundedAmount()).isEqualByComparingTo("0.00");
     assertThat(occurrence.isPayoutHeldForRefund()).isTrue();
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING);
 
     assertThatThrownBy(
             () ->
-                occurrence.recordRefund(
-                    new BigDecimal("9000000.00"),
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
+                occurrence.initiateRefund(
                     new BigDecimal("9000000.00"),
                     "REFUND-002",
                     "Would exceed captured amount",
+                    BigDecimal.ZERO,
+                    new BigDecimal("9000000.00"),
                     managerId))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Existing refund allocation must be reconciled first");
-
-    assertThatThrownBy(
-            () ->
-                occurrence.recordRefund(
-                    new BigDecimal("100.00"),
-                    new BigDecimal("50.00"),
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    "REFUND-UNBALANCED",
-                    "Allocation does not reconcile",
-                    managerId))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Existing refund allocation must be reconciled first");
-
-    assertThatThrownBy(
-            () ->
-                occurrence.recordRefund(
-                    new BigDecimal("500000.00"),
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    new BigDecimal("500000.00"),
-                    "REFUND-SECOND",
-                    "Second refund before reconciling the first",
-                    managerId))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Existing refund allocation must be reconciled first");
+        .hasMessageContaining("An existing refund must be completed or cancelled first");
 
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
@@ -1463,6 +1429,13 @@ class ContractWorkflowServiceTest {
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
         .thenReturn(List.of(occurrence));
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    ReflectionTestUtils.setField(
+        service,
+        "receivables",
+        Optional.of(
+            mock(
+                com.smartdroneinspection.contracts.repository.InspectorReceivableRepository
+                    .class)));
 
     assertThatThrownBy(
             () ->
@@ -1471,59 +1444,37 @@ class ContractWorkflowServiceTest {
                     requestId,
                     occurrenceId,
                     new RecordOccurrencePayoutRequest(
-                        "PAYOUT-001", "Attempt before reconciliation")))
+                        "PAYOUT-001", "Attempt before external refund completion")))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("held while a customer refund");
 
-    assertThatThrownBy(
-            () ->
-                service.reconcileRefundHold(
-                    managerId,
-                    requestId,
-                    occurrenceId,
-                    new com.smartdroneinspection.contracts.api.dto.request
-                        .ReconcileRefundHoldRequest(
-                        new BigDecimal("6650000.00"),
-                        "PAYOUT-BAD",
-                        "RECON-BAD",
-                        "Allocation does not match recorded refund",
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO,
-                        new BigDecimal("2500000.00"))))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("Reconciliation allocation must match");
-
-    service.reconcileRefundHold(
+    service.completeOccurrenceRefund(
         managerId,
         requestId,
         occurrenceId,
-        new com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundHoldRequest(
-            new BigDecimal("6650000.00"),
-            "PAYOUT-001",
-            "RECON-001",
-            "Confirmed partial refund; approved reduced net payout",
+        partial.getId(),
+        new CompleteOccurrenceRefundRequest(
             new BigDecimal("1000000.00"),
             new BigDecimal("250000.00"),
             new BigDecimal("250000.00"),
             new BigDecimal("100000.00"),
-            new BigDecimal("900000.00")));
-
+            new BigDecimal("900000.00"),
+            "BANK-REFUND-001"));
+    assertThat(partial.getStatus()).isEqualTo(ServiceRefund.RefundStatus.COMPLETED);
+    assertThat(occurrence.getRefundedAmount()).isEqualByComparingTo("2500000.00");
+    assertThat(occurrence.getRefundStatus()).isEqualTo("PARTIAL");
     assertThat(occurrence.isPayoutHeldForRefund()).isFalse();
     assertThat(occurrence.getPayoutStatus())
-        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
-    assertThat(occurrence.getPayout().getFinalPayoutAmount()).isEqualByComparingTo("6650000.00");
-    assertThat(occurrence.getFinalPayoutAmount()).isEqualByComparingTo("6650000.00");
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
+
     service.recordOccurrencePayout(
         managerId,
         requestId,
         occurrenceId,
-        new RecordOccurrencePayoutRequest("PAYOUT-001", "Paid after refund reconciliation"));
+        new RecordOccurrencePayoutRequest("PAYOUT-001", "Paid after refund completion"));
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
     assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
-    assertThat(occurrence.getPayout().getRefundReconciledByUserId()).isEqualTo(managerId);
   }
 
   @Test

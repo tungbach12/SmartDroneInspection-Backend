@@ -104,10 +104,6 @@ public record ServiceRequestOccurrenceResponse(
             occurrence.getPayoutRecordedAt(),
             occurrence.getPayout().getPayoutRecordedByUserId(),
             occurrence.isPayoutHeldForRefund(),
-            occurrence.getPayout().getRefundReconciliationReference(),
-            occurrence.getPayout().getRefundReconciliationNote(),
-            occurrence.getPayout().getRefundReconciledByUserId(),
-            occurrence.getPayout().getRefundReconciledAt(),
             occurrence.getPayout().getFinalPayoutAmount()));
   }
 }
