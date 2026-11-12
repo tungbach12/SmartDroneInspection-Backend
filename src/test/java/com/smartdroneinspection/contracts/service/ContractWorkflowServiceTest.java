@@ -1397,6 +1397,11 @@ class ContractWorkflowServiceTest {
     ServiceRefund partial =
         occurrence.recordRefund(
             new BigDecimal("2500000.00"),
+            new BigDecimal("1000000.00"),
+            new BigDecimal("250000.00"),
+            new BigDecimal("250000.00"),
+            new BigDecimal("100000.00"),
+            new BigDecimal("900000.00"),
             "REFUND-001",
             "Service partially cancelled before execution",
             managerId);
@@ -1411,11 +1416,46 @@ class ContractWorkflowServiceTest {
             () ->
                 occurrence.recordRefund(
                     new BigDecimal("9000000.00"),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    new BigDecimal("9000000.00"),
                     "REFUND-002",
                     "Would exceed captured amount",
                     managerId))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Cumulative refunds cannot exceed");
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Existing refund allocation must be reconciled first");
+
+    assertThatThrownBy(
+            () ->
+                occurrence.recordRefund(
+                    new BigDecimal("100.00"),
+                    new BigDecimal("50.00"),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "REFUND-UNBALANCED",
+                    "Allocation does not reconcile",
+                    managerId))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Existing refund allocation must be reconciled first");
+
+    assertThatThrownBy(
+            () ->
+                occurrence.recordRefund(
+                    new BigDecimal("500000.00"),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    new BigDecimal("500000.00"),
+                    "REFUND-SECOND",
+                    "Second refund before reconciling the first",
+                    managerId))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Existing refund allocation must be reconciled first");
 
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
@@ -1435,21 +1475,46 @@ class ContractWorkflowServiceTest {
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("held while a customer refund");
 
+    assertThatThrownBy(
+            () ->
+                service.reconcileRefundHold(
+                    managerId,
+                    requestId,
+                    occurrenceId,
+                    new com.smartdroneinspection.contracts.api.dto.request
+                        .ReconcileRefundHoldRequest(
+                        new BigDecimal("6650000.00"),
+                        "PAYOUT-BAD",
+                        "RECON-BAD",
+                        "Allocation does not match recorded refund",
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        new BigDecimal("2500000.00"))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Reconciliation allocation must match");
+
     service.reconcileRefundHold(
         managerId,
         requestId,
         occurrenceId,
         new com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundHoldRequest(
-            new BigDecimal("6000000.00"),
+            new BigDecimal("6650000.00"),
             "PAYOUT-001",
             "RECON-001",
-            "Confirmed partial refund; approved reduced net payout"));
+            "Confirmed partial refund; approved reduced net payout",
+            new BigDecimal("1000000.00"),
+            new BigDecimal("250000.00"),
+            new BigDecimal("250000.00"),
+            new BigDecimal("100000.00"),
+            new BigDecimal("900000.00")));
 
     assertThat(occurrence.isPayoutHeldForRefund()).isFalse();
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
-    assertThat(occurrence.getPayout().getFinalPayoutAmount()).isEqualByComparingTo("6000000.00");
-    assertThat(occurrence.getFinalPayoutAmount()).isEqualByComparingTo("6000000.00");
+    assertThat(occurrence.getPayout().getFinalPayoutAmount()).isEqualByComparingTo("6650000.00");
+    assertThat(occurrence.getFinalPayoutAmount()).isEqualByComparingTo("6650000.00");
     service.recordOccurrencePayout(
         managerId,
         requestId,

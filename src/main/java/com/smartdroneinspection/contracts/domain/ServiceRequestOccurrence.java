@@ -161,18 +161,139 @@ public class ServiceRequestOccurrence {
   }
 
   public ServiceRefund recordRefund(
-      BigDecimal amount, String reference, String reason, UUID managerId) {
+      BigDecimal amount,
+      BigDecimal inspectorPayoutReduction,
+      BigDecimal platformCommissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment,
+      BigDecimal platformAbsorbedAmount,
+      String reference,
+      String reason,
+      UUID managerId) {
     if (payout.getPayoutStatus() == OccurrencePayoutStatus.PAID) {
       throw new IllegalStateException(
           "A refund cannot be recorded after Inspector payout; reconcile the disbursement separately");
     }
+    if (payout.isHeldForRefund()) {
+      throw new IllegalStateException("Existing refund allocation must be reconciled first");
+    }
+    validateRefundAllocationWithinFinancialBreakdown(
+        amount,
+        inspectorPayoutReduction,
+        platformCommissionAdjustment,
+        vatAdjustment,
+        tncnAdjustment);
     ServiceRefund refund =
-        payment.recordRefund(getTotalPrice(), amount, reference, reason, managerId);
+        payment.recordRefund(
+            getTotalPrice(),
+            amount,
+            inspectorPayoutReduction,
+            platformCommissionAdjustment,
+            vatAdjustment,
+            tncnAdjustment,
+            platformAbsorbedAmount,
+            reference,
+            reason,
+            managerId);
     if (payout.getPayoutStatus() != OccurrencePayoutStatus.PAID) {
       payout.holdForRefund();
     }
     updatedAt = Instant.now();
     return refund;
+  }
+
+  private void validateRefundAllocationWithinFinancialBreakdown(
+      BigDecimal refundAmount,
+      BigDecimal inspectorReduction,
+      BigDecimal commissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment) {
+    if (refundAmount == null || refundAmount.signum() <= 0) {
+      throw new IllegalArgumentException("Refund amount must be positive");
+    }
+    BigDecimal previousRefunded = payment.getRefundedAmount();
+    if (previousRefunded.signum() > 0 && payment.getRefunds().isEmpty()) {
+      throw new IllegalStateException(
+          "Existing refund allocation must be reconciled before recording another refund");
+    }
+    validateAllocationComponent(inspectorReduction, getInspectorNetPayout(), "Inspector payout");
+    validateAllocationComponent(commissionAdjustment, getCommissionAmount(), "Platform commission");
+    validateAllocationComponent(vatAdjustment, getVatAmount(), "VAT");
+    validateAllocationComponent(tncnAdjustment, getTncnAmount(), "TNCN");
+  }
+
+  private void validateAllocationComponent(BigDecimal requested, BigDecimal maximum, String label) {
+    if (requested == null || requested.signum() < 0) {
+      throw new IllegalArgumentException(label + " refund allocation must be non-negative");
+    }
+    if (maximum == null) {
+      if (requested.signum() != 0) {
+        throw new IllegalArgumentException(
+            label + " allocation is unavailable for this occurrence");
+      }
+      return;
+    }
+    BigDecimal prior = BigDecimal.ZERO;
+    for (ServiceRefund refund : payment.getRefunds()) {
+      BigDecimal priorValue =
+          switch (label) {
+            case "Inspector payout" -> refund.getInspectorPayoutReduction();
+            case "Platform commission" -> refund.getPlatformCommissionAdjustment();
+            case "VAT" -> refund.getVatAdjustment();
+            case "TNCN" -> refund.getTncnAdjustment();
+            default -> BigDecimal.ZERO;
+          };
+      if (priorValue == null) {
+        throw new IllegalStateException(
+            "Existing refund allocation must be reconciled before recording another refund");
+      }
+      prior = prior.add(priorValue);
+    }
+    if (prior.add(requested).compareTo(maximum) > 0) {
+      throw new IllegalArgumentException(label + " refund allocation exceeds the remaining amount");
+    }
+  }
+
+  private void validateRecordedRefundAllocations(
+      BigDecimal inspectorReduction,
+      BigDecimal commissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment,
+      BigDecimal platformAbsorbedAmount) {
+    BigDecimal[] requested = {
+      inspectorReduction,
+      commissionAdjustment,
+      vatAdjustment,
+      tncnAdjustment,
+      platformAbsorbedAmount
+    };
+    BigDecimal[] recorded = {
+      sumRefundAllocation(ServiceRefund::getInspectorPayoutReduction),
+      sumRefundAllocation(ServiceRefund::getPlatformCommissionAdjustment),
+      sumRefundAllocation(ServiceRefund::getVatAdjustment),
+      sumRefundAllocation(ServiceRefund::getTncnAdjustment),
+      sumRefundAllocation(ServiceRefund::getPlatformAbsorbedAmount)
+    };
+    for (int i = 0; i < requested.length; i++) {
+      if (requested[i] == null || requested[i].compareTo(recorded[i]) != 0) {
+        throw new IllegalArgumentException(
+            "Reconciliation allocation must match the recorded refund allocation");
+      }
+    }
+  }
+
+  private BigDecimal sumRefundAllocation(
+      java.util.function.Function<ServiceRefund, BigDecimal> field) {
+    BigDecimal sum = BigDecimal.ZERO;
+    for (ServiceRefund refund : payment.getRefunds()) {
+      BigDecimal amount = field.apply(refund);
+      if (amount == null) {
+        throw new IllegalStateException(
+            "Legacy refunds must be reconciled individually from external evidence");
+      }
+      sum = sum.add(amount);
+    }
+    return sum;
   }
 
   public boolean isPayoutHeldForRefund() {
@@ -188,7 +309,7 @@ public class ServiceRequestOccurrence {
     payout.reconcileRefund(
         managerId,
         finalPayoutAmount,
-        getInspectorNetPayout(),
+        getRemainingInspectorNetPayout(),
         payoutReference,
         reconciliationReference,
         note);
@@ -231,7 +352,7 @@ public class ServiceRequestOccurrence {
     if (inspectorId == null) {
       throw new IllegalStateException("No inspector assigned to receive payout");
     }
-    payout.recordPayout(reference, managerUserId, getInspectorNetPayout());
+    payout.recordPayout(reference, managerUserId, getRemainingInspectorNetPayout());
     updatedAt = payout.getPayoutRecordedAt();
   }
 
@@ -240,11 +361,66 @@ public class ServiceRequestOccurrence {
       BigDecimal finalAmount,
       String payoutReference,
       String reconciliationReference,
-      String note) {
+      String note,
+      BigDecimal inspectorPayoutReduction,
+      BigDecimal platformCommissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment,
+      BigDecimal platformAbsorbedAmount) {
+    if (payment.getRefundedAmount().signum() > 0
+        && (payment.getRefunds().isEmpty()
+            || payment.getRefunds().stream().anyMatch(ServiceRefund::isAllocationMissing))) {
+      if (payment.getRefunds().isEmpty()
+          && payment.getRefundedAmount().compareTo(finalAmount) == 0) {
+        throw new IllegalStateException(
+            "Legacy refund allocations must be verified before finalizing payout");
+      }
+      if (payment.getRefunds().size() != 1
+          || !payment.getRefunds().getFirst().isAllocationMissing()) {
+        throw new IllegalStateException(
+            "Legacy refunds must be reconciled individually from external evidence");
+      }
+      validateRefundAllocationWithinFinancialBreakdown(
+          payment.getRefundedAmount(),
+          inspectorPayoutReduction,
+          platformCommissionAdjustment,
+          vatAdjustment,
+          tncnAdjustment);
+      if (platformAbsorbedAmount == null || platformAbsorbedAmount.signum() < 0) {
+        throw new IllegalArgumentException("Platform absorbed allocation must be non-negative");
+      }
+      BigDecimal allocationTotal =
+          inspectorPayoutReduction
+              .add(platformCommissionAdjustment)
+              .add(vatAdjustment)
+              .add(tncnAdjustment)
+              .add(platformAbsorbedAmount);
+      if (allocationTotal.compareTo(payment.getRefundedAmount()) != 0) {
+        throw new IllegalArgumentException(
+            "Refund allocation must exactly equal the refund amount");
+      }
+      payment.allocateLegacyRefund(
+          payment.getRefundedAmount(),
+          inspectorPayoutReduction,
+          platformCommissionAdjustment,
+          vatAdjustment,
+          tncnAdjustment,
+          platformAbsorbedAmount,
+          managerId,
+          reconciliationReference,
+          note);
+    } else if (payment.getRefundedAmount().signum() > 0) {
+      validateRecordedRefundAllocations(
+          inspectorPayoutReduction,
+          platformCommissionAdjustment,
+          vatAdjustment,
+          tncnAdjustment,
+          platformAbsorbedAmount);
+    }
     payout.reconcileRefund(
         managerId,
         finalAmount,
-        getInspectorNetPayout(),
+        getRemainingInspectorNetPayout(),
         payoutReference,
         reconciliationReference,
         note);
@@ -380,6 +556,22 @@ public class ServiceRequestOccurrence {
 
   public BigDecimal getInspectorNetPayout() {
     return invoice.getInspectorNetPayout();
+  }
+
+  public BigDecimal getRemainingInspectorNetPayout() {
+    BigDecimal original = getInspectorNetPayout();
+    if (original == null) {
+      return null;
+    }
+    BigDecimal reductions = BigDecimal.ZERO;
+    for (ServiceRefund refund : payment.getRefunds()) {
+      BigDecimal reduction = refund.getInspectorPayoutReduction();
+      if (reduction == null) {
+        return null;
+      }
+      reductions = reductions.add(reduction);
+    }
+    return original.subtract(reductions).setScale(2, java.math.RoundingMode.HALF_UP);
   }
 
   public Instant getReportAcceptedAt() {

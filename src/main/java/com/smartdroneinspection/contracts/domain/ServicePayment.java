@@ -127,7 +127,16 @@ public class ServicePayment {
   }
 
   ServiceRefund recordRefund(
-      BigDecimal totalPrice, BigDecimal amount, String reference, String reason, UUID managerId) {
+      BigDecimal totalPrice,
+      BigDecimal amount,
+      BigDecimal inspectorPayoutReduction,
+      BigDecimal platformCommissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment,
+      BigDecimal platformAbsorbedAmount,
+      String reference,
+      String reason,
+      UUID managerId) {
     if (paymentStatus != OccurrencePaymentStatus.PAID) {
       throw new IllegalStateException("Only a paid occurrence may be refunded");
     }
@@ -137,17 +146,83 @@ public class ServicePayment {
     if (amount == null || amount.signum() <= 0 || totalPrice == null) {
       throw new IllegalArgumentException("Refund amount must be positive");
     }
-    BigDecimal nextTotal = refundedAmount.add(amount).setScale(2, java.math.RoundingMode.HALF_UP);
+    BigDecimal normalizedAmount = amount.setScale(2, java.math.RoundingMode.HALF_UP);
+    inspectorPayoutReduction =
+        requireNonNegative(inspectorPayoutReduction, "Inspector payout reduction");
+    platformCommissionAdjustment =
+        requireNonNegative(platformCommissionAdjustment, "Platform commission adjustment");
+    vatAdjustment = requireNonNegative(vatAdjustment, "VAT adjustment");
+    tncnAdjustment = requireNonNegative(tncnAdjustment, "TNCN adjustment");
+    platformAbsorbedAmount = requireNonNegative(platformAbsorbedAmount, "Platform absorbed amount");
+    BigDecimal allocated =
+        inspectorPayoutReduction
+            .add(platformCommissionAdjustment)
+            .add(vatAdjustment)
+            .add(tncnAdjustment)
+            .add(platformAbsorbedAmount)
+            .setScale(2, java.math.RoundingMode.HALF_UP);
+    if (allocated.compareTo(normalizedAmount) != 0) {
+      throw new IllegalArgumentException("Refund allocation must exactly equal the refund amount");
+    }
+    BigDecimal nextTotal =
+        refundedAmount.add(normalizedAmount).setScale(2, java.math.RoundingMode.HALF_UP);
     if (nextTotal.compareTo(totalPrice) > 0) {
       throw new IllegalArgumentException("Cumulative refunds cannot exceed the captured payment");
     }
-    ServiceRefund refund = new ServiceRefund(this, amount, reference.trim(), reason.trim());
+    ServiceRefund refund =
+        new ServiceRefund(
+            this,
+            amount,
+            inspectorPayoutReduction,
+            platformCommissionAdjustment,
+            vatAdjustment,
+            tncnAdjustment,
+            platformAbsorbedAmount,
+            reference.trim(),
+            reason.trim());
     refund.attributeTo(managerId);
     refunds.add(refund);
     refundedAmount = nextTotal;
     refundStatus = nextTotal.compareTo(totalPrice) == 0 ? "FULL" : "PARTIAL";
     updatedAt = Instant.now();
     return refund;
+  }
+
+  void allocateLegacyRefund(
+      BigDecimal amount,
+      BigDecimal inspectorPayoutReduction,
+      BigDecimal platformCommissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment,
+      BigDecimal platformAbsorbedAmount,
+      UUID managerId,
+      String reconciliationReference,
+      String note) {
+    if (refundedAmount.compareTo(amount) != 0 || refunds.size() != 1) {
+      throw new IllegalStateException(
+          "Legacy refunds must be reconciled individually from external evidence");
+    }
+    ServiceRefund refund = refunds.getFirst();
+    if (!refund.isAllocationMissing()) {
+      throw new IllegalStateException("Refund allocation is already reconciled");
+    }
+    refund.reconcileAllocation(
+        inspectorPayoutReduction,
+        platformCommissionAdjustment,
+        vatAdjustment,
+        tncnAdjustment,
+        platformAbsorbedAmount,
+        managerId,
+        reconciliationReference,
+        note);
+    updatedAt = Instant.now();
+  }
+
+  private BigDecimal requireNonNegative(BigDecimal value, String label) {
+    if (value == null || value.signum() < 0) {
+      throw new IllegalArgumentException(label + " must be zero or greater");
+    }
+    return value.setScale(2, java.math.RoundingMode.HALF_UP);
   }
 
   void confirm(String reference, String method) {

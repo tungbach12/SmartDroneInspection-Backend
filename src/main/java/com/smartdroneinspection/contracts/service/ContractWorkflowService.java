@@ -693,7 +693,15 @@ public class ContractWorkflowService
     }
     try {
       occurrence.recordRefund(
-          input.amount(), input.refundReference(), input.reason(), manager.id());
+          input.amount(),
+          input.inspectorPayoutReduction(),
+          input.platformCommissionAdjustment(),
+          input.vatAdjustment(),
+          input.tncnAdjustment(),
+          input.platformAbsorbedAmount(),
+          input.refundReference(),
+          input.reason(),
+          manager.id());
       occurrences.saveAndFlush(occurrence);
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "REFUND_INVALID", ex.getMessage());
@@ -780,7 +788,12 @@ public class ContractWorkflowService
           input.finalPayoutAmount(),
           input.payoutReference(),
           input.reconciliationReference(),
-          input.note());
+          input.note(),
+          input.inspectorPayoutReduction(),
+          input.platformCommissionAdjustment(),
+          input.vatAdjustment(),
+          input.tncnAdjustment(),
+          input.platformAbsorbedAmount());
       occurrences.saveAndFlush(occurrence);
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "REFUND_RECONCILIATION_INVALID", ex.getMessage());

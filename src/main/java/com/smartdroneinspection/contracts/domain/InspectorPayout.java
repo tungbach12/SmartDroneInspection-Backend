@@ -91,6 +91,9 @@ public class InspectorPayout {
   }
 
   void holdForRefund() {
+    if (heldForRefund) {
+      throw new IllegalStateException("Existing refund allocation must be reconciled first");
+    }
     heldForRefund = true;
     if (payoutStatus == OccurrencePayoutStatus.ELIGIBLE) {
       payoutStatus = OccurrencePayoutStatus.PENDING;

@@ -72,9 +72,18 @@ public record OccurrenceFinanceResponse(
   public record RefundSummary(
       java.util.UUID id,
       BigDecimal amount,
+      BigDecimal inspectorPayoutReduction,
+      BigDecimal platformCommissionAdjustment,
+      BigDecimal vatAdjustment,
+      BigDecimal tncnAdjustment,
+      BigDecimal platformAbsorbedAmount,
       String reference,
       String reason,
       UUID recordedByUserId,
+      UUID allocationReconciledByUserId,
+      String allocationReconciliationReference,
+      String allocationReconciliationNote,
+      Instant allocationReconciledAt,
       Instant recordedAt) {}
 
   private static final String MVP_DISCLAIMER =
@@ -99,9 +108,18 @@ public record OccurrenceFinanceResponse(
                 new RefundSummary(
                     refund.getId(),
                     refund.getAmount(),
+                    refund.getInspectorPayoutReduction(),
+                    refund.getPlatformCommissionAdjustment(),
+                    refund.getVatAdjustment(),
+                    refund.getTncnAdjustment(),
+                    refund.getPlatformAbsorbedAmount(),
                     refund.getReference(),
                     refund.getReason(),
                     refund.getRecordedByUserId(),
+                    refund.getAllocationReconciledByUserId(),
+                    refund.getAllocationReconciliationReference(),
+                    refund.getAllocationReconciliationNote(),
+                    refund.getAllocationReconciledAt(),
                     refund.getRecordedAt()))
         .toList();
   }
@@ -112,7 +130,21 @@ public record OccurrenceFinanceResponse(
         .map(
             refund ->
                 new RefundSummary(
-                    refund.getId(), refund.getAmount(), null, null, null, refund.getRecordedAt()))
+                    refund.getId(),
+                    refund.getAmount(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    refund.getRecordedAt()))
         .toList();
   }
 

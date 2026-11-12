@@ -85,8 +85,17 @@ class ServicePaymentSchemaMigrationTest {
         "id",
         "occurrence_id",
         "amount",
+        "inspector_payout_reduction",
+        "platform_commission_adjustment",
+        "vat_adjustment",
+        "tncn_adjustment",
+        "platform_absorbed_amount",
         "refund_reference",
         "reason",
+        "platform_commission_adjustment",
+        "vat_adjustment",
+        "tncn_adjustment",
+        "platform_absorbed_amount",
         "recorded_by_user_id",
         "recorded_at");
   }
