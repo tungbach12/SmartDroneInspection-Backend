@@ -100,4 +100,92 @@ class ContractWorkflowControllerTest {
 
     verify(workflow).markMessagesRead(managerId, requestId);
   }
+
+  @Test
+  void listsActivePartnerCapabilities() throws Exception {
+    when(workflow.listPartnerCapabilities(managerId))
+        .thenReturn(
+            java.util.List.of(
+                new com.smartdroneinspection.contracts.service.PartnerRegistryService
+                    .DroneFeatureOption(
+                    "THERMAL_CAMERA", "Camera nhiệt", "Thermal Camera", 1, true, "CAPABILITY")));
+
+    mockMvc
+        .perform(get("/api/v1/contracts/requests/partner-capabilities"))
+        .andExpect(status().isOk())
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data[0].code")
+                .value("THERMAL_CAMERA"));
+
+    verify(workflow).listPartnerCapabilities(managerId);
+  }
+
+  @Test
+  void evaluatesPartnerCandidatesForServiceRequest() throws Exception {
+    UUID inspectorId = UUID.randomUUID();
+    UUID droneId = UUID.randomUUID();
+    when(workflow.evaluatePartnerCandidates(
+            org.mockito.ArgumentMatchers.eq(managerId),
+            org.mockito.ArgumentMatchers.eq(requestId),
+            org.mockito.ArgumentMatchers.any()))
+        .thenReturn(
+            java.util.List.of(
+                com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse.from(
+                    new com.smartdroneinspection.contracts.service.PartnerCandidateEvaluation
+                        .Result(
+                        inspectorId,
+                        droneId,
+                        "Tran Minh Quan",
+                        "https://cdn.example.test/avatars/quan.png",
+                        "SDI-700",
+                        "Matrice 350 RTK",
+                        true,
+                        java.util.List.of("THERMAL_CAMERA", "RTK_POSITIONING"),
+                        com.smartdroneinspection.contracts.service.PartnerCandidateEvaluation.Status
+                            .PASS,
+                        com.smartdroneinspection.contracts.service.PartnerCandidateEvaluation.Status
+                            .MATCH,
+                        new java.math.BigDecimal("120.0"),
+                        new java.math.BigDecimal("80.00"),
+                        new java.math.BigDecimal("1200.00"),
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        "Evaluation is advisory. It does not confirm a flight permit or clearance."))));
+
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests/{requestId}/partner-candidates", requestId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "plannedStartAt": "2026-12-04T01:00:00Z",
+                      "plannedEndAt": "2026-12-04T03:00:00Z",
+                      "requiredDroneFeatureCodes": ["THERMAL_CAMERA"]
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data[0].inspectorAvatarUrl")
+                .value("https://cdn.example.test/avatars/quan.png"))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data[0].droneHasImage")
+                .value(true))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data[0].droneFeatureCodes")
+                .value(
+                    org.hamcrest.Matchers.containsInAnyOrder("THERMAL_CAMERA", "RTK_POSITIONING")))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data[0].eligibility")
+                .value("PASS"))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data[0].capabilityFit")
+                .value("MATCH"));
+  }
 }

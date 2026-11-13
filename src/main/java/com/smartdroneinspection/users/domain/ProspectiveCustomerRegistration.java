@@ -49,6 +49,12 @@ public class ProspectiveCustomerRegistration {
   @Column(name = "ownership_information", length = 1000)
   private String ownershipInformation;
 
+  @Column(name = "structure_height_meters", precision = 8, scale = 2)
+  private BigDecimal structureHeightMeters;
+
+  @Column(name = "footprint_area_square_meters", precision = 12, scale = 2)
+  private BigDecimal footprintAreaSquareMeters;
+
   @Column(nullable = false, length = 32)
   private String status;
 
@@ -85,6 +91,8 @@ public class ProspectiveCustomerRegistration {
       BigDecimal latitude,
       BigDecimal longitude,
       String ownershipInformation,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
       String airspaceClassification) {
     this.userId = userId;
     this.organizationName = organizationName;
@@ -97,6 +105,8 @@ public class ProspectiveCustomerRegistration {
     this.latitude = latitude;
     this.longitude = longitude;
     this.ownershipInformation = ownershipInformation;
+    this.structureHeightMeters = structureHeightMeters;
+    this.footprintAreaSquareMeters = footprintAreaSquareMeters;
     this.airspaceClassification = airspaceClassification;
     this.status = "PENDING";
     this.createdAt = Instant.now();
@@ -166,6 +176,14 @@ public class ProspectiveCustomerRegistration {
 
   public String getOwnershipInformation() {
     return ownershipInformation;
+  }
+
+  public BigDecimal getStructureHeightMeters() {
+    return structureHeightMeters;
+  }
+
+  public BigDecimal getFootprintAreaSquareMeters() {
+    return footprintAreaSquareMeters;
   }
 
   public String getStatus() {

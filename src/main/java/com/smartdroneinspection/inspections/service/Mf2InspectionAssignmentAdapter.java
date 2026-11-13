@@ -43,6 +43,14 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public boolean hasPlatformScheduleConflict(
+      UUID inspectorId, UUID droneId, Instant plannedStartAt, Instant plannedEndAt) {
+    return inspections.hasPlatformPartnerScheduleConflict(
+        inspectorId, droneId, plannedStartAt, plannedEndAt);
+  }
+
+  @Override
   @Transactional
   public UUID assign(
       UUID customerOrganizationId,

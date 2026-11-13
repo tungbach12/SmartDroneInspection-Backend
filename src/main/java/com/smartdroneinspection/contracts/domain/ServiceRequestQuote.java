@@ -9,7 +9,13 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "service_request_quotes")
@@ -38,6 +44,10 @@ public class ServiceRequestQuote {
   @Column(name = "price_per_occurrence_vnd", nullable = false, precision = 15, scale = 2)
   private BigDecimal pricePerOccurrenceVnd;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "required_drone_feature_codes", columnDefinition = "jsonb", nullable = false)
+  private List<String> requiredDroneFeatureCodes = new ArrayList<>();
+
   @Column(name = "issued_by_user_id", nullable = false)
   private UUID issuedByUserId;
 
@@ -65,6 +75,28 @@ public class ServiceRequestQuote {
       UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       UUID issuedByUserId) {
+    this(
+        requestId,
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        pricePerOccurrenceVnd,
+        List.of(),
+        issuedByUserId);
+  }
+
+  public ServiceRequestQuote(
+      UUID requestId,
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      UUID inspectorId,
+      UUID droneId,
+      BigDecimal pricePerOccurrenceVnd,
+      List<String> requiredDroneFeatureCodes,
+      UUID issuedByUserId) {
     validate(
         requestId,
         scopeSnapshot,
@@ -81,6 +113,7 @@ public class ServiceRequestQuote {
     this.inspectorId = inspectorId;
     this.droneId = droneId;
     this.pricePerOccurrenceVnd = normalizePrice(pricePerOccurrenceVnd);
+    this.requiredDroneFeatureCodes = normalizeFeatures(requiredDroneFeatureCodes);
     this.issuedByUserId = issuedByUserId;
     this.updatedByUserId = issuedByUserId;
   }
@@ -92,6 +125,26 @@ public class ServiceRequestQuote {
       UUID inspectorId,
       UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
+      UUID editorUserId) {
+    revise(
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        inspectorId,
+        droneId,
+        pricePerOccurrenceVnd,
+        requiredDroneFeatureCodes,
+        editorUserId);
+  }
+
+  public void revise(
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      UUID inspectorId,
+      UUID droneId,
+      BigDecimal pricePerOccurrenceVnd,
+      List<String> requiredDroneFeatureCodes,
       UUID editorUserId) {
     validate(
         requestId,
@@ -108,6 +161,7 @@ public class ServiceRequestQuote {
     this.inspectorId = inspectorId;
     this.droneId = droneId;
     this.pricePerOccurrenceVnd = normalizePrice(pricePerOccurrenceVnd);
+    this.requiredDroneFeatureCodes = normalizeFeatures(requiredDroneFeatureCodes);
     this.issuedByUserId = editorUserId;
     this.updatedByUserId = editorUserId;
     this.updatedAt = Instant.now();
@@ -135,6 +189,20 @@ public class ServiceRequestQuote {
         || editorUserId == null) {
       throw new IllegalArgumentException("Quote fields are invalid");
     }
+  }
+
+  private static List<String> normalizeFeatures(List<String> codes) {
+    if (codes == null || codes.isEmpty()) return new ArrayList<>();
+    return new ArrayList<>(
+        codes.stream()
+            .filter(code -> code != null && !code.isBlank())
+            .map(code -> code.trim().toUpperCase(Locale.ROOT))
+            .distinct()
+            .toList());
+  }
+
+  public List<String> getRequiredDroneFeatureCodes() {
+    return Collections.unmodifiableList(new ArrayList<>(requiredDroneFeatureCodes));
   }
 
   private static BigDecimal normalizePrice(BigDecimal value) {

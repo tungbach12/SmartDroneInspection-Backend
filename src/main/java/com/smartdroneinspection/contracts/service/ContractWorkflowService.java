@@ -1,15 +1,18 @@
 package com.smartdroneinspection.contracts.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.EvaluatePartnerCandidatesRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestOccurrenceResponse;
@@ -47,6 +50,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -401,6 +405,46 @@ public class ContractWorkflowService
     return toResponse(request);
   }
 
+  @Transactional(readOnly = true)
+  public List<PartnerRegistryService.DroneFeatureOption> listPartnerCapabilities(UUID actorId) {
+    requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    return partners.listActiveCapabilities();
+  }
+
+  @Transactional(readOnly = true)
+  public List<PartnerCandidateResponse> evaluatePartnerCandidates(
+      UUID actorId, UUID requestId, EvaluatePartnerCandidatesRequest input) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManager(manager, requestId);
+    requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
+    if (request.getRequestType() == RequestType.RECURRING) {
+      validateRecurringQuoteSchedule(request, input.plannedStartAt());
+    }
+    Asset asset =
+        assets
+            .findByIdAndOrganizationId(request.getAssetId(), request.getOrganizationId())
+            .filter(value -> value.getStatus() != AssetStatus.RETIRED)
+            .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
+    partners.validateRequiredDroneFeatureCodes(input.requiredDroneFeatureCodes());
+    List<Instant> starts = proposedOccurrenceStarts(request, input.plannedStartAt());
+    return partners
+        .evaluateCandidates(
+            manager.id(),
+            asset,
+            input.plannedStartAt(),
+            input.requiredDroneFeatureCodes(),
+            starts,
+            (inspectorId, droneId) ->
+                occurrences.hasScheduleConflict(
+                    inspectorId, droneId, input.plannedStartAt(), input.plannedEndAt()),
+            (inspectorId, droneId) ->
+                assignment.hasPlatformScheduleConflict(
+                    inspectorId, droneId, input.plannedStartAt(), input.plannedEndAt()))
+        .stream()
+        .map(PartnerCandidateResponse::from)
+        .toList();
+  }
+
   @Transactional
   public ServiceRequestResponse saveQuote(
       UUID actorId, UUID requestId, IssueServiceQuoteRequest input) {
@@ -422,6 +466,36 @@ public class ContractWorkflowService
     }
     List<Instant> proposedOccurrenceStarts =
         proposedOccurrenceStarts(request, input.firstOccurrenceStartAt());
+    partners.validateRequiredDroneFeatureCodes(input.requiredDroneFeatureCodes());
+    Asset quoteAsset =
+        assets
+            .findByIdAndOrganizationId(request.getAssetId(), request.getOrganizationId())
+            .filter(value -> value.getStatus() != AssetStatus.RETIRED)
+            .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
+    boolean contractConflict =
+        occurrences.hasScheduleConflict(
+            input.inspectorId(),
+            input.droneId(),
+            input.firstOccurrenceStartAt(),
+            input.firstOccurrenceEndAt());
+    boolean inspectionConflict =
+        assignment.hasPlatformScheduleConflict(
+            input.inspectorId(),
+            input.droneId(),
+            input.firstOccurrenceStartAt(),
+            input.firstOccurrenceEndAt());
+    var candidate =
+        partners.evaluateCandidate(
+            manager.id(),
+            input.inspectorId(),
+            input.droneId(),
+            input.firstOccurrenceStartAt(),
+            input.firstOccurrenceEndAt(),
+            quoteAsset,
+            input.requiredDroneFeatureCodes(),
+            contractConflict,
+            inspectionConflict);
+    requireCandidateEligible(candidate, HttpStatus.BAD_REQUEST);
     if (!partners.isEligibleInspectorForAllDates(input.inspectorId(), proposedOccurrenceStarts)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
@@ -454,6 +528,7 @@ public class ContractWorkflowService
                 input.inspectorId(),
                 input.droneId(),
                 input.resolvedPrice(),
+                input.requiredDroneFeatureCodes(),
                 manager.id());
         quotes.saveAndFlush(quote);
       } else {
@@ -464,6 +539,7 @@ public class ContractWorkflowService
             input.inspectorId(),
             input.droneId(),
             input.resolvedPrice(),
+            input.requiredDroneFeatureCodes(),
             manager.id());
         quote = quotes.saveAndFlush(existing);
       }
@@ -674,15 +750,71 @@ public class ContractWorkflowService
     }
 
     requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
-    if (occurrences.hasScheduleConflict(
-        input.inspectorId(), input.droneId(), input.plannedStartAt(), input.plannedEndAt())) {
+    Map<String, Object> acceptedSnapshot = request.getAcceptedTermsSnapshot();
+    if (acceptedSnapshot == null) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "ACCEPTED_TERMS_MISSING",
+          "The accepted quote snapshot is required before dispatch");
+    }
+    List<String> acceptedFeatures = stringList(acceptedSnapshot.get("requiredDroneFeatureCodes"));
+    partners.validateRequiredDroneFeatureCodes(acceptedFeatures);
+    Asset dispatchAsset =
+        assets
+            .findByIdAndOrganizationId(request.getAssetId(), request.getOrganizationId())
+            .filter(value -> value.getStatus() != AssetStatus.RETIRED)
+            .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
+    if (input.inspectorId() == null || input.droneId() == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "PARTNER_PAIR_INVALID", "Inspector and drone are required");
+    }
+    boolean contractConflict =
+        occurrences.hasScheduleConflict(
+            input.inspectorId(), input.droneId(), input.plannedStartAt(), input.plannedEndAt());
+    boolean inspectionConflict =
+        assignment.hasPlatformScheduleConflict(
+            input.inspectorId(), input.droneId(), input.plannedStartAt(), input.plannedEndAt());
+    var candidate =
+        partners.evaluateCandidate(
+            manager.id(),
+            input.inspectorId(),
+            input.droneId(),
+            input.plannedStartAt(),
+            input.plannedEndAt(),
+            dispatchAsset,
+            acceptedFeatures,
+            contractConflict,
+            inspectionConflict);
+    requireCandidateEligible(candidate, HttpStatus.CONFLICT);
+    if (contractConflict) {
       throw failure(
           HttpStatus.CONFLICT,
           "SCHEDULE_CONFLICT",
           "Selected Inspector or drone has another assigned contract occurrence during this window");
     }
     partners.lockEligibleInspector(input.inspectorId(), input.plannedStartAt());
-    partners.lockEligibleDrone(input.droneId(), input.inspectorId());
+    Drone lockedDrone =
+        partners.lockEligibleDrone(input.droneId(), input.inspectorId(), input.plannedStartAt());
+    var lockedCandidate =
+        PartnerCandidateEvaluation.evaluate(
+            input.inspectorId(),
+            lockedDrone.getId(),
+            candidate.inspectorName(),
+            candidate.inspectorAvatarUrl(),
+            lockedDrone.getSerialNumber(),
+            lockedDrone.getModel(),
+            !lockedDrone.getImageFileKeys().isEmpty(),
+            users.findActiveUser(input.inspectorId()).orElse(null),
+            lockedDrone,
+            input.plannedStartAt(),
+            occurrences.hasScheduleConflict(
+                input.inspectorId(), input.droneId(), input.plannedStartAt(), input.plannedEndAt()),
+            assignment.hasPlatformScheduleConflict(
+                input.inspectorId(), input.droneId(), input.plannedStartAt(), input.plannedEndAt()),
+            true,
+            dispatchAsset,
+            acceptedFeatures);
+    requireCandidateEligible(lockedCandidate, HttpStatus.CONFLICT);
     UUID inspectionId =
         assignment.assign(
             request.getOrganizationId(),
@@ -1592,6 +1724,39 @@ public class ContractWorkflowService
           throw failure(
               HttpStatus.BAD_REQUEST, "RECURRENCE_INVALID", "Recurrence cadence is invalid");
     };
+  }
+
+  private static List<String> stringList(Object value) {
+    if (!(value instanceof List<?> values)) return List.of();
+    return values.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+  }
+
+  private void requireCandidateEligible(
+      PartnerCandidateEvaluation.Result candidate, HttpStatus failureStatus) {
+    if (candidate == null) {
+      throw failure(
+          failureStatus,
+          "PARTNER_PAIR_NEEDS_VERIFICATION",
+          "Partner eligibility and required capabilities could not be evaluated");
+    }
+    if (candidate.capabilityFit() == PartnerCandidateEvaluation.Status.MISMATCH) {
+      throw failure(
+          failureStatus,
+          "PARTNER_CAPABILITY_MISMATCH",
+          "Drone does not declare all required capabilities");
+    }
+    if (candidate.capabilityFit() == PartnerCandidateEvaluation.Status.UNKNOWN) {
+      throw failure(
+          failureStatus,
+          "PARTNER_CAPABILITY_UNKNOWN",
+          "Required capabilities or altitude cannot be verified for this drone");
+    }
+    if (candidate.eligibility() != PartnerCandidateEvaluation.Status.PASS) {
+      throw failure(
+          failureStatus,
+          "PARTNER_PAIR_INELIGIBLE",
+          "Selected partner pair fails eligibility checks");
+    }
   }
 
   private void requireRequestedOccurrenceWindow(

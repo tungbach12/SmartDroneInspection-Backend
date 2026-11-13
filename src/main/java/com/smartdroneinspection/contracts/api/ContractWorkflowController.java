@@ -4,10 +4,12 @@ import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequ
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.EvaluatePartnerCandidatesRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.PostServiceRequestMessage;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
 import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
@@ -48,6 +50,14 @@ public class ContractWorkflowController {
     this.workflow = workflow;
   }
 
+  @GetMapping("/partner-capabilities")
+  public ApiResponse<
+          List<
+              com.smartdroneinspection.contracts.service.PartnerRegistryService.DroneFeatureOption>>
+      listPartnerCapabilities(@AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(workflow.listPartnerCapabilities(actorId(jwt)));
+  }
+
   @GetMapping
   public ApiResponse<List<ServiceRequestResponse>> list(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(workflow.list(actorId(jwt)));
@@ -78,6 +88,15 @@ public class ContractWorkflowController {
   public ApiResponse<ServiceRequestResponse> markMessagesRead(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
     return ApiResponse.success(workflow.markMessagesRead(actorId(jwt), requestId));
+  }
+
+  @PostMapping("/{requestId}/partner-candidates")
+  public ApiResponse<List<PartnerCandidateResponse>> evaluatePartnerCandidates(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody EvaluatePartnerCandidatesRequest request) {
+    return ApiResponse.success(
+        workflow.evaluatePartnerCandidates(actorId(jwt), requestId, request));
   }
 
   @PutMapping("/{requestId}/quote")

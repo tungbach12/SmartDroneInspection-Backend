@@ -173,6 +173,7 @@ public class DroneRegistrationApplicationService {
             docMap.get("INSPECTION"),
             docMap,
             request.maxWindResistanceMps(),
+            request.maxAltitudeMeters(),
             request.opticalZoomLevel(),
             Boolean.TRUE.equals(request.hasThermalCamera()),
             Boolean.TRUE.equals(request.hasRtk()),
@@ -235,6 +236,7 @@ public class DroneRegistrationApplicationService {
           docMap.get("INSPECTION"),
           docMap,
           request.maxWindResistanceMps(),
+          request.maxAltitudeMeters(),
           request.opticalZoomLevel(),
           Boolean.TRUE.equals(request.hasThermalCamera()),
           Boolean.TRUE.equals(request.hasRtk()),
@@ -420,6 +422,7 @@ public class DroneRegistrationApplicationService {
             application.getRegistrationExpiresAt());
         drone.applyCapabilitiesAndDocuments(
             application.getMaxWindResistanceMps(),
+            application.getMaxAltitudeMeters(),
             application.getOpticalZoomLevel(),
             application.isHasThermalCamera(),
             application.isHasRtk(),
@@ -439,6 +442,7 @@ public class DroneRegistrationApplicationService {
                 application.getRegistrationExpiresAt());
         drone.applyCapabilitiesAndDocuments(
             application.getMaxWindResistanceMps(),
+            application.getMaxAltitudeMeters(),
             application.getOpticalZoomLevel(),
             application.isHasThermalCamera(),
             application.isHasRtk(),
@@ -463,6 +467,7 @@ public class DroneRegistrationApplicationService {
               application.getRegistrationExpiresAt());
       drone.applyCapabilitiesAndDocuments(
           application.getMaxWindResistanceMps(),
+          application.getMaxAltitudeMeters(),
           application.getOpticalZoomLevel(),
           application.isHasThermalCamera(),
           application.isHasRtk(),

@@ -15,6 +15,7 @@ import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.InspectionItemRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -107,6 +108,8 @@ public class AssetService {
             request.longitude(),
             request.ownershipInformation(),
             initialInspectionItems,
+            request.structureHeightMeters(),
+            request.footprintAreaSquareMeters(),
             actorId);
 
     Asset savedAsset = assets.saveAndFlush(asset);
@@ -160,8 +163,16 @@ public class AssetService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
     }
-    if (request.latitude() != null && request.longitude() != null) {
-      validateNoFlyZone(request.latitude(), request.longitude());
+    BigDecimal proposedLatitude =
+        request.clearCoordinates()
+            ? null
+            : request.latitude() != null ? request.latitude() : asset.getLatitude();
+    BigDecimal proposedLongitude =
+        request.clearCoordinates()
+            ? null
+            : request.longitude() != null ? request.longitude() : asset.getLongitude();
+    if (proposedLatitude != null && proposedLongitude != null) {
+      validateNoFlyZone(proposedLatitude, proposedLongitude);
     }
     asset.update(
         request.name(),
@@ -170,7 +181,13 @@ public class AssetService {
         request.latitude(),
         request.longitude(),
         request.ownershipInformation(),
-        request.inspectionItems());
+        request.inspectionItems(),
+        request.structureHeightMeters(),
+        request.footprintAreaSquareMeters(),
+        request.clearCoordinates(),
+        request.clearStructureHeight(),
+        request.clearFootprintArea(),
+        request.clearDescription());
     Asset saved = assets.saveAndFlush(asset);
     return toResponse(saved);
   }
@@ -297,6 +314,8 @@ public class AssetService {
         asset.getStatus().name(),
         asset.getCategoryId(),
         asset.getCreatedAt(),
-        items);
+        items,
+        asset.getStructureHeightMeters(),
+        asset.getFootprintAreaSquareMeters());
   }
 }

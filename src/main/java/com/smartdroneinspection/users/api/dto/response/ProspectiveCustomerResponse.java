@@ -1,6 +1,7 @@
 package com.smartdroneinspection.users.api.dto.response;
 
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,6 +12,8 @@ public record ProspectiveCustomerResponse(
     String organizationCode,
     String assetName,
     String assetCode,
+    BigDecimal structureHeightMeters,
+    BigDecimal footprintAreaSquareMeters,
     String airspaceClassification,
     String status,
     String reviewNote,
@@ -26,6 +29,8 @@ public record ProspectiveCustomerResponse(
         registration.getOrganizationCode(),
         registration.getAssetName(),
         registration.getAssetCode(),
+        registration.getStructureHeightMeters(),
+        registration.getFootprintAreaSquareMeters(),
         registration.getAirspaceClassification(),
         registration.getStatus(),
         registration.getReviewNote(),

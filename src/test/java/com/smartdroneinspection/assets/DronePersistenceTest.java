@@ -43,6 +43,16 @@ class DronePersistenceTest {
                 "REG-12345",
                 "drones/reg/cert.pdf",
                 registrationExpiresAt));
+    saved.applyCapabilitiesAndDocuments(
+        null,
+        new java.math.BigDecimal("6000"),
+        null,
+        false,
+        false,
+        null,
+        java.util.List.of(),
+        java.util.List.of());
+    saved = drones.saveAndFlush(saved);
 
     Drone reloaded =
         drones.findByIdAndOrganizationId(saved.getId(), fixture.organizationId()).orElseThrow();
@@ -56,9 +66,22 @@ class DronePersistenceTest {
     assertThat(reloaded.getRegistrationNumber()).isEqualTo("REG-12345");
     assertThat(reloaded.getRegistrationFileKey()).isEqualTo("drones/reg/cert.pdf");
     assertThat(reloaded.getRegistrationExpiresAt()).isEqualTo(registrationExpiresAt);
+    assertThat(reloaded.getMaxAltitudeMeters()).isEqualByComparingTo("6000");
     assertThat(reloaded.getCreatedAt()).isNotNull();
     assertThat(reloaded.getUpdatedAt()).isNotNull();
     assertThat(reloaded.getOrganizationId()).isEqualTo(fixture.organizationId());
+  }
+
+  @Test
+  void databaseRejectsNegativeMaximumAltitude() {
+    Fixture fixture = persistFixture();
+    Drone saved = drones.saveAndFlush(newDrone(fixture.organizationId(), "SN-NEGATIVE-ALTITUDE"));
+
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update(
+                    "UPDATE drones SET max_altitude_meters = -1 WHERE id = ?", saved.getId()))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
@@ -128,12 +151,10 @@ class DronePersistenceTest {
     UUID organizationId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations
-          (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status)
+        VALUES (?, ?, ?, 'ACTIVE')
         """,
         organizationId,
-        "Organization " + organizationId,
         "Org " + organizationId,
         "ORG-" + organizationId);
     return organizationId;

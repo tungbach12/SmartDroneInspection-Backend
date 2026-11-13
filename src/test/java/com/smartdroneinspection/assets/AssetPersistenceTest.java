@@ -61,6 +61,42 @@ class AssetPersistenceTest {
   }
 
   @Test
+  void persistsOptionalAssetDimensionsAndLoadsLegacyNullDimensions() {
+    Fixture fixture = persistFixture();
+    Asset asset =
+        new Asset(
+            fixture.organizationId(),
+            fixture.categoryId(),
+            "bridge-dimensions",
+            "River Bridge",
+            null,
+            "District 1",
+            null,
+            null,
+            null,
+            java.util.List.of(),
+            new java.math.BigDecimal("42.50"),
+            new java.math.BigDecimal("1200.75"),
+            fixture.userId());
+    Asset saved = assetRepository.saveAndFlush(asset);
+
+    assertThat(assetRepository.findById(saved.getId()))
+        .hasValueSatisfying(
+            loaded -> {
+              assertThat(loaded.getStructureHeightMeters()).isEqualByComparingTo("42.50");
+              assertThat(loaded.getFootprintAreaSquareMeters()).isEqualByComparingTo("1200.75");
+            });
+
+    Asset legacy = assetRepository.saveAndFlush(newAsset(fixture, "bridge-legacy"));
+    assertThat(assetRepository.findById(legacy.getId()))
+        .hasValueSatisfying(
+            loaded -> {
+              assertThat(loaded.getStructureHeightMeters()).isNull();
+              assertThat(loaded.getFootprintAreaSquareMeters()).isNull();
+            });
+  }
+
+  @Test
   void rejectsDuplicateCodeWithinOrganization() {
     Fixture fixture = persistFixture();
     assetRepository.saveAndFlush(newAsset(fixture, "bridge-01"));
@@ -159,11 +195,10 @@ class AssetPersistenceTest {
     String suffix = organizationId.toString();
     jdbcTemplate.update(
         """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
+        INSERT INTO organizations (id, display_name, registration_code, status)
+        VALUES (?, ?, ?, 'ACTIVE')
         """,
         organizationId,
-        "Organization " + suffix,
         "Organization " + suffix,
         "ORG-" + suffix);
     return organizationId;

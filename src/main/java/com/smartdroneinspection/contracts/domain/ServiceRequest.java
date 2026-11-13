@@ -339,17 +339,18 @@ public class ServiceRequest {
   }
 
   private Map<String, Object> acceptedTerms(ServiceRequestQuote quote, Instant at, UUID userId) {
-    return Map.of(
-        "quoteId", quote.getId(),
-        "scopeSnapshot", quote.getScopeSnapshot(),
-        "firstOccurrenceStartAt", quote.getFirstOccurrenceStartAt(),
-        "firstOccurrenceEndAt", quote.getFirstOccurrenceEndAt(),
-        "inspectorId", quote.getInspectorId(),
-        "droneId", quote.getDroneId(),
-        "pricePerOccurrenceVnd", quote.getPricePerOccurrenceVnd(),
-        "issuedByUserId", quote.getIssuedByUserId(),
-        "acceptedAt", at,
-        "acceptedByUserId", userId);
+    return Map.ofEntries(
+        Map.entry("quoteId", quote.getId()),
+        Map.entry("scopeSnapshot", quote.getScopeSnapshot()),
+        Map.entry("firstOccurrenceStartAt", quote.getFirstOccurrenceStartAt()),
+        Map.entry("firstOccurrenceEndAt", quote.getFirstOccurrenceEndAt()),
+        Map.entry("inspectorId", quote.getInspectorId()),
+        Map.entry("droneId", quote.getDroneId()),
+        Map.entry("pricePerOccurrenceVnd", quote.getPricePerOccurrenceVnd()),
+        Map.entry("requiredDroneFeatureCodes", quote.getRequiredDroneFeatureCodes()),
+        Map.entry("issuedByUserId", quote.getIssuedByUserId()),
+        Map.entry("acceptedAt", at),
+        Map.entry("acceptedByUserId", userId));
   }
 
   public void recordSignedContract(String objectKey) {

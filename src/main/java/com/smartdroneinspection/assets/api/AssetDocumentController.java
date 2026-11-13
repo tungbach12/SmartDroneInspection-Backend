@@ -41,10 +41,16 @@ public class AssetDocumentController {
       @RequestParam("file") MultipartFile file,
       @RequestParam String documentType,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-          LocalDate documentDate) {
+          LocalDate documentDate,
+      @RequestParam(required = false, defaultValue = "false") boolean primaryImage) {
     return ApiResponse.success(
         documents.upload(
-            UUID.fromString(jwt.getSubject()), assetId, file, documentType, documentDate));
+            UUID.fromString(jwt.getSubject()),
+            assetId,
+            file,
+            documentType,
+            documentDate,
+            primaryImage));
   }
 
   @GetMapping

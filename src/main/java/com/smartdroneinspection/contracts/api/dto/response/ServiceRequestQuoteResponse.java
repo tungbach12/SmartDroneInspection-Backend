@@ -3,6 +3,7 @@ package com.smartdroneinspection.contracts.api.dto.response;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record ServiceRequestQuoteResponse(
@@ -19,7 +20,13 @@ public record ServiceRequestQuoteResponse(
     Instant createdAt,
     Instant updatedAt,
     UUID updatedByUserId,
-    long rowVersion) {
+    long rowVersion,
+    List<String> requiredDroneFeatureCodes) {
+
+  public ServiceRequestQuoteResponse {
+    requiredDroneFeatureCodes =
+        requiredDroneFeatureCodes == null ? List.of() : List.copyOf(requiredDroneFeatureCodes);
+  }
 
   public static ServiceRequestQuoteResponse from(ServiceRequestQuote quote) {
     return new ServiceRequestQuoteResponse(
@@ -36,6 +43,7 @@ public record ServiceRequestQuoteResponse(
         quote.getCreatedAt(),
         quote.getUpdatedAt(),
         quote.getUpdatedByUserId(),
-        quote.getRowVersion());
+        quote.getRowVersion(),
+        quote.getRequiredDroneFeatureCodes());
   }
 }

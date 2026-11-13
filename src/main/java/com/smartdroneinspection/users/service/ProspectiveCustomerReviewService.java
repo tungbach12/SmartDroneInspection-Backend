@@ -117,7 +117,9 @@ public class ProspectiveCustomerReviewService {
             registration.getAssetLocation(),
             registration.getLatitude(),
             registration.getLongitude(),
-            registration.getOwnershipInformation()));
+            registration.getOwnershipInformation(),
+            null,
+            null));
     registration.approve(adminId, request.reviewNote());
     registrations.saveAndFlush(registration);
     audit.record(
