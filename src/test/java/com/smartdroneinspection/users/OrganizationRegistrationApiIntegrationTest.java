@@ -11,9 +11,8 @@ import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
+import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,13 +26,17 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
-@SpringBootTest
+@SpringBootTest(
+    properties = {
+      "smartdroneinspection.auth.otp.enabled=false",
+      "smartdroneinspection.auth.otp.challenge-pepper="
+    })
 @Import(TestcontainersConfiguration.class)
 class OrganizationRegistrationApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired UserRepository users;
-  @Autowired OrganizationRepository organizations;
+  @Autowired ProspectiveCustomerRegistrationRepository prospectiveRegistrations;
   @Autowired AssetCategoryRepository categories;
   @Autowired AssetRepository assets;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -51,15 +54,14 @@ class OrganizationRegistrationApiIntegrationTest {
   }
 
   @Test
-  void registrationCreatesActiveOrganizationCustomerAndFirstAssetAtomically() throws Exception {
+  void registrationCreatesActiveCustomerAndFirstAssetAtomically() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
     String email = "customer-" + unique + "@example.test";
-    String code = "ORG-" + unique.substring(0, 16);
     var category =
         categories.saveAndFlush(
             new AssetCategory("REG-" + unique.substring(0, 12), "Bridge", null, true));
     String assetCode = "AST-" + unique.substring(0, 16);
-    String body = registrationBody(email, code, assetCode, category.getId(), 10.5500, 106.8500);
+    String body = registrationBody(email, assetCode, category.getId(), 10.5500, 106.8500);
 
     mockMvc
         .perform(
@@ -70,37 +72,34 @@ class OrganizationRegistrationApiIntegrationTest {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.registrationStatus").value("ACTIVE"))
         .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")))
-        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER_ORGANIZATION"));
+        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER"));
 
     User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(customer.roleValues()).containsExactly("CUSTOMER");
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM assets WHERE organization_id = ? AND asset_code = ?",
+                "SELECT count(*) FROM assets WHERE owner_customer_id = ? AND asset_code = ?",
                 Integer.class,
-                customer.getOrganizationId(),
+                customer.getId(),
                 assetCode.toUpperCase(java.util.Locale.ROOT)))
         .isEqualTo(1);
-    Organization organization = organizations.findById(customer.getOrganizationId()).orElseThrow();
-    assertThat(organization.getStatus()).isEqualTo("ACTIVE");
   }
 
   @Test
-  void registrationWithoutFirstAssetCreatesActiveOrganizationAndCustomer() throws Exception {
+  void registrationWithoutFirstAssetCreatesActiveCustomer() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
     String email = "direct-" + unique + "@example.test";
-    String code = "DIR-" + unique.substring(0, 16);
     String body =
         """
         {
           "email":"%s",
           "fullName":"Direct Customer Admin",
           "organizationName":"Direct Infrastructure Company",
-          "organizationCode":"%s",
+          "organizationCode":"DIR-%s",
           "password":"a sufficiently long passphrase"
         }
         """
-            .formatted(email, code);
+            .formatted(email, unique.substring(0, 16));
 
     mockMvc
         .perform(
@@ -111,19 +110,18 @@ class OrganizationRegistrationApiIntegrationTest {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.registrationStatus").value("ACTIVE"))
         .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")))
-        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER_ORGANIZATION"));
+        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER"));
 
     User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(customer.roleValues()).containsExactly("CUSTOMER");
-    Organization organization = organizations.findById(customer.getOrganizationId()).orElseThrow();
-    assertThat(organization.getStatus()).isEqualTo("ACTIVE");
   }
 
   @Test
   void unlistedAirspaceCreatesDisabledProspectAndNoOrganization() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
     String email = "pending-" + unique + "@example.test";
-    String code = "PEND-" + unique.substring(0, 16);
+    String assetCode = "AST-" + unique.substring(0, 16);
+    String code = "ORG-" + assetCode;
     var category =
         categories.saveAndFlush(
             new AssetCategory("PEN-" + unique.substring(0, 12), "Bridge", null, true));
@@ -133,22 +131,16 @@ class OrganizationRegistrationApiIntegrationTest {
             post("/api/v1/auth/register")
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    registrationBody(
-                        email,
-                        code,
-                        "AST-" + unique.substring(0, 16),
-                        category.getId(),
-                        10.9,
-                        106.7)))
+                .content(registrationBody(email, assetCode, category.getId(), 10.9, 106.7)))
         .andExpect(status().isAccepted())
         .andExpect(jsonPath("$.data.registrationStatus").value("PENDING_AIRSPACE_REVIEW"))
-        .andExpect(jsonPath("$.data.user.actorZone").value("PROSPECT_CUSTOMER"));
+        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER"));
 
     User prospect = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
-    assertThat(prospect.getOrganizationId()).isNull();
     assertThat(prospect.getStatus().name()).isEqualTo("DISABLED");
-    assertThat(organizations.findByRegistrationCodeIgnoreCase(code)).isEmpty();
+    assertThat(
+            prospectiveRegistrations.existsByOrganizationCodeIgnoreCaseAndStatus(code, "PENDING"))
+        .isTrue();
   }
 
   @Test
@@ -167,7 +159,6 @@ class OrganizationRegistrationApiIntegrationTest {
                 .content(
                     registrationBody(
                         email,
-                        "BLOCK-" + unique.substring(0, 16),
                         "BLK-" + unique.substring(0, 16),
                         category.getId(),
                         10.8188,
@@ -178,12 +169,8 @@ class OrganizationRegistrationApiIntegrationTest {
   }
 
   private String registrationBody(
-      String email,
-      String organizationCode,
-      String assetCode,
-      UUID categoryId,
-      double lat,
-      double lon) {
+      String email, String assetCode, UUID categoryId, double lat, double lon) {
+    String organizationCode = "ORG-" + assetCode;
     return """
         {
           "email":"%s",

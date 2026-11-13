@@ -7,7 +7,7 @@ import java.util.UUID;
 
 public record InspectionResponse(
     UUID id,
-    UUID organizationId,
+    UUID ownerCustomerId,
     UUID assetId,
     String assetName,
     String locationText,
@@ -36,7 +36,7 @@ public record InspectionResponse(
 
   public InspectionResponse(
       UUID id,
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       String assetName,
       String locationText,
@@ -56,7 +56,7 @@ public record InspectionResponse(
       Instant updatedAt) {
     this(
         id,
-        organizationId,
+        ownerCustomerId,
         assetId,
         assetName,
         locationText,
@@ -84,7 +84,7 @@ public record InspectionResponse(
       com.smartdroneinspection.inspections.domain.Inspection inspection) {
     return new InspectionResponse(
         inspection.getId(),
-        inspection.getOrganizationId(),
+        inspection.getOwnerCustomerId(),
         inspection.getAssetId(),
         null,
         null,

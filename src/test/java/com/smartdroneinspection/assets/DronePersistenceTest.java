@@ -33,7 +33,7 @@ class DronePersistenceTest {
     Drone saved =
         drones.saveAndFlush(
             new Drone(
-                fixture.organizationId(),
+                fixture.ownerCustomerId(),
                 "SN-ROUNDTRIP",
                 "Mavic 3 Enterprise",
                 "DJI",
@@ -55,7 +55,7 @@ class DronePersistenceTest {
     saved = drones.saveAndFlush(saved);
 
     Drone reloaded =
-        drones.findByIdAndOrganizationId(saved.getId(), fixture.organizationId()).orElseThrow();
+        drones.findByIdAndOwnerCustomerId(saved.getId(), fixture.ownerCustomerId()).orElseThrow();
 
     assertThat(reloaded.getSerialNumber()).isEqualTo("SN-ROUNDTRIP");
     assertThat(reloaded.getModel()).isEqualTo("Mavic 3 Enterprise");
@@ -69,13 +69,13 @@ class DronePersistenceTest {
     assertThat(reloaded.getMaxAltitudeMeters()).isEqualByComparingTo("6000");
     assertThat(reloaded.getCreatedAt()).isNotNull();
     assertThat(reloaded.getUpdatedAt()).isNotNull();
-    assertThat(reloaded.getOrganizationId()).isEqualTo(fixture.organizationId());
+    assertThat(reloaded.getOwnerCustomerId()).isEqualTo(fixture.ownerCustomerId());
   }
 
   @Test
   void databaseRejectsNegativeMaximumAltitude() {
     Fixture fixture = persistFixture();
-    Drone saved = drones.saveAndFlush(newDrone(fixture.organizationId(), "SN-NEGATIVE-ALTITUDE"));
+    Drone saved = drones.saveAndFlush(newDrone(fixture.ownerCustomerId(), "SN-NEGATIVE-ALTITUDE"));
 
     assertThatThrownBy(
             () ->
@@ -85,96 +85,78 @@ class DronePersistenceTest {
   }
 
   @Test
-  void returnsDroneOnlyForItsOwnOrganization() {
+  void returnsDroneOnlyForItsOwnOwner() {
     Fixture fixture = persistFixture();
-    Drone saved = drones.saveAndFlush(newDrone(fixture.organizationId(), "SN-SCOPE"));
+    Drone saved = drones.saveAndFlush(newDrone(fixture.ownerCustomerId(), "SN-SCOPE"));
 
-    assertThat(drones.findByIdAndOrganizationId(saved.getId(), fixture.organizationId()))
+    assertThat(drones.findByIdAndOwnerCustomerId(saved.getId(), fixture.ownerCustomerId()))
         .isPresent();
-    assertThat(drones.findByIdAndOrganizationId(saved.getId(), UUID.randomUUID())).isEmpty();
+    assertThat(drones.findByIdAndOwnerCustomerId(saved.getId(), UUID.randomUUID())).isEmpty();
   }
 
   @Test
-  void rejectsTheSameSerialNumberAcrossOrganizations() {
-    UUID firstOrganizationId = persistOrganization();
-    UUID secondOrganizationId = persistOrganization();
-    persistUser(firstOrganizationId);
-    persistUser(secondOrganizationId);
+  void rejectsTheSameSerialNumberAcrossOwners() {
+    Fixture firstFixture = persistFixture();
+    Fixture secondFixture = persistFixture();
 
-    drones.saveAndFlush(newDrone(firstOrganizationId, "SN-SHARED"));
+    drones.saveAndFlush(newDrone(firstFixture.ownerCustomerId(), "SN-SHARED"));
 
-    assertThatThrownBy(() -> drones.saveAndFlush(newDrone(secondOrganizationId, "SN-SHARED")))
+    assertThatThrownBy(
+            () -> drones.saveAndFlush(newDrone(secondFixture.ownerCustomerId(), "SN-SHARED")))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
-  void rejectsDuplicateSerialNumberWithinOneOrganization() {
+  void rejectsDuplicateSerialNumberWithinOneOwner() {
     Fixture fixture = persistFixture();
-    drones.saveAndFlush(newDrone(fixture.organizationId(), "SN-DUP"));
+    drones.saveAndFlush(newDrone(fixture.ownerCustomerId(), "SN-DUP"));
 
-    assertThatThrownBy(() -> drones.saveAndFlush(newDrone(fixture.organizationId(), "SN-DUP")))
+    assertThatThrownBy(() -> drones.saveAndFlush(newDrone(fixture.ownerCustomerId(), "SN-DUP")))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
-  void selectionQueryReturnsOnlyActiveDronesOfTheOwnOrganization() {
-    UUID organizationId = persistOrganization();
-    UUID otherOrganizationId = persistOrganization();
-    persistUser(organizationId);
-    persistUser(otherOrganizationId);
+  void selectionQueryReturnsOnlyActiveDronesOfTheOwnOwner() {
+    Fixture fixture = persistFixture();
+    Fixture otherFixture = persistFixture();
 
-    Drone active = drones.saveAndFlush(newDrone(organizationId, "SN-ACTIVE"));
-    Drone suspended = drones.saveAndFlush(newDrone(organizationId, "SN-SUSPENDED"));
+    Drone active = drones.saveAndFlush(newDrone(fixture.ownerCustomerId(), "SN-ACTIVE"));
+    Drone suspended = drones.saveAndFlush(newDrone(fixture.ownerCustomerId(), "SN-SUSPENDED"));
     suspended.changeServiceability(DroneServiceability.SUSPENDED);
     drones.saveAndFlush(suspended);
-    drones.saveAndFlush(newDrone(otherOrganizationId, "SN-FOREIGN-ACTIVE"));
+    drones.saveAndFlush(newDrone(otherFixture.ownerCustomerId(), "SN-FOREIGN-ACTIVE"));
 
     assertThat(
-            drones.findAllByOrganizationIdAndServiceability(
-                organizationId, DroneServiceability.ACTIVE))
+            drones.findAllByOwnerCustomerIdAndServiceability(
+                fixture.ownerCustomerId(), DroneServiceability.ACTIVE))
         .extracting(Drone::getId)
         .containsExactly(active.getId());
   }
 
-  private Drone newDrone(UUID organizationId, String serialNumber) {
+  private Drone newDrone(UUID ownerCustomerId, String serialNumber) {
     return new Drone(
-        organizationId, serialNumber, "Mavic 3", "DJI", "{}", DroneServiceability.ACTIVE, null);
+        ownerCustomerId, serialNumber, "Mavic 3", "DJI", "{}", DroneServiceability.ACTIVE, null);
   }
 
   private Fixture persistFixture() {
-    UUID organizationId = persistOrganization();
-    UUID userId = persistUser(organizationId);
-    return new Fixture(organizationId, userId);
+    UUID userId = persistUser();
+    return new Fixture(userId, userId);
   }
 
-  private UUID persistOrganization() {
-    UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, ?, ?, 'ACTIVE')
-        """,
-        organizationId,
-        "Org " + organizationId,
-        "ORG-" + organizationId);
-    return organizationId;
-  }
-
-  private UUID persistUser(UUID organizationId) {
+  private UUID persistUser() {
     UUID userId = UUID.randomUUID();
     String email = "pilot-" + userId + "@example.test";
     jdbcTemplate.update(
         """
         INSERT INTO users
-          (id, email, normalized_email, full_name, status, actor_zone, organization_id)
-        VALUES (?, ?, ?, 'Test Pilot', 'ACTIVE', 'CUSTOMER_ORGANIZATION', ?)
+          (id, email, normalized_email, full_name, status, actor_zone)
+        VALUES (?, ?, ?, 'Test Pilot', 'ACTIVE', 'INSPECTOR')
         """,
         userId,
         email,
-        email,
-        organizationId);
+        email);
     return userId;
   }
 
-  private record Fixture(UUID organizationId, UUID userId) {}
+  private record Fixture(UUID ownerCustomerId, UUID userId) {}
 }

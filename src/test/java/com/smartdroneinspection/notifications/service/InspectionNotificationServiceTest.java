@@ -41,7 +41,6 @@ class InspectionNotificationServiceTest {
   void assignmentSkipsWhenRequiredIdsMissing() {
     UUID id = UUID.randomUUID();
     service.recordInspectionAssignment(null, id, id, Instant.now());
-    service.recordInspectionAssignment(id, null, id, Instant.now());
     service.recordInspectionAssignment(id, id, null, Instant.now());
 
     verify(userAccess, never()).findActiveUser(any());
@@ -62,19 +61,21 @@ class InspectionNotificationServiceTest {
   }
 
   @Test
-  void assignmentSkipsWhenOrgMismatch() {
+  void assignmentSkipsWhenInspectorOrgMismatch() {
     UUID inspectionId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
     UUID otherOrgId = UUID.randomUUID();
     UUID inspectorId = UUID.randomUUID();
 
     ActiveUser user =
-        new ActiveUser(inspectorId, Set.of("INSPECTOR"), otherOrgId, "Inspector Test");
+        new ActiveUser(inspectorId, Set.of("INSPECTOR"), otherOrgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(user));
 
     service.recordInspectionAssignment(inspectionId, orgId, inspectorId, Instant.now());
 
-    verify(notificationRepository, never()).saveAndFlush(any());
+    // Assignment notification recipient is the inspector, not the organization; org no longer gates
+    // it.
+    verify(notificationRepository).saveAndFlush(any());
   }
 
   @Test
@@ -84,7 +85,7 @@ class InspectionNotificationServiceTest {
     UUID userId = UUID.randomUUID();
 
     ActiveUser user =
-        new ActiveUser(userId, Set.of("MAINTENANCE_ENGINEER"), orgId, "Engineer Test");
+        new ActiveUser(userId, Set.of("MAINTENANCE_ENGINEER"), orgId.toString(), "Engineer Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
 
     service.recordInspectionAssignment(inspectionId, orgId, userId, Instant.now());
@@ -99,7 +100,8 @@ class InspectionNotificationServiceTest {
     UUID inspectorId = UUID.randomUUID();
     String key = "INSPECTION_ASSIGNED:" + inspectionId + ":" + inspectorId;
 
-    ActiveUser user = new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(user));
     when(notificationRepository.existsByDeduplicationKey(key)).thenReturn(true);
 
@@ -116,7 +118,8 @@ class InspectionNotificationServiceTest {
     Instant plannedStart = Instant.now().plus(1, ChronoUnit.DAYS);
     String key = "INSPECTION_ASSIGNED:" + inspectionId + ":" + inspectorId;
 
-    ActiveUser user = new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(user));
     when(notificationRepository.existsByDeduplicationKey(key)).thenReturn(false);
 
@@ -127,12 +130,11 @@ class InspectionNotificationServiceTest {
 
     Notification saved = captor.getValue();
     assertThat(saved.getRecipientUserId()).isEqualTo(inspectorId);
-    assertThat(saved.getOrganizationId()).isEqualTo(orgId);
     assertThat(saved.getEventType()).isEqualTo("INSPECTION_ASSIGNED");
     assertThat(saved.getChannel()).isEqualTo(NotificationChannel.IN_APP);
     assertThat(saved.getTitle()).isEqualTo("Inspection Assigned");
     assertThat(saved.getBody()).contains(inspectionId.toString());
-    assertThat(saved.getTargetPath()).isEqualTo("/inspections/" + inspectionId);
+    assertThat(saved.getTargetPath()).isEqualTo("/operations/inspections/" + inspectionId);
     assertThat(saved.getStatus()).isEqualTo(NotificationStatus.SENT);
     assertThat(saved.getDeduplicationKey()).isEqualTo(key);
   }
@@ -144,7 +146,8 @@ class InspectionNotificationServiceTest {
     UUID inspectorId = UUID.randomUUID();
     String key = "INSPECTION_ASSIGNED:" + inspectionId + ":" + inspectorId;
 
-    ActiveUser user = new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(inspectorId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(user));
     when(notificationRepository.existsByDeduplicationKey(key)).thenReturn(false);
     doThrow(new DataIntegrityViolationException("duplicate key value"))
@@ -156,31 +159,32 @@ class InspectionNotificationServiceTest {
   }
 
   @Test
-  void recordFieldSessionAbortedCreatesNotificationForManagers() {
+  void recordFieldSessionAbortedCreatesNotificationForOwnerCustomer() {
     UUID inspectionId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
-    UUID managerId = UUID.randomUUID();
+    UUID ownerCustomerId = UUID.randomUUID();
 
-    UserAccess.WorkforceMember manager =
-        new UserAccess.WorkforceMember(
-            managerId, "manager@test.org", "Test Manager", Set.of("MANAGER"), "ACTIVE", orgId);
-    when(userAccess.listWorkforceMembers(orgId)).thenReturn(java.util.List.of(manager));
-
-    service.recordFieldSessionAborted(inspectionId, orgId, UUID.randomUUID(), "Heavy rain");
+    service.recordFieldSessionAborted(
+        inspectionId, ownerCustomerId, UUID.randomUUID(), "Heavy rain");
 
     ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
     verify(notificationRepository).saveAndFlush(captor.capture());
 
     Notification saved = captor.getValue();
-    assertThat(saved.getRecipientUserId()).isEqualTo(managerId);
+    assertThat(saved.getRecipientUserId()).isEqualTo(ownerCustomerId);
     assertThat(saved.getEventType()).isEqualTo("FIELD_SESSION_ABORTED");
     assertThat(saved.getBody()).contains("Heavy rain");
   }
 
   @Test
+  void recordFieldSessionAbortedSkipsWhenOwnerCustomerMissing() {
+    UUID inspectionId = UUID.randomUUID();
+    service.recordFieldSessionAborted(inspectionId, null, UUID.randomUUID(), "Reason");
+    verify(notificationRepository, never()).saveAndFlush(any());
+  }
+
+  @Test
   void recordFieldSessionAbortedSkipsWhenIdsMissing() {
     service.recordFieldSessionAborted(null, UUID.randomUUID(), UUID.randomUUID(), "Reason");
-    service.recordFieldSessionAborted(UUID.randomUUID(), null, UUID.randomUUID(), "Reason");
     verify(notificationRepository, never()).saveAndFlush(any());
   }
 }

@@ -644,7 +644,7 @@ public class ReportService {
     Inspection inspection = inspections.findById(inspectionId).orElseThrow();
     Identity reportIdentity =
         reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .find(inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
     DroneContext assignedDrone =
         reportIdentity == null || reportIdentity.droneSerialNumber() == null
@@ -844,10 +844,10 @@ public class ReportService {
     Inspection inspection;
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       inspection = inspections.findById(inspectionId).orElseThrow(this::reportNotFound);
-    } else if (actor.hasRole(Roles.CUSTOMER) && actor.organizationId() != null) {
+    } else if (actor.hasRole(Roles.CUSTOMER) && actor.ownerCustomerId() != null) {
       inspection =
           inspections
-              .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+              .findByIdAndOwnerCustomerId(inspectionId, actor.ownerCustomerId())
               .orElseThrow(this::reportNotFound);
     } else {
       throw new BusinessException(
@@ -1124,7 +1124,7 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     Identity reportIdentity =
         reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .find(inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
@@ -1418,7 +1418,7 @@ public class ReportService {
     if (inspection == null) return null;
     var identity =
         reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .find(inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
     var drone =
         identity == null || identity.droneSerialNumber() == null

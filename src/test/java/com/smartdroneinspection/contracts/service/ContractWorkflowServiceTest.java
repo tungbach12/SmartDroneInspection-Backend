@@ -75,7 +75,7 @@ class ContractWorkflowServiceTest {
 
   private final UUID customerId = UUID.randomUUID();
   private final UUID managerId = UUID.randomUUID();
-  private final UUID orgId = UUID.randomUUID();
+  private final UUID orgId = customerId;
   private final UUID assetId = UUID.randomUUID();
   private final UUID inspectorId = UUID.randomUUID();
   private final UUID droneId = UUID.randomUUID();
@@ -113,7 +113,8 @@ class ContractWorkflowServiceTest {
     when(users.findActiveUser(customerId))
         .thenReturn(
             Optional.of(
-                new UserAccess.ActiveUser(customerId, Set.of(Roles.CUSTOMER), orgId, "Customer")));
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
     when(users.findActiveUser(managerId))
         .thenReturn(
             Optional.of(
@@ -124,8 +125,7 @@ class ContractWorkflowServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Inspector",
                     "inspector@example.test",
                     "LIC-TEST-001",
@@ -136,7 +136,7 @@ class ContractWorkflowServiceTest {
     Asset quoteAsset = mock(Asset.class);
     when(quoteAsset.getStatus()).thenReturn(AssetStatus.ACTIVE);
     when(quoteAsset.getId()).thenReturn(assetId);
-    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(quoteAsset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(quoteAsset));
     Drone lockedDrone = mock(Drone.class);
     when(lockedDrone.getId()).thenReturn(droneId);
     when(lockedDrone.getInspectorOwnerId()).thenReturn(inspectorId);
@@ -191,7 +191,7 @@ class ContractWorkflowServiceTest {
     when(asset.getId()).thenReturn(assetId);
     when(asset.getName()).thenReturn("Bridge 1");
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
-    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(asset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
     when(requests.saveAndFlush(any(ServiceRequest.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -225,7 +225,7 @@ class ContractWorkflowServiceTest {
     when(asset.getId()).thenReturn(assetId);
     when(asset.getName()).thenReturn("Bridge 1");
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
-    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(asset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
     CreateServiceRequest input =
         new CreateServiceRequest(
             assetId,
@@ -253,7 +253,7 @@ class ContractWorkflowServiceTest {
     when(asset.getId()).thenReturn(assetId);
     when(asset.getName()).thenReturn("Bridge 1");
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
-    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(asset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
     when(requests.saveAndFlush(any(ServiceRequest.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
     LocalDate start = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
@@ -286,7 +286,7 @@ class ContractWorkflowServiceTest {
     when(asset.getId()).thenReturn(assetId);
     when(asset.getName()).thenReturn("Bridge 1");
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
-    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(asset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
     LocalDate start = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
     CreateServiceRequest input =
         new CreateServiceRequest(
@@ -427,7 +427,7 @@ class ContractWorkflowServiceTest {
             Instant.parse("2026-12-04T01:00:00Z"),
             Instant.parse("2026-12-04T03:00:00Z"));
     ReflectionTestUtils.setField(currentQuote, "rowVersion", 3L);
-    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(request));
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.of(currentQuote));
     when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(false);
@@ -503,7 +503,7 @@ class ContractWorkflowServiceTest {
     UUID requestId = UUID.randomUUID();
     ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
     request.markQuoted();
-    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(request));
     ServiceRequestQuote currentQuote =
         quoteEntity(
@@ -526,19 +526,19 @@ class ContractWorkflowServiceTest {
     UUID requestId = UUID.randomUUID();
     ServiceRequest customerRequest =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
-    when(requests.findByIdAndOrganizationId(requestId, orgId))
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(customerRequest));
     when(quotes.findByRequestId(any())).thenReturn(Optional.empty());
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(any())).thenReturn(List.of());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(any())).thenReturn(List.of());
 
-    assertThat(service.get(customerId, requestId).organizationId()).isEqualTo(orgId);
+    assertThat(service.get(customerId, requestId).ownerCustomerId()).isEqualTo(orgId);
 
     ServiceRequest managerRequest = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     when(requests.findById(requestId)).thenReturn(Optional.of(managerRequest));
     assertThat(service.get(managerId, requestId).id()).isEqualTo(managerRequest.getId());
 
-    when(requests.findByOrganizationIdOrderByCreatedAtDesc(orgId))
+    when(requests.findByOwnerCustomerIdOrderByCreatedAtDesc(orgId))
         .thenReturn(List.of(customerRequest));
     when(requests.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(managerRequest));
     assertThat(service.list(customerId)).hasSize(1);
@@ -550,7 +550,7 @@ class ContractWorkflowServiceTest {
     UUID requestId = UUID.randomUUID();
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
-    when(requests.findByIdAndOrganizationId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
     when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
@@ -654,7 +654,7 @@ class ContractWorkflowServiceTest {
     when(asset.getId()).thenReturn(assetId);
     when(asset.getName()).thenReturn("Bridge 1");
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
-    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(asset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
     LocalDate requestedFrom = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
     CreateServiceRequest input =
         new CreateServiceRequest(
@@ -1249,7 +1249,7 @@ class ContractWorkflowServiceTest {
         8,
         "a".repeat(64),
         managerId);
-    when(requests.findByIdAndOrganizationId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
     when(requests.findById(requestId)).thenReturn(Optional.of(request));
     when(objectStore.open("contracts/requests/private-key/signed_contract.pdf"))
         .thenAnswer(invocation -> new java.io.ByteArrayInputStream("%PDF-e2e".getBytes()));
@@ -1268,8 +1268,8 @@ class ContractWorkflowServiceTest {
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(
-                    foreignCustomerId, Set.of(Roles.CUSTOMER), foreignOrganizationId, "Customer")));
-    when(requests.findByIdAndOrganizationId(requestId, foreignOrganizationId))
+                    foreignCustomerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    when(requests.findByIdAndOwnerCustomerId(requestId, foreignOrganizationId))
         .thenReturn(Optional.empty());
     assertThatThrownBy(() -> service.openSignedContract(foreignCustomerId, requestId))
         .isInstanceOf(BusinessException.class)
@@ -1511,7 +1511,7 @@ class ContractWorkflowServiceTest {
             managerId);
     ReflectionTestUtils.setField(quote, "id", UUID.randomUUID());
 
-    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(request));
     when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(quote));
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.of(quote));
@@ -1609,7 +1609,7 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     occurrence.assign(inspectorId, droneId, inspectionId, managerId);
 
-    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
     when(reportAccess.isReportPublished(inspectionId, reportVersionId)).thenReturn(true);
@@ -1643,7 +1643,7 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     occurrence.assign(inspectorId, droneId, inspectionId, managerId);
 
-    when(requests.findWithLockByIdAndOrganizationId(requestId, orgId))
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
     when(reportAccess.isReportPublished(inspectionId, reportVersionId)).thenReturn(false);

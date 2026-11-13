@@ -34,13 +34,12 @@ public class SecurityAuditService {
     jdbcTemplate.update(
         """
         INSERT INTO audit_events
-          (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+          (actor_user_id, action, aggregate_type, aggregate_id,
            after_status, trace_id, safe_metadata, created_at)
         VALUES
-          ((SELECT organization_id FROM users WHERE id = ?), ?, ?, ?, ?, ?, ?,
+          (?, ?, ?, ?, ?, ?,
            jsonb_build_object('ip_address', ?::text, 'user_agent', ?::text), ?)
         """,
-        subjectUserId,
         actorUserId,
         eventType,
         aggregateType,

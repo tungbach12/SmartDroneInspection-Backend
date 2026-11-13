@@ -49,9 +49,6 @@ public class User {
   @Column(name = "actor_zone", nullable = false, length = 32)
   private ActorZone actorZone;
 
-  @Column(name = "organization_id")
-  private UUID organizationId;
-
   @Column(name = "auth_version", nullable = false)
   private int authVersion;
 
@@ -82,13 +79,8 @@ public class User {
   protected User() {}
 
   public User(
-      String email,
-      String fullName,
-      String passwordHash,
-      UserStatus status,
-      ActorZone actorZone,
-      UUID organizationId) {
-    this(email, fullName, null, null, passwordHash, status, actorZone, organizationId);
+      String email, String fullName, String passwordHash, UserStatus status, ActorZone actorZone) {
+    this(email, fullName, null, null, passwordHash, status, actorZone);
   }
 
   public User(
@@ -98,8 +90,7 @@ public class User {
       String avatarUrl,
       String passwordHash,
       UserStatus status,
-      ActorZone actorZone,
-      UUID organizationId) {
+      ActorZone actorZone) {
     this.email = email;
     this.normalizedEmail = normalizeEmail(email);
     this.fullName = fullName;
@@ -108,7 +99,6 @@ public class User {
     this.passwordHash = passwordHash;
     this.status = status;
     this.actorZone = actorZone;
-    this.organizationId = organizationId;
     this.createdAt = Instant.now();
     this.updatedAt = this.createdAt;
   }
@@ -167,18 +157,13 @@ public class User {
     return actorZone;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
-  }
-
   public void setFullName(String fullName) {
     this.fullName = fullName;
     this.updatedAt = Instant.now();
   }
 
-  public void approveAsCustomer(UUID organizationId) {
-    updateAccessProfile(
-        ActorZone.CUSTOMER_ORGANIZATION, organizationId, List.of(UserRole.CUSTOMER));
+  public void approveAsCustomer() {
+    updateAccessProfile(ActorZone.CUSTOMER, List.of(UserRole.CUSTOMER));
     this.status = UserStatus.ACTIVE;
     this.otpVerified = true;
     this.updatedAt = Instant.now();
@@ -278,9 +263,8 @@ public class User {
     this.updatedAt = Instant.now();
   }
 
-  public void updateAccessProfile(ActorZone actorZone, UUID organizationId, List<UserRole> roles) {
+  public void updateAccessProfile(ActorZone actorZone, List<UserRole> roles) {
     this.actorZone = actorZone;
-    this.organizationId = organizationId;
     replaceRoles(roles);
     incrementAuthVersion();
   }

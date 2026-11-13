@@ -65,8 +65,7 @@ class InspectorProfileServiceTest {
             null,
             "hash",
             UserStatus.ACTIVE,
-            ActorZone.INSPECTOR_PARTNER,
-            null);
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     profile = new InspectorProfile(inspectorId);
     profile.updateFlightExperience(BigDecimal.valueOf(50), null, null, null);

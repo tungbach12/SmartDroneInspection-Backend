@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -26,27 +25,23 @@ class CatalogRepositoryQueryTest {
   @Autowired AssetRepository assets;
   @Autowired AssetCategoryRepository categories;
   @Autowired UserRepository users;
-  @Autowired JdbcTemplate jdbcTemplate;
 
   AssetTestFixture.Data data;
 
   @BeforeEach
   void setUp() {
-    data = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
+    data = new AssetTestFixture(categories, assets, users).create();
   }
 
   @Test
-  void assignableDroneLookupReturnsOnlyActiveDronesInTheOrganization() {
-    Drone active = drones.saveAndFlush(new Drone(data.organizationId(), "DJI-M350-RTK-T01"));
-    Drone heldForMaintenance =
-        drones.saveAndFlush(new Drone(data.organizationId(), "DJI-M350-RTK-T02"));
+  void assignableDroneLookupReturnsOnlyActiveDronesOfTheOwner() {
+    Drone active = drones.saveAndFlush(new Drone(data.clientId(), "DJI-M350-RTK-T01"));
+    Drone heldForMaintenance = drones.saveAndFlush(new Drone(data.clientId(), "DJI-M350-RTK-T02"));
     heldForMaintenance.changeServiceability(DroneServiceability.MAINTENANCE);
     drones.saveAndFlush(heldForMaintenance);
 
-    assertThat(drones.findAssignableByOrganizationId(data.organizationId()))
-        .containsExactly(active);
-    assertThat(drones.findAssignableByOrganizationId(data.otherOrganizationId())).isEmpty();
-    assertThat(drones.findByIdAndOrganizationId(active.getId(), data.otherOrganizationId()))
-        .isEmpty();
+    assertThat(drones.findAssignableByOwnerCustomerId(data.clientId())).containsExactly(active);
+    assertThat(drones.findAssignableByOwnerCustomerId(data.otherClientId())).isEmpty();
+    assertThat(drones.findByIdAndOwnerCustomerId(active.getId(), data.otherClientId())).isEmpty();
   }
 }

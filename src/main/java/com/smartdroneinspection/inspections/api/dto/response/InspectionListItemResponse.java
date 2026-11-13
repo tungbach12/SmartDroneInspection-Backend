@@ -10,7 +10,7 @@ import java.util.UUID;
  */
 public record InspectionListItemResponse(
     UUID id,
-    UUID organizationId,
+    UUID ownerCustomerId,
     UUID assetId,
     UUID inspectorId,
     String status,
@@ -38,7 +38,7 @@ public record InspectionListItemResponse(
 
   public InspectionListItemResponse(
       UUID id,
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID inspectorId,
       String status,
@@ -59,7 +59,7 @@ public record InspectionListItemResponse(
       Long paymentAmount) {
     this(
         id,
-        organizationId,
+        ownerCustomerId,
         assetId,
         inspectorId,
         status,
@@ -88,7 +88,7 @@ public record InspectionListItemResponse(
 
   public InspectionListItemResponse(
       UUID id,
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID inspectorId,
       String status,
@@ -103,7 +103,7 @@ public record InspectionListItemResponse(
       String inspectionType) {
     this(
         id,
-        organizationId,
+        ownerCustomerId,
         assetId,
         inspectorId,
         status,
@@ -132,7 +132,7 @@ public record InspectionListItemResponse(
 
   public InspectionListItemResponse(
       UUID id,
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID inspectorId,
       String status,
@@ -146,7 +146,7 @@ public record InspectionListItemResponse(
       String pendingAction) {
     this(
         id,
-        organizationId,
+        ownerCustomerId,
         assetId,
         inspectorId,
         status,

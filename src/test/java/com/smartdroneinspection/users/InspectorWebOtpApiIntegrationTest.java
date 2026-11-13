@@ -8,12 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.Map;
 import java.util.UUID;
@@ -34,20 +32,19 @@ import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(
     properties = {
-      "app.auth.otp.enabled=true",
-      "app.auth.otp.challenge-pepper=integration-test-only-pepper",
-      "app.auth.otp.smtp-host=localhost",
-      "app.auth.otp.email-from=otp@example.test",
-      "app.auth.otp.sms-account-sid=AC-test",
-      "app.auth.otp.sms-auth-token=test-token",
-      "app.auth.otp.sms-from-number=+14155550000"
+      "smartdroneinspection.auth.otp.enabled=true",
+      "smartdroneinspection.auth.otp.challenge-pepper=integration-test-only-pepper",
+      "smartdroneinspection.auth.otp.smtp-host=localhost",
+      "smartdroneinspection.auth.otp.email-from=otp@example.test",
+      "smartdroneinspection.auth.otp.sms-account-sid=AC-test",
+      "smartdroneinspection.auth.otp.sms-auth-token=test-token",
+      "smartdroneinspection.auth.otp.sms-from-number=+14155550000"
     })
 @Import(TestcontainersConfiguration.class)
 class InspectorWebOtpApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
-  @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired PasswordEncoder passwords;
   @MockitoBean com.smartdroneinspection.users.service.LoginOtpDelivery otpDelivery;
@@ -58,9 +55,6 @@ class InspectorWebOtpApiIntegrationTest {
   @BeforeEach
   void setUp() {
     mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
-    Organization organization =
-        organizations.saveAndFlush(
-            new Organization("OTP organization", "OTP-" + UUID.randomUUID(), "Test fixture"));
     email = "otp-inspector-" + UUID.randomUUID() + "@example.test";
     password = "OTP-test-password-" + UUID.randomUUID();
     User inspector =
@@ -71,8 +65,7 @@ class InspectorWebOtpApiIntegrationTest {
             null,
             passwords.encode(password),
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organization.getId());
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     users.saveAndFlush(inspector);
   }
@@ -199,11 +192,7 @@ class InspectorWebOtpApiIntegrationTest {
             null,
             passwords.encode(temporaryPassword),
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            users
-                .findByNormalizedEmail(User.normalizeEmail(email))
-                .orElseThrow()
-                .getOrganizationId());
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     inspector.requirePasswordChange();
     users.saveAndFlush(inspector);

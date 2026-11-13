@@ -56,7 +56,7 @@ class InspectionFieldSessionApiIntegrationTest {
   @Autowired JdbcTemplate jdbcTemplate;
 
   MockMvc mockMvc;
-  UUID organizationId;
+  UUID ownerCustomerId;
   UUID inspectorId;
   UUID reviewerId;
   UUID assetId;
@@ -68,17 +68,16 @@ class InspectionFieldSessionApiIntegrationTest {
     mockMvc =
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
 
-    AssetTestFixture.Data fixture =
-        new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
-    organizationId = fixture.organizationId();
-    reviewerId = createUser(organizationId, UserRole.CUSTOMER, "reviewer");
-    inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
+    AssetTestFixture.Data fixture = new AssetTestFixture(categories, assets, users).create();
+    ownerCustomerId = fixture.clientId();
+    reviewerId = ownerCustomerId;
+    inspectorId = createUser(UserRole.INSPECTOR, "inspector");
 
     assetId =
         assets
             .saveAndFlush(
                 new Asset(
-                    organizationId,
+                    ownerCustomerId,
                     fixture.categoryId(),
                     "ASSET-SESSION-API-" + UUID.randomUUID(),
                     "Session API asset",
@@ -90,7 +89,7 @@ class InspectionFieldSessionApiIntegrationTest {
                     reviewerId))
             .getId();
     droneId =
-        drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
+        drones.saveAndFlush(new Drone(ownerCustomerId, "READY-DRONE-" + UUID.randomUUID())).getId();
     inspectionId = createReadyInspection();
   }
 
@@ -204,7 +203,7 @@ class InspectionFieldSessionApiIntegrationTest {
   @Test
   void anotherInspectorCannotCompleteThisSession() throws Exception {
     UUID sessionId = startSession();
-    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-completer");
+    UUID otherInspectorId = createUser(UserRole.INSPECTOR, "other-completer");
 
     mockMvc
         .perform(
@@ -273,7 +272,7 @@ class InspectionFieldSessionApiIntegrationTest {
   @Test
   void anotherInspectorCannotAbortThisSession() throws Exception {
     UUID sessionId = startSession();
-    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
+    UUID otherInspectorId = createUser(UserRole.INSPECTOR, "other-inspector");
 
     mockMvc
         .perform(
@@ -289,16 +288,7 @@ class InspectionFieldSessionApiIntegrationTest {
 
   @Test
   void anInspectorFromAnotherOrganizationSeesNoSession() throws Exception {
-    UUID outsiderOrganizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status) "
-            + "VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')",
-        outsiderOrganizationId,
-        "Outsider org",
-        "Outsider org",
-        "ORG-" + outsiderOrganizationId);
-    UUID scopedOutsiderId =
-        createUser(outsiderOrganizationId, UserRole.INSPECTOR, "scoped-outsider");
+    UUID scopedOutsiderId = createUser(UserRole.INSPECTOR, "scoped-outsider");
 
     mockMvc
         .perform(
@@ -354,15 +344,14 @@ class InspectionFieldSessionApiIntegrationTest {
     return new ObjectMapper().writeValueAsString(fields);
   }
 
-  private UUID createUser(UUID organizationId, UserRole role, String label) {
+  private UUID createUser(UserRole role, String label) {
     User user =
         new User(
             label + "-" + UUID.randomUUID() + "@example.test",
             label,
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.CUSTOMER);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
@@ -370,10 +359,10 @@ class InspectionFieldSessionApiIntegrationTest {
   private UUID createReadyInspection() {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_uploaded_at, status, planned_start_at, planned_end_at) "
-            + "VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', CURRENT_TIMESTAMP, 'SCHEDULED', ?, ?)",
+        "INSERT INTO inspections (id, owner_customer_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, status, planned_start_at, planned_end_at) "
+            + "VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', 'SCHEDULED', ?, ?)",
         id,
-        organizationId,
+        ownerCustomerId,
         assetId,
         inspectorId,
         droneId,

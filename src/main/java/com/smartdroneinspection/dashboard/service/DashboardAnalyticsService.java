@@ -3,7 +3,6 @@ package com.smartdroneinspection.dashboard.service;
 import com.smartdroneinspection.dashboard.api.dto.DashboardAnalyticsResponse;
 import com.smartdroneinspection.dashboard.api.dto.DashboardAnalyticsResponse.*;
 import com.smartdroneinspection.users.UserAccess;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,7 +31,8 @@ public class DashboardAnalyticsService {
     boolean isAdminOrManager = actor.hasRole("ADMIN") || actor.hasRole("MANAGER");
     boolean isInspector = actor.hasRole("INSPECTOR");
 
-    UUID orgId = actor.organizationId();
+    UUID ownerCustomerId = actor.ownerCustomerId();
+    boolean customerScoped = isCustomer && ownerCustomerId != null;
 
     // 1. Core metric counts
     long assetsCount;
@@ -60,36 +60,38 @@ public class DashboardAnalyticsService {
               "SELECT count(*) FROM findings WHERE is_deleted = false AND severity = 'MEDIUM'");
       lowFindingsCount =
           queryCount("SELECT count(*) FROM findings WHERE is_deleted = false AND severity = 'LOW'");
-    } else if (isCustomer && orgId != null) {
+    } else if (customerScoped) {
       assetsCount =
           queryCount(
-              "SELECT count(*) FROM assets WHERE organization_id = ? AND status != 'RETIRED'",
-              orgId);
+              "SELECT count(*) FROM assets WHERE owner_customer_id = ? AND status != 'RETIRED'",
+              ownerCustomerId);
       activeAssetsCount =
           queryCount(
-              "SELECT count(*) FROM assets WHERE organization_id = ? AND status = 'ACTIVE'", orgId);
+              "SELECT count(*) FROM assets WHERE owner_customer_id = ? AND status = 'ACTIVE'",
+              ownerCustomerId);
       inspectionsCount =
-          queryCount("SELECT count(*) FROM inspections WHERE organization_id = ?", orgId);
+          queryCount(
+              "SELECT count(*) FROM inspections WHERE owner_customer_id = ?", ownerCustomerId);
       activeInspectionsCount =
           queryCount(
-              "SELECT count(*) FROM inspections WHERE organization_id = ? AND status IN ('SCHEDULED', 'IN_PROGRESS', 'FIELD_COMPLETED', 'UNDER_REVIEW')",
-              orgId);
+              "SELECT count(*) FROM inspections WHERE owner_customer_id = ? AND status IN ('SCHEDULED', 'IN_PROGRESS', 'FIELD_COMPLETED', 'UNDER_REVIEW')",
+              ownerCustomerId);
       findingsCount =
           queryCount(
-              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.organization_id = ? AND f.is_deleted = false",
-              orgId);
+              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.owner_customer_id = ? AND f.is_deleted = false",
+              ownerCustomerId);
       criticalFindingsCount =
           queryCount(
-              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.organization_id = ? AND f.is_deleted = false AND f.severity IN ('CRITICAL', 'HIGH')",
-              orgId);
+              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.owner_customer_id = ? AND f.is_deleted = false AND f.severity IN ('CRITICAL', 'HIGH')",
+              ownerCustomerId);
       mediumFindingsCount =
           queryCount(
-              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.organization_id = ? AND f.is_deleted = false AND f.severity = 'MEDIUM'",
-              orgId);
+              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.owner_customer_id = ? AND f.is_deleted = false AND f.severity = 'MEDIUM'",
+              ownerCustomerId);
       lowFindingsCount =
           queryCount(
-              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.organization_id = ? AND f.is_deleted = false AND f.severity = 'LOW'",
-              orgId);
+              "SELECT count(*) FROM findings f JOIN inspections i ON f.inspection_id = i.id WHERE i.owner_customer_id = ? AND f.is_deleted = false AND f.severity = 'LOW'",
+              ownerCustomerId);
     } else if (isInspector) {
       assetsCount = 0;
       activeAssetsCount = 0;
@@ -157,7 +159,7 @@ public class DashboardAnalyticsService {
               "phát hiện cần xử lý",
               "alert"));
     } else if (isAdminOrManager) {
-      long orgsCount = queryCount("SELECT count(*) FROM organizations");
+      long orgsCount = queryCount("SELECT count(DISTINCT owner_customer_id) FROM assets");
       summaryCards.add(
           new DashboardMetricDto(
               "orgs",
@@ -343,8 +345,8 @@ public class DashboardAnalyticsService {
           (int)
               queryCount(
                   "SELECT count(*) FROM inspections WHERE status = 'COMPLETED'"
-                      + (orgId != null && !isAdminOrManager ? " AND organization_id = ?" : ""),
-                  orgId != null && !isAdminOrManager ? new Object[] {orgId} : new Object[] {});
+                      + (customerScoped ? " AND owner_customer_id = ?" : ""),
+                  customerScoped ? new Object[] {ownerCustomerId} : new Object[] {});
       int completionRate =
           inspectionsCount > 0
               ? (int) Math.round((double) completed / inspectionsCount * 100)
@@ -382,7 +384,7 @@ public class DashboardAnalyticsService {
             + "WHERE f.is_deleted = false AND f.created_at >= (CURRENT_DATE - INTERVAL '6 MONTH') "
             + (isInspector
                 ? "AND i.inspector_id = ? "
-                : (orgId != null && !isAdminOrManager ? "AND i.organization_id = ? " : ""))
+                : (customerScoped ? "AND i.owner_customer_id = ? " : ""))
             + "GROUP BY 1, 2, 3";
 
     Map<String, Integer> findingsMap = new HashMap<>();
@@ -390,8 +392,8 @@ public class DashboardAnalyticsService {
       List<Map<String, Object>> fRows =
           isInspector
               ? jdbcTemplate.queryForList(findingsGroupSql, actorId)
-              : (orgId != null && !isAdminOrManager
-                  ? jdbcTemplate.queryForList(findingsGroupSql, orgId)
+              : (customerScoped
+                  ? jdbcTemplate.queryForList(findingsGroupSql, ownerCustomerId)
                   : jdbcTemplate.queryForList(findingsGroupSql));
       for (Map<String, Object> r : fRows) {
         Number y = (Number) r.get("y");
@@ -487,11 +489,11 @@ public class DashboardAnalyticsService {
       List<QueueTableRowDto> rows = new ArrayList<>();
       String sql =
           "SELECT i.id, a.name AS asset_name, a.asset_code, i.status FROM inspections i JOIN assets a ON i.asset_id = a.id "
-              + (orgId != null && !isAdminOrManager ? "WHERE i.organization_id = ? " : "")
+              + (customerScoped ? "WHERE i.owner_customer_id = ? " : "")
               + "ORDER BY i.created_at DESC LIMIT 5";
       List<Map<String, Object>> records =
-          orgId != null && !isAdminOrManager
-              ? jdbcTemplate.queryForList(sql, orgId)
+          customerScoped
+              ? jdbcTemplate.queryForList(sql, ownerCustomerId)
               : jdbcTemplate.queryForList(sql);
       for (Map<String, Object> row : records) {
         String status = (String) row.get("status");
@@ -539,15 +541,6 @@ public class DashboardAnalyticsService {
     try {
       Long count = jdbcTemplate.queryForObject(sql, Long.class, args);
       return count != null ? count : 0;
-    } catch (Exception ex) {
-      return 0;
-    }
-  }
-
-  private long querySum(String sql, Object... args) {
-    try {
-      BigDecimal sum = jdbcTemplate.queryForObject(sql, BigDecimal.class, args);
-      return sum != null ? sum.longValue() : 0;
     } catch (Exception ex) {
       return 0;
     }

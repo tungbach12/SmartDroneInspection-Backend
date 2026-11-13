@@ -75,8 +75,7 @@ public class AdminUserService {
                         .roleValues()
                         .contains(com.smartdroneinspection.shared.auth.Roles.ADMIN)) {
                   if (request.actorZone()
-                          != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER
-                      || request.organizationId() != null
+                          != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR
                       || request.roles() == null
                       || request.roles().size() != 1
                       || !request
@@ -91,7 +90,7 @@ public class AdminUserService {
                 }
               });
     }
-    rolePolicy.validate(request.actorZone(), request.organizationId(), request.roles());
+    rolePolicy.validate(request.actorZone(), request.roles());
     String normalizedEmail = User.normalizeEmail(request.email());
     if (users.findByNormalizedEmail(normalizedEmail).isPresent()) {
       throw new AuthException(
@@ -106,8 +105,7 @@ public class AdminUserService {
             request.avatarUrl() != null ? request.avatarUrl().trim() : null,
             passwords.encode(temporaryPassword),
             UserStatus.ACTIVE,
-            request.actorZone(),
-            request.organizationId());
+            request.actorZone());
     user.requirePasswordChange();
     for (var role : request.roles()) {
       user.addRole(role);
@@ -145,10 +143,9 @@ public class AdminUserService {
       String userAgent,
       String correlationId) {
     requireDifferentUser(actorId, userId);
-    rolePolicy.validate(request.actorZone(), request.organizationId(), request.roles());
+    rolePolicy.validate(request.actorZone(), request.roles());
     User user = requireUser(userId);
-    user.updateAccessProfile(
-        request.actorZone(), request.organizationId(), new ArrayList<>(request.roles()));
+    user.updateAccessProfile(request.actorZone(), new ArrayList<>(request.roles()));
     auth.revokeAllSessions(userId, "roles-changed");
     audit.record(
         actorId, userId, "USER_ROLES_CHANGED", "SUCCESS", ipAddress, userAgent, correlationId);
@@ -201,7 +198,6 @@ public class AdminUserService {
         user.getAvatarUrl(),
         user.roleValues(),
         user.getActorZone().name(),
-        user.getOrganizationId(),
         user.isVisionFallbackEnabled());
   }
 

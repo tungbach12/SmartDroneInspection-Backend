@@ -83,7 +83,6 @@ class VnPayPaymentIntegrationTest {
 
   private MockMvc mockMvc;
 
-  private UUID orgId;
   private UUID customerUserId;
   private UUID otherCustomerUserId;
   private UUID managerUserId;
@@ -101,24 +100,6 @@ class VnPayPaymentIntegrationTest {
     jdbcTemplate.execute("DELETE FROM service_request_occurrences");
     jdbcTemplate.execute("DELETE FROM service_requests");
     jdbcTemplate.execute("DELETE FROM service_request_quotes");
-
-    orgId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, 'VNPay Corp', ?, 'ACTIVE')
-        """,
-        orgId,
-        "ORG-" + orgId.toString().substring(0, 18));
-
-    UUID otherOrgId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, 'Other Corp', ?, 'ACTIVE')
-        """,
-        otherOrgId,
-        "ORG-" + otherOrgId.toString().substring(0, 18));
 
     managerUserId =
         createPlatformUser(
@@ -146,25 +127,22 @@ class VnPayPaymentIntegrationTest {
 
     customerUserId =
         createUser(
-            orgId,
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.CUSTOMER,
             "customer." + UUID.randomUUID() + "@vnpay.test",
             "Customer Primary");
 
     otherCustomerUserId =
         createUser(
-            otherOrgId,
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.CUSTOMER,
             "other." + UUID.randomUUID() + "@other.test",
             "Customer Other Org");
 
     inspectorUserId =
         createUser(
-            null,
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR_PARTNER,
+            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@partner.test",
             "Partner Pilot");
 
@@ -224,7 +202,7 @@ class VnPayPaymentIntegrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                orgId,
+                customerUserId,
                 category.getId(),
                 "TOWER-" + UUID.randomUUID().toString().substring(0, 8),
                 "Tower Alpha",
@@ -608,14 +586,13 @@ class VnPayPaymentIntegrationTest {
   }
 
   private UUID createPlatformUser(UserRole role, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM, null);
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
 
-  private UUID createUser(
-      UUID organizationId, UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone, organizationId);
+  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

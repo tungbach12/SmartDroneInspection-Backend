@@ -29,7 +29,6 @@ class FullDatabaseSchemaMigrationTest {
             .collect(Collectors.toSet());
     Set<String> expected =
         Set.of(
-            "organizations",
             "users",
             "auth_sessions",
             "prospective_customer_registrations",
@@ -64,7 +63,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(34);
+    assertThat(expected).hasSize(33);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -101,6 +100,15 @@ class FullDatabaseSchemaMigrationTest {
     assertThat(columns).as("columns for %s", table).contains(expectedColumns);
   }
 
+  private void assertNoColumn(String table, String column) {
+    List<String> columns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?",
+            String.class,
+            table);
+    assertThat(columns).as("columns for %s", table).doesNotContain(column);
+  }
+
   @Test
   void createsTargetAndSharedRuntimeGuardIndexes() {
     List<String> indexes =
@@ -122,20 +130,37 @@ class FullDatabaseSchemaMigrationTest {
 
     assertThat(indexes)
         .contains(
-            "uq_assets_organization_asset_code",
+            "uq_assets_owner_customer_asset_code",
             "ix_notifications_recipient_status",
-            "uq_users_id_organization",
-            "uq_assets_id_organization");
-    assertThat(constraints).contains("fk_inspections_asset_tenant");
+            "ix_assets_owner_customer",
+            "ix_drones_owner_customer");
+    assertThat(constraints).contains("assets_owner_customer_id_fkey");
   }
 
   @Test
-  void appliesAllMigrationsThroughV40AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV43AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(40);
-    assertThat(versions.getLast()).isEqualTo("40");
+    assertThat(versions).hasSize(43);
+    assertThat(versions.getLast()).isEqualTo("43");
+
+    assertColumns("assets", "owner_customer_id");
+    assertColumns("drones", "owner_customer_id");
+    assertColumns("inspections", "owner_customer_id");
+    assertColumns("service_requests", "owner_customer_id");
+    assertNoColumn("assets", "organization_id");
+    assertNoColumn("drones", "organization_id");
+    assertNoColumn("inspections", "organization_id");
+    assertNoColumn("service_requests", "organization_id");
+    assertNoColumn("users", "organization_id");
+
+    // V43 dropped the organizations table outright; owner_customer_id is the sole tenant key.
+    List<String> orgTables =
+        jdbcTemplate.queryForList(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'organizations'",
+            String.class);
+    assertThat(orgTables).as("organizations table must be dropped by V43").isEmpty();
 
     List<String> dimensionColumns =
         jdbcTemplate.queryForList(

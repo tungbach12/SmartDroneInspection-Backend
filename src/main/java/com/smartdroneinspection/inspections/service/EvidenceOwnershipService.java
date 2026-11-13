@@ -21,10 +21,10 @@ public class EvidenceOwnershipService implements EvidenceOwnership {
   }
 
   @Override
-  public boolean existsInOrganization(UUID evidenceId, UUID organizationId) {
-    if (evidenceId == null || organizationId == null) {
+  public boolean existsOwnedByCustomer(UUID evidenceId, UUID ownerCustomerId) {
+    if (evidenceId == null || ownerCustomerId == null) {
       return false;
     }
-    return evidence.findInOrganization(evidenceId, organizationId).isPresent();
+    return evidence.findOwnedByCustomer(evidenceId, ownerCustomerId).isPresent();
   }
 }

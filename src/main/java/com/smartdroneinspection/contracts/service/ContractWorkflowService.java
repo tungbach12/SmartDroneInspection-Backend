@@ -257,7 +257,7 @@ public class ContractWorkflowService
     UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
     Asset asset =
         assets
-            .findByIdAndOrganizationId(input.assetId(), actor.organizationId())
+            .findByIdAndOwnerCustomerId(input.assetId(), actor.ownerCustomerId())
             .filter(value -> value.getStatus() != AssetStatus.RETIRED)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
     LocalTime start = input.windowStart() == null ? LocalTime.of(8, 0) : input.windowStart();
@@ -335,7 +335,7 @@ public class ContractWorkflowService
     try {
       request =
           new ServiceRequest(
-              actor.organizationId(),
+              actor.ownerCustomerId(),
               asset.getId(),
               actor.id(),
               description,
@@ -352,20 +352,19 @@ public class ContractWorkflowService
     } catch (IllegalArgumentException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", exception.getMessage());
     }
+    request.markCustomerOwned(actor.id());
     return toResponse(requests.saveAndFlush(request));
   }
 
   @Transactional(readOnly = true)
   public List<ServiceRequestResponse> list(UUID actorId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
-    if (actorPolicy.actorKind(actor.roles(), actor.organizationId())
-        == Mf2ActorPolicy.ActorKind.CUSTOMER) {
-      return requests.findByOrganizationIdOrderByCreatedAtDesc(actor.organizationId()).stream()
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
+      return requests.findByOwnerCustomerIdOrderByCreatedAtDesc(actor.ownerCustomerId()).stream()
           .map(this::toResponse)
           .toList();
     }
-    if (actorPolicy.actorKind(actor.roles(), actor.organizationId())
-        == Mf2ActorPolicy.ActorKind.MANAGER) {
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
       return requests.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
     }
     throw forbidden();
@@ -422,7 +421,7 @@ public class ContractWorkflowService
     }
     Asset asset =
         assets
-            .findByIdAndOrganizationId(request.getAssetId(), request.getOrganizationId())
+            .findByIdAndOwnerCustomerId(request.getAssetId(), request.getOwnerCustomerId())
             .filter(value -> value.getStatus() != AssetStatus.RETIRED)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
     partners.validateRequiredDroneFeatureCodes(input.requiredDroneFeatureCodes());
@@ -469,7 +468,7 @@ public class ContractWorkflowService
     partners.validateRequiredDroneFeatureCodes(input.requiredDroneFeatureCodes());
     Asset quoteAsset =
         assets
-            .findByIdAndOrganizationId(request.getAssetId(), request.getOrganizationId())
+            .findByIdAndOwnerCustomerId(request.getAssetId(), request.getOwnerCustomerId())
             .filter(value -> value.getStatus() != AssetStatus.RETIRED)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
     boolean contractConflict =
@@ -761,7 +760,7 @@ public class ContractWorkflowService
     partners.validateRequiredDroneFeatureCodes(acceptedFeatures);
     Asset dispatchAsset =
         assets
-            .findByIdAndOrganizationId(request.getAssetId(), request.getOrganizationId())
+            .findByIdAndOwnerCustomerId(request.getAssetId(), request.getOwnerCustomerId())
             .filter(value -> value.getStatus() != AssetStatus.RETIRED)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
     if (input.inspectorId() == null || input.droneId() == null) {
@@ -817,7 +816,7 @@ public class ContractWorkflowService
     requireCandidateEligible(lockedCandidate, HttpStatus.CONFLICT);
     UUID inspectionId =
         assignment.assign(
-            request.getOrganizationId(),
+            request.getOwnerCustomerId(),
             request.getAssetId(),
             input.inspectorId(),
             input.droneId(),
@@ -992,8 +991,8 @@ public class ContractWorkflowService
       return OccurrenceFinanceResponse.forManager(occurrence);
     }
     if (actor.hasRole(Roles.CUSTOMER)
-        && actor.organizationId() != null
-        && actor.organizationId().equals(request.getOrganizationId())) {
+        && actor.ownerCustomerId() != null
+        && actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
       return OccurrenceFinanceResponse.forCustomer(occurrence);
     }
     if (actor.hasRole(Roles.INSPECTOR) && actor.id().equals(occurrence.getInspectorId())) {
@@ -1010,8 +1009,8 @@ public class ContractWorkflowService
     ServiceRequest request = requireRequestForActor(actor, requestId);
     if (!actor.hasRole(Roles.ADMIN) && !actor.hasRole(Roles.MANAGER)) {
       if (!actor.hasRole(Roles.CUSTOMER)
-          || actor.organizationId() == null
-          || !actor.organizationId().equals(request.getOrganizationId())) {
+          || actor.ownerCustomerId() == null
+          || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
         throw forbidden();
       }
     }
@@ -1155,8 +1154,8 @@ public class ContractWorkflowService
     ServiceRequest request = requireRequestForActor(actor, requestId);
     if (!actor.hasRole(Roles.ADMIN) && !actor.hasRole(Roles.MANAGER)) {
       if (!actor.hasRole(Roles.CUSTOMER)
-          || actor.organizationId() == null
-          || !actor.organizationId().equals(request.getOrganizationId())) {
+          || actor.ownerCustomerId() == null
+          || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
         throw forbidden();
       }
     }
@@ -1849,16 +1848,15 @@ public class ContractWorkflowService
     jdbcTemplate.update(
         """
         INSERT INTO audit_events
-          (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+          (actor_user_id, action, aggregate_type, aggregate_id,
            before_status, after_status, aggregate_version, safe_metadata, created_at)
-        VALUES (?, ?, 'MF2_QUOTE_SAVED', 'SERVICE_REQUEST', ?, ?, ?, ?,
+        VALUES (?, 'MF2_QUOTE_SAVED', 'SERVICE_REQUEST', ?, ?, ?, ?,
           jsonb_build_object('quoteId', ?::text, 'scopeSnapshot', ?::text,
             'firstOccurrenceStartAt', ?::text, 'firstOccurrenceEndAt', ?::text,
             'inspectorId', ?::text, 'droneId', ?::text,
             'pricePerOccurrenceVnd', ?::text, 'previousPricePerOccurrenceVnd', ?::text,
             'updatedAt', ?::text), CURRENT_TIMESTAMP)
         """,
-        request.getOrganizationId(),
         manager.id(),
         request.getId(),
         previousStatus.name(),
@@ -1883,15 +1881,14 @@ public class ContractWorkflowService
     jdbcTemplate.update(
         """
         INSERT INTO audit_events
-          (organization_id, actor_user_id, action, aggregate_type, aggregate_id,
+          (actor_user_id, action, aggregate_type, aggregate_id,
            before_status, after_status, aggregate_version, safe_metadata, created_at)
-        VALUES (?, ?, 'MF2_QUOTE_ACCEPTED', 'SERVICE_REQUEST', ?, 'QUOTED', 'ACCEPTED', ?,
+        VALUES (?, 'MF2_QUOTE_ACCEPTED', 'SERVICE_REQUEST', ?, 'QUOTED', 'ACCEPTED', ?,
           jsonb_build_object('quoteId', ?::text, 'acceptedAt', ?::text,
             'scopeSnapshot', ?::text, 'firstOccurrenceStartAt', ?::text,
             'firstOccurrenceEndAt', ?::text, 'inspectorId', ?::text,
             'droneId', ?::text, 'pricePerOccurrenceVnd', ?::text), CURRENT_TIMESTAMP)
         """,
-        request.getOrganizationId(),
         customer.id(),
         request.getId(),
         quote.getRowVersion(),
@@ -1925,12 +1922,10 @@ public class ContractWorkflowService
   }
 
   private ServiceRequest requireRequestForActor(UserAccess.ActiveUser actor, UUID requestId) {
-    if (actorPolicy.actorKind(actor.roles(), actor.organizationId())
-        == Mf2ActorPolicy.ActorKind.CUSTOMER) {
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
       return requireCustomerRequest(actor, requestId);
     }
-    if (actorPolicy.actorKind(actor.roles(), actor.organizationId())
-        == Mf2ActorPolicy.ActorKind.MANAGER) {
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
       return requireRequestForManager(actor, requestId);
     }
     if (actor.hasRole(Roles.INSPECTOR)) {
@@ -1944,7 +1939,7 @@ public class ContractWorkflowService
 
   private ServiceRequest requireCustomerRequest(UserAccess.ActiveUser customer, UUID requestId) {
     return requests
-        .findByIdAndOrganizationId(requestId, customer.organizationId())
+        .findByIdAndOwnerCustomerId(requestId, customer.ownerCustomerId())
         .orElseThrow(
             () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
   }
@@ -1952,7 +1947,7 @@ public class ContractWorkflowService
   private ServiceRequest requireCustomerRequestLocked(
       UserAccess.ActiveUser customer, UUID requestId) {
     return requests
-        .findWithLockByIdAndOrganizationId(requestId, customer.organizationId())
+        .findWithLockByIdAndOwnerCustomerId(requestId, customer.ownerCustomerId())
         .orElseThrow(
             () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
   }
@@ -1974,13 +1969,11 @@ public class ContractWorkflowService
 
   private UserAccess.ActiveUser requireActor(UUID actorId, Mf2ActorPolicy.ActorKind expected) {
     UserAccess.ActiveUser actor = users.findActiveUser(actorId).orElseThrow(this::forbidden);
-    if (actorPolicy.actorKind(actor.roles(), actor.organizationId())
-            == Mf2ActorPolicy.ActorKind.NONE
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.NONE
         && !actor.hasRole(Roles.INSPECTOR)) {
       throw forbidden();
     }
-    if (expected != null
-        && actorPolicy.actorKind(actor.roles(), actor.organizationId()) != expected) {
+    if (expected != null && actorPolicy.actorKind(actor.roles()) != expected) {
       throw forbidden();
     }
     return actor;

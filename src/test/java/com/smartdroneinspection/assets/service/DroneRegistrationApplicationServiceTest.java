@@ -62,8 +62,7 @@ class DroneRegistrationApplicationServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot",
                     "pilot@test.local",
                     "LIC-123",
@@ -76,7 +75,6 @@ class DroneRegistrationApplicationServiceTest {
                 new UserAccess.ActiveUser(
                     adminId,
                     Set.of(Roles.ADMIN),
-                    null,
                     "PLATFORM",
                     "Admin",
                     "admin@test.local",

@@ -61,9 +61,7 @@ class DroneEvidenceUploadServiceTest {
     UUID userId = UUID.randomUUID();
     when(users.findActiveUser(userId))
         .thenReturn(
-            Optional.of(
-                new UserAccess.ActiveUser(
-                    userId, Set.of("CUSTOMER"), null, "CUSTOMER_ORGANIZATION")));
+            Optional.of(new UserAccess.ActiveUser(userId, Set.of("CUSTOMER"), null, "CUSTOMER")));
     var service =
         new DroneEvidenceUploadService(
             Optional.of(store),
@@ -124,10 +122,10 @@ class DroneEvidenceUploadServiceTest {
                 new UserAccess.ActiveUser(
                     adminId,
                     Set.of("ADMIN"),
-                    null,
                     "PLATFORM",
                     "Admin",
                     "admin@example.test",
+                    null,
                     null,
                     null,
                     null,
@@ -138,10 +136,10 @@ class DroneEvidenceUploadServiceTest {
                 new UserAccess.ActiveUser(
                     customerId,
                     Set.of("CUSTOMER"),
-                    UUID.randomUUID(),
-                    "CUSTOMER_ORGANIZATION",
+                    "CUSTOMER",
                     "Customer",
                     "customer@example.test",
+                    null,
                     null,
                     null,
                     null,
@@ -169,8 +167,7 @@ class DroneEvidenceUploadServiceTest {
     return new UserAccess.ActiveUser(
         inspectorId,
         Set.of("INSPECTOR"),
-        null,
-        "INSPECTOR_PARTNER",
+        "INSPECTOR",
         "Inspector",
         "inspector@example.test",
         "PILOT-1",

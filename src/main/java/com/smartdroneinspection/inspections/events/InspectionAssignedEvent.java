@@ -5,4 +5,4 @@ import java.util.UUID;
 
 /** Domain event emitted when an inspection is created and assigned to an inspector. */
 public record InspectionAssignedEvent(
-    UUID inspectionId, UUID organizationId, UUID inspectorId, Instant plannedStartAt) {}
+    UUID inspectionId, UUID ownerCustomerId, UUID inspectorId, Instant plannedStartAt) {}

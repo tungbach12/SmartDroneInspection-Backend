@@ -29,7 +29,7 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Table(
     name = "assets",
-    uniqueConstraints = @UniqueConstraint(columnNames = {"organization_id", "asset_code"}))
+    uniqueConstraints = @UniqueConstraint(columnNames = {"owner_customer_id", "asset_code"}))
 public class Asset {
 
   private static final BigDecimal MINIMUM_LATITUDE = BigDecimal.valueOf(-90);
@@ -39,8 +39,8 @@ public class Asset {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
+  @Column(name = "owner_customer_id", nullable = false)
+  private UUID ownerCustomerId;
 
   @Column(name = "category_id", nullable = false)
   private UUID categoryId;
@@ -103,7 +103,7 @@ public class Asset {
   protected Asset() {}
 
   public Asset(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID categoryId,
       String code,
       String name,
@@ -115,7 +115,7 @@ public class Asset {
       List<String> inspectionItems,
       UUID createdByUserId) {
     this(
-        organizationId,
+        ownerCustomerId,
         categoryId,
         code,
         name,
@@ -131,7 +131,7 @@ public class Asset {
   }
 
   public Asset(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID categoryId,
       String code,
       String name,
@@ -147,7 +147,8 @@ public class Asset {
     validateCoordinates(latitude, longitude);
     validateDimension(structureHeightMeters, "Structure height");
     validateDimension(footprintAreaSquareMeters, "Footprint area");
-    this.organizationId = organizationId;
+    this.ownerCustomerId =
+        java.util.Objects.requireNonNull(ownerCustomerId, "Asset owner customer is required");
     this.categoryId = categoryId;
     this.code = normalizeCode(code);
     this.name = name;
@@ -165,7 +166,7 @@ public class Asset {
   }
 
   public Asset(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID categoryId,
       String code,
       String name,
@@ -176,7 +177,7 @@ public class Asset {
       String ownershipInformation,
       UUID createdByUserId) {
     this(
-        organizationId,
+        ownerCustomerId,
         categoryId,
         code,
         name,
@@ -404,8 +405,13 @@ public class Asset {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
+  public UUID getOwnerCustomerId() {
+    return ownerCustomerId;
+  }
+
+  public void markCustomerOwned(UUID ownerCustomerId) {
+    this.ownerCustomerId = ownerCustomerId;
+    this.updatedAt = Instant.now();
   }
 
   public String getCode() {

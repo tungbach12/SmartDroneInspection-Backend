@@ -23,33 +23,34 @@ class InspectionNotificationListenerTest {
   @Test
   void onInspectionAssignedDelegatesToService() {
     UUID inspectionId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
+    UUID ownerCustomerId = UUID.randomUUID();
     UUID inspectorId = UUID.randomUUID();
     Instant plannedStart = Instant.now();
 
     InspectionAssignedEvent event =
-        new InspectionAssignedEvent(inspectionId, orgId, inspectorId, plannedStart);
+        new InspectionAssignedEvent(inspectionId, ownerCustomerId, inspectorId, plannedStart);
 
     listener.onInspectionAssigned(event);
 
     verify(notificationService)
-        .recordInspectionAssignment(inspectionId, orgId, inspectorId, plannedStart);
+        .recordInspectionAssignment(inspectionId, ownerCustomerId, inspectorId, plannedStart);
   }
 
   @Test
   void onFieldSessionAbortedDelegatesToService() {
     UUID inspectionId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
+    UUID ownerCustomerId = UUID.randomUUID();
     UUID sessionId = UUID.randomUUID();
     UUID inspectorId = UUID.randomUUID();
     String reason = "Heavy thunderstorm";
 
     com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent event =
         new com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent(
-            inspectionId, orgId, sessionId, inspectorId, reason, Instant.now());
+            inspectionId, ownerCustomerId, sessionId, inspectorId, reason, Instant.now());
 
     listener.onFieldSessionAborted(event);
 
-    verify(notificationService).recordFieldSessionAborted(inspectionId, orgId, inspectorId, reason);
+    verify(notificationService)
+        .recordFieldSessionAborted(inspectionId, ownerCustomerId, inspectorId, reason);
   }
 }

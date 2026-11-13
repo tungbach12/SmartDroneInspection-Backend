@@ -38,7 +38,7 @@ public class AssetRegistrationListener {
                         "Unknown or inactive category"));
     Asset asset =
         new Asset(
-            event.organizationId(),
+            event.customerId(),
             category.getId(),
             event.assetCode(),
             event.assetName(),
@@ -51,6 +51,7 @@ public class AssetRegistrationListener {
             event.structureHeightMeters(),
             event.footprintAreaSquareMeters(),
             event.customerId());
+    asset.markCustomerOwned(event.customerId());
     assets.saveAndFlush(asset);
   }
 }

@@ -87,8 +87,7 @@ class OAuth2ControllerTest {
             null,
             "http://avatar.jpg",
             List.of(UserRole.CUSTOMER.value()),
-            ActorZone.CUSTOMER_ORGANIZATION.name(),
-            null,
+            ActorZone.CUSTOMER.name(),
             false);
     AuthFlowResponse flowResponse =
         new AuthFlowResponse(
@@ -134,8 +133,7 @@ class OAuth2ControllerTest {
             null,
             "http://avatar.jpg",
             List.of(UserRole.CUSTOMER.value()),
-            ActorZone.CUSTOMER_ORGANIZATION.name(),
-            null,
+            ActorZone.CUSTOMER.name(),
             false);
     AuthFlowResponse flowResponse =
         new AuthFlowResponse(

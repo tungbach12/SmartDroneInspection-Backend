@@ -12,11 +12,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, UUID> {
 
-  List<ServiceRequest> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
+  List<ServiceRequest> findByOwnerCustomerIdOrderByCreatedAtDesc(UUID ownerCustomerId);
 
   List<ServiceRequest> findAllByOrderByCreatedAtDesc();
 
-  Optional<ServiceRequest> findByIdAndOrganizationId(UUID id, UUID organizationId);
+  Optional<ServiceRequest> findByIdAndOwnerCustomerId(UUID id, UUID ownerCustomerId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select request from ServiceRequest request where request.id = :id")
@@ -25,7 +25,7 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
       "select request from ServiceRequest request where request.id = :id "
-          + "and request.organizationId = :organizationId")
-  Optional<ServiceRequest> findWithLockByIdAndOrganizationId(
-      @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+          + "and request.ownerCustomerId = :ownerCustomerId")
+  Optional<ServiceRequest> findWithLockByIdAndOwnerCustomerId(
+      @Param("id") UUID id, @Param("ownerCustomerId") UUID ownerCustomerId);
 }

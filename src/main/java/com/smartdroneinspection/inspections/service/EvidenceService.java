@@ -529,17 +529,11 @@ public class EvidenceService {
 
   Inspection requireAssignedInspection(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
-    if (actor.isInspectorPartner()) {
-      return inspections
-          .findAssignedInspectorInspection(inspectionId, null, actorId, true)
-          .filter(Inspection::isPartnerAssignment)
-          .orElseThrow(this::inspectionNotFound);
-    }
-    if (actor.organizationId() == null || !actor.hasRole(Roles.INSPECTOR)) {
+    if (!actor.hasRole(Roles.INSPECTOR)) {
       throw inspectionNotFound();
     }
     return inspections
-        .findByIdAndOrganizationIdAndInspectorId(inspectionId, actor.organizationId(), actorId)
+        .findAssignedByInspector(inspectionId, actorId)
         .orElseThrow(this::inspectionNotFound);
   }
 
@@ -548,18 +542,17 @@ public class EvidenceService {
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       return inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
     }
-    if (actor.isInspectorPartner()) {
+    if (actor.hasRole(Roles.INSPECTOR)) {
       return inspections
-          .findAssignedInspectorInspection(inspectionId, null, actorId, true)
-          .filter(Inspection::isPartnerAssignment)
+          .findAssignedByInspector(inspectionId, actorId)
           .orElseThrow(this::inspectionNotFound);
     }
-    if (actor.organizationId() == null) {
+    if (actor.ownerCustomerId() == null) {
       throw inspectionNotFound();
     }
     Inspection inspection =
         inspections
-            .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+            .findByIdAndOwnerCustomerId(inspectionId, actor.ownerCustomerId())
             .orElseThrow(this::inspectionNotFound);
     if (!inspection.getInspectorId().equals(actorId) && !actor.hasRole(Roles.CUSTOMER)) {
       throw inspectionNotFound();

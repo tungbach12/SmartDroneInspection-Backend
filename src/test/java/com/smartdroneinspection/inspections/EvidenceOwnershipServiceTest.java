@@ -40,36 +40,32 @@ class EvidenceOwnershipServiceTest {
   }
 
   @Test
-  void recognisesEvidenceOwnedByTheCallingOrganization() {
-    UUID evidenceId = insertEvidence(fixture.organizationId(), fixture.inspectionId(), "own.png");
+  void recognisesEvidenceOwnedByTheCallingCustomer() {
+    UUID evidenceId = insertEvidence(fixture.inspectionId(), "own.png");
 
-    assertThat(evidenceOwnership.existsInOrganization(evidenceId, fixture.organizationId()))
-        .isTrue();
+    assertThat(evidenceOwnership.existsOwnedByCustomer(evidenceId, fixture.reviewerId())).isTrue();
   }
 
   @Test
-  void deniesEvidenceOwnedByAnotherOrganization() {
+  void deniesEvidenceOwnedByAnotherCustomer() {
     // Fully coherent foreign lineage: the evidence, its inspection and its asset all belong to the
-    // other tenant, so a true result here could only come from a check that ignores organization.
-    UUID foreignInspectionId = createInspection(fixture.otherOrganizationId());
-    UUID foreignEvidenceId =
-        insertEvidence(fixture.otherOrganizationId(), foreignInspectionId, "foreign.png");
+    // other customer, so a true result here could only come from a check that ignores ownership.
+    UUID foreignInspectionId = createInspection(fixture.outsiderId());
+    UUID foreignEvidenceId = insertEvidence(foreignInspectionId, "foreign.png");
 
-    assertThat(evidenceOwnership.existsInOrganization(foreignEvidenceId, fixture.organizationId()))
+    assertThat(evidenceOwnership.existsOwnedByCustomer(foreignEvidenceId, fixture.reviewerId()))
         .isFalse();
-    assertThat(
-            evidenceOwnership.existsInOrganization(
-                foreignEvidenceId, fixture.otherOrganizationId()))
+    assertThat(evidenceOwnership.existsOwnedByCustomer(foreignEvidenceId, fixture.outsiderId()))
         .isTrue();
   }
 
   @Test
   void deniesAnEvidenceIdentifierThatDoesNotExist() {
-    assertThat(evidenceOwnership.existsInOrganization(UUID.randomUUID(), fixture.organizationId()))
+    assertThat(evidenceOwnership.existsOwnedByCustomer(UUID.randomUUID(), fixture.reviewerId()))
         .isFalse();
   }
 
-  private UUID createInspection(UUID organizationId) {
+  private UUID createInspection(UUID ownerCustomerId) {
     UUID categoryId = UUID.randomUUID();
     jdbcTemplate.update(
         """
@@ -82,22 +78,22 @@ class EvidenceOwnershipServiceTest {
     UUID assetId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO assets (id, organization_id, category_id, asset_code, name, location, status,
+        INSERT INTO assets (id, owner_customer_id, category_id, asset_code, name, location, status,
                             created_at, updated_at, row_version)
         VALUES (?, ?, ?, ?, 'Foreign span', '{"label":"District 9"}', 'ACTIVE',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         assetId,
-        organizationId,
+        ownerCustomerId,
         categoryId,
         upperCode("AST"));
 
     return inspections
-        .saveAndFlush(new Inspection(organizationId, assetId, null, null, null, null))
+        .saveAndFlush(new Inspection(ownerCustomerId, assetId, null, null, null, null))
         .getId();
   }
 
-  private UUID insertEvidence(UUID organizationId, UUID inspectionId, String fileName) {
+  private UUID insertEvidence(UUID inspectionId, String fileName) {
     UUID evidenceId = UUID.randomUUID();
     jdbcTemplate.update(
         """

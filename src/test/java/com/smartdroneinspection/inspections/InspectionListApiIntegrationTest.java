@@ -60,7 +60,7 @@ class InspectionListApiIntegrationTest {
 
   @Test
   void anInspectorSeesOnlyInspectionsAssignedToThem() throws Exception {
-    UUID unassigned = createInspection(fixture.organizationId(), fixture.otherInspectorId());
+    UUID unassigned = createInspection(fixture.reviewerId(), fixture.otherInspectorId());
 
     mockMvc
         .perform(get("/api/v1/inspections").with(principal(fixture.inspectorId(), "INSPECTOR")))
@@ -75,7 +75,7 @@ class InspectionListApiIntegrationTest {
 
   @Test
   void anOrganizationAdminSeesEveryInspectionInTheirOrganizationOnly() throws Exception {
-    createInspection(fixture.otherOrganizationId(), fixture.otherInspectorId());
+    createInspection(fixture.outsiderId(), fixture.otherInspectorId());
 
     mockMvc
         .perform(get("/api/v1/inspections").with(principal(fixture.reviewerId(), "CUSTOMER")))
@@ -96,7 +96,7 @@ class InspectionListApiIntegrationTest {
   @Test
   void aPlatformAdminReadsAcrossOrganizations() throws Exception {
     UUID adminId = createPlatformAdmin();
-    UUID foreignInspection = createInspection(fixture.otherOrganizationId(), null);
+    UUID foreignInspection = createInspection(fixture.outsiderId(), null);
 
     // The suite shares one container, so an absolute total would count other tests' fixtures.
     // What matters is that ADMIN sees both tenants, which an organization-scoped caller cannot.
@@ -119,7 +119,7 @@ class InspectionListApiIntegrationTest {
   @Test
   void pagingIsBoundedAndReportsTheRequestedWindow() throws Exception {
     for (int index = 0; index < 4; index++) {
-      createInspection(fixture.organizationId(), fixture.inspectorId());
+      createInspection(fixture.reviewerId(), fixture.inspectorId());
     }
 
     mockMvc
@@ -159,7 +159,7 @@ class InspectionListApiIntegrationTest {
 
   @Test
   void theReportListReturnsOnlyInspectionsThatCarryAReport() throws Exception {
-    UUID withoutReport = createInspection(fixture.organizationId(), fixture.inspectorId());
+    UUID withoutReport = createInspection(fixture.reviewerId(), fixture.inspectorId());
     createReport(fixture.inspectionId(), fixture.inspectorId());
 
     mockMvc
@@ -187,7 +187,7 @@ class InspectionListApiIntegrationTest {
 
   @Test
   void anInspectorOnlySeesReportsForTheirOwnInspections() throws Exception {
-    UUID otherInspection = createInspection(fixture.organizationId(), fixture.otherInspectorId());
+    UUID otherInspection = createInspection(fixture.reviewerId(), fixture.otherInspectorId());
     createReport(otherInspection, fixture.otherInspectorId());
     createReport(fixture.inspectionId(), fixture.inspectorId());
 
@@ -220,36 +220,35 @@ class InspectionListApiIntegrationTest {
    *
    * @param inspectorId an inspector of {@code organizationId}, or null to create one there
    */
-  private UUID createInspection(UUID organizationId, UUID inspectorId) {
+  private UUID createInspection(UUID ownerCustomerId, UUID inspectorId) {
     UUID assetId =
-        fixture.organizationId().equals(organizationId)
+        fixture.reviewerId().equals(ownerCustomerId)
             ? fixture.assetId()
-            : createAssetIn(organizationId);
+            : createAssetIn(ownerCustomerId);
     UUID resolvedInspector =
-        fixture.organizationId().equals(organizationId) && inspectorId != null
+        fixture.reviewerId().equals(ownerCustomerId) && inspectorId != null
             ? inspectorId
-            : createInspectorIn(organizationId);
+            : createInspectorIn(ownerCustomerId);
     return inspections
         .saveAndFlush(
             new com.smartdroneinspection.inspections.domain.Inspection(
-                organizationId, assetId, resolvedInspector, null, null, null))
+                ownerCustomerId, assetId, resolvedInspector, null, null, null))
         .getId();
   }
 
-  private UUID createInspectorIn(UUID organizationId) {
+  private UUID createInspectorIn(UUID ownerCustomerId) {
     User inspector =
         new User(
             "list-inspector-" + UUID.randomUUID() + "@example.test",
             "List inspector",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     return users.saveAndFlush(inspector).getId();
   }
 
-  private UUID createAssetIn(UUID organizationId) {
+  private UUID createAssetIn(UUID ownerCustomerId) {
     UUID categoryId = UUID.randomUUID();
     jdbcTemplate.update(
         """
@@ -261,13 +260,13 @@ class InspectionListApiIntegrationTest {
     UUID assetId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO assets (id, organization_id, category_id, asset_code, name, location, status,
+        INSERT INTO assets (id, owner_customer_id, category_id, asset_code, name, location, status,
                             created_at, updated_at, row_version)
         VALUES (?, ?, ?, ?, 'Main span', '{"label":"District 1"}', 'ACTIVE',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         assetId,
-        organizationId,
+        ownerCustomerId,
         categoryId,
         ("AST" + UUID.randomUUID()).toUpperCase(java.util.Locale.ROOT));
     return assetId;
@@ -284,8 +283,7 @@ class InspectionListApiIntegrationTest {
             "List platform admin",
             null,
             UserStatus.ACTIVE,
-            ActorZone.PLATFORM,
-            null);
+            ActorZone.PLATFORM);
     admin.addRole(UserRole.ADMIN);
     return users.saveAndFlush(admin).getId();
   }

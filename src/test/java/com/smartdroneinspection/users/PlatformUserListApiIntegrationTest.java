@@ -10,12 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.TestcontainersConfiguration;
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +42,6 @@ import org.springframework.web.context.WebApplicationContext;
 class PlatformUserListApiIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
-  @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
@@ -61,17 +58,13 @@ class PlatformUserListApiIntegrationTest {
   @Test
   void listsEveryManagedAccountWithItsRolesAndZone() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
-    Organization organization =
-        organizations.saveAndFlush(
-            new Organization("Operator organization", "OPS-" + unique, "Test fixture"));
     User customer =
         new User(
             "customer-" + unique + "@example.test",
             "Customer Manager",
             "{argon2}encoded-password",
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organization.getId());
+            ActorZone.CUSTOMER);
     customer.addRole(UserRole.CUSTOMER);
     users.saveAndFlush(customer);
 
@@ -83,7 +76,7 @@ class PlatformUserListApiIntegrationTest {
         .andExpect(jsonPath("$.data[*].email", hasItem(admin.getEmail())))
         .andExpect(
             jsonPath("$.data[?(@.email == '" + customer.getEmail() + "')].actorZone")
-                .value("CUSTOMER_ORGANIZATION"))
+                .value("CUSTOMER"))
         .andExpect(
             jsonPath(
                 "$.data[?(@.email == '" + customer.getEmail() + "')].roles[0]",
@@ -93,17 +86,13 @@ class PlatformUserListApiIntegrationTest {
   @Test
   void refusesTheListToACallerWhoIsNotAPlatformAdministrator() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
-    Organization organization =
-        organizations.saveAndFlush(
-            new Organization("Caller organization", "CAL-" + unique, "Test fixture"));
     User orgAdmin =
         new User(
             "orgadmin-" + unique + "@example.test",
             "Organization Admin",
             "{argon2}encoded-password",
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organization.getId());
+            ActorZone.CUSTOMER);
     orgAdmin.addRole(UserRole.CUSTOMER);
     users.saveAndFlush(orgAdmin);
 
@@ -120,17 +109,13 @@ class PlatformUserListApiIntegrationTest {
   @Test
   void resetsThePasswordOfAnotherAccountAndRevokesItsSessions() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
-    Organization organization =
-        organizations.saveAndFlush(
-            new Organization("Reset organization", "RST-" + unique, "Test fixture"));
     User engineer =
         new User(
             "reset-" + unique + "@example.test",
             "Resettable Engineer",
             "{argon2}encoded-password",
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organization.getId());
+            ActorZone.INSPECTOR);
     engineer.addRole(UserRole.INSPECTOR);
     users.saveAndFlush(engineer);
 
@@ -151,8 +136,7 @@ class PlatformUserListApiIntegrationTest {
             "Platform Admin",
             "{argon2}encoded-password",
             UserStatus.ACTIVE,
-            ActorZone.PLATFORM,
-            null);
+            ActorZone.PLATFORM);
     user.addRole(UserRole.ADMIN);
     return users.saveAndFlush(user);
   }
