@@ -9,7 +9,6 @@ import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Users and category shared by the asset tests. */
 public final class AssetTestFixture {
@@ -17,88 +16,37 @@ public final class AssetTestFixture {
   private final AssetCategoryRepository categories;
   private final AssetRepository assets;
   private final UserRepository users;
-  private final JdbcTemplate jdbcTemplate;
 
   public AssetTestFixture(
-      AssetCategoryRepository categories,
-      AssetRepository assets,
-      UserRepository users,
-      JdbcTemplate jdbcTemplate) {
+      AssetCategoryRepository categories, AssetRepository assets, UserRepository users) {
     this.categories = categories;
     this.assets = assets;
     this.users = users;
-    this.jdbcTemplate = jdbcTemplate;
   }
 
   public Data create() {
-    UUID organizationId = createOrganization("Primary");
-    UUID otherOrganizationId = createOrganization("Other");
-
-    User client =
-        saveUser(
-            "client",
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId,
-            UserRole.CUSTOMER);
+    User client = saveUser("client", UserStatus.ACTIVE, ActorZone.CUSTOMER, UserRole.CUSTOMER);
     User otherClient =
-        saveUser(
-            "other-client",
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            otherOrganizationId,
-            UserRole.CUSTOMER);
-    User manager =
-        saveUser(
-            "manager",
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId,
-            UserRole.CUSTOMER);
-    User admin = saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, null, UserRole.ADMIN);
+        saveUser("other-client", UserStatus.ACTIVE, ActorZone.CUSTOMER, UserRole.CUSTOMER);
+    User manager = saveUser("manager", UserStatus.ACTIVE, ActorZone.CUSTOMER, UserRole.CUSTOMER);
+    User admin = saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, UserRole.ADMIN);
 
     AssetCategory category =
         categories.saveAndFlush(
-            new AssetCategory("bridge-" + organizationId, "Bridge", "Bridge infrastructure", true));
+            new AssetCategory("bridge-" + client.getId(), "Bridge", "Bridge infrastructure", true));
 
     return new Data(
-        organizationId,
-        otherOrganizationId,
-        client.getId(),
-        otherClient.getId(),
-        manager.getId(),
-        admin.getId(),
-        category.getId());
+        client.getId(), otherClient.getId(), manager.getId(), admin.getId(), category.getId());
   }
 
-  private UUID createOrganization(String label) {
-    UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'ACTIVE', now(), now())
-        """,
-        organizationId,
-        label + " organization " + organizationId,
-        "ORG-" + organizationId);
-    return organizationId;
-  }
-
-  private User saveUser(
-      String label, UserStatus status, ActorZone actorZone, UUID organizationId, UserRole role) {
+  private User saveUser(String label, UserStatus status, ActorZone actorZone, UserRole role) {
     UUID id = UUID.randomUUID();
     String email = label + "-" + id + "@example.test";
-    User user = new User(email, label, "{noop}password", status, actorZone, organizationId);
+    User user = new User(email, label, "{noop}password", status, actorZone);
     user.addRole(role);
     return users.saveAndFlush(user);
   }
 
   public record Data(
-      UUID organizationId,
-      UUID otherOrganizationId,
-      UUID clientId,
-      UUID otherClientId,
-      UUID managerId,
-      UUID adminId,
-      UUID categoryId) {}
+      UUID clientId, UUID otherClientId, UUID managerId, UUID adminId, UUID categoryId) {}
 }

@@ -30,17 +30,17 @@ import org.hibernate.type.SqlTypes;
     name = "drones",
     uniqueConstraints =
         @UniqueConstraint(
-            name = "uq_drones_organization_serial",
-            columnNames = {"organization_id", "serial_number"}))
+            name = "uq_drones_owner_customer_serial",
+            columnNames = {"owner_customer_id", "serial_number"}))
 public class Drone {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id")
-  private UUID organizationId;
-
   @Column(name = "inspector_owner_id")
   private UUID inspectorOwnerId;
+
+  @Column(name = "owner_customer_id")
+  private UUID ownerCustomerId;
 
   @Column(name = "serial_number", nullable = false, length = 128)
   private String serialNumber;
@@ -110,22 +110,22 @@ public class Drone {
 
   protected Drone() {}
 
-  public Drone(UUID organizationId, String serialNumber) {
-    this(organizationId, serialNumber, null, null, null, DroneServiceability.ACTIVE);
+  public Drone(UUID ownerCustomerId, String serialNumber) {
+    this(ownerCustomerId, serialNumber, null, null, null, DroneServiceability.ACTIVE);
   }
 
   public Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability) {
-    this(organizationId, serialNumber, model, manufacturer, payloadMetadata, serviceability, null);
+    this(ownerCustomerId, serialNumber, model, manufacturer, payloadMetadata, serviceability, null);
   }
 
   public Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
@@ -135,21 +135,23 @@ public class Drone {
       String registrationNumber,
       String registrationFileKey,
       Instant registrationExpiresAt) {
-    this(organizationId, serialNumber, model, manufacturer, payloadMetadata, serviceability, notes);
+    this(
+        ownerCustomerId, serialNumber, model, manufacturer, payloadMetadata, serviceability, notes);
     this.registrationNumber = registrationNumber;
     this.registrationFileKey = registrationFileKey;
     this.registrationExpiresAt = registrationExpiresAt;
   }
 
   public Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability,
       String notes) {
-    this.organizationId = Objects.requireNonNull(organizationId, "Drone organization is required");
+    this.ownerCustomerId =
+        Objects.requireNonNull(ownerCustomerId, "Drone owner customer is required");
     if (serialNumber == null || serialNumber.isBlank()) {
       throw new IllegalArgumentException("Drone serial number must not be blank");
     }
@@ -165,7 +167,7 @@ public class Drone {
   }
 
   private Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID inspectorOwnerId,
       String serialNumber,
       String model,
@@ -173,13 +175,13 @@ public class Drone {
       String registrationNumber,
       String registrationFileKey,
       Instant registrationExpiresAt) {
-    if ((organizationId == null) == (inspectorOwnerId == null)) {
+    if ((ownerCustomerId == null) == (inspectorOwnerId == null)) {
       throw new IllegalArgumentException("Exactly one Drone owner scope is required.");
     }
     if (serialNumber == null || serialNumber.isBlank()) {
       throw new IllegalArgumentException("Drone serial number must not be blank.");
     }
-    this.organizationId = organizationId;
+    this.ownerCustomerId = ownerCustomerId;
     this.inspectorOwnerId = inspectorOwnerId;
     this.serialNumber = serialNumber.trim();
     this.model = model;
@@ -211,8 +213,8 @@ public class Drone {
         registrationExpiresAt);
   }
 
-  public static Drone createOrganizationOwned(
-      UUID organizationId,
+  public static Drone createCustomerOwned(
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
@@ -220,7 +222,7 @@ public class Drone {
       String registrationFileKey,
       Instant registrationExpiresAt) {
     return new Drone(
-        organizationId,
+        ownerCustomerId,
         null,
         serialNumber,
         model,
@@ -234,12 +236,18 @@ public class Drone {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
-  }
-
   public UUID getInspectorOwnerId() {
     return inspectorOwnerId;
+  }
+
+  public UUID getOwnerCustomerId() {
+    return ownerCustomerId;
+  }
+
+  /** Phase 1 bridge: records the owning customer user for organization-owned drones. */
+  public void markCustomerOwned(UUID ownerCustomerId) {
+    this.ownerCustomerId = ownerCustomerId;
+    this.updatedAt = Instant.now();
   }
 
   public String getSerialNumber() {

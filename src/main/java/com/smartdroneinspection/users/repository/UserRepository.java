@@ -14,8 +14,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
   Optional<User> findDetailedById(UUID id);
 
-  List<User> findWorkforceByOrganizationId(UUID organizationId);
-
   /**
    * Every account the platform administrator manages, with its roles.
    *
@@ -26,7 +24,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
   List<User> findAllWithRoles();
 
   @Query(
-      "select u from User u where u.actorZone = com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER "
+      "select u from User u where u.actorZone = com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR "
           + "and u.status = com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE "
           + "order by u.fullName asc")
   List<User> findActiveInspectorPartners();
@@ -36,6 +34,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
   boolean existsByRoleName(@Param("roleName") String roleName);
 
   @Query(
-      "select distinct u from User u where concat(',', u.roles, ',') like '%,INSPECTOR,%' or u.actorZone = com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER order by u.fullName")
+      "select distinct u from User u where concat(',', u.roles, ',') like '%,INSPECTOR,%' or u.actorZone = com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR order by u.fullName")
   List<User> findAllInspectors();
 }

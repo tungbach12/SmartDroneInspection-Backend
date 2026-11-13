@@ -12,8 +12,8 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * MF3 fixtures: one organization with an assigned Inspector and a qualified CUSTOMER reviewer, a
- * second organization for cross-tenant denial, and an inspection already past field work.
+ * MF3 fixtures: a customer owner with an assigned Inspector and an INSPECTOR who is not the
+ * assignee, a second customer for cross-tenant denial, and an inspection already past field work.
  */
 public final class InspectionTestFixture {
 
@@ -29,23 +29,18 @@ public final class InspectionTestFixture {
   }
 
   public Data create() {
-    UUID organizationId = createOrganization("MF3 primary");
-    UUID otherOrganizationId = createOrganization("MF3 other");
-
-    User inspector = saveUser("mf3-inspector", organizationId, UserRole.INSPECTOR);
-    User reviewer = saveUser("mf3-reviewer", organizationId, UserRole.CUSTOMER);
+    User inspector = saveUser("mf3-inspector", UserRole.INSPECTOR);
+    User reviewer = saveUser("mf3-reviewer", UserRole.CUSTOMER);
     // An INSPECTOR who is not the assignee, to prove assignment scope rather than role is enforced.
-    User otherInspector = saveUser("mf3-other-inspector", organizationId, UserRole.INSPECTOR);
-    User outsider = saveUser("mf3-outsider", otherOrganizationId, UserRole.CUSTOMER);
+    User otherInspector = saveUser("mf3-other-inspector", UserRole.INSPECTOR);
+    User outsider = saveUser("mf3-outsider", UserRole.CUSTOMER);
 
-    UUID assetId = createAsset(organizationId);
+    UUID assetId = createAsset(reviewer.getId());
     Inspection inspection =
         inspections.saveAndFlush(
-            new Inspection(organizationId, assetId, inspector.getId(), null, null, null));
+            new Inspection(reviewer.getId(), assetId, inspector.getId(), null, null, null));
     advanceToFieldCompleted(inspection);
     return new Data(
-        organizationId,
-        otherOrganizationId,
         assetId,
         inspection.getId(),
         inspector.getId(),
@@ -61,7 +56,7 @@ public final class InspectionTestFixture {
         inspection.getId());
   }
 
-  private UUID createAsset(UUID organizationId) {
+  private UUID createAsset(UUID ownerCustomerId) {
     UUID categoryId = UUID.randomUUID();
     jdbcTemplate.update(
         """
@@ -73,13 +68,13 @@ public final class InspectionTestFixture {
     UUID assetId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO assets (id, organization_id, category_id, asset_code, name, location, status,
+        INSERT INTO assets (id, owner_customer_id, category_id, asset_code, name, location, status,
                             created_at, updated_at, row_version)
         VALUES (?, ?, ?, ?, 'Main span', '{"label":"District 1"}', 'ACTIVE',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
         """,
         assetId,
-        organizationId,
+        ownerCustomerId,
         categoryId,
         upperCode("AST"));
     return assetId;
@@ -90,35 +85,19 @@ public final class InspectionTestFixture {
     return (prefix + UUID.randomUUID()).toUpperCase(java.util.Locale.ROOT);
   }
 
-  private UUID createOrganization(String label) {
-    UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, ?, ?, 'ACTIVE')
-        """,
-        organizationId,
-        label + " " + organizationId,
-        "ORG-" + organizationId);
-    return organizationId;
-  }
-
-  private User saveUser(String label, UUID organizationId, UserRole role) {
+  private User saveUser(String label, UserRole role) {
     User user =
         new User(
             label + "-" + UUID.randomUUID() + "@example.test",
             label,
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            role == UserRole.INSPECTOR ? ActorZone.INSPECTOR : ActorZone.CUSTOMER);
     user.addRole(role);
     return users.saveAndFlush(user);
   }
 
   public record Data(
-      UUID organizationId,
-      UUID otherOrganizationId,
       UUID assetId,
       UUID inspectionId,
       UUID inspectorId,

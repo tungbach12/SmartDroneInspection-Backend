@@ -39,20 +39,20 @@ public class ReportAssetContextAccess implements ReportContextAccess {
 
   @Override
   @Transactional(readOnly = true)
-  public Optional<Identity> find(UUID organizationId, UUID assetId, UUID droneId) {
-    Optional<Asset> asset = assets.findByIdAndOrganizationId(assetId, organizationId);
+  public Optional<Identity> find(UUID ownerCustomerId, UUID assetId, UUID droneId) {
+    Optional<Asset> asset = assets.findByIdAndOwnerCustomerId(assetId, ownerCustomerId);
     if (asset.isEmpty()) return Optional.empty();
     Asset record = asset.get();
     Drone drone =
         droneId == null
             ? null
             : drones
-                .findByIdAndOrganizationId(droneId, organizationId)
+                .findByIdAndOwnerCustomerId(droneId, ownerCustomerId)
                 .or(() -> drones.findById(droneId))
                 .orElse(null);
     return Optional.of(
         new Identity(
-            users.findOrganizationName(organizationId).orElse(null),
+            users.findActiveUser(ownerCustomerId).map(UserAccess.ActiveUser::fullName).orElse(null),
             record.getCode(),
             record.getName(),
             locationLabel(record.getLocationText()),

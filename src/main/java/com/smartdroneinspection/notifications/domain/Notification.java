@@ -21,9 +21,6 @@ public class Notification {
   @Column(name = "recipient_user_id", nullable = false)
   private UUID recipientUserId;
 
-  @Column(name = "organization_id")
-  private UUID organizationId;
-
   @Column(name = "event_type", nullable = false, length = 96)
   private String eventType;
 
@@ -60,18 +57,16 @@ public class Notification {
 
   public Notification(
       UUID recipientUserId,
-      UUID organizationId,
       String eventType,
       NotificationChannel channel,
       String title,
       String body,
       String targetPath) {
-    this(recipientUserId, organizationId, eventType, channel, title, body, targetPath, null);
+    this(recipientUserId, eventType, channel, title, body, targetPath, null);
   }
 
   public Notification(
       UUID recipientUserId,
-      UUID organizationId,
       String eventType,
       NotificationChannel channel,
       String title,
@@ -79,7 +74,6 @@ public class Notification {
       String targetPath,
       String deduplicationKey) {
     this.recipientUserId = recipientUserId;
-    this.organizationId = organizationId;
     this.eventType = eventType;
     this.channel = channel;
     this.title = title;
@@ -121,10 +115,6 @@ public class Notification {
 
   public UUID getRecipientUserId() {
     return recipientUserId;
-  }
-
-  public UUID getOrganizationId() {
-    return organizationId;
   }
 
   public String getEventType() {

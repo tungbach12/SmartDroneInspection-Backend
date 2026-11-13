@@ -41,9 +41,6 @@ public class AccessTokenService {
             .claim("roles", user.roleValues())
             .claim("actor_zone", user.getActorZone().name())
             .claim("auth_time", issuedAt.getEpochSecond());
-    if (user.getOrganizationId() != null) {
-      claims.claim("org_id", user.getOrganizationId().toString());
-    }
     var header = JwsHeader.with(MacAlgorithm.HS256).type("at+jwt").build();
     String token =
         encoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();

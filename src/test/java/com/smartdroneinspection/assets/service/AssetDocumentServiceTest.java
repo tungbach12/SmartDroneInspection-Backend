@@ -52,9 +52,8 @@ class AssetDocumentServiceTest {
     when(userAccess.findActiveUser(actorId))
         .thenReturn(
             Optional.of(
-                new UserAccess.ActiveUser(
-                    actorId, Set.of(Roles.CUSTOMER), organizationId, "Customer")));
-    when(assets.findDetailedByIdAndOrganizationId(assetId, organizationId))
+                new UserAccess.ActiveUser(actorId, Set.of(Roles.CUSTOMER), null, "Customer")));
+    when(assets.findDetailedByIdAndOwnerCustomerId(assetId, actorId))
         .thenReturn(Optional.of(asset));
     when(asset.getStatus())
         .thenReturn(com.smartdroneinspection.assets.domain.enums.AssetStatus.ACTIVE);

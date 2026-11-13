@@ -10,7 +10,7 @@ public interface Mf2InspectionAssignment {
       UUID inspectorId, UUID droneId, Instant plannedStartAt, Instant plannedEndAt);
 
   UUID assign(
-      UUID customerOrganizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID inspectorId,
       UUID droneId,

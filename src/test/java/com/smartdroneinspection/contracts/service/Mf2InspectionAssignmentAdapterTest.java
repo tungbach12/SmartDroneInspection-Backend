@@ -55,16 +55,14 @@ class Mf2InspectionAssignmentAdapterTest {
 
     when(users.findActiveUser(managerId))
         .thenReturn(
-            Optional.of(
-                new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), null, "Manager")));
+            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Manager")));
     when(users.findActiveUser(inspectorId))
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Inspector",
                     "inspector@example.test",
                     "LIC-001",
@@ -74,7 +72,8 @@ class Mf2InspectionAssignmentAdapterTest {
     Asset asset = mock(Asset.class);
     when(asset.getId()).thenReturn(assetId);
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
-    when(assets.findWithLockByIdAndOrganizationId(assetId, organizationId))
+    when(asset.getOwnerCustomerId()).thenReturn(organizationId);
+    when(assets.findWithLockByIdAndOwnerCustomerId(assetId, organizationId))
         .thenReturn(Optional.of(asset));
     Drone drone = mock(Drone.class);
     when(drone.getId()).thenReturn(droneId);
@@ -104,7 +103,7 @@ class Mf2InspectionAssignmentAdapterTest {
     verify(inspections).saveAndFlush(captor.capture());
     Inspection saved = captor.getValue();
     assertThat(inspectionId).isNotNull();
-    assertThat(saved.getOrganizationId()).isEqualTo(organizationId);
+    assertThat(saved.getOwnerCustomerId()).isEqualTo(organizationId);
     assertThat(saved.getAssetId()).isEqualTo(assetId);
     assertThat(saved.getPlannedStartAt()).isEqualTo(start);
     assertThat(saved.getPlannedEndAt()).isEqualTo(end);
@@ -114,7 +113,7 @@ class Mf2InspectionAssignmentAdapterTest {
   void rejectsPlatformAdminFromCommercialInspectionAssignment() {
     when(users.findActiveUser(managerId))
         .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.ADMIN), null, "Admin")));
+            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.ADMIN), "Admin")));
 
     assertThatThrownBy(
             () ->

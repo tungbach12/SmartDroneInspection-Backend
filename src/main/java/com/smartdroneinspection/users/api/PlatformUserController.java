@@ -56,9 +56,7 @@ public class PlatformUserController {
             && callerRoles.contains(com.smartdroneinspection.shared.auth.Roles.MANAGER)
             && !callerRoles.contains(com.smartdroneinspection.shared.auth.Roles.ADMIN);
     if (isManager) {
-      if (body.actorZone()
-              != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR_PARTNER
-          || body.organizationId() != null
+      if (body.actorZone() != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR
           || body.roles() == null
           || body.roles().size() != 1
           || !body.roles()

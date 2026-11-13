@@ -75,12 +75,6 @@ class ServicePaymentSchemaMigrationTest {
 
   @Test
   void persistsInvoicePaymentAndPayoutAlongsideScheduledOccurrence() {
-    UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO organizations (id, display_name, registration_code, status) VALUES (?, ?, ?, 'ACTIVE')",
-        organizationId,
-        "Payment Test Organization",
-        "PAY-ORG-" + organizationId.toString().substring(0, 8));
     User customer =
         users.saveAndFlush(
             new User(
@@ -88,8 +82,7 @@ class ServicePaymentSchemaMigrationTest {
                 "Payment Test Customer",
                 "test-password-hash",
                 UserStatus.ACTIVE,
-                ActorZone.CUSTOMER_ORGANIZATION,
-                organizationId));
+                ActorZone.CUSTOMER));
     User inspector =
         users.saveAndFlush(
             new User(
@@ -97,8 +90,7 @@ class ServicePaymentSchemaMigrationTest {
                 "Payment Test Inspector",
                 "test-password-hash",
                 UserStatus.ACTIVE,
-                ActorZone.INSPECTOR_PARTNER,
-                null));
+                ActorZone.INSPECTOR));
     AssetCategory category =
         categories.saveAndFlush(
             new AssetCategory(
@@ -106,7 +98,7 @@ class ServicePaymentSchemaMigrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                organizationId,
+                customer.getId(),
                 category.getId(),
                 "PAY-" + UUID.randomUUID().toString().substring(0, 8),
                 "Payment Test Asset",
@@ -120,7 +112,7 @@ class ServicePaymentSchemaMigrationTest {
     ServiceRequest request =
         requests.saveAndFlush(
             new ServiceRequest(
-                organizationId,
+                customer.getId(),
                 asset.getId(),
                 customer.getId(),
                 "Payment Test Request",
@@ -148,7 +140,7 @@ class ServicePaymentSchemaMigrationTest {
     Inspection inspection =
         inspections.saveAndFlush(
             new Inspection(
-                organizationId,
+                customer.getId(),
                 asset.getId(),
                 inspector.getId(),
                 drone.getId(),

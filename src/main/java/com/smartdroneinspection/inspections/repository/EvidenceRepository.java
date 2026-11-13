@@ -40,9 +40,9 @@ public interface EvidenceRepository
 
   @Query(
       "select e from Evidence e join Inspection i on i.id = e.inspectionId where e.id = :id and"
-          + " i.organizationId = :organizationId")
-  Optional<Evidence> findInOrganization(
-      @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+          + " i.ownerCustomerId = :ownerCustomerId")
+  Optional<Evidence> findOwnedByCustomer(
+      @Param("id") UUID id, @Param("ownerCustomerId") UUID ownerCustomerId);
 
   long countByInspectionId(UUID inspectionId);
 

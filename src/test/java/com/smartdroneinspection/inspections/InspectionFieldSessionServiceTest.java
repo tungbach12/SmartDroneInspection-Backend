@@ -52,7 +52,7 @@ class InspectionFieldSessionServiceTest {
   @Autowired UserAccess userAccess;
   @Autowired EntityManager entityManager;
 
-  private UUID organizationId;
+  private UUID ownerCustomerId;
   private UUID otherOrganizationId;
   private UUID inspectorId;
   private UUID reviewerId;
@@ -64,18 +64,17 @@ class InspectionFieldSessionServiceTest {
 
   @BeforeEach
   void setUp() {
-    AssetTestFixture.Data fixture =
-        new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
-    organizationId = fixture.organizationId();
-    otherOrganizationId = fixture.otherOrganizationId();
-    reviewerId = createUser(organizationId, UserRole.CUSTOMER, "reviewer");
-    inspectorId = createUser(organizationId, UserRole.INSPECTOR, "inspector");
+    AssetTestFixture.Data fixture = new AssetTestFixture(categories, assets, users).create();
+    ownerCustomerId = fixture.clientId();
+    otherOrganizationId = fixture.otherClientId();
+    reviewerId = createUser(UserRole.CUSTOMER, "reviewer");
+    inspectorId = createUser(UserRole.INSPECTOR, "inspector");
 
     assetId =
         assets
             .saveAndFlush(
                 new Asset(
-                    organizationId,
+                    ownerCustomerId,
                     fixture.categoryId(),
                     "ASSET-SESSION-" + UUID.randomUUID(),
                     "Session asset",
@@ -87,7 +86,7 @@ class InspectionFieldSessionServiceTest {
                     reviewerId))
             .getId();
     droneId =
-        drones.saveAndFlush(new Drone(organizationId, "READY-DRONE-" + UUID.randomUUID())).getId();
+        drones.saveAndFlush(new Drone(ownerCustomerId, "READY-DRONE-" + UUID.randomUUID())).getId();
     inspectionId = createReadyInspection();
     initialSessionCount =
         jdbcTemplate.queryForObject(
@@ -155,7 +154,7 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void anotherInspectorCannotStartThisSession() {
-    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
+    UUID otherInspectorId = createUser(UserRole.INSPECTOR, "other-inspector");
 
     assertThatThrownBy(() -> service.start(otherInspectorId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
@@ -167,7 +166,7 @@ class InspectionFieldSessionServiceTest {
 
   @Test
   void anInspectorFromAnotherOrganizationStartsNothing() {
-    UUID outsiderId = createUser(otherOrganizationId, UserRole.INSPECTOR, "outsider");
+    UUID outsiderId = createUser(UserRole.INSPECTOR, "outsider");
 
     assertThatThrownBy(() -> service.start(outsiderId, inspectionId, "Ready at the gate"))
         .isInstanceOf(BusinessException.class)
@@ -284,7 +283,7 @@ class InspectionFieldSessionServiceTest {
   void anotherInspectorCannotAbortThisSession() {
     FieldSession session =
         service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
+    UUID otherInspectorId = createUser(UserRole.INSPECTOR, "other-inspector");
 
     assertThatThrownBy(() -> service.abort(otherInspectorId, inspectionId, session.getId(), "Wind"))
         .isInstanceOf(BusinessException.class)
@@ -296,7 +295,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void listingSessionsDoesNotExposeAnotherInspectorsInspection() {
     service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-    UUID otherInspectorId = createUser(organizationId, UserRole.INSPECTOR, "other-inspector");
+    UUID otherInspectorId = createUser(UserRole.INSPECTOR, "other-inspector");
 
     assertThat(service.listSessions(inspectorId, inspectionId)).hasSize(1);
     assertThatThrownBy(() -> service.listSessions(otherInspectorId, inspectionId))
@@ -309,7 +308,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void listingSessionsOfAnotherOrganizationSeesNothing() {
     service.start(inspectorId, inspectionId, "Confirmed bridge is accessible");
-    UUID outsiderId = createUser(otherOrganizationId, UserRole.INSPECTOR, "outsider");
+    UUID outsiderId = createUser(UserRole.INSPECTOR, "outsider");
 
     assertThatThrownBy(() -> service.listSessions(outsiderId, inspectionId))
         .isInstanceOf(BusinessException.class)
@@ -343,15 +342,14 @@ class InspectionFieldSessionServiceTest {
         .isEqualTo(initialSessionCount);
   }
 
-  private UUID createUser(UUID organizationId, UserRole role, String label) {
+  private UUID createUser(UserRole role, String label) {
     User user =
         new User(
             label + "-" + UUID.randomUUID() + "@example.test",
             label,
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.CUSTOMER);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
@@ -360,12 +358,12 @@ class InspectionFieldSessionServiceTest {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspections (id, organization_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, status,
-          planned_start_at, planned_end_at)
-        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', 'SCHEDULED', ?, ?)
+        INSERT INTO inspections (id, owner_customer_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, status,
+          partner_assignment, planned_start_at, planned_end_at)
+        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', 'SCHEDULED', TRUE, ?, ?)
         """,
         id,
-        organizationId,
+        reviewerId,
         assetId,
         inspectorId,
         droneId,

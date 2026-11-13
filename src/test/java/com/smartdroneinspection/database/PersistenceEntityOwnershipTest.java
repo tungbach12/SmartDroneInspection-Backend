@@ -42,8 +42,6 @@ class PersistenceEntityOwnershipTest {
             "notifications",
             "com.smartdroneinspection.notifications.domain.Notification"),
         Arguments.of("users", "auth_sessions", "com.smartdroneinspection.users.domain.AuthSession"),
-        Arguments.of(
-            "users", "organizations", "com.smartdroneinspection.users.domain.Organization"),
         Arguments.of("users", "users", "com.smartdroneinspection.users.domain.User"),
         Arguments.of(
             "users",

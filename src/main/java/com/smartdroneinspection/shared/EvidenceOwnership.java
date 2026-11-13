@@ -2,8 +2,8 @@ package com.smartdroneinspection.shared;
 
 import java.util.UUID;
 
-/** Public cross-module port for checking whether evidence belongs to an organization. */
+/** Public cross-module port for checking whether evidence belongs to a customer owner. */
 public interface EvidenceOwnership {
 
-  boolean existsInOrganization(UUID evidenceId, UUID organizationId);
+  boolean existsOwnedByCustomer(UUID evidenceId, UUID ownerCustomerId);
 }

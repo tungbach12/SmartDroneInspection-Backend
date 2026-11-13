@@ -10,7 +10,6 @@ import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.service.AdminUserService;
 import com.smartdroneinspection.users.service.InspectorProfileService;
@@ -29,7 +28,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 class UserAccessInspectorProfileProjectionTest {
 
   @Mock private UserRepository users;
-  @Mock private OrganizationRepository organizations;
   @Mock private AdminUserService adminUsers;
   @Mock private RolePolicy rolePolicy;
   @Mock private SecurityAuditService securityAudit;
@@ -45,8 +43,7 @@ class UserAccessInspectorProfileProjectionTest {
             "Inspector",
             "password-hash",
             UserStatus.ACTIVE,
-            ActorZone.INSPECTOR_PARTNER,
-            null);
+            ActorZone.INSPECTOR);
     user.addRole(UserRole.INSPECTOR);
     ReflectionTestUtils.setField(user, "id", userId);
     InspectorProfile profile = new InspectorProfile(userId);
@@ -58,7 +55,6 @@ class UserAccessInspectorProfileProjectionTest {
     UserAccess.ActiveUser activeUser =
         new UserAccessService(
                 users,
-                organizations,
                 adminUsers,
                 rolePolicy,
                 securityAudit,
@@ -83,8 +79,7 @@ class UserAccessInspectorProfileProjectionTest {
             "Inspector",
             "password-hash",
             UserStatus.ACTIVE,
-            ActorZone.INSPECTOR_PARTNER,
-            null);
+            ActorZone.INSPECTOR);
     ReflectionTestUtils.setField(user, "id", userId);
     when(users.findDetailedById(userId)).thenReturn(Optional.of(user));
     when(inspectorProfileRepository.findById(userId)).thenReturn(Optional.empty());
@@ -92,7 +87,6 @@ class UserAccessInspectorProfileProjectionTest {
     UserAccess.ActiveUser activeUser =
         new UserAccessService(
                 users,
-                organizations,
                 adminUsers,
                 rolePolicy,
                 securityAudit,

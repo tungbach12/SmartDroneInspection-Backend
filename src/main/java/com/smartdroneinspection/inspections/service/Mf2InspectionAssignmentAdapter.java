@@ -53,7 +53,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
   @Override
   @Transactional
   public UUID assign(
-      UUID customerOrganizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID inspectorId,
       UUID droneId,
@@ -62,17 +62,14 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
       UUID assignedByUserId) {
     users
         .findActiveUser(assignedByUserId)
-        .filter(user -> user.hasRole(Roles.MANAGER) && user.organizationId() == null)
+        .filter(user -> user.hasRole(Roles.MANAGER))
         .orElseThrow(
             () ->
                 failure(
                     HttpStatus.FORBIDDEN,
                     "FORBIDDEN",
                     "Only an active Manager can assign partner inspections"));
-    if (customerOrganizationId == null
-        || assetId == null
-        || inspectorId == null
-        || droneId == null) {
+    if (ownerCustomerId == null || assetId == null || inspectorId == null || droneId == null) {
       throw failure(HttpStatus.BAD_REQUEST, "ASSIGNMENT_INVALID", "Assignment data is incomplete");
     }
     if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
@@ -82,7 +79,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
 
     Asset asset =
         assets
-            .findWithLockByIdAndOrganizationId(assetId, customerOrganizationId)
+            .findWithLockByIdAndOwnerCustomerId(assetId, ownerCustomerId)
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, "NOT_FOUND", "Customer asset not found"));
     if (asset.getStatus() == AssetStatus.RETIRED) {
@@ -133,18 +130,20 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
 
     Inspection inspection =
         new Inspection(
-            customerOrganizationId,
+            asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId,
             asset.getId(),
             inspector.id(),
             drone.getId(),
             plannedStartAt,
             plannedEndAt);
     inspection.markPartnerAssignment();
+    inspection.markCustomerOwned(
+        asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId);
     Inspection saved = inspections.saveAndFlush(inspection);
     events.publishEvent(
         new InspectionAssignedEvent(
             saved.getId(),
-            saved.getOrganizationId(),
+            saved.getOwnerCustomerId(),
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
     return saved.getId();

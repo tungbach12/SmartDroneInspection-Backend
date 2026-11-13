@@ -65,7 +65,6 @@ class EvidenceServiceTest {
         new UserAccess.ActiveUser(
             managerId,
             Set.of(Roles.MANAGER),
-            null,
             "PLATFORM",
             "Platform Manager",
             "manager@platform.test",
@@ -94,7 +93,6 @@ class EvidenceServiceTest {
         new UserAccess.ActiveUser(
             adminId,
             Set.of(Roles.ADMIN),
-            null,
             "PLATFORM",
             "Platform Admin",
             "admin@platform.test",
@@ -123,8 +121,7 @@ class EvidenceServiceTest {
         new UserAccess.ActiveUser(
             otherUserId,
             Set.of(Roles.INSPECTOR),
-            orgId,
-            "CUSTOMER_ORGANIZATION",
+            "INSPECTOR",
             "Other Guy",
             "other@asset.test",
             null,
@@ -132,13 +129,9 @@ class EvidenceServiceTest {
             null,
             null);
 
-    Inspection inspection =
-        new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
-    ReflectionTestUtils.setField(inspection, "id", inspectionId);
-
     when(userAccess.findActiveUser(otherUserId)).thenReturn(Optional.of(stranger));
-    when(inspections.findByIdAndOrganizationId(inspectionId, orgId))
-        .thenReturn(Optional.of(inspection));
+    when(inspections.findAssignedByInspector(inspectionId, otherUserId))
+        .thenReturn(Optional.empty());
 
     assertThatThrownBy(() -> evidenceService.requireInspectionInScope(otherUserId, inspectionId))
         .isInstanceOf(BusinessException.class)

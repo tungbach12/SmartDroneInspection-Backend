@@ -192,7 +192,7 @@ public class InspectionListService {
             : null;
     return new InspectionListItemResponse(
         inspection.getId(),
-        inspection.getOrganizationId(),
+        inspection.getOwnerCustomerId(),
         inspection.getAssetId(),
         inspection.getInspectorId(),
         inspection.getStatus().name(),
@@ -233,19 +233,16 @@ public class InspectionListService {
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       return new Scope.PlatformAdmin(inspections);
     }
-    if (actor.isInspectorPartner()) {
-      return new Scope.InspectorPartner(actor.id(), inspections);
-    }
-    UUID organizationId = actor.organizationId();
-    if (organizationId == null) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "The user does not belong to an organization.");
-    }
+    UUID ownerCustomerId = actor.ownerCustomerId();
     if (actor.hasRole("CUSTOMER")) {
-      return new Scope.OrganizationManager(organizationId, inspections);
+      if (ownerCustomerId == null) {
+        throw new BusinessException(
+            HttpStatus.FORBIDDEN, "FORBIDDEN", "The user has no customer ownership scope.");
+      }
+      return new Scope.OrganizationManager(ownerCustomerId, inspections);
     }
     if (actor.hasRole("INSPECTOR")) {
-      return new Scope.Inspector(organizationId, actor.id(), inspections);
+      return new Scope.Inspector(ownerCustomerId, actor.id(), inspections);
     }
     throw new BusinessException(
         HttpStatus.FORBIDDEN, "FORBIDDEN", "The user has no permission to view inspections.");
@@ -290,43 +287,29 @@ public class InspectionListService {
       }
     }
 
-    record OrganizationManager(UUID organizationId, InspectionRepository repository)
+    record OrganizationManager(UUID ownerCustomerId, InspectionRepository repository)
         implements Scope {
       @Override
       public Page<Inspection> query(Pageable pageable) {
-        return repository.findByOrganizationId(organizationId, pageable);
+        return repository.findByOwnerCustomerId(ownerCustomerId, pageable);
       }
 
       @Override
       public Page<Inspection> queryWithReport(Pageable pageable) {
-        return repository.findWithReportByOrganizationId(organizationId, pageable);
+        return repository.findWithReportByOwnerCustomerId(ownerCustomerId, pageable);
       }
     }
 
-    record Inspector(UUID organizationId, UUID inspectorId, InspectionRepository repository)
+    record Inspector(UUID ownerCustomerId, UUID inspectorId, InspectionRepository repository)
         implements Scope {
       @Override
       public Page<Inspection> query(Pageable pageable) {
-        return repository.findByOrganizationIdAndInspectorId(organizationId, inspectorId, pageable);
+        return repository.findByInspectorId(inspectorId, pageable);
       }
 
       @Override
       public Page<Inspection> queryWithReport(Pageable pageable) {
-        return repository.findWithReportByOrganizationIdAndInspectorId(
-            organizationId, inspectorId, pageable);
-      }
-    }
-
-    record InspectorPartner(UUID inspectorId, InspectionRepository repository) implements Scope {
-      @Override
-      public Page<Inspection> query(Pageable pageable) {
-        return repository.findByInspectorIdAndPartnerAssignmentTrue(inspectorId, pageable);
-      }
-
-      @Override
-      public Page<Inspection> queryWithReport(Pageable pageable) {
-        return repository.findWithReportByInspectorIdAndPartnerAssignmentTrue(
-            inspectorId, pageable);
+        return repository.findWithReportByInspectorId(inspectorId, pageable);
       }
     }
   }

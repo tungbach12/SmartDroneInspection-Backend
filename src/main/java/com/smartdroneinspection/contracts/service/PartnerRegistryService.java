@@ -468,8 +468,7 @@ public class PartnerRegistryService {
 
   private void requireManager(UUID managerId) {
     UserAccess.ActiveUser actor = users.findActiveUser(managerId).orElseThrow(this::forbidden);
-    if ((!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN))
-        || actor.organizationId() != null) {
+    if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
       throw forbidden();
     }
   }

@@ -53,11 +53,11 @@ public class InspectionCreationService {
   @Transactional
   public InspectionResponse create(UUID actorId, CreateInspectionRequest request) {
     UserAccess.ActiveUser actor = requireOrgAdmin(actorId);
-    UUID organizationId = actor.organizationId();
+    UUID ownerCustomerId = actor.ownerCustomerId();
 
     Asset asset =
         assets
-            .findByIdAndOrganizationId(request.assetId(), organizationId)
+            .findByIdAndOwnerCustomerId(request.assetId(), ownerCustomerId)
             .orElseThrow(
                 () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
 
@@ -76,24 +76,24 @@ public class InspectionCreationService {
     UserAccess.ActiveUser inspector =
         userAccess
             .findActiveUser(request.inspectorId())
-            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
+            .filter(u -> u.hasRole(Roles.INSPECTOR))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_INSPECTOR",
-                        "Assigned inspector must be active in the organization."));
+                        "Assigned inspector must be an active inspector."));
 
     Drone drone =
         drones
-            .findWithLockByIdAndOrganizationId(request.droneId(), organizationId)
+            .findWithLockByIdAndOwnerCustomerId(request.droneId(), ownerCustomerId)
             .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_DRONE",
-                        "Assigned drone must be active in the organization."));
+                        "Assigned drone must be active and owned by the customer."));
 
     if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
       throw new BusinessException(
@@ -102,8 +102,8 @@ public class InspectionCreationService {
           "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
     }
 
-    if (inspections.hasScheduleConflict(
-        organizationId,
+    if (inspections.hasScheduleConflictByOwner(
+        ownerCustomerId,
         inspector.id(),
         drone.getId(),
         request.plannedStartAt(),
@@ -116,19 +116,20 @@ public class InspectionCreationService {
 
     Inspection inspection =
         new Inspection(
-            organizationId,
+            actor.ownerCustomerId(),
             asset.getId(),
             inspector.id(),
             drone.getId(),
             request.plannedStartAt(),
             request.plannedEndAt());
+    inspection.markCustomerOwned(actorId);
 
     Inspection saved = inspections.saveAndFlush(inspection);
 
     eventPublisher.publishEvent(
         new InspectionAssignedEvent(
             saved.getId(),
-            saved.getOrganizationId(),
+            saved.getOwnerCustomerId(),
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
 
@@ -150,17 +151,16 @@ public class InspectionCreationService {
     } else if (actor.isInspectorPartner() || actor.hasRole(Roles.INSPECTOR)) {
       inspection =
           inspections
-              .findAssignedInspectorInspection(
-                  inspectionId, actor.organizationId(), actor.id(), actor.isInspectorPartner())
+              .findAssignedByInspector(inspectionId, actor.id())
               .orElseThrow(
                   () ->
                       new BusinessException(
                           HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
     } else {
-      UUID organizationId = actor.organizationId();
+      UUID ownerCustomerId = actor.ownerCustomerId();
       inspection =
           inspections
-              .findByIdAndOrganizationId(inspectionId, organizationId)
+              .findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId)
               .orElseThrow(
                   () ->
                       new BusinessException(
@@ -180,14 +180,12 @@ public class InspectionCreationService {
       byte[] content,
       String contentType) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = actor.organizationId();
+    UUID ownerCustomerId = actor.ownerCustomerId();
 
     Inspection inspection =
         (actor.isInspectorPartner()
-                ? inspections
-                    .findAssignedInspectorInspection(inspectionId, null, actorId, true)
-                    .filter(Inspection::isPartnerAssignment)
-                : inspections.findByIdAndOrganizationId(inspectionId, organizationId))
+                ? inspections.findAssignedByInspector(inspectionId, actorId)
+                : inspections.findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId))
             .orElseThrow(
                 () ->
                     new BusinessException(
@@ -265,7 +263,9 @@ public class InspectionCreationService {
         Instant.now());
     Inspection saved = inspections.saveAndFlush(inspection);
     Asset asset =
-        assets.findByIdAndOrganizationId(inspection.getAssetId(), organizationId).orElse(null);
+        assets
+            .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
+            .orElse(null);
     return toResponse(saved, asset);
   }
 
@@ -391,8 +391,8 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
     }
 
@@ -431,8 +431,8 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
     }
 
@@ -497,7 +497,7 @@ public class InspectionCreationService {
     eventPublisher.publishEvent(
         new InspectionAssignedEvent(
             saved.getId(),
-            saved.getOrganizationId(),
+            saved.getOwnerCustomerId(),
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
 
@@ -522,8 +522,8 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
     }
 
@@ -555,14 +555,14 @@ public class InspectionCreationService {
             ? (inspection.isPartnerAssignment()
                 ? drones.findById(inspection.getDroneId()).orElse(null)
                 : drones
-                    .findByIdAndOrganizationId(
-                        inspection.getDroneId(), inspection.getOrganizationId())
+                    .findByIdAndOwnerCustomerId(
+                        inspection.getDroneId(), inspection.getOwnerCustomerId())
                     .orElse(null))
             : null;
 
     return new InspectionResponse(
         inspection.getId(),
-        inspection.getOrganizationId(),
+        inspection.getOwnerCustomerId(),
         inspection.getAssetId(),
         assetName,
         asset == null ? null : asset.getLocationText(),
@@ -588,13 +588,13 @@ public class InspectionCreationService {
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_MANAGER)) {
+    if (!actor.hasRole(Roles.ORG_MANAGER) && !actor.hasRole(Roles.CUSTOMER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ORG_MANAGER can perform this action.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only a customer can perform this action.");
     }
-    if (actor.organizationId() == null) {
+    if (actor.ownerCustomerId() == null) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Actor has no organization scope.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Actor has no customer ownership scope.");
     }
     return actor;
   }

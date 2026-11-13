@@ -55,21 +55,20 @@ class NotificationServiceTest {
               assertThat(be.code()).isEqualTo("USER_INACTIVE");
             });
 
-    verify(notificationRepository, never())
-        .findByRecipientUserIdAndOrganizationIdOrderByCreatedAtDesc(any(), any(), any());
+    verify(notificationRepository, never()).findByRecipientUserIdOrderByCreatedAtDesc(any(), any());
   }
 
   @Test
   void listWithOrgReturnsPaginatedNotifications() {
     UUID userId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
-    ActiveUser user = new ActiveUser(userId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(userId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
 
     Notification notification =
         new Notification(
             userId,
-            orgId,
             "INSPECTION_ASSIGNED",
             NotificationChannel.IN_APP,
             "Title",
@@ -77,8 +76,8 @@ class NotificationServiceTest {
             "/inspections/1");
 
     PageRequest expectedPageRequest = PageRequest.of(0, 20);
-    when(notificationRepository.findByRecipientUserIdAndOrganizationIdOrderByCreatedAtDesc(
-            userId, orgId, expectedPageRequest))
+    when(notificationRepository.findByRecipientUserIdOrderByCreatedAtDesc(
+            userId, expectedPageRequest))
         .thenReturn(new PageImpl<>(List.of(notification), expectedPageRequest, 1));
 
     NotificationPageResponse response = notificationService.list(userId, 1, 20, false);
@@ -101,13 +100,13 @@ class NotificationServiceTest {
   void listWithOrgAndUnreadOnlyQueriesUnread() {
     UUID userId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
-    ActiveUser user = new ActiveUser(userId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(userId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
 
     PageRequest expectedPageRequest = PageRequest.of(0, 10);
-    when(notificationRepository
-            .findByRecipientUserIdAndOrganizationIdAndReadAtIsNullOrderByCreatedAtDesc(
-                userId, orgId, expectedPageRequest))
+    when(notificationRepository.findByRecipientUserIdAndReadAtIsNullOrderByCreatedAtDesc(
+            userId, expectedPageRequest))
         .thenReturn(new PageImpl<>(List.of(), expectedPageRequest, 0));
 
     NotificationPageResponse response = notificationService.list(userId, 1, 10, true);
@@ -115,8 +114,7 @@ class NotificationServiceTest {
     assertThat(response.items()).isEmpty();
     assertThat(response.totalCount()).isZero();
     verify(notificationRepository)
-        .findByRecipientUserIdAndOrganizationIdAndReadAtIsNullOrderByCreatedAtDesc(
-            userId, orgId, expectedPageRequest);
+        .findByRecipientUserIdAndReadAtIsNullOrderByCreatedAtDesc(userId, expectedPageRequest);
   }
 
   @Test
@@ -159,11 +157,10 @@ class NotificationServiceTest {
   void unreadCountReturnsCorrectCount() {
     UUID userId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
-    ActiveUser user = new ActiveUser(userId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(userId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
-    when(notificationRepository.countByRecipientUserIdAndOrganizationIdAndReadAtIsNull(
-            userId, orgId))
-        .thenReturn(5L);
+    when(notificationRepository.countByRecipientUserIdAndReadAtIsNull(userId)).thenReturn(5L);
 
     NotificationUnreadCountResponse response = notificationService.unreadCount(userId);
 
@@ -187,10 +184,10 @@ class NotificationServiceTest {
     UUID userId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
     UUID notificationId = UUID.randomUUID();
-    ActiveUser user = new ActiveUser(userId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(userId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
-    when(notificationRepository.findByIdAndRecipientUserIdAndOrganizationId(
-            notificationId, userId, orgId))
+    when(notificationRepository.findByIdAndRecipientUserId(notificationId, userId))
         .thenReturn(Optional.empty());
 
     assertThatThrownBy(() -> notificationService.markRead(userId, notificationId))
@@ -210,21 +207,20 @@ class NotificationServiceTest {
     UUID userId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
     UUID notificationId = UUID.randomUUID();
-    ActiveUser user = new ActiveUser(userId, Set.of("INSPECTOR"), orgId, "Inspector Test");
+    ActiveUser user =
+        new ActiveUser(userId, Set.of("INSPECTOR"), orgId.toString(), "Inspector Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
 
     Notification notification =
         new Notification(
             userId,
-            orgId,
             "INSPECTION_ASSIGNED",
             NotificationChannel.IN_APP,
             "Title",
             "Body",
             "/inspections/1");
 
-    when(notificationRepository.findByIdAndRecipientUserIdAndOrganizationId(
-            notificationId, userId, orgId))
+    when(notificationRepository.findByIdAndRecipientUserId(notificationId, userId))
         .thenReturn(Optional.of(notification));
     when(notificationRepository.save(any(Notification.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));

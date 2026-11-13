@@ -20,9 +20,8 @@ class DroneTest {
 
   @Test
   void blankSerialNumberIsRejected() {
-    UUID organizationId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> new Drone(organizationId, "  "))
+    assertThatThrownBy(() -> new Drone(UUID.randomUUID(), "  "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Drone serial number must not be blank");
   }

@@ -40,8 +40,7 @@ class PartnerRegistryServiceTest {
 
     when(users.findActiveUser(managerId))
         .thenReturn(
-            Optional.of(
-                new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), null, "Manager")));
+            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Manager")));
   }
 
   @Test
@@ -86,8 +85,7 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot",
                     "pilot@example.test",
                     "LIC-001",
@@ -107,8 +105,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -140,7 +137,8 @@ class PartnerRegistryServiceTest {
     when(users.findActiveUser(customerId))
         .thenReturn(
             Optional.of(
-                new UserAccess.ActiveUser(customerId, Set.of(Roles.CUSTOMER), UUID.randomUUID())));
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
 
     assertThatThrownBy(() -> service.listInspectors(customerId))
         .isInstanceOf(BusinessException.class)
@@ -155,8 +153,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -200,8 +197,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -236,8 +232,7 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot",
                     "pilot@example.test",
                     "LIC-001",
@@ -269,8 +264,7 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot Class A",
                     "pilota@example.test",
                     "LIC-001",
@@ -306,8 +300,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Tran Minh Quan",
             "quan@example.test",
             "LIC-700",

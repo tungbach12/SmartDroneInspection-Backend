@@ -13,7 +13,7 @@ public record ReportPublishedEvent(
     UUID reportId,
     UUID reportVersionId,
     UUID inspectionId,
-    UUID organizationId,
+    UUID ownerCustomerId,
     UUID assetId,
     UUID publishedByUserId,
     List<UUID> forwardedFindingIds,

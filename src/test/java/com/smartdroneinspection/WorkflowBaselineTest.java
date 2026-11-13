@@ -5,12 +5,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -45,7 +43,6 @@ class WorkflowBaselineTest {
   @Autowired WebApplicationContext webApplicationContext;
   private MockMvc mockMvc;
   @Autowired ObjectMapper objectMapper;
-  @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired PasswordEncoder passwords;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -56,23 +53,14 @@ class WorkflowBaselineTest {
   @BeforeEach
   void seedRoleFixtures() {
     mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
-    Organization organization =
-        organizations.saveAndFlush(
-            new Organization("W3 baseline customer", "W3-" + UUID.randomUUID(), "Test fixture"));
 
     for (UserRole role : UserRole.values()) {
       String email = "w3-" + role.name().toLowerCase() + "-" + UUID.randomUUID() + "@example.test";
       String password = PASSWORD_PREFIX + UUID.randomUUID();
       ActorZone actorZone = zoneFor(role);
-      UUID organizationId = actorZone == ActorZone.PLATFORM ? null : organization.getId();
       User user =
           new User(
-              email,
-              "W3 " + role.name(),
-              passwords.encode(password),
-              UserStatus.ACTIVE,
-              actorZone,
-              organizationId);
+              email, "W3 " + role.name(), passwords.encode(password), UserStatus.ACTIVE, actorZone);
       user.addRole(role);
       users.saveAndFlush(user);
       credentials.put(role, new FixtureCredentials(email, password));
@@ -170,7 +158,7 @@ class WorkflowBaselineTest {
   private ActorZone zoneFor(UserRole role) {
     return (role == UserRole.ADMIN || role == UserRole.MANAGER)
         ? ActorZone.PLATFORM
-        : ActorZone.CUSTOMER_ORGANIZATION;
+        : (role == UserRole.INSPECTOR ? ActorZone.INSPECTOR : ActorZone.CUSTOMER);
   }
 
   private record FixtureCredentials(String email, String password) {}

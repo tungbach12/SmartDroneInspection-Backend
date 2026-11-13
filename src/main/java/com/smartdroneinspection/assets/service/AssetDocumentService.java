@@ -172,11 +172,11 @@ public class AssetDocumentService {
           .orElseThrow(
               () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
     }
-    if (actor.organizationId() == null) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
+    if (actor.ownerCustomerId() == null) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No customer ownership scope");
     }
     return assets
-        .findDetailedByIdAndOrganizationId(assetId, actor.organizationId())
+        .findDetailedByIdAndOwnerCustomerId(assetId, actor.ownerCustomerId())
         .orElseThrow(
             () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
   }

@@ -25,16 +25,9 @@ class V25TargetSchemaFoundationTest {
   void createsTheTargetColumnContractAcrossAllTargetTables() {
     Map<String, Set<String>> targetColumns =
         Map.ofEntries(
-            Map.entry("organizations", Set.of("display_name", "registration_code", "status")),
             Map.entry(
                 "users",
-                Set.of(
-                    "organization_id",
-                    "normalized_email",
-                    "full_name",
-                    "auth_version",
-                    "roles",
-                    "actor_zone")),
+                Set.of("normalized_email", "full_name", "auth_version", "roles", "actor_zone")),
             Map.entry(
                 "inspector_profiles",
                 Set.of(
@@ -79,7 +72,6 @@ class V25TargetSchemaFoundationTest {
             Map.entry(
                 "drones",
                 Set.of(
-                    "organization_id",
                     "serial_number",
                     "model",
                     "serviceability",
@@ -92,20 +84,13 @@ class V25TargetSchemaFoundationTest {
             Map.entry("inspection_items", Set.of("category_id", "label", "sort_order", "active")),
             Map.entry(
                 "assets",
-                Set.of(
-                    "organization_id",
-                    "asset_code",
-                    "category_id",
-                    "location",
-                    "inspection_items",
-                    "status")),
+                Set.of("asset_code", "category_id", "location", "inspection_items", "status")),
             Map.entry(
                 "asset_documents",
                 Set.of("asset_id", "document_type", "object_key", "checksum_sha256")),
             Map.entry(
                 "inspections",
                 Set.of(
-                    "organization_id",
                     "asset_id",
                     "planned_start_at",
                     "planned_end_at",
@@ -168,17 +153,10 @@ class V25TargetSchemaFoundationTest {
                     "created_at")),
             Map.entry(
                 "audit_events",
-                Set.of(
-                    "organization_id",
-                    "actor_user_id",
-                    "action",
-                    "aggregate_type",
-                    "aggregate_id",
-                    "created_at")),
+                Set.of("actor_user_id", "action", "aggregate_type", "aggregate_id", "created_at")),
             Map.entry(
                 "notifications",
-                Set.of(
-                    "recipient_user_id", "organization_id", "event_type", "channel", "created_at")),
+                Set.of("recipient_user_id", "event_type", "channel", "created_at")),
             Map.entry(
                 "service_request_occurrences",
                 Set.of("request_id", "inspection_id", "inspector_id", "drone_id", "status")),
@@ -197,7 +175,7 @@ class V25TargetSchemaFoundationTest {
                     "payout_reference",
                     "payout_recorded_at")));
 
-    assertThat(targetColumns).hasSize(22);
+    assertThat(targetColumns).hasSize(21);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate

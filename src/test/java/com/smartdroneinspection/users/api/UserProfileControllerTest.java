@@ -41,8 +41,7 @@ class UserProfileControllerTest {
             "inspector@example.test",
             "Inspector Test",
             List.of("INSPECTOR"),
-            "CUSTOMER_ORGANIZATION",
-            UUID.randomUUID(),
+            "CUSTOMER",
             true);
 
     when(authService.me(userId)).thenReturn(response);
@@ -75,8 +74,7 @@ class UserProfileControllerTest {
             null,
             null,
             List.of("INSPECTOR"),
-            "CUSTOMER_ORGANIZATION",
-            UUID.randomUUID(),
+            "CUSTOMER",
             true,
             "RPL-VN-2026-0042",
             "CLASS_3",
@@ -107,8 +105,7 @@ class UserProfileControllerTest {
             "inspector@example.test",
             "Inspector Test",
             List.of("INSPECTOR"),
-            "CUSTOMER_ORGANIZATION",
-            UUID.randomUUID(),
+            "CUSTOMER",
             true);
 
     when(authService.updateVisionFallbackPreference(userId, true)).thenReturn(response);

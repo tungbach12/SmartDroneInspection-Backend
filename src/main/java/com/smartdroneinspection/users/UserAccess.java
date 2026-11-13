@@ -16,39 +16,12 @@ public interface UserAccess {
     return List.of();
   }
 
-  Optional<String> findOrganizationName(UUID organizationId);
-
-  Optional<String> findOrganizationCode(UUID organizationId);
-
-  boolean organizationExists(UUID organizationId);
-
   boolean isVisionFallbackEnabled(UUID userId);
-
-  Optional<WorkforceMember> findWorkforceMember(UUID userId, UUID organizationId);
-
-  List<WorkforceMember> listWorkforceMembers(UUID organizationId);
 
   ProvisionedWorkforceMember provisionWorkforceUser(
       UUID actorId,
-      UUID organizationId,
       String email,
       String fullName,
-      Set<String> roles,
-      String ipAddress,
-      String userAgent,
-      String correlationId);
-
-  WorkforceMember updateWorkforceStatus(
-      UUID actorId,
-      UUID userId,
-      String status,
-      String ipAddress,
-      String userAgent,
-      String correlationId);
-
-  WorkforceMember updateWorkforceRoles(
-      UUID actorId,
-      UUID userId,
       Set<String> roles,
       String ipAddress,
       String userAgent,
@@ -78,7 +51,6 @@ public interface UserAccess {
   record ActiveUser(
       UUID id,
       Set<String> roles,
-      UUID organizationId,
       String actorZone,
       String fullName,
       String email,
@@ -91,7 +63,6 @@ public interface UserAccess {
     public ActiveUser(
         UUID id,
         Set<String> roles,
-        UUID organizationId,
         String fullName,
         String email,
         String pilotLicenseNumber,
@@ -101,7 +72,6 @@ public interface UserAccess {
       this(
           id,
           roles,
-          organizationId,
           null,
           fullName,
           email,
@@ -115,7 +85,6 @@ public interface UserAccess {
     public ActiveUser(
         UUID id,
         Set<String> roles,
-        UUID organizationId,
         String actorZone,
         String fullName,
         String email,
@@ -126,7 +95,6 @@ public interface UserAccess {
       this(
           id,
           roles,
-          organizationId,
           actorZone,
           fullName,
           email,
@@ -140,7 +108,6 @@ public interface UserAccess {
     public ActiveUser(
         UUID id,
         Set<String> roles,
-        UUID organizationId,
         String actorZone,
         String pilotLicenseNumber,
         String pilotLicenseClass,
@@ -149,7 +116,6 @@ public interface UserAccess {
       this(
           id,
           roles,
-          organizationId,
           actorZone,
           null,
           null,
@@ -162,25 +128,28 @@ public interface UserAccess {
           null);
     }
 
-    public ActiveUser(
-        UUID id, Set<String> roles, UUID organizationId, String fullName, String email) {
-      this(id, roles, organizationId, null, fullName, email, null, null, null, null, null);
+    public ActiveUser(UUID id, Set<String> roles, String fullName, String email) {
+      this(id, roles, null, fullName, email, null, null, null, null, null);
     }
 
-    public ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
-      this(id, roles, organizationId, null, fullName, null, null, null, null, null, null);
+    public ActiveUser(UUID id, Set<String> roles, String fullName) {
+      this(id, roles, null, fullName, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null, null, null, null, null, null, null, null);
-    }
-
-    public ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
-      this(id, roles, organizationId, null, null, null, null, null, null, null, null);
+      this(id, roles, null, null, null, null, null, null, null, null);
     }
 
     public ActiveUser {
       roles = Set.copyOf(roles);
+    }
+
+    /**
+     * Phase-2 bridge: the owning customer user for customer-scoped resources. A customer owns its
+     * own data, so this is the user's own id; null for inspectors, managers, and admins.
+     */
+    public UUID ownerCustomerId() {
+      return hasRole("CUSTOMER") ? id : null;
     }
 
     public boolean hasRole(String role) {
@@ -230,19 +199,18 @@ public interface UserAccess {
       return true;
     }
 
+    /**
+     * Partner-inspector distinction for read authorization. Tenancy is now per-record: a partner
+     * inspection is identified by {@code Inspection.partnerAssignment}, not by an org-coupled actor
+     * zone. Any active Inspector may be assigned; the per-record flag separates partner reads.
+     */
     public boolean isInspectorPartner() {
-      return "INSPECTOR_PARTNER".equals(actorZone) && hasRole("INSPECTOR");
+      return hasRole("INSPECTOR");
     }
   }
 
-  /** Organization-scoped projection of a workforce user, free of persistence types. */
-  record WorkforceMember(
-      UUID id,
-      String email,
-      String fullName,
-      Set<String> roles,
-      String status,
-      UUID organizationId) {
+  /** A workforce user, free of persistence types. */
+  record WorkforceMember(UUID id, String email, String fullName, Set<String> roles, String status) {
 
     public WorkforceMember {
       roles = Set.copyOf(roles);

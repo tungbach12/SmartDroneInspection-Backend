@@ -38,27 +38,13 @@ public class NotificationService {
     PageRequest pageRequest = PageRequest.of(safePage - 1, safePageSize);
     Page<Notification> pagedResult;
 
-    if (actor.organizationId() != null) {
-      if (unreadOnly) {
-        pagedResult =
-            notificationRepository
-                .findByRecipientUserIdAndOrganizationIdAndReadAtIsNullOrderByCreatedAtDesc(
-                    actor.id(), actor.organizationId(), pageRequest);
-      } else {
-        pagedResult =
-            notificationRepository.findByRecipientUserIdAndOrganizationIdOrderByCreatedAtDesc(
-                actor.id(), actor.organizationId(), pageRequest);
-      }
+    if (unreadOnly) {
+      pagedResult =
+          notificationRepository.findByRecipientUserIdAndReadAtIsNullOrderByCreatedAtDesc(
+              actor.id(), pageRequest);
     } else {
-      if (unreadOnly) {
-        pagedResult =
-            notificationRepository.findByRecipientUserIdAndReadAtIsNullOrderByCreatedAtDesc(
-                actor.id(), pageRequest);
-      } else {
-        pagedResult =
-            notificationRepository.findByRecipientUserIdOrderByCreatedAtDesc(
-                actor.id(), pageRequest);
-      }
+      pagedResult =
+          notificationRepository.findByRecipientUserIdOrderByCreatedAtDesc(actor.id(), pageRequest);
     }
 
     List<NotificationResponse> items =
@@ -71,11 +57,7 @@ public class NotificationService {
   @Transactional(readOnly = true)
   public NotificationUnreadCountResponse unreadCount(UUID userId) {
     ActiveUser actor = requireActiveUser(userId);
-    long count =
-        actor.organizationId() != null
-            ? notificationRepository.countByRecipientUserIdAndOrganizationIdAndReadAtIsNull(
-                actor.id(), actor.organizationId())
-            : notificationRepository.countByRecipientUserIdAndReadAtIsNull(actor.id());
+    long count = notificationRepository.countByRecipientUserIdAndReadAtIsNull(actor.id());
     return new NotificationUnreadCountResponse(count);
   }
 
@@ -83,10 +65,8 @@ public class NotificationService {
   public NotificationResponse markRead(UUID userId, UUID notificationId) {
     ActiveUser actor = requireActiveUser(userId);
     Notification notification =
-        (actor.organizationId() != null
-                ? notificationRepository.findByIdAndRecipientUserIdAndOrganizationId(
-                    notificationId, actor.id(), actor.organizationId())
-                : notificationRepository.findByIdAndRecipientUserId(notificationId, actor.id()))
+        notificationRepository
+            .findByIdAndRecipientUserId(notificationId, actor.id())
             .orElseThrow(
                 () ->
                     new BusinessException(

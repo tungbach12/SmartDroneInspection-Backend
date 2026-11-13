@@ -8,15 +8,14 @@ import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
+import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrganizationRegistrationService {
 
-  private final OrganizationRepository organizations;
   private final UserRepository users;
   private final ProspectiveCustomerRegistrationRepository prospectiveRegistrations;
   private final org.springframework.context.ApplicationEventPublisher events;
@@ -36,7 +34,6 @@ public class OrganizationRegistrationService {
   private final RegistrationOtpService registrationOtp;
 
   public OrganizationRegistrationService(
-      OrganizationRepository organizations,
       UserRepository users,
       ProspectiveCustomerRegistrationRepository prospectiveRegistrations,
       org.springframework.context.ApplicationEventPublisher events,
@@ -45,7 +42,6 @@ public class OrganizationRegistrationService {
       PasswordPolicy passwordPolicy,
       SecurityAuditService audit,
       RegistrationOtpService registrationOtp) {
-    this.organizations = organizations;
     this.users = users;
     this.prospectiveRegistrations = prospectiveRegistrations;
     this.events = events;
@@ -65,7 +61,7 @@ public class OrganizationRegistrationService {
     String email = User.normalizeEmail(request.email());
     String fullName = request.fullName().trim();
     String organizationName = request.organizationName().trim();
-    String organizationCode = Organization.normalizeCode(request.organizationCode());
+    String organizationCode = normalizeCode(request.organizationCode());
     var firstAsset = request.firstAsset();
     boolean requiresAirspaceReview = false;
     CustomerAirspaceEvaluation evaluation = null;
@@ -100,14 +96,6 @@ public class OrganizationRegistrationService {
           "ORGANIZATION_CODE_ALREADY_EXISTS",
           "Organization code is already reserved by a pending registration.");
     }
-    if (organizations.findByRegistrationCodeIgnoreCase(organizationCode).isPresent()
-        || prospectiveRegistrations.existsByOrganizationCodeIgnoreCaseAndStatus(
-            organizationCode, "PENDING")) {
-      throw new AuthException(
-          HttpStatus.CONFLICT,
-          "ORGANIZATION_CODE_ALREADY_EXISTS",
-          "Organization code is already in use.");
-    }
     passwordPolicy.validate(request.password(), email, fullName);
     if (registrationOtp.isReady()) {
       if (request.otpChallengeToken() == null
@@ -134,8 +122,7 @@ public class OrganizationRegistrationService {
               null,
               passwords.encode(request.password()),
               UserStatus.DISABLED,
-              ActorZone.PROSPECT_CUSTOMER,
-              null);
+              ActorZone.CUSTOMER);
       prospect.setOtpVerified(true);
       prospect.addRole(UserRole.CUSTOMER);
       prospect = users.saveAndFlush(prospect);
@@ -146,7 +133,7 @@ public class OrganizationRegistrationService {
                   organizationName,
                   organizationCode,
                   firstAsset.categoryId(),
-                  firstAsset.code().trim().toUpperCase(java.util.Locale.ROOT),
+                  firstAsset.code().trim().toUpperCase(Locale.ROOT),
                   firstAsset.name().trim(),
                   firstAsset.description(),
                   firstAsset.locationText().trim(),
@@ -165,7 +152,6 @@ public class OrganizationRegistrationService {
           userAgent,
           correlationId);
       return new OrganizationRegistrationResponse(
-          null,
           organizationName,
           organizationCode,
           new UserResponse(
@@ -173,16 +159,13 @@ public class OrganizationRegistrationService {
               prospect.getEmail(),
               prospect.getFullName(),
               prospect.roleValues(),
-              prospect.getActorZone().name(),
-              prospect.getOrganizationId()),
+              prospect.getActorZone().name()),
           "PENDING_AIRSPACE_REVIEW",
           registration.getId(),
           evaluation.status().name(),
           evaluation.message());
     }
 
-    Organization organization =
-        organizations.save(new Organization(organizationName, organizationCode, null));
     User customer =
         new User(
             email,
@@ -191,17 +174,14 @@ public class OrganizationRegistrationService {
             null,
             passwords.encode(request.password()),
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organization.getId());
+            ActorZone.CUSTOMER);
     customer.setOtpVerified(true);
     customer.addRole(UserRole.CUSTOMER);
     customer = users.saveAndFlush(customer);
 
-    organizations.saveAndFlush(organization);
     if (firstAsset != null) {
       events.publishEvent(
           new CustomerRegistrationEvent(
-              organization.getId(),
               customer.getId(),
               firstAsset.categoryId(),
               firstAsset.code(),
@@ -225,16 +205,14 @@ public class OrganizationRegistrationService {
         correlationId);
 
     return new OrganizationRegistrationResponse(
-        organization.getId(),
-        organization.getName(),
-        organization.getCode(),
+        organizationName,
+        organizationCode,
         new UserResponse(
             customer.getId(),
             customer.getEmail(),
             customer.getFullName(),
             customer.roleValues(),
-            customer.getActorZone().name(),
-            customer.getOrganizationId()));
+            customer.getActorZone().name()));
   }
 
   private void validateFirstAsset(
@@ -245,5 +223,9 @@ public class OrganizationRegistrationService {
       throw new AuthException(
           HttpStatus.BAD_REQUEST, "INVALID_FIRST_ASSET", "First asset code and name are required.");
     }
+  }
+
+  private static String normalizeCode(String value) {
+    return value.trim().toUpperCase(Locale.ROOT);
   }
 }

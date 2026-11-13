@@ -14,7 +14,6 @@ import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.notifications.domain.Notification;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.InspectorProfile;
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.OtpChallenge;
 import com.smartdroneinspection.users.domain.User;
 import java.util.List;
@@ -42,7 +41,6 @@ class PersistenceEntityMappingTest {
           AuthSession.class,
           InspectorProfile.class,
           OtpChallenge.class,
-          Organization.class,
           User.class);
 
   @Test
