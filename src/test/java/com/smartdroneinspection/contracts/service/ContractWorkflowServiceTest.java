@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
@@ -117,6 +118,66 @@ class ContractWorkflowServiceTest {
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), null, "Manager")));
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId,
+                    Set.of(Roles.INSPECTOR),
+                    null,
+                    "INSPECTOR_PARTNER",
+                    "Inspector",
+                    "inspector@example.test",
+                    "LIC-TEST-001",
+                    "CLASS_A",
+                    Instant.parse("2030-01-01T00:00:00Z"),
+                    "licenses/test.pdf",
+                    null)));
+    Asset quoteAsset = mock(Asset.class);
+    when(quoteAsset.getStatus()).thenReturn(AssetStatus.ACTIVE);
+    when(quoteAsset.getId()).thenReturn(assetId);
+    when(assets.findByIdAndOrganizationId(assetId, orgId)).thenReturn(Optional.of(quoteAsset));
+    Drone lockedDrone = mock(Drone.class);
+    when(lockedDrone.getId()).thenReturn(droneId);
+    when(lockedDrone.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(lockedDrone.getSerialNumber()).thenReturn("SDI-TEST-001");
+    when(lockedDrone.getModel()).thenReturn("Test Drone");
+    when(lockedDrone.isEligibleForAssignment()).thenReturn(true);
+    when(lockedDrone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2030-01-01T00:00:00Z"));
+    when(lockedDrone.getRegistrationNumber()).thenReturn("REG-TEST-001");
+    when(lockedDrone.getFeatures()).thenReturn(List.of());
+    when(lockedDrone.resolveMtowKg()).thenReturn(1.0);
+    when(lockedDrone.requiresClassBLicense()).thenReturn(false);
+    when(partners.lockEligibleDrone(eq(droneId), eq(inspectorId), any(Instant.class)))
+        .thenReturn(lockedDrone);
+    when(partners.evaluateCandidate(
+            eq(managerId),
+            eq(inspectorId),
+            eq(droneId),
+            any(Instant.class),
+            any(Instant.class),
+            any(Asset.class),
+            any(),
+            any(boolean.class),
+            any(boolean.class)))
+        .thenReturn(
+            new PartnerCandidateEvaluation.Result(
+                inspectorId,
+                droneId,
+                "Inspector",
+                null,
+                "SDI-TEST-001",
+                "Test Drone",
+                false,
+                List.of(),
+                PartnerCandidateEvaluation.Status.PASS,
+                PartnerCandidateEvaluation.Status.MATCH,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                "Advisory"));
     when(partners.isEligibleInspector(eq(inspectorId), any(Instant.class))).thenReturn(true);
     when(partners.isEligibleDrone(droneId, inspectorId)).thenReturn(true);
     when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(true);

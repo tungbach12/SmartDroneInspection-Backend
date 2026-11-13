@@ -1,5 +1,7 @@
 package com.smartdroneinspection.assets.api.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -16,10 +18,38 @@ public record CreateAssetRequest(
     BigDecimal latitude,
     BigDecimal longitude,
     @Size(max = 1000) String ownershipInformation,
-    List<String> inspectionItems) {
+    List<String> inspectionItems,
+    @DecimalMin(value = "0.0", inclusive = true) @Digits(integer = 6, fraction = 2)
+        BigDecimal structureHeightMeters,
+    @DecimalMin(value = "0.0", inclusive = true) @Digits(integer = 10, fraction = 2)
+        BigDecimal footprintAreaSquareMeters) {
 
   public CreateAssetRequest {
     inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+  }
+
+  public CreateAssetRequest(
+      String code,
+      String name,
+      String description,
+      UUID categoryId,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      List<String> inspectionItems) {
+    this(
+        code,
+        name,
+        description,
+        categoryId,
+        locationText,
+        latitude,
+        longitude,
+        ownershipInformation,
+        inspectionItems,
+        null,
+        null);
   }
 
   public CreateAssetRequest(
@@ -40,6 +70,8 @@ public record CreateAssetRequest(
         latitude,
         longitude,
         ownershipInformation,
-        List.of());
+        List.of(),
+        null,
+        null);
   }
 }

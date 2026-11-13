@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -61,6 +62,15 @@ public class AssetController {
   @PutMapping("/{assetId}")
   @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<AssetResponse> update(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID assetId,
+      @Valid @RequestBody UpdateAssetRequest request) {
+    return ApiResponse.success(assets.update(subject(jwt), assetId, request));
+  }
+
+  @PatchMapping("/{assetId}")
+  @PreAuthorize("hasRole('CUSTOMER')")
+  public ApiResponse<AssetResponse> patch(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,
       @Valid @RequestBody UpdateAssetRequest request) {

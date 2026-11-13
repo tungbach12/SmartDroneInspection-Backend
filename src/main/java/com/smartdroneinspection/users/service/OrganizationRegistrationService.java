@@ -153,6 +153,8 @@ public class OrganizationRegistrationService {
                   firstAsset.latitude(),
                   firstAsset.longitude(),
                   firstAsset.ownershipInformation(),
+                  firstAsset.structureHeightMeters(),
+                  firstAsset.footprintAreaSquareMeters(),
                   evaluation.status().name()));
       audit.record(
           null,
@@ -208,7 +210,9 @@ public class OrganizationRegistrationService {
               firstAsset.locationText(),
               firstAsset.latitude(),
               firstAsset.longitude(),
-              firstAsset.ownershipInformation()));
+              firstAsset.ownershipInformation(),
+              firstAsset.structureHeightMeters(),
+              firstAsset.footprintAreaSquareMeters()));
     }
 
     audit.record(

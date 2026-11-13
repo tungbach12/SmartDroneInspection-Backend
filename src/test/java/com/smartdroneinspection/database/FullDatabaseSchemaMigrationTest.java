@@ -130,12 +130,32 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV39AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV40AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(39);
-    assertThat(versions.getLast()).isEqualTo("39");
+    assertThat(versions).hasSize(40);
+    assertThat(versions.getLast()).isEqualTo("40");
+
+    List<String> dimensionColumns =
+        jdbcTemplate.queryForList(
+            """
+            SELECT table_name || '.' || column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND column_name IN (
+                'structure_height_meters', 'footprint_area_square_meters', 'max_altitude_meters')
+              AND table_name IN ('assets', 'drones', 'drone_registration_applications', 'prospective_customer_registrations')
+            """,
+            String.class);
+    assertThat(dimensionColumns)
+        .containsExactlyInAnyOrder(
+            "assets.structure_height_meters",
+            "assets.footprint_area_square_meters",
+            "drones.max_altitude_meters",
+            "drone_registration_applications.max_altitude_meters",
+            "prospective_customer_registrations.structure_height_meters",
+            "prospective_customer_registrations.footprint_area_square_meters");
 
     String recurrenceConstraint =
         jdbcTemplate.queryForObject(

@@ -99,11 +99,13 @@ class DroneRegistrationApplicationServiceTest {
             "owner-key",
             "insp-key",
             null,
+            new java.math.BigDecimal("5000"),
             null,
             false,
             false,
             null,
-            List.of("drone-img-key"));
+            List.of("drone-img-key"),
+            null);
     DroneEvidenceUploadService evidenceUploads = mock(DroneEvidenceUploadService.class);
     service =
         new DroneRegistrationApplicationService(
@@ -139,6 +141,7 @@ class DroneRegistrationApplicationServiceTest {
 
     var response = service.submit(inspectorId, request, "127.0.0.1", "agent", "corr-1");
     assertThat(response.serialNumber()).isEqualTo("SN-001");
+    assertThat(response.maxAltitudeMeters()).isEqualByComparingTo("5000");
     verify(userAccess)
         .recordSecurityAudit(
             eq(inspectorId),
@@ -315,12 +318,14 @@ class DroneRegistrationApplicationServiceTest {
   @Test
   void approveApplicationCreatesDroneAndUpdatesApplication() {
     DroneRegistrationApplication app = sampleApplication();
+    ReflectionTestUtils.setField(app, "maxAltitudeMeters", new java.math.BigDecimal("6000"));
     when(applications.findByIdAndStatus(applicationId, "PENDING")).thenReturn(Optional.of(app));
     when(drones.existsBySerialNumberIgnoreCase(app.getSerialNumber())).thenReturn(false);
     when(drones.saveAndFlush(any(Drone.class)))
         .thenAnswer(
             inv -> {
               Drone d = inv.getArgument(0);
+              assertThat(d.getMaxAltitudeMeters()).isEqualByComparingTo("6000");
               ReflectionTestUtils.setField(d, "id", droneId);
               return d;
             });
@@ -330,6 +335,7 @@ class DroneRegistrationApplicationServiceTest {
     var response = service.approve(adminId, applicationId, "ip", "agent", "corr");
     assertThat(response.status()).isEqualTo("APPROVED");
     assertThat(response.droneId()).isEqualTo(droneId);
+    assertThat(response.maxAltitudeMeters()).isEqualByComparingTo("6000");
     verify(userAccess)
         .recordSecurityAudit(
             eq(adminId),

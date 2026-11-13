@@ -16,7 +16,9 @@ public record AssetResponse(
     String status,
     UUID categoryId,
     Instant createdAt,
-    List<String> inspectionItems) {
+    List<String> inspectionItems,
+    BigDecimal structureHeightMeters,
+    BigDecimal footprintAreaSquareMeters) {
 
   public AssetResponse {
     inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
@@ -44,6 +46,8 @@ public record AssetResponse(
         status,
         categoryId,
         createdAt,
-        List.of());
+        List.of(),
+        null,
+        null);
   }
 }

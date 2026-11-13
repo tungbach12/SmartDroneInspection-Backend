@@ -95,7 +95,8 @@ public class UserAccessService implements UserAccess {
         profile == null ? null : profile.getPilotLicenseNumber(),
         profile == null ? null : profile.getPilotLicenseClass(),
         profile == null ? null : profile.getPilotLicenseExpiresAt(),
-        profile == null ? null : profile.getPilotLicenseFileKey());
+        profile == null ? null : profile.getPilotLicenseFileKey(),
+        user.getAvatarUrl());
   }
 
   @Override

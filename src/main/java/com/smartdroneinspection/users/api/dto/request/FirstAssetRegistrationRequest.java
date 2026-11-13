@@ -1,5 +1,7 @@
 package com.smartdroneinspection.users.api.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -14,4 +16,8 @@ public record FirstAssetRegistrationRequest(
     @NotBlank @Size(max = 500) String locationText,
     @NotNull BigDecimal latitude,
     @NotNull BigDecimal longitude,
-    @Size(max = 1000) String ownershipInformation) {}
+    @Size(max = 1000) String ownershipInformation,
+    @DecimalMin(value = "0.0", inclusive = true) @Digits(integer = 6, fraction = 2)
+        BigDecimal structureHeightMeters,
+    @DecimalMin(value = "0.0", inclusive = true) @Digits(integer = 10, fraction = 2)
+        BigDecimal footprintAreaSquareMeters) {}

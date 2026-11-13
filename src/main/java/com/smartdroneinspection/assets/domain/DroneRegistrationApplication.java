@@ -63,6 +63,9 @@ public class DroneRegistrationApplication {
   @Column(name = "max_wind_resistance_mps", precision = 4, scale = 1)
   private BigDecimal maxWindResistanceMps;
 
+  @Column(name = "max_altitude_meters", precision = 8, scale = 1)
+  private BigDecimal maxAltitudeMeters;
+
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
 
@@ -152,6 +155,7 @@ public class DroneRegistrationApplication {
         inspectionFileKey,
         documentFiles,
         maxWindResistanceMps,
+        null,
         opticalZoomLevel,
         hasThermalCamera,
         hasRtk,
@@ -176,7 +180,46 @@ public class DroneRegistrationApplication {
       boolean hasRtk,
       List<String> imageFileKeys,
       List<String> features) {
+    this(
+        inspectorId,
+        serial,
+        model,
+        manufacturer,
+        registrationNumber,
+        registrationFileKey,
+        registrationExpiresAt,
+        ownershipFileKey,
+        inspectionFileKey,
+        documentFiles,
+        maxWindResistanceMps,
+        null,
+        opticalZoomLevel,
+        hasThermalCamera,
+        hasRtk,
+        imageFileKeys,
+        features);
+  }
+
+  public DroneRegistrationApplication(
+      UUID inspectorId,
+      String serial,
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt,
+      String ownershipFileKey,
+      String inspectionFileKey,
+      Map<String, String> documentFiles,
+      BigDecimal maxWindResistanceMps,
+      BigDecimal maxAltitudeMeters,
+      String opticalZoomLevel,
+      boolean hasThermalCamera,
+      boolean hasRtk,
+      List<String> imageFileKeys,
+      List<String> features) {
     this.inspectorUserId = inspectorId;
+    this.maxAltitudeMeters = maxAltitudeMeters;
     this.serialNumber = serial.trim();
     this.model = model;
     this.manufacturer = manufacturer;
@@ -194,6 +237,7 @@ public class DroneRegistrationApplication {
         this.documentFiles.put("INSPECTION", this.inspectionFileKey);
     }
     this.maxWindResistanceMps = maxWindResistanceMps;
+    this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
     this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
@@ -227,6 +271,40 @@ public class DroneRegistrationApplication {
       boolean hasRtk,
       List<String> imageFileKeys,
       List<String> features) {
+    resubmit(
+        model,
+        manufacturer,
+        registrationNumber,
+        registrationFileKey,
+        registrationExpiresAt,
+        ownershipFileKey,
+        inspectionFileKey,
+        documentFiles,
+        maxWindResistanceMps,
+        null,
+        opticalZoomLevel,
+        hasThermalCamera,
+        hasRtk,
+        imageFileKeys,
+        features);
+  }
+
+  public void resubmit(
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt,
+      String ownershipFileKey,
+      String inspectionFileKey,
+      Map<String, String> documentFiles,
+      BigDecimal maxWindResistanceMps,
+      BigDecimal maxAltitudeMeters,
+      String opticalZoomLevel,
+      boolean hasThermalCamera,
+      boolean hasRtk,
+      List<String> imageFileKeys,
+      List<String> features) {
     if (!"REJECTED".equals(status) && !"APPROVED".equals(status)) {
       throw new IllegalStateException(
           "Only rejected or approved applications may be resubmitted or renewed.");
@@ -247,6 +325,7 @@ public class DroneRegistrationApplication {
         this.documentFiles.put("INSPECTION", this.inspectionFileKey);
     }
     this.maxWindResistanceMps = maxWindResistanceMps;
+    this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
     this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
@@ -325,6 +404,10 @@ public class DroneRegistrationApplication {
 
   public BigDecimal getMaxWindResistanceMps() {
     return maxWindResistanceMps;
+  }
+
+  public BigDecimal getMaxAltitudeMeters() {
+    return maxAltitudeMeters;
   }
 
   public String getOpticalZoomLevel() {

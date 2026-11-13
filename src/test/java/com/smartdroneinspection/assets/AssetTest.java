@@ -57,6 +57,54 @@ class AssetTest {
   }
 
   @Test
+  void storesOptionalDimensionsAndAllowsOmittedUpdatesToPreserveThem() {
+    Asset asset = newAsset();
+    asset.update(
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        new BigDecimal("28.50"),
+        new BigDecimal("900.00"));
+
+    assertThat(asset.getStructureHeightMeters()).isEqualByComparingTo("28.50");
+    assertThat(asset.getFootprintAreaSquareMeters()).isEqualByComparingTo("900.00");
+
+    asset.update(null, null, null, null, null, null, null, null, null);
+    assertThat(asset.getStructureHeightMeters()).isEqualByComparingTo("28.50");
+    assertThat(asset.getFootprintAreaSquareMeters()).isEqualByComparingTo("900.00");
+
+    asset.update(null, null, null, null, null, null, null, null, null, false, true, true, false);
+    assertThat(asset.getStructureHeightMeters()).isNull();
+    assertThat(asset.getFootprintAreaSquareMeters()).isNull();
+  }
+
+  @Test
+  void rejectsNegativeDimensions() {
+    assertThatThrownBy(
+            () ->
+                new Asset(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "A-1",
+                    "Asset",
+                    null,
+                    "Location",
+                    null,
+                    null,
+                    null,
+                    java.util.List.of(),
+                    new BigDecimal("-0.01"),
+                    null,
+                    UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Structure height must not be negative");
+  }
+
+  @Test
   void rejectsInvalidDocumentMetadata() {
     Asset asset = newAsset();
 

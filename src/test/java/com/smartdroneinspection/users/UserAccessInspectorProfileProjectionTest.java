@@ -71,6 +71,7 @@ class UserAccessInspectorProfileProjectionTest {
     assertThat(activeUser.pilotLicenseClass()).isEqualTo("CLASS-2");
     assertThat(activeUser.pilotLicenseExpiresAt()).isEqualTo(expiresAt);
     assertThat(activeUser.pilotLicenseFileKey()).isEqualTo("licenses/scan.pdf");
+    assertThat(activeUser.avatarUrl()).isNull();
   }
 
   @Test
@@ -104,5 +105,6 @@ class UserAccessInspectorProfileProjectionTest {
     assertThat(activeUser.pilotLicenseClass()).isNull();
     assertThat(activeUser.pilotLicenseExpiresAt()).isNull();
     assertThat(activeUser.pilotLicenseFileKey()).isNull();
+    assertThat(activeUser.avatarUrl()).isNull();
   }
 }

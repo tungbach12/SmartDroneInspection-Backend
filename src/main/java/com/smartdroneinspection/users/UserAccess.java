@@ -85,7 +85,8 @@ public interface UserAccess {
       String pilotLicenseNumber,
       String pilotLicenseClass,
       java.time.Instant pilotLicenseExpiresAt,
-      String pilotLicenseFileKey) {
+      String pilotLicenseFileKey,
+      String avatarUrl) {
 
     public ActiveUser(
         UUID id,
@@ -107,7 +108,33 @@ public interface UserAccess {
           pilotLicenseNumber,
           pilotLicenseClass,
           pilotLicenseExpiresAt,
-          pilotLicenseFileKey);
+          pilotLicenseFileKey,
+          null);
+    }
+
+    public ActiveUser(
+        UUID id,
+        Set<String> roles,
+        UUID organizationId,
+        String actorZone,
+        String fullName,
+        String email,
+        String pilotLicenseNumber,
+        String pilotLicenseClass,
+        java.time.Instant pilotLicenseExpiresAt,
+        String pilotLicenseFileKey) {
+      this(
+          id,
+          roles,
+          organizationId,
+          actorZone,
+          fullName,
+          email,
+          pilotLicenseNumber,
+          pilotLicenseClass,
+          pilotLicenseExpiresAt,
+          pilotLicenseFileKey,
+          null);
     }
 
     public ActiveUser(
@@ -131,24 +158,25 @@ public interface UserAccess {
           pilotLicenseExpiresAt == null
               ? null
               : pilotLicenseExpiresAt.atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
-          pilotLicenseFileKey);
+          pilotLicenseFileKey,
+          null);
     }
 
     public ActiveUser(
         UUID id, Set<String> roles, UUID organizationId, String fullName, String email) {
-      this(id, roles, organizationId, null, fullName, email, null, null, null, null);
+      this(id, roles, organizationId, null, fullName, email, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, UUID organizationId, String fullName) {
-      this(id, roles, organizationId, null, fullName, null, null, null, null, null);
+      this(id, roles, organizationId, null, fullName, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null, null, null, null, null, null, null);
+      this(id, roles, null, null, null, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, UUID organizationId) {
-      this(id, roles, organizationId, null, null, null, null, null, null, null);
+      this(id, roles, organizationId, null, null, null, null, null, null, null, null);
     }
 
     public ActiveUser {

@@ -78,6 +78,9 @@ public class Drone {
   @Column(name = "max_wind_resistance_mps", precision = 4, scale = 1)
   private BigDecimal maxWindResistanceMps;
 
+  @Column(name = "max_altitude_meters", precision = 8, scale = 1)
+  private BigDecimal maxAltitudeMeters;
+
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
 
@@ -291,6 +294,7 @@ public class Drone {
 
   public void applyCapabilitiesAndDocuments(
       BigDecimal maxWindResistanceMps,
+      BigDecimal maxAltitudeMeters,
       String opticalZoomLevel,
       boolean hasThermalCamera,
       boolean hasRtk,
@@ -298,6 +302,7 @@ public class Drone {
       List<String> imageFileKeys,
       List<String> features) {
     this.maxWindResistanceMps = maxWindResistanceMps;
+    this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
     this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
@@ -309,6 +314,10 @@ public class Drone {
 
   public List<String> getFeatures() {
     return features != null ? features : List.of();
+  }
+
+  public boolean hasKnownCapabilityDeclaration() {
+    return features != null;
   }
 
   public List<String> getImageFileKeys() {
@@ -327,8 +336,20 @@ public class Drone {
     return maxWindResistanceMps;
   }
 
+  public BigDecimal getMaxAltitudeMeters() {
+    return maxAltitudeMeters;
+  }
+
   public String getOpticalZoomLevel() {
     return opticalZoomLevel;
+  }
+
+  public boolean hasThermalCamera() {
+    return hasThermalCamera;
+  }
+
+  public boolean hasRtk() {
+    return hasRtk;
   }
 
   public boolean isHasThermalCamera() {
@@ -410,13 +431,21 @@ public class Drone {
     return mtow != null && mtow >= 2.0;
   }
 
+  public boolean hasKnownMtow() {
+    Double mtow = resolveMtowKg();
+    return mtow != null && mtow > 0;
+  }
+
   /**
    * Classifies this airframe into one of the 5 statutory MTOW categories under Article 4 of Decree
    * 288/2025/ND-CP (`CATEGORY_1` through `CATEGORY_5`).
    */
   public String resolveLegalCategory() {
     Double mtow = resolveMtowKg();
-    double effectiveMtow = mtow != null && mtow > 0 ? mtow : 0.92;
+    if (mtow == null || mtow <= 0) {
+      return "UNKNOWN";
+    }
+    double effectiveMtow = mtow;
     if (effectiveMtow < 0.25) {
       return "CATEGORY_1";
     }
