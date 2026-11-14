@@ -83,8 +83,8 @@ public class InspectionDroneHubService {
     }
     Asset asset =
         assets
-            .findByIdAndOrganizationId(
-                scope.inspection().getAssetId(), scope.inspection().getOrganizationId())
+            .findByIdAndOwnerCustomerId(
+                scope.inspection().getAssetId(), scope.inspection().getOwnerCustomerId())
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
@@ -159,8 +159,8 @@ public class InspectionDroneHubService {
     String source = "IMPORTED_LOG_" + extension.toUpperCase(java.util.Locale.ROOT);
     String proximityWarning = "";
     var assetOpt =
-        assets.findByIdAndOrganizationId(
-            scope.inspection().getAssetId(), scope.inspection().getOrganizationId());
+        assets.findByIdAndOwnerCustomerId(
+            scope.inspection().getAssetId(), scope.inspection().getOwnerCustomerId());
     if (assetOpt.isPresent()) {
       Asset asset = assetOpt.get();
       if (asset.getLatitude() != null && asset.getLongitude() != null) {
@@ -453,12 +453,12 @@ public class InspectionDroneHubService {
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw failure(
           HttpStatus.FORBIDDEN,
           "DRONEHUB_SCOPE_DENIED",
-          "Access denied to this organization's flight report.");
+          "Access denied to this customer's flight report.");
     }
     FieldSession session =
         sessions
@@ -514,16 +514,12 @@ public class InspectionDroneHubService {
                         HttpStatus.FORBIDDEN,
                         "DRONEHUB_SCOPE_DENIED",
                         "Only the assigned active Inspector may access mission telemetry."));
-    boolean partner = actor.isInspectorPartner();
     Inspection inspection =
         inspections
-            .findAssignedInspectorInspection(inspectionId, actor.organizationId(), actorId, partner)
+            .findAssignedByInspector(inspectionId, actorId)
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
-    if (inspection.isPartnerAssignment() != partner) {
-      throw failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found.");
-    }
     FieldSession session =
         sessions
             .findByIdAndInspectionId(sessionId, inspectionId)

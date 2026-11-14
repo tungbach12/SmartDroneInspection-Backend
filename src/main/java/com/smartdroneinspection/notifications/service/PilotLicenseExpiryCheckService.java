@@ -160,7 +160,6 @@ public class PilotLicenseExpiryCheckService {
       Notification notification =
           new Notification(
               inspector.id(),
-              inspector.organizationId(),
               "PILOT_LICENSE_" + tier.code(),
               NotificationChannel.IN_APP,
               title,
@@ -202,7 +201,6 @@ public class PilotLicenseExpiryCheckService {
         Notification notification =
             new Notification(
                 manager.id(),
-                null,
                 "PILOT_LICENSE_EXPIRED_ALERT",
                 NotificationChannel.IN_APP,
                 title,

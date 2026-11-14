@@ -170,7 +170,8 @@ class VnPayWebhookAndGatewayTest {
                         + orderCode));
 
     assertThat(occurrence.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(occurrence.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(occurrence.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(occurrence.getPayoutReference()).isNull();
     assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
     assertThat(occurrence.getPaymentReference()).isEqualTo("VNPAY-14998877");
 

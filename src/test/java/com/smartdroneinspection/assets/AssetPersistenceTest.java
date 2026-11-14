@@ -26,22 +26,21 @@ class AssetPersistenceTest {
   @Autowired JdbcTemplate jdbcTemplate;
 
   @Test
-  void returnsAssetOnlyForItsOrganization() {
+  void returnsAssetOnlyForItsOwner() {
     Fixture fixture = persistFixture();
-    UUID otherOrganizationId = persistOrganization();
+    UUID otherOwnerId = persistUser();
     Asset asset = assetRepository.saveAndFlush(newAsset(fixture, "bridge-01"));
 
     assertThat(
             assetRepository
-                .findByIdAndOrganizationId(asset.getId(), fixture.organizationId())
+                .findByIdAndOwnerCustomerId(asset.getId(), fixture.ownerCustomerId())
                 .map(Asset::getId))
         .contains(asset.getId());
-    assertThat(assetRepository.findByIdAndOrganizationId(asset.getId(), otherOrganizationId))
-        .isEmpty();
+    assertThat(assetRepository.findByIdAndOwnerCustomerId(asset.getId(), otherOwnerId)).isEmpty();
   }
 
   @Test
-  void allowsSameNormalizedCodeInDifferentOrganizations() {
+  void allowsSameNormalizedCodeForDifferentOwners() {
     Fixture firstFixture = persistFixture();
     Fixture secondFixture = persistFixture();
 
@@ -51,17 +50,53 @@ class AssetPersistenceTest {
     assertThat(first.getCode()).isEqualTo("BRIDGE-01");
     assertThat(second.getCode()).isEqualTo("BRIDGE-01");
     assertThat(
-            assetRepository.existsByOrganizationIdAndCode(
-                firstFixture.organizationId(), "BRIDGE-01"))
+            assetRepository.existsByOwnerCustomerIdAndCode(
+                firstFixture.ownerCustomerId(), "BRIDGE-01"))
         .isTrue();
     assertThat(
-            assetRepository.existsByOrganizationIdAndCode(
-                secondFixture.organizationId(), "BRIDGE-01"))
+            assetRepository.existsByOwnerCustomerIdAndCode(
+                secondFixture.ownerCustomerId(), "BRIDGE-01"))
         .isTrue();
   }
 
   @Test
-  void rejectsDuplicateCodeWithinOrganization() {
+  void persistsOptionalAssetDimensionsAndLoadsLegacyNullDimensions() {
+    Fixture fixture = persistFixture();
+    Asset asset =
+        new Asset(
+            fixture.ownerCustomerId(),
+            fixture.categoryId(),
+            "bridge-dimensions",
+            "River Bridge",
+            null,
+            "District 1",
+            null,
+            null,
+            null,
+            java.util.List.of(),
+            new java.math.BigDecimal("42.50"),
+            new java.math.BigDecimal("1200.75"),
+            fixture.userId());
+    Asset saved = assetRepository.saveAndFlush(asset);
+
+    assertThat(assetRepository.findById(saved.getId()))
+        .hasValueSatisfying(
+            loaded -> {
+              assertThat(loaded.getStructureHeightMeters()).isEqualByComparingTo("42.50");
+              assertThat(loaded.getFootprintAreaSquareMeters()).isEqualByComparingTo("1200.75");
+            });
+
+    Asset legacy = assetRepository.saveAndFlush(newAsset(fixture, "bridge-legacy"));
+    assertThat(assetRepository.findById(legacy.getId()))
+        .hasValueSatisfying(
+            loaded -> {
+              assertThat(loaded.getStructureHeightMeters()).isNull();
+              assertThat(loaded.getFootprintAreaSquareMeters()).isNull();
+            });
+  }
+
+  @Test
+  void rejectsDuplicateCodeWithinOwner() {
     Fixture fixture = persistFixture();
     assetRepository.saveAndFlush(newAsset(fixture, "bridge-01"));
 
@@ -124,18 +159,18 @@ class AssetPersistenceTest {
     assetRepository.saveAndFlush(second);
 
     assertThat(
-            assetRepository.findDetailedByIdAndOrganizationId(
-                first.getId(), fixture.organizationId()))
+            assetRepository.findDetailedByIdAndOwnerCustomerId(
+                first.getId(), fixture.ownerCustomerId()))
         .hasValueSatisfying(asset -> assertThat(asset.getDocuments()).hasSize(1));
     assertThat(
-            assetRepository.findDetailedByIdAndOrganizationId(
-                second.getId(), fixture.organizationId()))
+            assetRepository.findDetailedByIdAndOwnerCustomerId(
+                second.getId(), fixture.ownerCustomerId()))
         .hasValueSatisfying(asset -> assertThat(asset.getDocuments()).hasSize(1));
   }
 
   private Asset newAsset(Fixture fixture, String code) {
     return new Asset(
-        fixture.organizationId(),
+        fixture.ownerCustomerId(),
         fixture.categoryId(),
         code,
         "River Bridge",
@@ -148,42 +183,25 @@ class AssetPersistenceTest {
   }
 
   private Fixture persistFixture() {
-    UUID organizationId = persistOrganization();
-    UUID userId = persistUser(organizationId);
+    UUID userId = persistUser();
     UUID categoryId = persistCategory();
-    return new Fixture(organizationId, userId, categoryId);
+    return new Fixture(userId, userId, categoryId);
   }
 
-  private UUID persistOrganization() {
-    UUID organizationId = UUID.randomUUID();
-    String suffix = organizationId.toString();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
-        """,
-        organizationId,
-        "Organization " + suffix,
-        "Organization " + suffix,
-        "ORG-" + suffix);
-    return organizationId;
-  }
-
-  private UUID persistUser(UUID organizationId) {
+  private UUID persistUser() {
     UUID userId = UUID.randomUUID();
     String email = "asset-user-" + userId + "@example.test";
     jdbcTemplate.update(
         """
         INSERT INTO users (
           id, email, normalized_email, full_name, status, actor_zone,
-          organization_id, auth_version, failed_login_count, must_change_password
-        ) VALUES (?, ?, ?, ?, 'ACTIVE', 'CUSTOMER_ORGANIZATION', ?, 0, 0, FALSE)
+          auth_version, failed_login_count, must_change_password
+        ) VALUES (?, ?, ?, ?, 'ACTIVE', 'CUSTOMER', 0, 0, FALSE)
         """,
         userId,
         email,
         email,
-        "Asset User",
-        organizationId);
+        "Asset User");
     return userId;
   }
 
@@ -198,5 +216,5 @@ class AssetPersistenceTest {
     return categoryId;
   }
 
-  private record Fixture(UUID organizationId, UUID userId, UUID categoryId) {}
+  private record Fixture(UUID ownerCustomerId, UUID userId, UUID categoryId) {}
 }

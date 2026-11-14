@@ -38,7 +38,6 @@ public class InspectorApplicationNotificationListener {
         notifications.saveAndFlush(
             new Notification(
                 manager.id(),
-                null,
                 "INSPECTOR_APPLICATION_SUBMITTED",
                 NotificationChannel.IN_APP,
                 "Inspector application to review",

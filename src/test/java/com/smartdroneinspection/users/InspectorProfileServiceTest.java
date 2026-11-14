@@ -75,8 +75,7 @@ class InspectorProfileServiceTest {
             null,
             "hash",
             UserStatus.ACTIVE,
-            ActorZone.INSPECTOR_PARTNER,
-            null);
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     profile = new InspectorProfile(inspectorId);
     profile.updateFlightExperience(BigDecimal.valueOf(50), null, null, null);
@@ -261,5 +260,45 @@ class InspectorProfileServiceTest {
     verify(flightLogRepository).save(any(InspectorFlightLog.class));
     assertThat(profile.getCertifiedDroneModels()).contains("Autel EVO Max 4T");
     assertThat(profile.getSpecializations()).contains("Năng lượng tái tạo");
+  }
+
+  @Test
+  void updateProfile_preservesExistingLicenseFieldsWhenOmitted() {
+    when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(profile));
+    when(profileRepository.save(any(InspectorProfile.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(flightLogRepository.findByInspectorUserIdOrderByFlightDateDesc(inspector.getId()))
+        .thenReturn(List.of());
+
+    UpdateInspectorProfileRequest partialRequest =
+        new UpdateInspectorProfileRequest(
+            "Nguyen Van Bay",
+            null,
+            null,
+            null,
+            "Ha Noi",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    InspectorProfileResponse response = service.updateProfile(inspectorId, partialRequest, actorId);
+
+    assertThat(response.address()).isEqualTo("Ha Noi");
+    assertThat(response.phoneNumber()).isEqualTo("0901234567");
+    assertThat(response.pilotLicenseNumber()).isEqualTo("VN-UAV-12345");
+    assertThat(response.pilotLicenseClass()).isEqualTo("Hạng 2 (2-25kg)");
+    assertThat(response.pilotLicenseIssuedDate()).isEqualTo(LocalDate.of(2025, 1, 10));
+    assertThat(response.pilotLicenseExpiresAt()).isNotNull();
+    assertThat(response.pilotLicenseAuthority()).isEqualTo("Cục Tác chiến - BQP");
+    assertThat(response.priorFlightHours()).isEqualByComparingTo(BigDecimal.valueOf(50));
   }
 }

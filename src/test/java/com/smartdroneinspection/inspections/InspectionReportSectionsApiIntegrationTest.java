@@ -614,10 +614,10 @@ class InspectionReportSectionsApiIntegrationTest {
   void thePublishedDocumentCarriesSelectableTextAndTheAuthoredSections() throws Exception {
     UUID droneId = UUID.randomUUID();
     jdbcTemplate.update(
-        "INSERT INTO drones (id, organization_id, serial_number, manufacturer, model, serviceability, created_at, updated_at, row_version) "
+        "INSERT INTO drones (id, owner_customer_id, serial_number, manufacturer, model, serviceability, created_at, updated_at, row_version) "
             + "VALUES (?, ?, 'DRONE-REPORT-01', 'SurveyCo', 'S2', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)",
         droneId,
-        fixture.organizationId());
+        fixture.reviewerId());
     jdbcTemplate.update(
         "UPDATE inspections SET drone_id = ? WHERE id = ?", droneId, fixture.inspectionId());
     UUID sessionId = UUID.randomUUID();
@@ -638,7 +638,7 @@ class InspectionReportSectionsApiIntegrationTest {
     assertThat(text).contains("Approval and revisions");
     assertThat(text).doesNotContain("Executive summary");
     assertThat(text).contains("Not supplied");
-    assertThat(text).contains(fixtureOrganizationName());
+    assertThat(text).contains(fixtureReviewerName());
     assertThat(text).contains("Main span");
     assertThat(text).contains("District 1");
     assertThat(text).contains("SurveyCo");
@@ -653,11 +653,9 @@ class InspectionReportSectionsApiIntegrationTest {
 
   // ------------------------------------------------------------------ helpers
 
-  private String fixtureOrganizationName() {
+  private String fixtureReviewerName() {
     return jdbcTemplate.queryForObject(
-        "SELECT display_name FROM organizations WHERE id = ?",
-        String.class,
-        fixture.organizationId());
+        "SELECT full_name FROM users WHERE id = ?", String.class, fixture.reviewerId());
   }
 
   private byte[] downloadDocument(UUID versionId) throws Exception {

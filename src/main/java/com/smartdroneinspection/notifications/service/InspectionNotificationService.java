@@ -29,12 +29,11 @@ public class InspectionNotificationService {
 
   @Transactional
   public void recordInspectionAssignment(
-      UUID inspectionId, UUID organizationId, UUID inspectorId, Instant plannedStartAt) {
-    if (inspectionId == null || organizationId == null || inspectorId == null) {
+      UUID inspectionId, UUID ownerCustomerId, UUID inspectorId, Instant plannedStartAt) {
+    if (inspectionId == null || inspectorId == null) {
       log.warn(
-          "Skipping inspection assignment notification: required identifiers missing (inspectionId={}, organizationId={}, inspectorId={})",
+          "Skipping inspection assignment notification: required identifiers missing (inspectionId={}, inspectorId={})",
           inspectionId,
-          organizationId,
           inspectorId);
       return;
     }
@@ -43,13 +42,6 @@ public class InspectionNotificationService {
     if (recipient == null) {
       log.warn(
           "Cannot record inspection assignment notification: inspector {} is not active",
-          inspectorId);
-      return;
-    }
-
-    if (!recipient.isInspectorPartner() && !organizationId.equals(recipient.organizationId())) {
-      log.warn(
-          "Cannot record inspection assignment notification: organization mismatch for inspector {}",
           inspectorId);
       return;
     }
@@ -77,7 +69,6 @@ public class InspectionNotificationService {
     Notification notification =
         new Notification(
             inspectorId,
-            recipient.organizationId(),
             "INSPECTION_ASSIGNED",
             NotificationChannel.IN_APP,
             title,
@@ -90,8 +81,8 @@ public class InspectionNotificationService {
 
   @Transactional
   public void recordFieldSessionAborted(
-      UUID inspectionId, UUID organizationId, UUID inspectorId, String abortReason) {
-    if (inspectionId == null || organizationId == null) {
+      UUID inspectionId, UUID ownerCustomerId, UUID inspectorId, String abortReason) {
+    if (inspectionId == null) {
       log.warn("Skipping field session aborted notification: required identifiers missing");
       return;
     }
@@ -105,26 +96,25 @@ public class InspectionNotificationService {
             + ". Vui lòng điều phối hoặc dời lịch.";
     String targetPath = "/operations/inspections/" + inspectionId;
 
-    java.util.List<UserAccess.WorkforceMember> members =
-        userAccess.listWorkforceMembers(organizationId);
-    for (UserAccess.WorkforceMember m : members) {
-      if (m.roles().contains("MANAGER")
-          || m.roles().contains("CUSTOMER")
-          || m.roles().contains("ADMIN")) {
-        String key = deduplicationKey + ":" + m.id();
-        Notification notification =
-            new Notification(
-                m.id(),
-                organizationId,
-                "FIELD_SESSION_ABORTED",
-                NotificationChannel.IN_APP,
-                title,
-                body,
-                targetPath,
-                key);
-        saveWithDeduplication(notification, key);
-      }
+    // One user per customer: the owning customer is the single notified recipient. Platform
+    // managers/admins are operators, not tenant owners, and are not fanned out here.
+    if (ownerCustomerId == null) {
+      log.warn(
+          "Skipping field session aborted notification: inspection {} has no owner customer",
+          inspectionId);
+      return;
     }
+    String key = deduplicationKey + ":" + ownerCustomerId;
+    Notification notification =
+        new Notification(
+            ownerCustomerId,
+            "FIELD_SESSION_ABORTED",
+            NotificationChannel.IN_APP,
+            title,
+            body,
+            targetPath,
+            key);
+    saveWithDeduplication(notification, key);
   }
 
   private void saveWithDeduplication(Notification notification, String deduplicationKey) {

@@ -29,7 +29,6 @@ class FullDatabaseSchemaMigrationTest {
             .collect(Collectors.toSet());
     Set<String> expected =
         Set.of(
-            "organizations",
             "users",
             "auth_sessions",
             "prospective_customer_registrations",
@@ -56,6 +55,9 @@ class FullDatabaseSchemaMigrationTest {
             "service_invoices",
             "service_payments",
             "inspector_payouts",
+            "service_refunds",
+            "inspector_receivables",
+            "inspector_receivable_recoveries",
             "inspection_finance_settings",
             "platform_ai_settings",
             "inspector_flight_logs",
@@ -66,7 +68,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(36);
+    assertThat(expected).hasSize(38);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -103,6 +105,15 @@ class FullDatabaseSchemaMigrationTest {
     assertThat(columns).as("columns for %s", table).contains(expectedColumns);
   }
 
+  private void assertNoColumn(String table, String column) {
+    List<String> columns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ?",
+            String.class,
+            table);
+    assertThat(columns).as("columns for %s", table).doesNotContain(column);
+  }
+
   @Test
   void createsTargetAndSharedRuntimeGuardIndexes() {
     List<String> indexes =
@@ -124,20 +135,57 @@ class FullDatabaseSchemaMigrationTest {
 
     assertThat(indexes)
         .contains(
-            "uq_assets_organization_asset_code",
+            "uq_assets_owner_customer_asset_code",
             "ix_notifications_recipient_status",
-            "uq_users_id_organization",
-            "uq_assets_id_organization");
-    assertThat(constraints).contains("fk_inspections_asset_tenant");
+            "ix_assets_owner_customer",
+            "ix_drones_owner_customer");
+    assertThat(constraints).contains("assets_owner_customer_id_fkey");
   }
 
   @Test
-  void appliesAllMigrationsAndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV51AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(43);
-    assertThat(versions.getLast()).isEqualTo("43");
+    assertThat(versions).hasSize(51);
+    assertThat(versions.getLast()).isEqualTo("51");
+
+    assertColumns("assets", "owner_customer_id");
+    assertColumns("drones", "owner_customer_id");
+    assertColumns("inspections", "owner_customer_id");
+    assertColumns("service_requests", "owner_customer_id");
+    assertNoColumn("assets", "organization_id");
+    assertNoColumn("drones", "organization_id");
+    assertNoColumn("inspections", "organization_id");
+    assertNoColumn("service_requests", "organization_id");
+    assertNoColumn("users", "organization_id");
+
+    // V43 dropped the organizations table outright; owner_customer_id is the sole tenant key.
+    List<String> orgTables =
+        jdbcTemplate.queryForList(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'organizations'",
+            String.class);
+    assertThat(orgTables).as("organizations table must be dropped by V43").isEmpty();
+
+    List<String> dimensionColumns =
+        jdbcTemplate.queryForList(
+            """
+            SELECT table_name || '.' || column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND column_name IN (
+                'structure_height_meters', 'footprint_area_square_meters', 'max_altitude_meters')
+              AND table_name IN ('assets', 'drones', 'drone_registration_applications', 'prospective_customer_registrations')
+            """,
+            String.class);
+    assertThat(dimensionColumns)
+        .containsExactlyInAnyOrder(
+            "assets.structure_height_meters",
+            "assets.footprint_area_square_meters",
+            "drones.max_altitude_meters",
+            "drone_registration_applications.max_altitude_meters",
+            "prospective_customer_registrations.structure_height_meters",
+            "prospective_customer_registrations.footprint_area_square_meters");
 
     String recurrenceConstraint =
         jdbcTemplate.queryForObject(
@@ -178,14 +226,65 @@ class FullDatabaseSchemaMigrationTest {
         "occurrence_id",
         "payment_status",
         "payos_order_code",
-        "payment_method");
+        "payment_method",
+        "refunded_amount",
+        "refund_status");
     assertColumns(
         "inspector_payouts",
         "occurrence_id",
         "inspector_id",
         "payout_status",
         "payout_reference",
-        "payout_recorded_at");
+        "payout_recorded_at",
+        "payout_held_for_refund",
+        "refund_reconciliation_reference",
+        "refund_reconciled_by_user_id",
+        "payout_recorded_by_user_id");
+    assertColumns(
+        "service_refunds",
+        "id",
+        "occurrence_id",
+        "amount",
+        "inspector_payout_reduction",
+        "platform_commission_adjustment",
+        "vat_adjustment",
+        "tncn_adjustment",
+        "platform_absorbed_amount",
+        "refund_reference",
+        "recorded_by_user_id",
+        "recorded_at",
+        "request_reference",
+        "inspector_receivable_amount",
+        "platform_absorbed_plan_amount",
+        "refund_status",
+        "initiated_by_user_id",
+        "initiated_at",
+        "completed_by_user_id",
+        "completed_at",
+        "cancelled_by_user_id",
+        "cancelled_at",
+        "cancellation_reason");
+    assertColumns(
+        "inspector_receivables",
+        "id",
+        "refund_id",
+        "occurrence_id",
+        "inspector_id",
+        "assessed_amount",
+        "source_reference",
+        "reason",
+        "recorded_by_user_id",
+        "recorded_at",
+        "row_version");
+    assertColumns(
+        "inspector_receivable_recoveries",
+        "id",
+        "receivable_id",
+        "amount",
+        "external_reference",
+        "note",
+        "recorded_by_user_id",
+        "recorded_at");
 
     List<String> quoteColumns =
         jdbcTemplate.queryForList(

@@ -8,7 +8,6 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.Set;
-import java.util.UUID;
 
 public record CreateUserRequest(
     @NotBlank @Email @Size(max = 320) String email,
@@ -16,15 +15,10 @@ public record CreateUserRequest(
     @Size(max = 32) String phoneNumber,
     @Size(max = 500) String avatarUrl,
     @NotNull ActorZone actorZone,
-    UUID organizationId,
     @NotEmpty Set<UserRole> roles) {
 
   public CreateUserRequest(
-      String email,
-      String fullName,
-      ActorZone actorZone,
-      UUID organizationId,
-      Set<UserRole> roles) {
-    this(email, fullName, null, null, actorZone, organizationId, roles);
+      String email, String fullName, ActorZone actorZone, Set<UserRole> roles) {
+    this(email, fullName, null, null, actorZone, roles);
   }
 }

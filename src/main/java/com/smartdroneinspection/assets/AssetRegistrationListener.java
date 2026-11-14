@@ -6,6 +6,7 @@ import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.shared.api.CustomerRegistrationEvent;
 import com.smartdroneinspection.shared.exception.BusinessException;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -37,7 +38,7 @@ public class AssetRegistrationListener {
                         "Unknown or inactive category"));
     Asset asset =
         new Asset(
-            event.organizationId(),
+            event.customerId(),
             category.getId(),
             event.assetCode(),
             event.assetName(),
@@ -46,7 +47,11 @@ public class AssetRegistrationListener {
             event.latitude(),
             event.longitude(),
             event.ownershipInformation(),
+            List.of(),
+            event.structureHeightMeters(),
+            event.footprintAreaSquareMeters(),
             event.customerId());
+    asset.markCustomerOwned(event.customerId());
     assets.saveAndFlush(asset);
   }
 }

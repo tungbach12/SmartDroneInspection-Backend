@@ -34,8 +34,11 @@ public record ServiceRequestOccurrenceResponse(
     BigDecimal tncnRate,
     BigDecimal tncnAmount,
     BigDecimal inspectorNetPayout,
+    BigDecimal remainingInspectorNetPayout,
     OccurrencePaymentStatus paymentStatus,
     Instant paymentConfirmedAt,
+    java.math.BigDecimal refundedAmount,
+    String refundStatus,
     OccurrencePayoutStatus payoutStatus,
     Instant payoutRecordedAt,
     Instant reportAcceptedAt,
@@ -74,8 +77,11 @@ public record ServiceRequestOccurrenceResponse(
         occurrence.getTncnRate(),
         occurrence.getTncnAmount(),
         occurrence.getInspectorNetPayout(),
+        occurrence.getRemainingInspectorNetPayout(),
         occurrence.getPaymentStatus(),
         occurrence.getPaymentConfirmedAt(),
+        occurrence.getRefundedAmount(),
+        occurrence.getRefundStatus(),
         occurrence.getPayoutStatus(),
         occurrence.getPayoutRecordedAt(),
         occurrence.getReportAcceptedAt(),
@@ -95,6 +101,9 @@ public record ServiceRequestOccurrenceResponse(
             occurrence.getPayout().getInspectorId(),
             occurrence.getPayoutStatus(),
             occurrence.getPayoutReference(),
-            occurrence.getPayoutRecordedAt()));
+            occurrence.getPayoutRecordedAt(),
+            occurrence.getPayout().getPayoutRecordedByUserId(),
+            occurrence.isPayoutHeldForRefund(),
+            occurrence.getPayout().getFinalPayoutAmount()));
   }
 }

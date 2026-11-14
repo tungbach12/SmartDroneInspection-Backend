@@ -62,8 +62,7 @@ class DroneRegistrationApplicationServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot",
                     "pilot@test.local",
                     "LIC-123",
@@ -76,7 +75,6 @@ class DroneRegistrationApplicationServiceTest {
                 new UserAccess.ActiveUser(
                     adminId,
                     Set.of(Roles.ADMIN),
-                    null,
                     "PLATFORM",
                     "Admin",
                     "admin@test.local",
@@ -99,11 +97,13 @@ class DroneRegistrationApplicationServiceTest {
             "owner-key",
             "insp-key",
             null,
+            new java.math.BigDecimal("5000"),
             null,
             false,
             false,
             null,
-            List.of("drone-img-key"));
+            List.of("drone-img-key"),
+            null);
     DroneEvidenceUploadService evidenceUploads = mock(DroneEvidenceUploadService.class);
     service =
         new DroneRegistrationApplicationService(
@@ -139,6 +139,7 @@ class DroneRegistrationApplicationServiceTest {
 
     var response = service.submit(inspectorId, request, "127.0.0.1", "agent", "corr-1");
     assertThat(response.serialNumber()).isEqualTo("SN-001");
+    assertThat(response.maxAltitudeMeters()).isEqualByComparingTo("5000");
     verify(userAccess)
         .recordSecurityAudit(
             eq(inspectorId),
@@ -315,12 +316,14 @@ class DroneRegistrationApplicationServiceTest {
   @Test
   void approveApplicationCreatesDroneAndUpdatesApplication() {
     DroneRegistrationApplication app = sampleApplication();
+    ReflectionTestUtils.setField(app, "maxAltitudeMeters", new java.math.BigDecimal("6000"));
     when(applications.findByIdAndStatus(applicationId, "PENDING")).thenReturn(Optional.of(app));
     when(drones.existsBySerialNumberIgnoreCase(app.getSerialNumber())).thenReturn(false);
     when(drones.saveAndFlush(any(Drone.class)))
         .thenAnswer(
             inv -> {
               Drone d = inv.getArgument(0);
+              assertThat(d.getMaxAltitudeMeters()).isEqualByComparingTo("6000");
               ReflectionTestUtils.setField(d, "id", droneId);
               return d;
             });
@@ -330,6 +333,7 @@ class DroneRegistrationApplicationServiceTest {
     var response = service.approve(adminId, applicationId, "ip", "agent", "corr");
     assertThat(response.status()).isEqualTo("APPROVED");
     assertThat(response.droneId()).isEqualTo(droneId);
+    assertThat(response.maxAltitudeMeters()).isEqualByComparingTo("6000");
     verify(userAccess)
         .recordSecurityAudit(
             eq(adminId),
@@ -423,6 +427,143 @@ class DroneRegistrationApplicationServiceTest {
             any(),
             any(),
             any());
+  }
+
+  @Test
+  void resubmitWithCorrectedSerialNumberUpdatesSerialSuccessfully() {
+    DroneRegistrationApplication app = sampleApplication();
+    app.reject(adminId, "Wrong serial number in application");
+    when(applications.findById(applicationId)).thenReturn(Optional.of(app));
+    when(applications.saveAndFlush(any(DroneRegistrationApplication.class)))
+        .thenAnswer(inv -> inv.getArgument(0));
+
+    when(drones.existsBySerialNumberIgnoreCase("SN-APP-CORRECTED")).thenReturn(false);
+    when(applications.existsBySerialNumberIgnoreCaseAndStatusAndIdNot(
+            "SN-APP-CORRECTED", "PENDING", applicationId))
+        .thenReturn(false);
+
+    SubmitDroneRegistrationApplicationRequest request =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-APP-CORRECTED",
+            "DJI Matrice 350 RTK",
+            "DJI",
+            "REG-APP-2",
+            "reg-file",
+            Instant.now().plusSeconds(172800),
+            "owner-file",
+            "insp-file");
+
+    var response =
+        service.resubmit(inspectorId, applicationId, request, "127.0.0.1", "agent", "corr-3");
+    assertThat(response.status()).isEqualTo("PENDING");
+    assertThat(response.serialNumber()).isEqualTo("SN-APP-CORRECTED");
+  }
+
+  @Test
+  void resubmitRejectsDuplicateSerialOrChangingApprovedDroneSerial() {
+    DroneRegistrationApplication app = sampleApplication();
+    app.reject(adminId, "Typos");
+    when(applications.findById(applicationId)).thenReturn(Optional.of(app));
+
+    // Duplicate serial exists in drones
+    when(drones.existsBySerialNumberIgnoreCase("SN-DUP")).thenReturn(true);
+    SubmitDroneRegistrationApplicationRequest duplicateRequest =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-DUP",
+            "DJI M350",
+            "DJI",
+            "REG-APP",
+            "reg-file",
+            Instant.now().plusSeconds(172800),
+            "owner-file",
+            "insp-file");
+
+    assertThatThrownBy(
+            () ->
+                service.resubmit(
+                    inspectorId, applicationId, duplicateRequest, "127.0.0.1", "agent", "corr-4"))
+        .isInstanceOf(AuthException.class)
+        .hasMessageContaining("already registered");
+
+    // Changing serial on an already approved drone (renewal) is rejected
+    DroneRegistrationApplication approvedApp = sampleApplication();
+    approvedApp.approve(adminId, droneId);
+    when(applications.findById(applicationId)).thenReturn(Optional.of(approvedApp));
+
+    SubmitDroneRegistrationApplicationRequest changeSerialOnApproved =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-CHANGED",
+            "DJI M350",
+            "DJI",
+            "REG-APP",
+            "reg-file",
+            Instant.now().plusSeconds(172800),
+            "owner-file",
+            "insp-file");
+
+    assertThatThrownBy(
+            () ->
+                service.resubmit(
+                    inspectorId,
+                    applicationId,
+                    changeSerialOnApproved,
+                    "127.0.0.1",
+                    "agent",
+                    "corr-5"))
+        .isInstanceOf(AuthException.class)
+        .hasMessageContaining("existing approved drone cannot be changed");
+  }
+
+  @Test
+  void renewApplicationSyncsModelAndRejectsRetiredDrone() {
+    Drone existingDrone =
+        Drone.createInspectorOwned(
+            inspectorId,
+            "SN-APP",
+            "M350",
+            "DJI",
+            "REG-OLD",
+            "reg-old",
+            Instant.now().plusSeconds(3600));
+    ReflectionTestUtils.setField(existingDrone, "id", droneId);
+
+    DroneRegistrationApplication app = sampleApplication();
+    app.approve(adminId, droneId);
+
+    when(applications.findById(applicationId)).thenReturn(Optional.of(app));
+    when(drones.findById(droneId)).thenReturn(Optional.of(existingDrone));
+    when(applications.saveAndFlush(any(DroneRegistrationApplication.class)))
+        .thenAnswer(inv -> inv.getArgument(0));
+    when(drones.saveAndFlush(any(Drone.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    Instant renewedExpiry = Instant.now().plusSeconds(864000);
+    SubmitDroneRegistrationApplicationRequest renewRequest =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-APP",
+            "DJI Matrice 350 RTK [MTOW: 9.2 kg]",
+            "DJI Enterprise",
+            "REG-RENEWED",
+            "reg-renewed",
+            renewedExpiry,
+            "owner-file",
+            "insp-file");
+
+    service.resubmit(inspectorId, applicationId, renewRequest, "127.0.0.1", "agent", "corr-6");
+    when(applications.findByIdAndStatus(applicationId, "PENDING")).thenReturn(Optional.of(app));
+    service.approve(adminId, applicationId, "127.0.0.1", "agent", "corr-7");
+
+    assertThat(existingDrone.getModel()).isEqualTo("DJI Matrice 350 RTK [MTOW: 9.2 kg]");
+    assertThat(existingDrone.getManufacturer()).isEqualTo("DJI Enterprise");
+    assertThat(existingDrone.getRegistrationNumber()).isEqualTo("REG-RENEWED");
+
+    existingDrone.changeServiceability(
+        com.smartdroneinspection.assets.domain.enums.DroneServiceability.RETIRED);
+    assertThatThrownBy(
+            () ->
+                service.resubmit(
+                    inspectorId, applicationId, renewRequest, "127.0.0.1", "agent", "corr-8"))
+        .isInstanceOf(AuthException.class)
+        .hasMessageContaining("Retired drones cannot renew registration");
   }
 
   private DroneRegistrationApplication sampleApplication() {

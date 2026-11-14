@@ -65,8 +65,7 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Nguyen Van Pilot",
             "pilot@example.com",
             "DC-2026-0001234",
@@ -101,8 +100,7 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Le Thi Bay",
             "bay@example.com",
             "DC-2026-0005678",
@@ -132,8 +130,7 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Tran Expired",
             "expired@example.com",
             "DC-2025-0009999",
@@ -141,7 +138,7 @@ class PilotLicenseExpiryCheckServiceTest {
             expiredYesterday,
             "licenses/scan.pdf");
     ActiveUser manager =
-        new ActiveUser(managerId, Set.of("MANAGER"), null, "Platform Manager", "mgr@example.com");
+        new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager", "mgr@example.com");
 
     when(userAccess.listActiveInspectors()).thenReturn(List.of(inspector));
     when(userAccess.listActivePlatformManagers()).thenReturn(List.of(manager));
@@ -181,8 +178,7 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Valid Pilot",
             "valid@example.com",
             "DC-2026-0001111",
@@ -206,8 +202,7 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Event Pilot",
             "event@example.com",
             "DC-2026-0002222",

@@ -49,7 +49,7 @@ class AssetApiIntegrationTest {
                 org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers
                     .springSecurity())
             .build();
-    var fixtureHelper = new AssetTestFixture(categories, assets, users, jdbcTemplate);
+    var fixtureHelper = new AssetTestFixture(categories, assets, users);
     fixture = fixtureHelper.create();
   }
 
@@ -71,9 +71,9 @@ class AssetApiIntegrationTest {
 
     String persistedLocation =
         jdbcTemplate.queryForObject(
-            "SELECT location->>'label' FROM assets WHERE organization_id = ? AND asset_code = ?",
+            "SELECT location->>'label' FROM assets WHERE owner_customer_id = ? AND asset_code = ?",
             String.class,
-            fixture.organizationId(),
+            fixture.clientId(),
             "BR-01");
     org.assertj.core.api.Assertions.assertThat(persistedLocation).isEqualTo("District 1");
   }
@@ -168,7 +168,10 @@ class AssetApiIntegrationTest {
             put("/api/v1/assets/{id}", assetId)
                 .with(client(fixture.otherClientId()))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Hijacked\",\"locationText\":\"Elsewhere\"}"))
+                .content(
+                    "{\"name\":\"Hijacked\",\"locationText\":\"Elsewhere\","
+                        + "\"clearCoordinates\":false,\"clearStructureHeight\":false,"
+                        + "\"clearFootprintArea\":false,\"clearDescription\":false}"))
         .andExpect(status().isNotFound());
 
     mockMvc
@@ -176,7 +179,10 @@ class AssetApiIntegrationTest {
             put("/api/v1/assets/{id}", assetId)
                 .with(client(fixture.clientId()))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Renamed\",\"locationText\":\"District 2\"}"))
+                .content(
+                    "{\"name\":\"Renamed\",\"locationText\":\"District 2\","
+                        + "\"clearCoordinates\":false,\"clearStructureHeight\":false,"
+                        + "\"clearFootprintArea\":false,\"clearDescription\":false}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.name").value("Renamed"));
 
@@ -188,7 +194,10 @@ class AssetApiIntegrationTest {
             put("/api/v1/assets/{id}", assetId)
                 .with(client(fixture.clientId()))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Cannot rename\"}"))
+                .content(
+                    "{\"name\":\"Cannot rename\","
+                        + "\"clearCoordinates\":false,\"clearStructureHeight\":false,"
+                        + "\"clearFootprintArea\":false,\"clearDescription\":false}"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("INVALID_STATE"));
   }
@@ -266,7 +275,7 @@ class AssetApiIntegrationTest {
         .andExpect(jsonPath("$.data.inspectionItems[1]").value("Trụ cầu P1"));
 
     var created =
-        assets.findByOrganizationIdAndCode(fixture.organizationId(), "BR-ITEMS-01").orElseThrow();
+        assets.findByOwnerCustomerIdAndCode(fixture.clientId(), "BR-ITEMS-01").orElseThrow();
     org.assertj.core.api.Assertions.assertThat(created.getInspectionItems())
         .containsExactly("Mố cầu M1", "Trụ cầu P1");
   }
@@ -288,10 +297,12 @@ class AssetApiIntegrationTest {
         .andExpect(status().isCreated());
 
     var asset =
-        assets.findByOrganizationIdAndCode(fixture.organizationId(), "BR-UPDATE-01").orElseThrow();
+        assets.findByOwnerCustomerIdAndCode(fixture.clientId(), "BR-UPDATE-01").orElseThrow();
 
     String updateBody =
-        "{\"name\":\"Updated Bridge\",\"inspectionItems\":[\"Trụ cầu P1\",\"Gối cầu\"]}";
+        "{\"name\":\"Updated Bridge\",\"inspectionItems\":[\"Trụ cầu P1\",\"Gối cầu\"],"
+            + "\"clearCoordinates\":false,\"clearStructureHeight\":false,"
+            + "\"clearFootprintArea\":false,\"clearDescription\":false}";
 
     mockMvc
         .perform(
@@ -313,17 +324,7 @@ class AssetApiIntegrationTest {
   void orgAdminCanRetireAsset() throws Exception {
     var asset =
         assets.saveAndFlush(
-            new com.smartdroneinspection.assets.domain.Asset(
-                fixture.organizationId(),
-                fixture.categoryId(),
-                "BR-RETIRE-01",
-                "Retire Bridge",
-                null,
-                "{\"label\":\"District 1\"}",
-                null,
-                null,
-                null,
-                fixture.clientId()));
+            ownedAsset(fixture.categoryId(), "BR-RETIRE-01", "Retire Bridge", fixture.clientId()));
 
     mockMvc
         .perform(
@@ -350,6 +351,24 @@ class AssetApiIntegrationTest {
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority(
                 "ROLE_CUSTOMER"));
+  }
+
+  private com.smartdroneinspection.assets.domain.Asset ownedAsset(
+      UUID categoryId, String code, String name, UUID ownerCustomerId) {
+    com.smartdroneinspection.assets.domain.Asset asset =
+        new com.smartdroneinspection.assets.domain.Asset(
+            ownerCustomerId,
+            categoryId,
+            code,
+            name,
+            null,
+            "{\"label\":\"District 1\"}",
+            null,
+            null,
+            null,
+            ownerCustomerId);
+    asset.markCustomerOwned(ownerCustomerId);
+    return asset;
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor manager(UUID id) {

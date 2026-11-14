@@ -40,7 +40,7 @@ class AssetCatalogApiIntegrationTest {
   void setUp() {
     mockMvc =
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
-    fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
+    fixture = new AssetTestFixture(categories, assets, users).create();
   }
 
   @Test

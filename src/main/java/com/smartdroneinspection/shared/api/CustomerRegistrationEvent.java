@@ -5,7 +5,6 @@ import java.util.UUID;
 
 /** Cross-module event requesting creation of the customer's first asset in the same transaction. */
 public record CustomerRegistrationEvent(
-    UUID organizationId,
     UUID customerId,
     UUID categoryId,
     String assetCode,
@@ -14,4 +13,6 @@ public record CustomerRegistrationEvent(
     String locationText,
     BigDecimal latitude,
     BigDecimal longitude,
-    String ownershipInformation) {}
+    String ownershipInformation,
+    BigDecimal structureHeightMeters,
+    BigDecimal footprintAreaSquareMeters) {}

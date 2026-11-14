@@ -13,6 +13,7 @@ import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
@@ -47,12 +48,12 @@ class InspectionCreationApiIntegrationTest {
   @Autowired AssetCategoryRepository categories;
   @Autowired DroneRepository drones;
   @Autowired UserRepository users;
+  @Autowired com.smartdroneinspection.users.repository.InspectorProfileRepository inspectorProfiles;
   @Autowired JdbcTemplate jdbcTemplate;
 
   private MockMvc mockMvc;
-  private UUID organizationId;
-  private UUID otherOrganizationId;
   private UUID adminId;
+  private UUID foreignCustomerId;
   private UUID inspectorId;
   private UUID droneId;
   private UUID assetId;
@@ -66,31 +67,13 @@ class InspectionCreationApiIntegrationTest {
                     .springSecurity())
             .build();
 
-    organizationId = UUID.randomUUID();
-    otherOrganizationId = UUID.randomUUID();
-
-    jdbcTemplate.update(
-        "INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status) VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')",
-        organizationId,
-        "Org " + organizationId,
-        "Org " + organizationId,
-        "ORG-" + organizationId);
-
-    jdbcTemplate.update(
-        "INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status) VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')",
-        otherOrganizationId,
-        "Other " + otherOrganizationId,
-        "Other " + otherOrganizationId,
-        "ORG-" + otherOrganizationId);
-
     User admin =
         new User(
             "admin-" + UUID.randomUUID() + "@example.test",
             "Org Admin",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.CUSTOMER);
     admin.addRole(UserRole.CUSTOMER);
     adminId = users.saveAndFlush(admin).getId();
 
@@ -100,14 +83,14 @@ class InspectionCreationApiIntegrationTest {
             "Inspector One",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
     jdbcTemplate.update("INSERT INTO inspector_profiles (user_id) VALUES (?)", inspectorId);
 
-    Drone drone = drones.saveAndFlush(new Drone(organizationId, "DJI-M300-" + UUID.randomUUID()));
-    droneId = drone.getId();
+    Drone drone = drones.saveAndFlush(new Drone(adminId, "DJI-M300-" + UUID.randomUUID()));
+    drone.markCustomerOwned(adminId);
+    droneId = drones.saveAndFlush(drone).getId();
 
     AssetCategory category =
         categories.saveAndFlush(
@@ -117,7 +100,7 @@ class InspectionCreationApiIntegrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                organizationId,
+                adminId,
                 category.getId(),
                 "BR-MF1-" + UUID.randomUUID(),
                 "Main River Bridge",
@@ -126,9 +109,10 @@ class InspectionCreationApiIntegrationTest {
                 null,
                 null,
                 null,
-                List.of("Mố cầu M1", "Trụ cầu P1"),
+                List.of("Má»‘ cáº§u M1", "Trá»¥ cáº§u P1"),
                 adminId));
-    assetId = asset.getId();
+    asset.markCustomerOwned(adminId);
+    assetId = assets.saveAndFlush(asset).getId();
   }
 
   @Test
@@ -161,15 +145,25 @@ class InspectionCreationApiIntegrationTest {
         .andExpect(jsonPath("$.data.assetId").value(assetId.toString()))
         .andExpect(jsonPath("$.data.inspectorId").value(inspectorId.toString()))
         .andExpect(jsonPath("$.data.droneId").value(droneId.toString()))
-        .andExpect(jsonPath("$.data.inspectionItems[0]").value("Mố cầu M1"));
+        .andExpect(jsonPath("$.data.inspectionItems[0]").value("Má»‘ cáº§u M1"));
   }
 
   @Test
   void cannotCreateInspectionForForeignAsset() throws Exception {
+    User foreignCustomer =
+        new User(
+            "foreign-customer-" + UUID.randomUUID() + "@example.test",
+            "Foreign Customer",
+            null,
+            UserStatus.ACTIVE,
+            ActorZone.CUSTOMER);
+    foreignCustomer.addRole(UserRole.CUSTOMER);
+    UUID foreignCustomerId = users.saveAndFlush(foreignCustomer).getId();
+
     Asset foreignAsset =
         assets.saveAndFlush(
             new Asset(
-                otherOrganizationId,
+                foreignCustomerId,
                 categories.findAll().getFirst().getId(),
                 "BR-FOREIGN-" + UUID.randomUUID(),
                 "Foreign Bridge",
@@ -179,6 +173,8 @@ class InspectionCreationApiIntegrationTest {
                 null,
                 null,
                 UUID.randomUUID()));
+    foreignAsset.markCustomerOwned(foreignCustomerId);
+    assets.saveAndFlush(foreignAsset);
 
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
     Instant end = start.plus(2, ChronoUnit.HOURS);
@@ -234,7 +230,7 @@ class InspectionCreationApiIntegrationTest {
     Asset secondAsset =
         assets.saveAndFlush(
             new Asset(
-                organizationId,
+                adminId,
                 categories.findAll().getFirst().getId(),
                 "BR-SECOND-" + UUID.randomUUID(),
                 "Second Bridge",
@@ -244,6 +240,8 @@ class InspectionCreationApiIntegrationTest {
                 null,
                 null,
                 adminId));
+    secondAsset.markCustomerOwned(adminId);
+    assets.saveAndFlush(secondAsset);
 
     Instant overlappingStart = start.plus(1, ChronoUnit.HOURS);
     Instant overlappingEnd = end.plus(1, ChronoUnit.HOURS);
@@ -276,11 +274,23 @@ class InspectionCreationApiIntegrationTest {
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant end = start.plus(4, ChronoUnit.HOURS);
 
+    // Customer-owned inspector so the owner-scoped flight-permit lookup matches the inspection.
+    User customerInspector =
+        new User(
+            "customer-inspector-" + UUID.randomUUID() + "@example.test",
+            "Customer Inspector",
+            null,
+            UserStatus.ACTIVE,
+            ActorZone.CUSTOMER);
+    customerInspector.addRole(UserRole.INSPECTOR);
+    UUID customerInspectorId = users.saveAndFlush(customerInspector).getId();
+    jdbcTemplate.update("INSERT INTO inspector_profiles (user_id) VALUES (?)", customerInspectorId);
+
     String body =
         "{\"assetId\":\""
             + assetId
             + "\",\"inspectorId\":\""
-            + inspectorId
+            + customerInspectorId
             + "\",\"droneId\":\""
             + droneId
             + "\",\"plannedStartAt\":\""
@@ -303,8 +313,12 @@ class InspectionCreationApiIntegrationTest {
     String inspectionIdStr = com.jayway.jsonpath.JsonPath.read(responseJson, "$.data.id");
     UUID inspectionId = UUID.fromString(inspectionIdStr);
 
-    // Attempt flight permit upload before pilot license declared -> fails with
-    // PILOT_LICENSE_REQUIRED
+    // The owner-scoped inspector lookup matches partner-assigned inspections, so mark this one as
+    // a partner assignment for the flight-permit path. Mutate the managed entity (not raw SQL) so
+    // the shared persistence context sees the flag.
+    Inspection managed = inspections.findById(inspectionId).orElseThrow();
+    managed.markPartnerAssignment();
+    inspections.saveAndFlush(managed);
     MockMultipartFile permitFile =
         new MockMultipartFile("file", "permit.pdf", "application/pdf", "%PDF-sample".getBytes());
 
@@ -313,18 +327,16 @@ class InspectionCreationApiIntegrationTest {
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
-                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("PILOT_LICENSE_REQUIRED"));
 
     // Inspector self-declares pilot license
-    jdbcTemplate.update(
-        "UPDATE inspector_profiles SET pilot_license_number = ?, pilot_license_class = ?, pilot_license_expires_at = ?, pilot_license_file_key = ? WHERE user_id = ?",
-        "VN-UAV-12345",
-        "CLASS_A",
-        Instant.now().plus(365, ChronoUnit.DAYS),
-        "license/key.pdf",
-        inspectorId);
+    com.smartdroneinspection.users.domain.InspectorProfile profile =
+        inspectorProfiles.findById(customerInspectorId).orElseThrow();
+    profile.updatePilotLicense(
+        "VN-UAV-12345", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
+    inspectorProfiles.saveAndFlush(profile);
 
     // Inspector uploads flight permit -> status remains SCHEDULED with permit attached
     mockMvc
@@ -332,7 +344,7 @@ class InspectionCreationApiIntegrationTest {
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
-                .with(jwtUser(inspectorId, "ROLE_INSPECTOR")))
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.status").value("SCHEDULED"))

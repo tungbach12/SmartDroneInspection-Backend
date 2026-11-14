@@ -174,6 +174,7 @@ public class DroneRegistrationApplicationService {
             docMap.get("INSPECTION"),
             docMap,
             request.maxWindResistanceMps(),
+            request.maxAltitudeMeters(),
             request.opticalZoomLevel(),
             Boolean.TRUE.equals(request.hasThermalCamera()),
             Boolean.TRUE.equals(request.hasRtk()),
@@ -225,8 +226,35 @@ public class DroneRegistrationApplicationService {
           "DRONE_REGISTRATION_EXPIRED",
           "Drone registration must be current.");
     }
+    String serial = request.serialNumber().trim();
+    if (application.getDroneId() != null) {
+      if (!serial.equalsIgnoreCase(application.getSerialNumber())) {
+        throw new AuthException(
+            HttpStatus.BAD_REQUEST,
+            "CANNOT_CHANGE_APPROVED_DRONE_SERIAL",
+            "Serial number of an existing approved drone cannot be changed.");
+      }
+      Drone linked = drones.findById(application.getDroneId()).orElse(null);
+      if (linked != null && linked.getServiceability() == DroneServiceability.RETIRED) {
+        throw new AuthException(
+            HttpStatus.CONFLICT, "DRONE_RETIRED", "Retired drones cannot renew registration.");
+      }
+    } else {
+      if (drones.existsBySerialNumberIgnoreCase(serial)) {
+        throw new AuthException(
+            HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Drone serial is already registered.");
+      }
+      if (applications.existsBySerialNumberIgnoreCaseAndStatusAndIdNot(
+          serial, "PENDING", applicationId)) {
+        throw new AuthException(
+            HttpStatus.CONFLICT,
+            "DUPLICATE_SERIAL_NUMBER",
+            "Drone serial is already registered or pending.");
+      }
+    }
     try {
       application.resubmit(
+          serial,
           request.model(),
           request.manufacturer(),
           request.registrationNumber(),
@@ -236,6 +264,7 @@ public class DroneRegistrationApplicationService {
           docMap.get("INSPECTION"),
           docMap,
           request.maxWindResistanceMps(),
+          request.maxAltitudeMeters(),
           request.opticalZoomLevel(),
           Boolean.TRUE.equals(request.hasThermalCamera()),
           Boolean.TRUE.equals(request.hasRtk()),
@@ -459,13 +488,19 @@ public class DroneRegistrationApplicationService {
     if (application.getDroneId() != null) {
       drone = drones.findById(application.getDroneId()).orElse(null);
       if (drone != null) {
-        drone.updateDetails(application.getModel(), application.getManufacturer());
-        drone.updateRegistration(
+        if (drone.getServiceability() == DroneServiceability.RETIRED) {
+          throw new AuthException(
+              HttpStatus.CONFLICT, "DRONE_RETIRED", "Retired drones cannot renew registration.");
+        }
+        drone.renewRegistration(
+            application.getModel(),
+            application.getManufacturer(),
             application.getRegistrationNumber(),
             application.getRegistrationFileKey(),
             application.getRegistrationExpiresAt());
         drone.applyCapabilitiesAndDocuments(
             application.getMaxWindResistanceMps(),
+            application.getMaxAltitudeMeters(),
             application.getOpticalZoomLevel(),
             application.isHasThermalCamera(),
             application.isHasRtk(),
@@ -485,6 +520,7 @@ public class DroneRegistrationApplicationService {
                 application.getRegistrationExpiresAt());
         drone.applyCapabilitiesAndDocuments(
             application.getMaxWindResistanceMps(),
+            application.getMaxAltitudeMeters(),
             application.getOpticalZoomLevel(),
             application.isHasThermalCamera(),
             application.isHasRtk(),
@@ -509,6 +545,7 @@ public class DroneRegistrationApplicationService {
               application.getRegistrationExpiresAt());
       drone.applyCapabilitiesAndDocuments(
           application.getMaxWindResistanceMps(),
+          application.getMaxAltitudeMeters(),
           application.getOpticalZoomLevel(),
           application.isHasThermalCamera(),
           application.isHasRtk(),

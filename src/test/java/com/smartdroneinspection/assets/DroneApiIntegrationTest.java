@@ -51,7 +51,7 @@ class DroneApiIntegrationTest {
   @BeforeEach
   void setUp() {
     mockMvc = webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
-    fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
+    fixture = new AssetTestFixture(categories, assets, users).create();
   }
 
   @Test
@@ -86,8 +86,8 @@ class DroneApiIntegrationTest {
 
     String owner =
         jdbcTemplate.queryForObject(
-            "SELECT organization_id FROM drones WHERE serial_number = ?", String.class, serial);
-    assertThat(owner).isEqualTo(fixture.organizationId().toString());
+            "SELECT owner_customer_id FROM drones WHERE serial_number = ?", String.class, serial);
+    assertThat(owner).isEqualTo(fixture.clientId().toString());
   }
 
   @Test
@@ -276,16 +276,6 @@ class DroneApiIntegrationTest {
   }
 
   @Test
-  void writesAreRefusedWithoutAnActiveSubscription() throws Exception {
-    UUID unentitledOrganizationId = createUnentitledOrganization();
-    long before = droneCount();
-
-    createDrone(unentitledOrganizationId, serial()).andExpect(status().isForbidden());
-
-    assertThat(droneCount()).isEqualTo(before);
-  }
-
-  @Test
   void readsRemainAvailableWithoutAnActiveSubscription() throws Exception {
     UUID unentitledOrganizationId = createUnentitledOrganization();
     createDrone(fixture.clientId(), serial()).andExpect(status().isCreated());
@@ -314,23 +304,13 @@ class DroneApiIntegrationTest {
 
   private UUID createUnentitledOrganization() {
     UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, ?, ?, ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
-        """,
-        organizationId,
-        "Unentitled " + organizationId,
-        "Unentitled " + organizationId,
-        "ORG-" + organizationId);
     User admin =
         new User(
             "unentitled-" + organizationId + "@example.test",
             "unentitled-admin",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.CUSTOMER);
     admin.addRole(UserRole.CUSTOMER);
     return users.saveAndFlush(admin).getId();
   }

@@ -47,6 +47,10 @@ class ServicePaymentSchemaMigrationTest {
   void createsDedicatedPaymentTablesAndRemovesFinanceColumnsFromOccurrence() {
     jdbcTemplate.queryForObject(
         "SELECT version FROM flyway_schema_history WHERE version = '29'", String.class);
+    jdbcTemplate.queryForObject(
+        "SELECT version FROM flyway_schema_history WHERE version = '44'", String.class);
+    jdbcTemplate.queryForObject(
+        "SELECT version FROM flyway_schema_history WHERE version = '46'", String.class);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('service_invoices', 'service_payments', 'inspector_payouts')",
@@ -64,23 +68,76 @@ class ServicePaymentSchemaMigrationTest {
         "occurrence_id",
         "payment_status",
         "payos_order_code",
-        "payment_method");
+        "payment_method",
+        "refunded_amount",
+        "refund_status");
     assertColumns(
         "inspector_payouts",
         "occurrence_id",
         "payout_status",
         "payout_reference",
-        "payout_recorded_at");
+        "payout_recorded_at",
+        "payout_held_for_refund",
+        "refund_reconciliation_reference",
+        "refund_reconciliation_note",
+        "refund_reconciled_by_user_id",
+        "refund_reconciled_at",
+        "payout_recorded_by_user_id",
+        "final_payout_amount");
+    assertColumns(
+        "service_refunds",
+        "id",
+        "occurrence_id",
+        "amount",
+        "inspector_payout_reduction",
+        "platform_commission_adjustment",
+        "vat_adjustment",
+        "tncn_adjustment",
+        "platform_absorbed_amount",
+        "refund_reference",
+        "reason",
+        "platform_commission_adjustment",
+        "vat_adjustment",
+        "tncn_adjustment",
+        "platform_absorbed_amount",
+        "recorded_by_user_id",
+        "recorded_at",
+        "request_reference",
+        "inspector_receivable_amount",
+        "platform_absorbed_plan_amount",
+        "refund_status",
+        "initiated_by_user_id",
+        "initiated_at",
+        "completed_by_user_id",
+        "completed_at",
+        "cancelled_by_user_id",
+        "cancelled_at",
+        "cancellation_reason");
+    assertColumns(
+        "inspector_receivables",
+        "id",
+        "refund_id",
+        "occurrence_id",
+        "inspector_id",
+        "assessed_amount",
+        "source_reference",
+        "reason",
+        "recorded_by_user_id",
+        "recorded_at",
+        "row_version");
+    assertColumns(
+        "inspector_receivable_recoveries",
+        "id",
+        "receivable_id",
+        "amount",
+        "external_reference",
+        "note",
+        "recorded_by_user_id",
+        "recorded_at");
   }
 
   @Test
   void persistsInvoicePaymentAndPayoutAlongsideScheduledOccurrence() {
-    UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        "INSERT INTO organizations (id, display_name, registration_code, status) VALUES (?, ?, ?, 'ACTIVE')",
-        organizationId,
-        "Payment Test Organization",
-        "PAY-ORG-" + organizationId.toString().substring(0, 8));
     User customer =
         users.saveAndFlush(
             new User(
@@ -88,8 +145,7 @@ class ServicePaymentSchemaMigrationTest {
                 "Payment Test Customer",
                 "test-password-hash",
                 UserStatus.ACTIVE,
-                ActorZone.CUSTOMER_ORGANIZATION,
-                organizationId));
+                ActorZone.CUSTOMER));
     User inspector =
         users.saveAndFlush(
             new User(
@@ -97,8 +153,7 @@ class ServicePaymentSchemaMigrationTest {
                 "Payment Test Inspector",
                 "test-password-hash",
                 UserStatus.ACTIVE,
-                ActorZone.INSPECTOR_PARTNER,
-                null));
+                ActorZone.INSPECTOR));
     AssetCategory category =
         categories.saveAndFlush(
             new AssetCategory(
@@ -106,7 +161,7 @@ class ServicePaymentSchemaMigrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                organizationId,
+                customer.getId(),
                 category.getId(),
                 "PAY-" + UUID.randomUUID().toString().substring(0, 8),
                 "Payment Test Asset",
@@ -120,7 +175,7 @@ class ServicePaymentSchemaMigrationTest {
     ServiceRequest request =
         requests.saveAndFlush(
             new ServiceRequest(
-                organizationId,
+                customer.getId(),
                 asset.getId(),
                 customer.getId(),
                 "Payment Test Request",
@@ -148,7 +203,7 @@ class ServicePaymentSchemaMigrationTest {
     Inspection inspection =
         inspections.saveAndFlush(
             new Inspection(
-                organizationId,
+                customer.getId(),
                 asset.getId(),
                 inspector.getId(),
                 drone.getId(),

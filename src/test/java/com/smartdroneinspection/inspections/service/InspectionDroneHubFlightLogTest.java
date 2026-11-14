@@ -55,15 +55,25 @@ class InspectionDroneHubFlightLogTest {
   void setup() {
     when(userAccess.findActiveUser(actorId))
         .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(actorId, Set.of("INSPECTOR"), organizationId)));
-    when(inspections.findAssignedInspectorInspection(inspectionId, organizationId, actorId, false))
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    actorId,
+                    Set.of("INSPECTOR"),
+                    "INSPECTOR",
+                    "Inspector",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null)));
+    when(inspections.findAssignedByInspector(inspectionId, actorId))
         .thenReturn(Optional.of(inspection));
     when(inspection.isPartnerAssignment()).thenReturn(false);
     when(inspection.hasFlightPermit()).thenReturn(true);
     when(inspection.getStatus()).thenReturn(InspectionStatus.IN_PROGRESS);
     when(inspection.getAssetId()).thenReturn(assetId);
-    when(inspection.getOrganizationId()).thenReturn(organizationId);
-    when(assets.findByIdAndOrganizationId(assetId, organizationId)).thenReturn(Optional.empty());
+    when(inspection.getOwnerCustomerId()).thenReturn(actorId);
+    when(assets.findByIdAndOwnerCustomerId(assetId, actorId)).thenReturn(Optional.empty());
     when(sessions.findByIdAndInspectionId(sessionId, inspectionId))
         .thenReturn(Optional.of(session));
   }
@@ -102,8 +112,7 @@ class InspectionDroneHubFlightLogTest {
     Asset farAsset = mock(Asset.class);
     when(farAsset.getLatitude()).thenReturn(new BigDecimal("10.7769"));
     when(farAsset.getLongitude()).thenReturn(new BigDecimal("106.7009"));
-    when(assets.findByIdAndOrganizationId(assetId, organizationId))
-        .thenReturn(Optional.of(farAsset));
+    when(assets.findByIdAndOwnerCustomerId(assetId, actorId)).thenReturn(Optional.of(farAsset));
 
     String kml =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -176,7 +185,17 @@ class InspectionDroneHubFlightLogTest {
     UUID outsider = UUID.randomUUID();
     when(userAccess.findActiveUser(outsider))
         .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(outsider, Set.of("CUSTOMER"), organizationId)));
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    outsider,
+                    Set.of("CUSTOMER"),
+                    "CUSTOMER",
+                    "Outsider",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null)));
     assertThrows(
         BusinessException.class,
         () ->

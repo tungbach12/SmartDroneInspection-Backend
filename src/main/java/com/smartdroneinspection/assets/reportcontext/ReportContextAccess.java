@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /** Tenant-scoped organization, asset and assigned Drone labels for report composition. */
 public interface ReportContextAccess {
-  Optional<Identity> find(UUID organizationId, UUID assetId, UUID droneId);
+  Optional<Identity> find(UUID ownerCustomerId, UUID assetId, UUID droneId);
 
   record Identity(
       String organizationName,

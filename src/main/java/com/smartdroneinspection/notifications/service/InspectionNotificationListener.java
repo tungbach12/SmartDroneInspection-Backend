@@ -24,13 +24,13 @@ public class InspectionNotificationListener {
   public void onInspectionAssigned(InspectionAssignedEvent event) {
     log.info("Handling InspectionAssignedEvent for inspection {}", event.inspectionId());
     inspectionNotificationService.recordInspectionAssignment(
-        event.inspectionId(), event.organizationId(), event.inspectorId(), event.plannedStartAt());
+        event.inspectionId(), event.ownerCustomerId(), event.inspectorId(), event.plannedStartAt());
   }
 
   @ApplicationModuleListener
   public void onFieldSessionAborted(FieldSessionAbortedEvent event) {
     log.info("Handling FieldSessionAbortedEvent for inspection {}", event.inspectionId());
     inspectionNotificationService.recordFieldSessionAborted(
-        event.inspectionId(), event.organizationId(), event.inspectorId(), event.abortReason());
+        event.inspectionId(), event.ownerCustomerId(), event.inspectorId(), event.abortReason());
   }
 }

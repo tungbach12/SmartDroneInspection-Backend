@@ -7,7 +7,6 @@ import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import java.util.Set;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class RolePolicyTest {
@@ -15,78 +14,48 @@ class RolePolicyTest {
   private final RolePolicy policy = new RolePolicy();
 
   @Test
-  void customerOrganizationCannotCarryInspectorOrMultipleRoles() {
-    assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.INSPECTOR)))
+  void customerCannotCarryInspectorOrMultipleRoles() {
+    assertThatThrownBy(() -> policy.validate(ActorZone.CUSTOMER, Set.of(UserRole.INSPECTOR)))
         .isInstanceOf(IllegalArgumentException.class);
 
     assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION,
-                    UUID.randomUUID(),
-                    Set.of(UserRole.CUSTOMER, UserRole.ADMIN)))
+            () -> policy.validate(ActorZone.CUSTOMER, Set.of(UserRole.CUSTOMER, UserRole.ADMIN)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void rejectsAdminCombinedWithAnotherRole() {
     assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.PLATFORM, null, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
+            () -> policy.validate(ActorZone.PLATFORM, Set.of(UserRole.ADMIN, UserRole.INSPECTOR)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void requiresOrganizationForCustomer() {
-    assertThatThrownBy(
-            () -> policy.validate(ActorZone.CUSTOMER_ORGANIZATION, null, Set.of(UserRole.CUSTOMER)))
-        .isInstanceOf(IllegalArgumentException.class);
-
-    assertThatCode(
-            () ->
-                policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION, UUID.randomUUID(), Set.of(UserRole.CUSTOMER)))
+  void requiresExactlyOneCustomerRoleForCustomerZone() {
+    assertThatCode(() -> policy.validate(ActorZone.CUSTOMER, Set.of(UserRole.CUSTOMER)))
         .doesNotThrowAnyException();
+    assertThatThrownBy(() -> policy.validate(ActorZone.CUSTOMER, Set.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> policy.validate(ActorZone.CUSTOMER, null))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void permitsOnlyManagerOrAdminAsPlatformRoles() {
-    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER)))
+    assertThatCode(() -> policy.validate(ActorZone.PLATFORM, Set.of(UserRole.MANAGER)))
         .doesNotThrowAnyException();
 
     assertThatThrownBy(
-            () ->
-                policy.validate(ActorZone.PLATFORM, null, Set.of(UserRole.MANAGER, UserRole.ADMIN)))
+            () -> policy.validate(ActorZone.PLATFORM, Set.of(UserRole.MANAGER, UserRole.ADMIN)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void inspectorPartnerMustBeOrganizationIndependentInspector() {
-    assertThatCode(
-            () -> policy.validate(ActorZone.INSPECTOR_PARTNER, null, Set.of(UserRole.INSPECTOR)))
+  void inspectorMustCarryOnlyInspectorRole() {
+    assertThatCode(() -> policy.validate(ActorZone.INSPECTOR, Set.of(UserRole.INSPECTOR)))
         .doesNotThrowAnyException();
 
-    assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.INSPECTOR_PARTNER, UUID.randomUUID(), Set.of(UserRole.INSPECTOR)))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void prospectiveCustomerMustHaveNoOrganization() {
-    assertThatCode(
-            () -> policy.validate(ActorZone.PROSPECT_CUSTOMER, null, Set.of(UserRole.CUSTOMER)))
-        .doesNotThrowAnyException();
-
-    assertThatThrownBy(
-            () ->
-                policy.validate(
-                    ActorZone.PROSPECT_CUSTOMER, UUID.randomUUID(), Set.of(UserRole.CUSTOMER)))
+    assertThatThrownBy(() -> policy.validate(ActorZone.INSPECTOR, Set.of(UserRole.CUSTOMER)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

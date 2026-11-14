@@ -1,7 +1,10 @@
 package com.smartdroneinspection.contracts.service;
 
+import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.DroneFeatureConfig;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
+import com.smartdroneinspection.assets.repository.DroneFeatureConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -9,6 +12,7 @@ import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,10 +26,18 @@ public class PartnerRegistryService {
 
   private final DroneRepository drones;
   private final UserAccess users;
+  private final DroneFeatureConfigRepository featureConfigs;
 
   public PartnerRegistryService(DroneRepository drones, UserAccess users) {
+    this(drones, users, null);
+  }
+
+  @Autowired
+  public PartnerRegistryService(
+      DroneRepository drones, UserAccess users, DroneFeatureConfigRepository featureConfigs) {
     this.drones = drones;
     this.users = users;
+    this.featureConfigs = featureConfigs;
   }
 
   @Transactional
@@ -33,7 +45,10 @@ public class PartnerRegistryService {
     requireManager(managerId);
     UserAccess.ActiveUser inspector = requireActivePartnerInspector(inspectorUserId);
     return new InspectorOption(
-        inspector.id(), inspector.fullName(), inspector.pilotLicenseExpiresAt());
+        inspector.id(),
+        inspector.fullName(),
+        inspector.pilotLicenseExpiresAt(),
+        inspector.avatarUrl());
   }
 
   @Transactional(readOnly = true)
@@ -49,7 +64,10 @@ public class PartnerRegistryService {
                     failure(
                         HttpStatus.NOT_FOUND, PARTNER_NOT_FOUND, "Partner Inspector not found"));
     return new InspectorOption(
-        inspector.id(), inspector.fullName(), inspector.pilotLicenseExpiresAt());
+        inspector.id(),
+        inspector.fullName(),
+        inspector.pilotLicenseExpiresAt(),
+        inspector.avatarUrl());
   }
 
   @Transactional
@@ -67,7 +85,12 @@ public class PartnerRegistryService {
     }
     requireActivePartnerInspector(drone.getInspectorOwnerId());
     return new DroneOption(
-        drone.getId(), drone.getInspectorOwnerId(), drone.getSerialNumber(), drone.getModel());
+        drone.getId(),
+        drone.getInspectorOwnerId(),
+        drone.getSerialNumber(),
+        drone.getModel(),
+        !drone.getImageFileKeys().isEmpty(),
+        drone.getMaxAltitudeMeters());
   }
 
   @Transactional
@@ -99,7 +122,10 @@ public class PartnerRegistryService {
     return users.listActiveInspectorPartners().stream()
         .filter(UserAccess.ActiveUser::isInspectorPartner)
         .filter(user -> user.hasValidPilotLicense(now))
-        .map(user -> new InspectorOption(user.id(), user.fullName(), user.pilotLicenseExpiresAt()))
+        .map(
+            user ->
+                new InspectorOption(
+                    user.id(), user.fullName(), user.pilotLicenseExpiresAt(), user.avatarUrl()))
         .toList();
   }
 
@@ -121,8 +147,154 @@ public class PartnerRegistryService {
                     drone.getId(),
                     drone.getInspectorOwnerId(),
                     drone.getSerialNumber(),
-                    drone.getModel()))
+                    drone.getModel(),
+                    !drone.getImageFileKeys().isEmpty(),
+                    drone.getMaxAltitudeMeters()))
         .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<PartnerCandidateEvaluation.Result> evaluateCandidates(
+      UUID managerId,
+      Asset asset,
+      Instant startAt,
+      List<String> requiredFeatureCodes,
+      List<Instant> recurringStarts,
+      java.util.function.BiPredicate<UUID, UUID> contractConflict,
+      java.util.function.BiPredicate<UUID, UUID> inspectionConflict) {
+    requireManager(managerId);
+    Instant now = startAt != null ? startAt : Instant.now();
+    List<String> required = requiredFeatureCodes == null ? List.of() : requiredFeatureCodes;
+    java.util.Map<UUID, UserAccess.ActiveUser> inspectorsById =
+        users.listActiveInspectorPartners().stream()
+            .filter(UserAccess.ActiveUser::isInspectorPartner)
+            .collect(java.util.stream.Collectors.toMap(UserAccess.ActiveUser::id, user -> user));
+    return drones.findActivePartnerDrones().stream()
+        .filter(drone -> drone.getInspectorOwnerId() != null)
+        .filter(drone -> inspectorsById.containsKey(drone.getInspectorOwnerId()))
+        .map(
+            drone -> {
+              UserAccess.ActiveUser inspector = inspectorsById.get(drone.getInspectorOwnerId());
+              boolean ownerAndAvailable =
+                  drone.isEligibleForAssignment()
+                      && (drone.getRegistrationExpiresAt() == null
+                          || drone.getRegistrationExpiresAt().isAfter(now));
+              List<Instant> windowStarts =
+                  recurringStarts == null || recurringStarts.isEmpty()
+                      ? List.of(now)
+                      : recurringStarts;
+              boolean qualifiesForWindow =
+                  inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())
+                      && windowStarts.stream()
+                          .allMatch(
+                              start ->
+                                  inspector.hasValidPilotLicense(start)
+                                      && (drone.getRegistrationExpiresAt() == null
+                                          || drone.getRegistrationExpiresAt().isAfter(start)));
+              return PartnerCandidateEvaluation.evaluate(
+                  inspector.id(),
+                  drone.getId(),
+                  inspector.fullName(),
+                  inspector.avatarUrl(),
+                  drone.getSerialNumber(),
+                  drone.getModel(),
+                  !drone.getImageFileKeys().isEmpty(),
+                  inspector,
+                  drone,
+                  startAt,
+                  contractConflict.test(inspector.id(), drone.getId()),
+                  inspectionConflict.test(inspector.id(), drone.getId()),
+                  ownerAndAvailable && qualifiesForWindow,
+                  asset,
+                  required);
+            })
+        .sorted(
+            java.util.Comparator.<PartnerCandidateEvaluation.Result>comparingInt(
+                    result -> result.eligibility().ordinal())
+                .thenComparing(
+                    result -> result.inspectorName() == null ? "" : result.inspectorName(),
+                    String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(
+                    result -> result.droneSerialNumber() == null ? "" : result.droneSerialNumber(),
+                    String.CASE_INSENSITIVE_ORDER))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public PartnerCandidateEvaluation.Result evaluateCandidate(
+      UUID managerId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant startAt,
+      Instant endAt,
+      Asset asset,
+      List<String> requiredFeatureCodes,
+      boolean contractScheduleConflict,
+      boolean inspectionScheduleConflict) {
+    requireManager(managerId);
+    UserAccess.ActiveUser inspector = users.findActiveUser(inspectorId).orElse(null);
+    Drone drone = drones.findById(droneId).orElse(null);
+    boolean qualifies =
+        inspector != null
+            && drone != null
+            && inspector.isInspectorPartner()
+            && inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())
+            && (startAt == null || inspector.hasValidPilotLicense(startAt))
+            && (drone.getRegistrationExpiresAt() == null
+                || (startAt != null && drone.getRegistrationExpiresAt().isAfter(startAt)));
+    return PartnerCandidateEvaluation.evaluate(
+        inspectorId,
+        droneId,
+        inspector == null ? null : inspector.fullName(),
+        inspector == null ? null : inspector.avatarUrl(),
+        drone == null ? null : drone.getSerialNumber(),
+        drone == null ? null : drone.getModel(),
+        drone != null && !drone.getImageFileKeys().isEmpty(),
+        inspector,
+        drone,
+        startAt,
+        contractScheduleConflict,
+        inspectionScheduleConflict,
+        qualifies,
+        asset,
+        requiredFeatureCodes);
+  }
+
+  @Transactional(readOnly = true)
+  public List<DroneFeatureOption> listActiveCapabilities() {
+    if (featureConfigs == null) return List.of();
+    return featureConfigs.findAllByIsActiveTrueOrderByDisplayOrderAscCreatedAtAsc().stream()
+        .filter(config -> "CAPABILITY".equalsIgnoreCase(config.getCategory()))
+        .map(DroneFeatureOption::from)
+        .toList();
+  }
+
+  public void validateRequiredDroneFeatureCodes(List<String> codes) {
+    if (codes == null || codes.isEmpty()) return;
+    if (featureConfigs == null) {
+      throw failure(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "CAPABILITY_CATALOG_UNAVAILABLE",
+          "Drone capability catalog is unavailable");
+    }
+    java.util.Set<String> supported =
+        featureConfigs.findAllByIsActiveTrueOrderByDisplayOrderAscCreatedAtAsc().stream()
+            .filter(config -> "CAPABILITY".equalsIgnoreCase(config.getCategory()))
+            .map(config -> config.getCode().toUpperCase(java.util.Locale.ROOT))
+            .collect(java.util.stream.Collectors.toSet());
+    List<String> unsupported =
+        codes.stream()
+            .filter(code -> code != null && !code.isBlank())
+            .map(code -> code.trim().toUpperCase(java.util.Locale.ROOT))
+            .filter(code -> !supported.contains(code))
+            .distinct()
+            .toList();
+    if (!unsupported.isEmpty()) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_CAPABILITY_INVALID",
+          "Unsupported or inactive drone capabilities: " + String.join(", ", unsupported));
+    }
   }
 
   @Transactional
@@ -145,7 +317,7 @@ public class PartnerRegistryService {
   }
 
   @Transactional
-  public void lockEligibleDrone(UUID droneId, UUID inspectorUserId, Instant at) {
+  public Drone lockEligibleDrone(UUID droneId, UUID inspectorUserId, Instant at) {
     Instant checkTime = at != null ? at : Instant.now();
     UserAccess.ActiveUser inspector = lockEligibleInspector(inspectorUserId, checkTime);
     Drone drone =
@@ -169,6 +341,7 @@ public class PartnerRegistryService {
           "PILOT_LICENSE_CLASS_INSUFFICIENT",
           "Drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license");
     }
+    return drone;
   }
 
   @Transactional(readOnly = true)
@@ -295,8 +468,7 @@ public class PartnerRegistryService {
 
   private void requireManager(UUID managerId) {
     UserAccess.ActiveUser actor = users.findActiveUser(managerId).orElseThrow(this::forbidden);
-    if ((!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN))
-        || actor.organizationId() != null) {
+    if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
       throw forbidden();
     }
   }
@@ -314,7 +486,32 @@ public class PartnerRegistryService {
     return new BusinessException(status, code, detail);
   }
 
-  public record InspectorOption(UUID id, String fullName, Instant licenseExpiresAt) {}
+  public record InspectorOption(
+      UUID id, String fullName, Instant licenseExpiresAt, String avatarUrl) {}
 
-  public record DroneOption(UUID id, UUID inspectorOwnerId, String serialNumber, String model) {}
+  public record DroneOption(
+      UUID id,
+      UUID inspectorOwnerId,
+      String serialNumber,
+      String model,
+      boolean hasImage,
+      java.math.BigDecimal maxAltitudeMeters) {}
+
+  public record DroneFeatureOption(
+      String code,
+      String nameVi,
+      String nameEn,
+      int displayOrder,
+      boolean isActive,
+      String category) {
+    static DroneFeatureOption from(DroneFeatureConfig config) {
+      return new DroneFeatureOption(
+          config.getCode(),
+          config.getNameVi(),
+          config.getNameEn(),
+          config.getDisplayOrder(),
+          config.isActive(),
+          config.getCategory());
+    }
+  }
 }

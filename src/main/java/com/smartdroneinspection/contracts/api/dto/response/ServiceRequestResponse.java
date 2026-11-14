@@ -12,7 +12,7 @@ import java.util.UUID;
 
 public record ServiceRequestResponse(
     UUID id,
-    UUID organizationId,
+    UUID ownerCustomerId,
     UUID assetId,
     String description,
     LocalDate requestedFrom,
@@ -46,7 +46,7 @@ public record ServiceRequestResponse(
       List<ServiceRequestMessageResponse> messages) {
     return new ServiceRequestResponse(
         request.getId(),
-        request.getOrganizationId(),
+        request.getOwnerCustomerId(),
         request.getAssetId(),
         request.getDescription(),
         request.getRequestedFrom(),

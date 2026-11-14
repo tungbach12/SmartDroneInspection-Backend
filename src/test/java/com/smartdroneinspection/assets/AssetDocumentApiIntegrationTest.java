@@ -76,7 +76,7 @@ class AssetDocumentApiIntegrationTest {
     org.mockito.Mockito.when(objectStore.open(org.mockito.ArgumentMatchers.anyString()))
         .thenAnswer(
             invocation -> new ByteArrayInputStream(storedObjects.get(invocation.getArgument(0))));
-    fixture = new AssetTestFixture(categories, assets, users, jdbcTemplate).create();
+    fixture = new AssetTestFixture(categories, assets, users).create();
   }
 
   @Test
@@ -142,26 +142,26 @@ class AssetDocumentApiIntegrationTest {
   }
 
   private UUID seedActiveAsset() {
-    return assets
-        .saveAndFlush(
-            new Asset(
-                fixture.organizationId(),
-                fixture.categoryId(),
-                "ACT-" + UUID.randomUUID(),
-                "Active asset",
-                null,
-                "District 1",
-                null,
-                null,
-                null,
-                fixture.clientId()))
-        .getId();
+    Asset asset =
+        new Asset(
+            fixture.clientId(),
+            fixture.categoryId(),
+            "ACT-" + UUID.randomUUID(),
+            "Active asset",
+            null,
+            "District 1",
+            null,
+            null,
+            null,
+            fixture.clientId());
+    asset.markCustomerOwned(fixture.clientId());
+    return assets.saveAndFlush(asset).getId();
   }
 
   private UUID seedInactiveAsset() {
     Asset asset =
         new Asset(
-            fixture.organizationId(),
+            fixture.clientId(),
             fixture.categoryId(),
             "IN-" + UUID.randomUUID(),
             "Inactive asset",
@@ -171,6 +171,7 @@ class AssetDocumentApiIntegrationTest {
             null,
             null,
             fixture.clientId());
+    asset.markCustomerOwned(fixture.clientId());
     asset.deactivate();
     return assets.saveAndFlush(asset).getId();
   }

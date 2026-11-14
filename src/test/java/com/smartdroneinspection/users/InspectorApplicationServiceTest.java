@@ -138,8 +138,7 @@ class InspectorApplicationServiceTest {
   @Test
   void duplicateActiveUserEmailIsRejectedBeforeApplicationCreation() {
     String email = "pilot@example.test";
-    User existing =
-        new User(email, "Pilot", "hash", UserStatus.ACTIVE, ActorZone.INSPECTOR_PARTNER, null);
+    User existing = new User(email, "Pilot", "hash", UserStatus.ACTIVE, ActorZone.INSPECTOR);
     when(users.findByNormalizedEmail(email)).thenReturn(Optional.of(existing));
 
     assertThatThrownBy(

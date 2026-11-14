@@ -423,6 +423,19 @@ public class ReportService {
           "CLARIFICATION_REASON_REQUIRED",
           "Please provide the clarification or revision details");
     }
+    long priorClarifications =
+        versions.findByInspectionIdOrderByVersionNoDesc(inspectionId).stream()
+            .filter(
+                v ->
+                    v.getReturnReason() != null
+                        && v.getReturnReason().contains("[Yêu cầu làm rõ từ Khách hàng]"))
+            .count();
+    if (priorClarifications >= 2) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "MAX_CLARIFICATIONS_EXCEEDED",
+          "Báo cáo đã qua 02 lần yêu cầu làm rõ theo quy định hợp đồng. Vui lòng liên hệ trực tiếp Quản lý nền tảng để đối soát và hòa giải.");
+    }
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
     try {
@@ -571,6 +584,21 @@ public class ReportService {
           "REPORT_ARTEFACT_NOT_FOUND",
           "Only published reports can be downloaded");
     }
+
+    boolean paymentDue = paymentGate.map(gate -> gate.isPaymentDue(inspectionId)).orElse(false);
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isCustomer =
+        actor != null
+            && actor.hasRole(Roles.CUSTOMER)
+            && !actor.hasRole(Roles.ADMIN)
+            && !actor.hasRole(Roles.MANAGER);
+
+    if (isCustomer && paymentDue) {
+      byte[] previewContent = renderArtefact(inspectionId, version, true, Locale.ENGLISH);
+      return pdfResponse(
+          previewContent, "attachment", documentReference(version) + "-unpaid-preview.pdf");
+    }
+
     String objectKey = reportObjectKey(version.getId());
     byte[] content = null;
     if (objectStore.isPresent()) {
@@ -644,7 +672,7 @@ public class ReportService {
     Inspection inspection = inspections.findById(inspectionId).orElseThrow();
     Identity reportIdentity =
         reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .find(inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
     DroneContext assignedDrone =
         reportIdentity == null || reportIdentity.droneSerialNumber() == null
@@ -844,10 +872,10 @@ public class ReportService {
     Inspection inspection;
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       inspection = inspections.findById(inspectionId).orElseThrow(this::reportNotFound);
-    } else if (actor.hasRole(Roles.CUSTOMER) && actor.organizationId() != null) {
+    } else if (actor.hasRole(Roles.CUSTOMER) && actor.ownerCustomerId() != null) {
       inspection =
           inspections
-              .findByIdAndOrganizationId(inspectionId, actor.organizationId())
+              .findByIdAndOwnerCustomerId(inspectionId, actor.ownerCustomerId())
               .orElseThrow(this::reportNotFound);
     } else {
       throw new BusinessException(
@@ -1124,7 +1152,7 @@ public class ReportService {
         fieldSessions.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     Identity reportIdentity =
         reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .find(inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
     List<Finding> confirmedFindings = inspectorFindings(inspectionId);
 
@@ -1418,7 +1446,7 @@ public class ReportService {
     if (inspection == null) return null;
     var identity =
         reportContextAccess
-            .find(inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId())
+            .find(inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId())
             .orElse(null);
     var drone =
         identity == null || identity.droneSerialNumber() == null

@@ -13,13 +13,11 @@ class NotificationTest {
   @Test
   void inAppNotificationInitializesSent() {
     UUID recipientId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
     String deduplicationKey = "INSPECTION_ASSIGNED:123:" + recipientId;
 
     Notification notification =
         new Notification(
             recipientId,
-            orgId,
             "INSPECTION_ASSIGNED",
             NotificationChannel.IN_APP,
             "Assigned",
@@ -28,7 +26,6 @@ class NotificationTest {
             deduplicationKey);
 
     assertThat(notification.getRecipientUserId()).isEqualTo(recipientId);
-    assertThat(notification.getOrganizationId()).isEqualTo(orgId);
     assertThat(notification.getEventType()).isEqualTo("INSPECTION_ASSIGNED");
     assertThat(notification.getChannel()).isEqualTo(NotificationChannel.IN_APP);
     assertThat(notification.getTitle()).isEqualTo("Assigned");
@@ -47,12 +44,10 @@ class NotificationTest {
   @Test
   void emailNotificationInitializesPending() {
     UUID recipientId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
 
     Notification notification =
         new Notification(
             recipientId,
-            orgId,
             "WORK_ORDER_ASSIGNED",
             NotificationChannel.EMAIL,
             "Title",
@@ -69,12 +64,10 @@ class NotificationTest {
   @Test
   void markReadIsIdempotent() {
     UUID recipientId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
 
     Notification notification =
         new Notification(
             recipientId,
-            orgId,
             "INSPECTION_ASSIGNED",
             NotificationChannel.IN_APP,
             "Assigned",
@@ -100,12 +93,10 @@ class NotificationTest {
   @Test
   void markReadOnPendingNotificationSetsSentAt() {
     UUID recipientId = UUID.randomUUID();
-    UUID orgId = UUID.randomUUID();
 
     Notification notification =
         new Notification(
             recipientId,
-            orgId,
             "INSPECTION_ASSIGNED",
             NotificationChannel.EMAIL,
             "Title",

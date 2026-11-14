@@ -1,5 +1,7 @@
 package com.smartdroneinspection.assets.api.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -18,6 +20,8 @@ public record SubmitDroneRegistrationApplicationRequest(
     @NotBlank @Size(max = 1000) String ownershipFileKey,
     @Size(max = 1000) String inspectionFileKey,
     BigDecimal maxWindResistanceMps,
+    @DecimalMin(value = "0.0", inclusive = true) @Digits(integer = 7, fraction = 1)
+        BigDecimal maxAltitudeMeters,
     @Size(max = 32) String opticalZoomLevel,
     Boolean hasThermalCamera,
     Boolean hasRtk,
@@ -43,6 +47,7 @@ public record SubmitDroneRegistrationApplicationRequest(
         registrationExpiresAt,
         ownershipFileKey,
         inspectionFileKey,
+        null,
         null,
         null,
         false,
@@ -77,6 +82,7 @@ public record SubmitDroneRegistrationApplicationRequest(
         ownershipFileKey,
         inspectionFileKey,
         maxWindResistanceMps,
+        null,
         opticalZoomLevel,
         hasThermalCamera,
         hasRtk,

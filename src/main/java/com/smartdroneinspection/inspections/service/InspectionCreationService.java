@@ -53,11 +53,11 @@ public class InspectionCreationService {
   @Transactional
   public InspectionResponse create(UUID actorId, CreateInspectionRequest request) {
     UserAccess.ActiveUser actor = requireOrgAdmin(actorId);
-    UUID organizationId = actor.organizationId();
+    UUID ownerCustomerId = actor.ownerCustomerId();
 
     Asset asset =
         assets
-            .findByIdAndOrganizationId(request.assetId(), organizationId)
+            .findByIdAndOwnerCustomerId(request.assetId(), ownerCustomerId)
             .orElseThrow(
                 () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
 
@@ -76,24 +76,40 @@ public class InspectionCreationService {
     UserAccess.ActiveUser inspector =
         userAccess
             .findActiveUser(request.inspectorId())
-            .filter(u -> organizationId.equals(u.organizationId()) && u.hasRole(Roles.INSPECTOR))
+            .filter(u -> u.hasRole(Roles.INSPECTOR))
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_INSPECTOR",
-                        "Assigned inspector must be active in the organization."));
+                        "Assigned inspector must be an active inspector."));
 
     Drone drone =
         drones
-            .findWithLockByIdAndOrganizationId(request.droneId(), organizationId)
+            .findWithLockByIdAndOwnerCustomerId(request.droneId(), ownerCustomerId)
             .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
             .orElseThrow(
                 () ->
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_DRONE",
-                        "Assigned drone must be active in the organization."));
+                        "Assigned drone must be active and owned by the customer."));
+
+    if (inspector.pilotLicenseExpiresAt() != null
+        && !inspector.pilotLicenseExpiresAt().isAfter(request.plannedStartAt())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_EXPIRED",
+          "Assigned inspector's pilot license expires before the planned inspection start time.");
+    }
+
+    if (drone.getRegistrationExpiresAt() != null
+        && !drone.getRegistrationExpiresAt().isAfter(request.plannedStartAt())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_REGISTRATION_EXPIRED",
+          "Assigned drone registration expires before the planned inspection start time.");
+    }
 
     if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
       throw new BusinessException(
@@ -102,8 +118,8 @@ public class InspectionCreationService {
           "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
     }
 
-    if (inspections.hasScheduleConflict(
-        organizationId,
+    if (inspections.hasScheduleConflictByOwner(
+        ownerCustomerId,
         inspector.id(),
         drone.getId(),
         request.plannedStartAt(),
@@ -116,19 +132,20 @@ public class InspectionCreationService {
 
     Inspection inspection =
         new Inspection(
-            organizationId,
+            actor.ownerCustomerId(),
             asset.getId(),
             inspector.id(),
             drone.getId(),
             request.plannedStartAt(),
             request.plannedEndAt());
+    inspection.markCustomerOwned(actorId);
 
     Inspection saved = inspections.saveAndFlush(inspection);
 
     eventPublisher.publishEvent(
         new InspectionAssignedEvent(
             saved.getId(),
-            saved.getOrganizationId(),
+            saved.getOwnerCustomerId(),
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
 
@@ -150,17 +167,16 @@ public class InspectionCreationService {
     } else if (actor.isInspectorPartner() || actor.hasRole(Roles.INSPECTOR)) {
       inspection =
           inspections
-              .findAssignedInspectorInspection(
-                  inspectionId, actor.organizationId(), actor.id(), actor.isInspectorPartner())
+              .findAssignedByInspector(inspectionId, actor.id())
               .orElseThrow(
                   () ->
                       new BusinessException(
                           HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
     } else {
-      UUID organizationId = actor.organizationId();
+      UUID ownerCustomerId = actor.ownerCustomerId();
       inspection =
           inspections
-              .findByIdAndOrganizationId(inspectionId, organizationId)
+              .findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId)
               .orElseThrow(
                   () ->
                       new BusinessException(
@@ -180,14 +196,12 @@ public class InspectionCreationService {
       byte[] content,
       String contentType) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = actor.organizationId();
+    UUID ownerCustomerId = actor.ownerCustomerId();
 
     Inspection inspection =
         (actor.isInspectorPartner()
-                ? inspections
-                    .findAssignedInspectorInspection(inspectionId, null, actorId, true)
-                    .filter(Inspection::isPartnerAssignment)
-                : inspections.findByIdAndOrganizationId(inspectionId, organizationId))
+                ? inspections.findAssignedByInspector(inspectionId, actorId)
+                : inspections.findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId))
             .orElseThrow(
                 () ->
                     new BusinessException(
@@ -223,12 +237,24 @@ public class InspectionCreationService {
 
     if (inspection.getDroneId() != null) {
       Drone assignedDrone = drones.findById(inspection.getDroneId()).orElse(null);
-      if (assignedDrone != null
-          && !assignedInspector.isLicenseClassQualifiedFor(assignedDrone.requiresClassBLicense())) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "PILOT_LICENSE_CLASS_INSUFFICIENT",
-            "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+      if (assignedDrone != null) {
+        if (assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone is no longer active.");
+        }
+        if (assignedDrone.getRegistrationExpiresAt() != null
+            && !assignedDrone.getRegistrationExpiresAt().isAfter(Instant.now())) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "DRONE_REGISTRATION_EXPIRED",
+              "Assigned drone registration has expired.");
+        }
+        if (!assignedInspector.isLicenseClassQualifiedFor(assignedDrone.requiresClassBLicense())) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "PILOT_LICENSE_CLASS_INSUFFICIENT",
+              "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+        }
       }
     }
 
@@ -265,7 +291,9 @@ public class InspectionCreationService {
         Instant.now());
     Inspection saved = inspections.saveAndFlush(inspection);
     Asset asset =
-        assets.findByIdAndOrganizationId(inspection.getAssetId(), organizationId).orElse(null);
+        assets
+            .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
+            .orElse(null);
     return toResponse(saved, asset);
   }
 
@@ -391,8 +419,8 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
     }
 
@@ -405,6 +433,40 @@ public class InspectionCreationService {
     if (plannedStartAt == null || plannedEndAt == null || !plannedEndAt.isAfter(plannedStartAt)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
+    }
+
+    if (inspection.getInspectorId() != null) {
+      userAccess
+          .findActiveUser(inspection.getInspectorId())
+          .ifPresent(
+              assignedInspector -> {
+                if (assignedInspector.pilotLicenseExpiresAt() != null
+                    && !assignedInspector.pilotLicenseExpiresAt().isAfter(plannedStartAt)) {
+                  throw new BusinessException(
+                      HttpStatus.BAD_REQUEST,
+                      "PILOT_LICENSE_EXPIRED",
+                      "Assigned inspector's pilot license expires before the rescheduled inspection start time.");
+                }
+              });
+    }
+
+    if (inspection.getDroneId() != null) {
+      drones
+          .findById(inspection.getDroneId())
+          .ifPresent(
+              assignedDrone -> {
+                if (assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+                  throw new BusinessException(
+                      HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active.");
+                }
+                if (assignedDrone.getRegistrationExpiresAt() != null
+                    && !assignedDrone.getRegistrationExpiresAt().isAfter(plannedStartAt)) {
+                  throw new BusinessException(
+                      HttpStatus.BAD_REQUEST,
+                      "DRONE_REGISTRATION_EXPIRED",
+                      "Assigned drone registration expires before the rescheduled inspection start time.");
+                }
+              });
     }
 
     inspection.updatePlannedWindow(plannedStartAt, plannedEndAt);
@@ -431,8 +493,8 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
     }
 
@@ -451,7 +513,7 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "INVALID_INSPECTOR",
-                        "Assigned inspector must be active."));
+                        "Assigned inspector must be active and eligible for this inspection."));
 
     Instant checkAt =
         inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : Instant.now();
@@ -468,12 +530,24 @@ public class InspectionCreationService {
           drones
               .findById(newDroneId)
               .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+              .filter(
+                  d ->
+                      inspection.isPartnerAssignment()
+                          ? newInspector.id().equals(d.getInspectorOwnerId())
+                          : inspection.getOwnerCustomerId().equals(d.getOwnerCustomerId()))
               .orElseThrow(
                   () ->
                       new BusinessException(
                           HttpStatus.BAD_REQUEST,
                           "INVALID_DRONE",
-                          "Assigned drone must be active."));
+                          "Assigned drone must be active and owned by the eligible scope."));
+      if (newDrone.getRegistrationExpiresAt() != null
+          && !newDrone.getRegistrationExpiresAt().isAfter(checkAt)) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_EXPIRED",
+            "Assigned drone registration expires before the planned inspection start time.");
+      }
       if (!newInspector.isLicenseClassQualifiedFor(newDrone.requiresClassBLicense())) {
         throw new BusinessException(
             HttpStatus.BAD_REQUEST,
@@ -482,12 +556,31 @@ public class InspectionCreationService {
       }
     } else if (inspection.getDroneId() != null) {
       Drone currentDrone = drones.findById(inspection.getDroneId()).orElse(null);
-      if (currentDrone != null
-          && !newInspector.isLicenseClassQualifiedFor(currentDrone.requiresClassBLicense())) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "PILOT_LICENSE_CLASS_INSUFFICIENT",
-            "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+      if (currentDrone != null) {
+        if (currentDrone.getServiceability() != DroneServiceability.ACTIVE) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active.");
+        }
+        if (inspection.isPartnerAssignment()
+            && !newInspector.id().equals(currentDrone.getInspectorOwnerId())) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "INVALID_DRONE",
+              "Partner inspection reassignment requires a drone owned by the new Inspector.");
+        }
+        if (currentDrone.getRegistrationExpiresAt() != null
+            && !currentDrone.getRegistrationExpiresAt().isAfter(checkAt)) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "DRONE_REGISTRATION_EXPIRED",
+              "Assigned drone registration expires before the planned inspection start time.");
+        }
+        if (!newInspector.isLicenseClassQualifiedFor(currentDrone.requiresClassBLicense())) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "PILOT_LICENSE_CLASS_INSUFFICIENT",
+              "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
+        }
       }
     }
 
@@ -497,7 +590,7 @@ public class InspectionCreationService {
     eventPublisher.publishEvent(
         new InspectionAssignedEvent(
             saved.getId(),
-            saved.getOrganizationId(),
+            saved.getOwnerCustomerId(),
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
 
@@ -522,8 +615,8 @@ public class InspectionCreationService {
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
 
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
     }
 
@@ -555,14 +648,14 @@ public class InspectionCreationService {
             ? (inspection.isPartnerAssignment()
                 ? drones.findById(inspection.getDroneId()).orElse(null)
                 : drones
-                    .findByIdAndOrganizationId(
-                        inspection.getDroneId(), inspection.getOrganizationId())
+                    .findByIdAndOwnerCustomerId(
+                        inspection.getDroneId(), inspection.getOwnerCustomerId())
                     .orElse(null))
             : null;
 
     return new InspectionResponse(
         inspection.getId(),
-        inspection.getOrganizationId(),
+        inspection.getOwnerCustomerId(),
         inspection.getAssetId(),
         assetName,
         asset == null ? null : asset.getLocationText(),
@@ -588,13 +681,13 @@ public class InspectionCreationService {
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_MANAGER)) {
+    if (!actor.hasRole(Roles.ORG_MANAGER) && !actor.hasRole(Roles.CUSTOMER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ORG_MANAGER can perform this action.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only a customer can perform this action.");
     }
-    if (actor.organizationId() == null) {
+    if (actor.ownerCustomerId() == null) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Actor has no organization scope.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Actor has no customer ownership scope.");
     }
     return actor;
   }

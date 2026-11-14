@@ -86,13 +86,13 @@ public class InspectorProfileService {
     if (request.fullName() != null && !request.fullName().isBlank()) {
       user.setFullName(request.fullName().trim());
     }
-    user.setPhoneNumber(request.phoneNumber() != null ? request.phoneNumber().trim() : null);
+    user.setPhoneNumber(resolveOptionalText(request.phoneNumber(), user.getPhoneNumber()));
     InspectorProfile profile = findOrCreateProfile(inspectorUserId);
     profile.updatePersonalDetails(
-        request.citizenId() != null ? request.citizenId().trim() : null,
-        request.dateOfBirth(),
-        request.address() != null ? request.address().trim() : null,
-        request.notes() != null ? request.notes().trim() : null);
+        resolveOptionalText(request.citizenId(), profile.getCitizenId()),
+        request.dateOfBirth() != null ? request.dateOfBirth() : profile.getDateOfBirth(),
+        resolveOptionalText(request.address(), profile.getAddress()),
+        resolveOptionalText(request.notes(), profile.getNotes()));
 
     Optional<String> requestedClass =
         Optional.ofNullable(request.pilotLicenseClass())
@@ -114,17 +114,21 @@ public class InspectorProfileService {
                 })
             .orElse(existingClass);
     profile.updatePilotLicense(
-        request.pilotLicenseNumber() != null ? request.pilotLicenseNumber().trim() : null,
+        resolveOptionalText(request.pilotLicenseNumber(), profile.getPilotLicenseNumber()),
         licenseClass,
-        request.pilotLicenseIssuedDate(),
-        request.pilotLicenseExpiresAt(),
-        request.pilotLicenseAuthority() != null ? request.pilotLicenseAuthority().trim() : null,
+        request.pilotLicenseIssuedDate() != null
+            ? request.pilotLicenseIssuedDate()
+            : profile.getPilotLicenseIssuedDate(),
+        request.pilotLicenseExpiresAt() != null
+            ? request.pilotLicenseExpiresAt()
+            : profile.getPilotLicenseExpiresAt(),
+        resolveOptionalText(request.pilotLicenseAuthority(), profile.getPilotLicenseAuthority()),
         null);
     profile.updateFlightExperience(
         request.priorFlightHours(),
-        request.certifiedDroneModels() != null ? request.certifiedDroneModels().trim() : null,
-        request.specializations() != null ? request.specializations().trim() : null,
-        request.experienceSummary() != null ? request.experienceSummary().trim() : null);
+        resolveOptionalText(request.certifiedDroneModels(), profile.getCertifiedDroneModels()),
+        resolveOptionalText(request.specializations(), profile.getSpecializations()),
+        resolveOptionalText(request.experienceSummary(), profile.getExperienceSummary()));
 
     User saved = userRepository.save(user);
     profileRepository.save(profile);
@@ -133,6 +137,14 @@ public class InspectorProfileService {
           new PilotLicenseUpdatedEvent(inspectorUserId, profile.getPilotLicenseExpiresAt()));
     }
     return toProfileResponse(saved, profile);
+  }
+
+  private static String resolveOptionalText(String incoming, String current) {
+    if (incoming == null) {
+      return current;
+    }
+    String trimmed = incoming.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   public InspectorProfileResponse uploadLicenseScan(

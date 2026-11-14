@@ -72,22 +72,13 @@ class InspectionManagerDispatchApiIntegrationTest {
                     .springSecurity())
             .build();
 
-    organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, legal_name, registration_code, timezone, status, created_at, updated_at, row_version)
-        VALUES (?, 'Dispatch Org', 'Dispatch Org JSC', 'DISP-ORG', 'UTC', 'ACTIVE', now(), now(), 0)
-        """,
-        organizationId);
-
     User manager =
         new User(
             "manager-" + UUID.randomUUID() + "@test.org",
             "Dispatch Manager",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.CUSTOMER);
     manager.addRole(UserRole.CUSTOMER);
     managerId = users.saveAndFlush(manager).getId();
 
@@ -97,8 +88,7 @@ class InspectionManagerDispatchApiIntegrationTest {
             "Dispatch Inspector 1",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
 
@@ -108,8 +98,7 @@ class InspectionManagerDispatchApiIntegrationTest {
             "Dispatch Inspector 2",
             null,
             UserStatus.ACTIVE,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            organizationId);
+            ActorZone.INSPECTOR);
     inspector2.addRole(UserRole.INSPECTOR);
     newInspectorId = users.saveAndFlush(inspector2).getId();
 
@@ -122,7 +111,7 @@ class InspectionManagerDispatchApiIntegrationTest {
         assets
             .saveAndFlush(
                 new Asset(
-                    organizationId,
+                    managerId,
                     category.getId(),
                     "ASSET-DISP-" + UUID.randomUUID(),
                     "Dispatch Asset",
@@ -135,13 +124,11 @@ class InspectionManagerDispatchApiIntegrationTest {
                     managerId))
             .getId();
 
-    droneId =
-        drones.saveAndFlush(new Drone(organizationId, "DISP-DRONE-" + UUID.randomUUID())).getId();
+    droneId = drones.saveAndFlush(new Drone(managerId, "DISP-DRONE-" + UUID.randomUUID())).getId();
 
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant end = start.plus(4, ChronoUnit.HOURS);
-    Inspection inspection =
-        new Inspection(organizationId, assetId, inspectorId, droneId, start, end);
+    Inspection inspection = new Inspection(managerId, assetId, inspectorId, droneId, start, end);
     inspectionId = inspections.saveAndFlush(inspection).getId();
   }
 

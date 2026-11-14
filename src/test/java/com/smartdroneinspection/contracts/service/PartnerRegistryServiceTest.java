@@ -6,7 +6,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.DroneFeatureConfig;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
+import com.smartdroneinspection.assets.repository.DroneFeatureConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test;
 class PartnerRegistryServiceTest {
 
   private DroneRepository drones;
+  private DroneFeatureConfigRepository featureConfigs;
   private UserAccess users;
   private PartnerRegistryService service;
 
@@ -31,13 +34,32 @@ class PartnerRegistryServiceTest {
   @BeforeEach
   void setUp() {
     drones = mock(DroneRepository.class);
+    featureConfigs = mock(DroneFeatureConfigRepository.class);
     users = mock(UserAccess.class);
-    service = new PartnerRegistryService(drones, users);
+    service = new PartnerRegistryService(drones, users, featureConfigs);
 
     when(users.findActiveUser(managerId))
         .thenReturn(
-            Optional.of(
-                new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), null, "Manager")));
+            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Manager")));
+  }
+
+  @Test
+  void listsOnlyActiveCapabilityCatalogEntriesForPartnerSelection() {
+    var thermal =
+        new DroneFeatureConfig(
+            "THERMAL_CAMERA", "Camera nhiệt", "Thermal Camera", null, null, "CAPABILITY", true, 1);
+    var safety =
+        new DroneFeatureConfig("PARACHUTE", "Dù", "Parachute", null, null, "SAFETY", true, 2);
+    var inactive =
+        new DroneFeatureConfig(
+            "NIGHT_VISION", "Nhìn đêm", "Night vision", null, null, "CAPABILITY", false, 3);
+    when(featureConfigs.findAllByIsActiveTrueOrderByDisplayOrderAscCreatedAtAsc())
+        .thenReturn(List.of(thermal, safety));
+
+    assertThat(service.listActiveCapabilities())
+        .containsExactly(
+            new PartnerRegistryService.DroneFeatureOption(
+                "THERMAL_CAMERA", "Camera nhiệt", "Thermal Camera", 1, true, "CAPABILITY"));
   }
 
   @Test
@@ -63,8 +85,7 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot",
                     "pilot@example.test",
                     "LIC-001",
@@ -84,8 +105,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -117,7 +137,8 @@ class PartnerRegistryServiceTest {
     when(users.findActiveUser(customerId))
         .thenReturn(
             Optional.of(
-                new UserAccess.ActiveUser(customerId, Set.of(Roles.CUSTOMER), UUID.randomUUID())));
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
 
     assertThatThrownBy(() -> service.listInspectors(customerId))
         .isInstanceOf(BusinessException.class)
@@ -132,8 +153,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -177,8 +197,7 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            null,
-            "INSPECTOR_PARTNER",
+            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -213,8 +232,7 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot",
                     "pilot@example.test",
                     "LIC-001",
@@ -246,8 +264,7 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    null,
-                    "INSPECTOR_PARTNER",
+                    "INSPECTOR",
                     "Pilot Class A",
                     "pilota@example.test",
                     "LIC-001",
@@ -259,5 +276,63 @@ class PartnerRegistryServiceTest {
     assertThatThrownBy(() -> service.lockEligibleDrone(droneId, inspectorId))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("Class B pilot license");
+  }
+
+  @Test
+  void evaluatesPartnerCandidatesWithAvatarAndImageAvailability() {
+    UUID inspectorId = UUID.randomUUID();
+    Instant startAt = Instant.parse("2026-12-04T01:00:00Z");
+    Drone drone = mock(Drone.class);
+    when(drone.getId()).thenReturn(droneId);
+    when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(drone.getSerialNumber()).thenReturn("SDI-700");
+    when(drone.getModel()).thenReturn("Matrice 350 RTK");
+    when(drone.getImageFileKeys()).thenReturn(List.of("drones/sdi-700-0.png"));
+    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-700");
+    when(drone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2027-12-31T00:00:00Z"));
+    when(drone.resolveMtowKg()).thenReturn(6.47);
+    when(drone.requiresClassBLicense()).thenReturn(true);
+    when(drone.getFeatures()).thenReturn(List.of("THERMAL_CAMERA", "RTK_POSITIONING"));
+    when(drones.findActivePartnerDrones()).thenReturn(List.of(drone));
+
+    UserAccess.ActiveUser inspector =
+        new UserAccess.ActiveUser(
+            inspectorId,
+            Set.of(Roles.INSPECTOR),
+            "INSPECTOR",
+            "Tran Minh Quan",
+            "quan@example.test",
+            "LIC-700",
+            "CLASS_B",
+            Instant.parse("2027-12-31T00:00:00Z"),
+            "licenses/quan.pdf",
+            "https://cdn.example.test/avatars/quan.png");
+    when(users.listActiveInspectorPartners()).thenReturn(List.of(inspector));
+    when(users.findActiveUser(inspectorId)).thenReturn(Optional.of(inspector));
+
+    List<PartnerCandidateEvaluation.Result> results =
+        service.evaluateCandidates(
+            managerId,
+            null,
+            startAt,
+            List.of("THERMAL_CAMERA"),
+            List.of(),
+            (ins, dr) -> false,
+            (ins, dr) -> false);
+
+    assertThat(results)
+        .singleElement()
+        .satisfies(
+            candidate -> {
+              assertThat(candidate.inspectorId()).isEqualTo(inspectorId);
+              assertThat(candidate.droneId()).isEqualTo(droneId);
+              assertThat(candidate.inspectorAvatarUrl())
+                  .isEqualTo("https://cdn.example.test/avatars/quan.png");
+              assertThat(candidate.droneHasImage()).isTrue();
+              assertThat(candidate.eligibility()).isEqualTo(PartnerCandidateEvaluation.Status.PASS);
+              assertThat(candidate.capabilityFit())
+                  .isEqualTo(PartnerCandidateEvaluation.Status.MATCH);
+            });
   }
 }

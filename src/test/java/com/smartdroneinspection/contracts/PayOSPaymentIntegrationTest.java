@@ -94,7 +94,6 @@ class PayOSPaymentIntegrationTest {
 
   private MockMvc mockMvc;
 
-  private UUID orgId;
   private UUID customerUserId;
   private UUID otherCustomerUserId;
   private UUID managerUserId;
@@ -137,25 +136,6 @@ class PayOSPaymentIntegrationTest {
     jdbcTemplate.execute("DELETE FROM service_requests");
     jdbcTemplate.execute("DELETE FROM service_request_quotes");
 
-    // Organizations
-    orgId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, 'PayOS Corp', ?, 'ACTIVE')
-        """,
-        orgId,
-        "ORG-" + orgId.toString().substring(0, 18));
-
-    UUID otherOrgId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, 'Other Corp', ?, 'ACTIVE')
-        """,
-        otherOrgId,
-        "ORG-" + otherOrgId.toString().substring(0, 18));
-
     // Users
     managerUserId =
         createPlatformUser(
@@ -183,25 +163,22 @@ class PayOSPaymentIntegrationTest {
 
     customerUserId =
         createUser(
-            orgId,
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.CUSTOMER,
             "customer." + UUID.randomUUID() + "@payos.test",
             "Customer Primary");
 
     otherCustomerUserId =
         createUser(
-            otherOrgId,
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.CUSTOMER,
             "other." + UUID.randomUUID() + "@other.test",
             "Customer Other Org");
 
     inspectorUserId =
         createUser(
-            null,
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR_PARTNER,
+            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@partner.test",
             "Partner Pilot");
 
@@ -264,7 +241,7 @@ class PayOSPaymentIntegrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                orgId,
+                customerUserId,
                 category.getId(),
                 "TOWER-" + UUID.randomUUID().toString().substring(0, 8),
                 "Tower Alpha",
@@ -401,10 +378,11 @@ class PayOSPaymentIntegrationTest {
         .andExpect(jsonPath("$.code").value("00"))
         .andExpect(jsonPath("$.desc").value("success"));
 
-    // Verify occurrence is now PAID and payout is automatically disbursed (PAID)
+    // Customer payment settles; Inspector payout is only eligible, not automatically disbursed.
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(settledOcc.getPayoutReference()).isNull();
     assertThat(settledOcc.getPaymentReference()).isEqualTo("PAYOS-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(settledOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
@@ -729,14 +707,13 @@ class PayOSPaymentIntegrationTest {
   }
 
   private UUID createPlatformUser(UserRole role, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM, null);
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
 
-  private UUID createUser(
-      UUID organizationId, UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone, organizationId);
+  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

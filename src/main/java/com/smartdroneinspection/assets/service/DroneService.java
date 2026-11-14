@@ -36,7 +36,8 @@ public class DroneService {
 
   @Transactional
   public DroneResponse create(UUID actorId, CreateDroneRequest request) {
-    UUID organizationId = requireOrganization(requireActive(actorId));
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    requireOwnerCustomer(actor);
     requireJsonDocument(
         request.payloadMetadata(), "Payload metadata must be a valid JSON document.");
     String serialNumber = request.serialNumber().trim();
@@ -44,25 +45,30 @@ public class DroneService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "DUPLICATE_SERIAL_NUMBER", "Serial number already exists");
     }
-    return DroneResponse.from(
-        drones.saveAndFlush(
-            new Drone(
-                organizationId,
-                serialNumber,
-                request.model(),
-                request.manufacturer(),
-                request.payloadMetadata(),
-                DroneServiceability.ACTIVE,
-                request.notes(),
-                request.registrationNumber(),
-                request.registrationFileKey(),
-                request.registrationExpiresAt())));
+    Drone drone =
+        new Drone(
+            actor.ownerCustomerId(),
+            serialNumber,
+            request.model(),
+            request.manufacturer(),
+            request.payloadMetadata(),
+            DroneServiceability.ACTIVE,
+            request.notes(),
+            request.registrationNumber(),
+            request.registrationFileKey(),
+            request.registrationExpiresAt());
+    drone.markCustomerOwned(actorId);
+    return DroneResponse.from(drones.saveAndFlush(drone));
   }
 
   @Transactional(readOnly = true)
   public List<DroneResponse> list(UUID actorId) {
-    UUID organizationId = requireOrganization(requireActive(actorId));
-    return drones.findAllByOrganizationId(organizationId).stream()
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
+      return drones.findAll().stream().map(DroneResponse::from).toList();
+    }
+    UUID ownerCustomerId = requireOwnerCustomer(actor);
+    return drones.findAllByOwnerCustomerId(ownerCustomerId).stream()
         .map(DroneResponse::from)
         .toList();
   }
@@ -103,18 +109,18 @@ public class DroneService {
    */
   @Transactional(readOnly = true)
   public List<DroneSelectionResponse> selection(UUID actorId) {
-    UUID organizationId = requireOrganization(requireActive(actorId));
+    UUID ownerCustomerId = requireOwnerCustomer(requireActive(actorId));
     return drones
-        .findAllByOrganizationIdAndServiceability(organizationId, DroneServiceability.ACTIVE)
+        .findAllByOwnerCustomerIdAndServiceability(ownerCustomerId, DroneServiceability.ACTIVE)
         .stream()
         .map(DroneSelectionResponse::from)
         .toList();
   }
 
   private Drone requireOwnedDrone(UUID actorId, UUID droneId) {
-    UUID organizationId = requireOrganization(requireActive(actorId));
+    UUID ownerCustomerId = requireOwnerCustomer(requireActive(actorId));
     return drones
-        .findByIdAndOrganizationId(droneId, organizationId)
+        .findByIdAndOwnerCustomerId(droneId, ownerCustomerId)
         .orElseThrow(
             () ->
                 new BusinessException(HttpStatus.NOT_FOUND, "DRONE_NOT_FOUND", NOT_FOUND_MESSAGE));
@@ -132,12 +138,13 @@ public class DroneService {
     }
   }
 
-  private UUID requireOrganization(UserAccess.ActiveUser actor) {
-    if (actor.organizationId() == null) {
+  private UUID requireOwnerCustomer(UserAccess.ActiveUser actor) {
+    UUID ownerCustomerId = actor.ownerCustomerId();
+    if (ownerCustomerId == null) {
       throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Actor has no organization scope");
+          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Actor has no customer ownership scope");
     }
-    return actor.organizationId();
+    return ownerCustomerId;
   }
 
   private UserAccess.ActiveUser requireActive(UUID actorId) {

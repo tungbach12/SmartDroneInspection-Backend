@@ -41,6 +41,15 @@ public class InspectorPayout {
   @Column(name = "payout_recorded_at")
   private Instant payoutRecordedAt;
 
+  @Column(name = "payout_held_for_refund", nullable = false)
+  private boolean heldForRefund;
+
+  @Column(name = "payout_recorded_by_user_id")
+  private UUID payoutRecordedByUserId;
+
+  @Column(name = "final_payout_amount", precision = 15, scale = 2)
+  private java.math.BigDecimal finalPayoutAmount;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
@@ -69,31 +78,54 @@ public class InspectorPayout {
     }
   }
 
-  void markAutoDisbursed(String paymentReference, Instant paidAt) {
-    payoutStatus = OccurrencePayoutStatus.PAID;
-    payoutReference = "AUTO-DISBURSE-" + paymentReference;
-    payoutRecordedAt = paidAt;
-    updatedAt = paidAt;
+  void releaseRefundHold() {
+    if (payoutStatus == OccurrencePayoutStatus.PAID) return;
+    heldForRefund = false;
+    if (payoutStatus == OccurrencePayoutStatus.PENDING) {
+      payoutStatus = OccurrencePayoutStatus.ELIGIBLE;
+    }
+    updatedAt = Instant.now();
   }
 
-  void recordPayout(String reference) {
+  void holdForRefund() {
+    if (heldForRefund) {
+      throw new IllegalStateException("Existing refund allocation must be reconciled first");
+    }
+    heldForRefund = true;
+    if (payoutStatus == OccurrencePayoutStatus.ELIGIBLE) {
+      payoutStatus = OccurrencePayoutStatus.PENDING;
+    }
+    updatedAt = Instant.now();
+  }
+
+  void recordPayout(String reference, UUID managerId, java.math.BigDecimal originalNetAmount) {
+    if (heldForRefund) {
+      throw new IllegalStateException("Inspector payout is held pending refund reconciliation");
+    }
+    if (managerId == null) {
+      throw new IllegalArgumentException("Payout recorder is required");
+    }
     if (payoutStatus == OccurrencePayoutStatus.PAID) {
       if (reference.trim().equals(payoutReference)) {
-        return;
-      }
-      if (payoutReference != null && payoutReference.startsWith("AUTO-DISBURSE-")) {
-        payoutReference = reference.trim();
-        payoutRecordedAt = Instant.now();
-        updatedAt = payoutRecordedAt;
         return;
       }
       throw new IllegalStateException(
           "Payout was already recorded with reference " + payoutReference);
     }
     payoutStatus = OccurrencePayoutStatus.PAID;
+    finalPayoutAmount = originalNetAmount;
     payoutReference = reference.trim();
+    payoutRecordedByUserId = managerId;
     payoutRecordedAt = Instant.now();
     updatedAt = payoutRecordedAt;
+  }
+
+  boolean isHeldForRefund() {
+    return heldForRefund;
+  }
+
+  public boolean getHeldForRefund() {
+    return heldForRefund;
   }
 
   public UUID getOccurrenceId() {
@@ -114,6 +146,14 @@ public class InspectorPayout {
 
   public Instant getPayoutRecordedAt() {
     return payoutRecordedAt;
+  }
+
+  public java.math.BigDecimal getFinalPayoutAmount() {
+    return finalPayoutAmount;
+  }
+
+  public UUID getPayoutRecordedByUserId() {
+    return payoutRecordedByUserId;
   }
 
   public Instant getCreatedAt() {

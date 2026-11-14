@@ -192,8 +192,7 @@ public class InspectorApplicationService {
             null,
             application.getPasswordHash(),
             UserStatus.ACTIVE,
-            ActorZone.INSPECTOR_PARTNER,
-            null);
+            ActorZone.INSPECTOR);
     inspector.setOtpVerified(true);
     inspector.addRole(UserRole.INSPECTOR);
     inspector = users.saveAndFlush(inspector);
@@ -232,7 +231,6 @@ public class InspectorApplicationService {
         inspector.getAvatarUrl(),
         inspector.roleValues(),
         inspector.getActorZone().name(),
-        inspector.getOrganizationId(),
         inspector.isVisionFallbackEnabled(),
         application.getPilotLicenseNumber(),
         application.getPilotLicenseClass(),

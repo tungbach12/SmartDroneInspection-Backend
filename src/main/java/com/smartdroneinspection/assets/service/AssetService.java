@@ -15,6 +15,7 @@ import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.InspectionItemRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -60,7 +61,8 @@ public class AssetService {
 
   @Transactional
   public AssetResponse create(UUID actorId, CreateAssetRequest request) {
-    UUID organizationId = requireOrganization(requireActive(actorId));
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    UUID ownerCustomerId = requireOwnerCustomer(actor);
 
     if (request.latitude() != null && request.longitude() != null) {
       validateNoFlyZone(request.latitude(), request.longitude());
@@ -76,7 +78,7 @@ public class AssetService {
                         HttpStatus.BAD_REQUEST,
                         "VALIDATION_FAILED",
                         "Unknown or inactive category"));
-    if (assets.existsByOrganizationIdAndCode(organizationId, normalize(request.code()))) {
+    if (assets.existsByOwnerCustomerIdAndCode(ownerCustomerId, normalize(request.code()))) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "DUPLICATE_CODE", "Asset code already exists");
     }
@@ -97,7 +99,7 @@ public class AssetService {
 
     Asset asset =
         new Asset(
-            organizationId,
+            actor.ownerCustomerId(),
             category.getId(),
             request.code(),
             request.name(),
@@ -107,7 +109,10 @@ public class AssetService {
             request.longitude(),
             request.ownershipInformation(),
             initialInspectionItems,
+            request.structureHeightMeters(),
+            request.footprintAreaSquareMeters(),
             actorId);
+    asset.markCustomerOwned(actorId);
 
     Asset savedAsset = assets.saveAndFlush(asset);
     return toResponse(savedAsset);
@@ -122,23 +127,16 @@ public class AssetService {
 
     Page<Asset> result;
     if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
-      if (actor.organizationId() != null) {
-        result =
-            search == null || search.isBlank()
-                ? assets.findByOrganizationId(actor.organizationId(), pageRequest)
-                : assets.searchByOrganizationId(actor.organizationId(), search.trim(), pageRequest);
-      } else {
-        result =
-            search == null || search.isBlank()
-                ? assets.findAll(pageRequest)
-                : assets.searchAll(search.trim(), pageRequest);
-      }
-    } else {
-      UUID organizationId = requireOrganization(actor);
       result =
           search == null || search.isBlank()
-              ? assets.findByOrganizationId(organizationId, pageRequest)
-              : assets.searchByOrganizationId(organizationId, search.trim(), pageRequest);
+              ? assets.findAll(pageRequest)
+              : assets.searchAll(search.trim(), pageRequest);
+    } else {
+      UUID ownerCustomerId = requireOwnerCustomer(actor);
+      result =
+          search == null || search.isBlank()
+              ? assets.findByOwnerCustomerId(ownerCustomerId, pageRequest)
+              : assets.searchByOwnerCustomerId(ownerCustomerId, search.trim(), pageRequest);
     }
     return new AssetPageResponse(
         result.getContent().stream().map(this::toResponse).toList(),
@@ -160,8 +158,16 @@ public class AssetService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
     }
-    if (request.latitude() != null && request.longitude() != null) {
-      validateNoFlyZone(request.latitude(), request.longitude());
+    BigDecimal proposedLatitude =
+        request.clearCoordinates()
+            ? null
+            : request.latitude() != null ? request.latitude() : asset.getLatitude();
+    BigDecimal proposedLongitude =
+        request.clearCoordinates()
+            ? null
+            : request.longitude() != null ? request.longitude() : asset.getLongitude();
+    if (proposedLatitude != null && proposedLongitude != null) {
+      validateNoFlyZone(proposedLatitude, proposedLongitude);
     }
     asset.update(
         request.name(),
@@ -170,7 +176,13 @@ public class AssetService {
         request.latitude(),
         request.longitude(),
         request.ownershipInformation(),
-        request.inspectionItems());
+        request.inspectionItems(),
+        request.structureHeightMeters(),
+        request.footprintAreaSquareMeters(),
+        request.clearCoordinates(),
+        request.clearStructureHeight(),
+        request.clearFootprintArea(),
+        request.clearDescription());
     Asset saved = assets.saveAndFlush(asset);
     return toResponse(saved);
   }
@@ -188,10 +200,10 @@ public class AssetService {
                   () ->
                       new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
     } else {
-      UUID organizationId = requireOrganization(actor);
+      UUID ownerCustomerId = requireOwnerCustomer(actor);
       asset =
           assets
-              .findByIdAndOrganizationId(assetId, organizationId)
+              .findByIdAndOwnerCustomerId(assetId, ownerCustomerId)
               .orElseThrow(
                   () ->
                       new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
@@ -247,19 +259,26 @@ public class AssetService {
 
   private Asset requireOwnedAsset(UUID actorId, UUID assetId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID organizationId = requireOrganization(actor);
+    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
+      return assets
+          .findById(assetId)
+          .orElseThrow(
+              () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+    }
+    UUID ownerCustomerId = requireOwnerCustomer(actor);
     return assets
-        .findByIdAndOrganizationId(assetId, organizationId)
+        .findByIdAndOwnerCustomerId(assetId, ownerCustomerId)
         .orElseThrow(
             () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
   }
 
-  private UUID requireOrganization(UserAccess.ActiveUser actor) {
-    if (actor.organizationId() == null) {
+  private UUID requireOwnerCustomer(UserAccess.ActiveUser actor) {
+    UUID ownerCustomerId = actor.ownerCustomerId();
+    if (ownerCustomerId == null) {
       throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Actor has no organization scope");
+          HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Actor has no customer ownership scope");
     }
-    return actor.organizationId();
+    return ownerCustomerId;
   }
 
   private UserAccess.ActiveUser requireActive(UUID actorId) {
@@ -297,6 +316,8 @@ public class AssetService {
         asset.getStatus().name(),
         asset.getCategoryId(),
         asset.getCreatedAt(),
-        items);
+        items,
+        asset.getStructureHeightMeters(),
+        asset.getFootprintAreaSquareMeters());
   }
 }

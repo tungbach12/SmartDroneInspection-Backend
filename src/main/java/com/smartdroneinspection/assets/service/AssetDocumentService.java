@@ -70,13 +70,24 @@ public class AssetDocumentService {
 
   @Transactional
   public AssetDocumentResponse upload(
-      UUID actorId, UUID assetId, MultipartFile file, String documentType, LocalDate documentDate) {
+      UUID actorId,
+      UUID assetId,
+      MultipartFile file,
+      String documentType,
+      LocalDate documentDate,
+      boolean primaryImage) {
     Asset asset = requireOwnedAsset(actorId, assetId);
     if (asset.getStatus() != AssetStatus.ACTIVE) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Documents can only be added to active assets");
     }
     String contentType = file.getContentType() == null ? "" : file.getContentType();
+    if (primaryImage && !contentType.startsWith("image/")) {
+      throw new BusinessException(
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          "UNSUPPORTED_MEDIA_TYPE",
+          "Asset photo must be an image");
+    }
     if (!ALLOWED_TYPES.contains(contentType)) {
       throw new BusinessException(
           HttpStatus.UNSUPPORTED_MEDIA_TYPE,
@@ -103,7 +114,7 @@ public class AssetDocumentService {
     AssetDocument document =
         asset.addDocument(
             actorId,
-            documentType,
+            primaryImage ? "ASSET_PHOTO" : documentType,
             sanitizeFileName(file.getOriginalFilename()),
             contentType,
             content.length,
@@ -161,11 +172,11 @@ public class AssetDocumentService {
           .orElseThrow(
               () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
     }
-    if (actor.organizationId() == null) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No organization scope");
+    if (actor.ownerCustomerId() == null) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "No customer ownership scope");
     }
     return assets
-        .findDetailedByIdAndOrganizationId(assetId, actor.organizationId())
+        .findDetailedByIdAndOwnerCustomerId(assetId, actor.ownerCustomerId())
         .orElseThrow(
             () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
   }

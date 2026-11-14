@@ -54,8 +54,7 @@ public class BootstrapAdministrator implements ApplicationRunner {
             fullName.trim(),
             passwords.encode(password),
             UserStatus.ACTIVE,
-            ActorZone.PLATFORM,
-            null);
+            ActorZone.PLATFORM);
     administrator.addRole(UserRole.ADMIN);
     administrator.requirePasswordChange();
     users.save(administrator);

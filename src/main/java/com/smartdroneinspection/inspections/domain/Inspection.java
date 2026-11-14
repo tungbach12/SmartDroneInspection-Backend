@@ -19,8 +19,8 @@ public class Inspection {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
+  @Column(name = "owner_customer_id", nullable = false)
+  private UUID ownerCustomerId;
 
   @Column(name = "asset_id", nullable = false)
   private UUID assetId;
@@ -71,14 +71,14 @@ public class Inspection {
   protected Inspection() {}
 
   public Inspection(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID inspectorId,
       UUID droneId,
       Instant plannedStartAt,
       Instant plannedEndAt) {
-    this.organizationId =
-        Objects.requireNonNull(organizationId, "Inspection organization is required");
+    this.ownerCustomerId =
+        Objects.requireNonNull(ownerCustomerId, "Inspection owner customer is required");
     this.assetId = Objects.requireNonNull(assetId, "Inspection asset is required");
     this.inspectorId = inspectorId;
     this.droneId = droneId;
@@ -92,8 +92,8 @@ public class Inspection {
     this.updatedAt = createdAt;
   }
 
-  public Inspection(UUID organizationId, UUID assetId, Instant plannedStartAt) {
-    this(organizationId, assetId, null, null, plannedStartAt, null);
+  public Inspection(UUID ownerCustomerId, UUID assetId, Instant plannedStartAt) {
+    this(ownerCustomerId, assetId, null, null, plannedStartAt, null);
   }
 
   /** Marks an inspection assigned by the MF2 partner registry path. */
@@ -210,8 +210,14 @@ public class Inspection {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
+  public UUID getOwnerCustomerId() {
+    return ownerCustomerId;
+  }
+
+  /** Phase 1 bridge: records the owning customer user alongside the legacy organization. */
+  public void markCustomerOwned(UUID ownerCustomerId) {
+    this.ownerCustomerId = ownerCustomerId;
+    this.updatedAt = Instant.now();
   }
 
   public com.smartdroneinspection.inspections.domain.enums.InspectionType getInspectionType() {

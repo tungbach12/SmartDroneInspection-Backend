@@ -6,12 +6,10 @@ import com.smartdroneinspection.shared.api.CustomerRegistrationEvent;
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.request.RejectProspectiveCustomerRequest;
 import com.smartdroneinspection.users.api.dto.response.ProspectiveCustomerResponse;
-import com.smartdroneinspection.users.domain.Organization;
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.List;
@@ -24,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProspectiveCustomerReviewService {
   private final ProspectiveCustomerRegistrationRepository registrations;
   private final UserRepository users;
-  private final OrganizationRepository organizations;
   private final org.springframework.context.ApplicationEventPublisher events;
   private final CustomerAirspacePolicy airspace;
   private final SecurityAuditService audit;
@@ -32,13 +29,11 @@ public class ProspectiveCustomerReviewService {
   public ProspectiveCustomerReviewService(
       ProspectiveCustomerRegistrationRepository registrations,
       UserRepository users,
-      OrganizationRepository organizations,
       org.springframework.context.ApplicationEventPublisher events,
       CustomerAirspacePolicy airspace,
       SecurityAuditService audit) {
     this.registrations = registrations;
     this.users = users;
-    this.organizations = organizations;
     this.events = events;
     this.airspace = airspace;
     this.audit = audit;
@@ -63,7 +58,7 @@ public class ProspectiveCustomerReviewService {
     requireAdmin(adminId);
     ProspectiveCustomerRegistration registration = requirePending(registrationId);
     User prospect = users.findDetailedById(registration.getUserId()).orElseThrow(this::notFound);
-    if (prospect.getActorZone() != ActorZone.PROSPECT_CUSTOMER
+    if (prospect.getActorZone() != ActorZone.CUSTOMER
         || prospect.getStatus() != com.smartdroneinspection.users.domain.enums.UserStatus.DISABLED
         || !prospect.roleValues().contains("CUSTOMER")) {
       throw new AuthException(
@@ -87,28 +82,14 @@ public class ProspectiveCustomerReviewService {
           "AIRSPACE_REVIEW_NOTE_REQUIRED",
           "Manual review details are required for non-clear or unavailable airspace data.");
     }
-    if (organizations
-        .findByRegistrationCodeIgnoreCase(registration.getOrganizationCode())
-        .isPresent()) {
-      throw new AuthException(
-          HttpStatus.CONFLICT,
-          "ORGANIZATION_CODE_ALREADY_EXISTS",
-          "Organization code is already in use.");
-    }
     if (registrations.existsByOrganizationCodeIgnoreCaseAndAssetCodeIgnoreCaseAndStatus(
         registration.getOrganizationCode(), registration.getAssetCode(), "APPROVED")) {
       throw new AuthException(
           HttpStatus.CONFLICT, "ASSET_CODE_ALREADY_EXISTS", "Asset code is already registered.");
     }
-    Organization organization =
-        organizations.saveAndFlush(
-            new Organization(
-                registration.getOrganizationName(), registration.getOrganizationCode(), null));
-    prospect.approveAsCustomer(organization.getId());
-    organizations.saveAndFlush(organization);
+    prospect.approveAsCustomer();
     events.publishEvent(
         new CustomerRegistrationEvent(
-            organization.getId(),
             prospect.getId(),
             registration.getAssetCategoryId(),
             registration.getAssetCode(),
@@ -117,7 +98,9 @@ public class ProspectiveCustomerReviewService {
             registration.getAssetLocation(),
             registration.getLatitude(),
             registration.getLongitude(),
-            registration.getOwnershipInformation()));
+            registration.getOwnershipInformation(),
+            null,
+            null));
     registration.approve(adminId, request.reviewNote());
     registrations.saveAndFlush(registration);
     audit.record(

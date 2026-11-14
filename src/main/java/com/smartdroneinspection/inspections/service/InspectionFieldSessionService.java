@@ -1,5 +1,8 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
+import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
@@ -34,6 +37,7 @@ public class InspectionFieldSessionService {
   private final EntityManager entityManager;
   private final ObjectProvider<ReportContextAccess> reportContextAccessProvider;
   private final ApplicationEventPublisher eventPublisher;
+  private final ObjectProvider<DroneRepository> dronesProvider;
 
   private static final String SESSION_SCOPE_DENIED = "SESSION_SCOPE_DENIED";
   private static final String SESSION_NOT_FOUND = "SESSION_NOT_FOUND";
@@ -45,7 +49,24 @@ public class InspectionFieldSessionService {
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
-    this(inspections, sessions, userAccess, entityManager, null, null);
+    this(inspections, sessions, userAccess, entityManager, null, null, null);
+  }
+
+  public InspectionFieldSessionService(
+      InspectionRepository inspections,
+      FieldSessionRepository sessions,
+      UserAccess userAccess,
+      EntityManager entityManager,
+      ObjectProvider<ReportContextAccess> reportContextAccessProvider,
+      ApplicationEventPublisher eventPublisher) {
+    this(
+        inspections,
+        sessions,
+        userAccess,
+        entityManager,
+        reportContextAccessProvider,
+        eventPublisher,
+        null);
   }
 
   @Autowired
@@ -55,19 +76,20 @@ public class InspectionFieldSessionService {
       UserAccess userAccess,
       EntityManager entityManager,
       ObjectProvider<ReportContextAccess> reportContextAccessProvider,
-      ApplicationEventPublisher eventPublisher) {
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<DroneRepository> dronesProvider) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.userAccess = userAccess;
     this.entityManager = entityManager;
     this.reportContextAccessProvider = reportContextAccessProvider;
     this.eventPublisher = eventPublisher;
+    this.dronesProvider = dronesProvider;
   }
 
   @Transactional
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
-    boolean partnerAssignment = isInspectorPartner(inspectorId);
-    UUID organizationId = requireInspectorOrganization(inspectorId, partnerAssignment);
+    requireInspector(inspectorId);
     userAccess
         .findActiveUser(inspectorId)
         .ifPresent(
@@ -85,8 +107,7 @@ public class InspectionFieldSessionService {
           "Record the completed pre-flight checklist before starting the session.");
     }
 
-    Inspection inspection =
-        lockInspection(inspectionId, organizationId, inspectorId, partnerAssignment);
+    Inspection inspection = lockInspection(inspectionId, inspectorId);
     if (!inspection.isInspectedBy(inspectorId)) {
       throw sessionFailure(SESSION_SCOPE_DENIED, "This inspection is not assigned to you.");
     }
@@ -107,6 +128,25 @@ public class InspectionFieldSessionService {
       throw sessionFailure(
           "FLIGHT_PERMIT_REQUIRED",
           "A flight permit must be uploaded before starting the field session.");
+    }
+    if (dronesProvider != null && inspection.getDroneId() != null) {
+      DroneRepository droneRepo = dronesProvider.getIfAvailable();
+      if (droneRepo != null) {
+        Drone drone = droneRepo.findById(inspection.getDroneId()).orElse(null);
+        if (drone != null) {
+          if (drone.getServiceability() != DroneServiceability.ACTIVE) {
+            throw sessionFailure(
+                "INVALID_DRONE",
+                "Cannot start field work because the assigned drone is no longer active.");
+          }
+          if (drone.getRegistrationExpiresAt() != null
+              && !drone.getRegistrationExpiresAt().isAfter(Instant.now())) {
+            throw sessionFailure(
+                "DRONE_REGISTRATION_EXPIRED",
+                "Cannot start field work because the assigned drone registration has expired.");
+          }
+        }
+      }
     }
     if (inspection.getStatus() != InspectionStatus.SCHEDULED
         && inspection.getStatus() != InspectionStatus.FIELD_COMPLETED) {
@@ -137,12 +177,10 @@ public class InspectionFieldSessionService {
         actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.CUSTOMER);
 
     if (!isReviewer) {
-      boolean partnerAssignment = isInspectorPartner(actorId);
-      UUID organizationId = requireInspectorOrganization(actorId, partnerAssignment);
+      requireInspector(actorId);
       Inspection inspection =
           inspections
-              .findAssignedInspectorInspection(
-                  inspectionId, organizationId, actorId, partnerAssignment)
+              .findAssignedByInspector(inspectionId, actorId)
               .orElseThrow(
                   () ->
                       new BusinessException(
@@ -163,8 +201,8 @@ public class InspectionFieldSessionService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
-    if (actor.organizationId() != null
-        && !actor.organizationId().equals(inspection.getOrganizationId())) {
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "INSPECTION_SCOPE_DENIED", "Access denied");
     }
     return sessions.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
@@ -172,11 +210,8 @@ public class InspectionFieldSessionService {
 
   @Transactional
   public FieldSession abort(UUID inspectorId, UUID inspectionId, UUID sessionId, String reason) {
-    boolean partnerAssignment = isInspectorPartner(inspectorId);
-    UUID organizationId = requireInspectorOrganization(inspectorId, partnerAssignment);
-    FieldSession session =
-        requireOwnedOpenSession(
-            inspectionId, sessionId, organizationId, inspectorId, partnerAssignment);
+    requireInspector(inspectorId);
+    FieldSession session = requireOwnedOpenSession(inspectionId, sessionId, inspectorId);
 
     try {
       session.abort(reason);
@@ -186,12 +221,13 @@ public class InspectionFieldSessionService {
       throw new BusinessException(
           HttpStatus.CONFLICT, SESSION_NOT_IN_PROGRESS, exception.getMessage());
     }
-    FieldSession savedSession =
-        reopenInspection(session, organizationId, inspectorId, partnerAssignment);
+    FieldSession savedSession = reopenInspection(session, inspectorId);
     if (eventPublisher != null) {
+      Inspection inspection = inspections.findById(inspectionId).orElse(null);
+      UUID ownerCustomerId = inspection == null ? null : inspection.getOwnerCustomerId();
       eventPublisher.publishEvent(
           new FieldSessionAbortedEvent(
-              inspectionId, organizationId, sessionId, inspectorId, reason, Instant.now()));
+              inspectionId, ownerCustomerId, sessionId, inspectorId, reason, Instant.now()));
     }
     return savedSession;
   }
@@ -203,10 +239,8 @@ public class InspectionFieldSessionService {
       throw sessionFailure(
           "SESSION_OUTCOME_REQUIRED", "Record the completed field-session outcome.");
     }
-    boolean partnerAssignment = isInspectorPartner(inspectorId);
-    UUID organizationId = requireInspectorOrganization(inspectorId, partnerAssignment);
-    Inspection inspection =
-        lockInspection(inspectionId, organizationId, inspectorId, partnerAssignment);
+    requireInspector(inspectorId);
+    Inspection inspection = lockInspection(inspectionId, inspectorId);
     if (!inspection.isInspectedBy(inspectorId)) {
       throw sessionFailure(SESSION_SCOPE_DENIED, "This inspection is not assigned to you.");
     }
@@ -257,7 +291,7 @@ public class InspectionFieldSessionService {
       if (contextAccess != null) {
         var identity =
             contextAccess.find(
-                inspection.getOrganizationId(), inspection.getAssetId(), inspection.getDroneId());
+                inspection.getOwnerCustomerId(), inspection.getAssetId(), inspection.getDroneId());
         if (identity.isPresent()) {
           var id = identity.get();
           if (id.assetName() != null && !id.assetName().isBlank()) {
@@ -315,7 +349,7 @@ public class InspectionFieldSessionService {
         new FieldSessionCompletedEvent(
             inspection.getId(),
             session.getId(),
-            inspection.getOrganizationId(),
+            inspection.getOwnerCustomerId(),
             inspection.getInspectorId(),
             inspection.getDroneId(),
             inspection.getAssetId(),
@@ -331,11 +365,9 @@ public class InspectionFieldSessionService {
             droneSerialNumber));
   }
 
-  private FieldSession reopenInspection(
-      FieldSession session, UUID organizationId, UUID inspectorId, boolean partnerAssignment) {
+  private FieldSession reopenInspection(FieldSession session, UUID inspectorId) {
     inspections
-        .findAssignedInspectorInspectionWithLock(
-            session.getInspectionId(), organizationId, inspectorId, partnerAssignment)
+        .findAssignedByInspectorWithLock(session.getInspectionId(), inspectorId)
         .ifPresent(
             inspection -> {
               if (inspection.getStatus() == InspectionStatus.IN_PROGRESS) {
@@ -357,15 +389,10 @@ public class InspectionFieldSessionService {
   }
 
   private FieldSession requireOwnedOpenSession(
-      UUID inspectionId,
-      UUID sessionId,
-      UUID organizationId,
-      UUID inspectorId,
-      boolean partnerAssignment) {
+      UUID inspectionId, UUID sessionId, UUID inspectorId) {
     Inspection inspection =
         inspections
-            .findAssignedInspectorInspection(
-                inspectionId, organizationId, inspectorId, partnerAssignment)
+            .findAssignedByInspector(inspectionId, inspectorId)
             .orElseThrow(() -> sessionFailure(SESSION_NOT_FOUND, FIELD_SESSION_NOT_FOUND));
     FieldSession session =
         sessions
@@ -377,12 +404,10 @@ public class InspectionFieldSessionService {
     return session;
   }
 
-  private Inspection lockInspection(
-      UUID inspectionId, UUID organizationId, UUID inspectorId, boolean partnerAssignment) {
+  private Inspection lockInspection(UUID inspectionId, UUID inspectorId) {
     Inspection inspection =
         inspections
-            .findAssignedInspectorInspectionWithLock(
-                inspectionId, organizationId, inspectorId, partnerAssignment)
+            .findAssignedByInspectorWithLock(inspectionId, inspectorId)
             .orElseThrow(
                 () ->
                     new BusinessException(
@@ -391,28 +416,16 @@ public class InspectionFieldSessionService {
     return inspection;
   }
 
-  private UUID requireInspectorOrganization(UUID inspectorId, boolean partnerAssignment) {
-    UserAccess.ActiveUser user =
-        userAccess
-            .findActiveUser(inspectorId)
-            .filter(candidate -> candidate.hasRole(Roles.INSPECTOR))
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.FORBIDDEN,
-                        SESSION_SCOPE_DENIED,
-                        "Only an active Inspector may manage a field session."));
-    if (partnerAssignment != user.isInspectorPartner()) {
-      throw sessionFailure(SESSION_SCOPE_DENIED, "Inspector partner scope is not valid.");
-    }
-    return user.organizationId();
-  }
-
-  private boolean isInspectorPartner(UUID inspectorId) {
-    return userAccess
+  private void requireInspector(UUID inspectorId) {
+    userAccess
         .findActiveUser(inspectorId)
-        .map(UserAccess.ActiveUser::isInspectorPartner)
-        .orElse(false);
+        .filter(candidate -> candidate.hasRole(Roles.INSPECTOR))
+        .orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.FORBIDDEN,
+                    SESSION_SCOPE_DENIED,
+                    "Only an active Inspector may manage a field session."));
   }
 
   private static BusinessException sessionFailure(String code, String detail) {

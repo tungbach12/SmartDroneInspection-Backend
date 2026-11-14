@@ -30,17 +30,17 @@ import org.hibernate.type.SqlTypes;
     name = "drones",
     uniqueConstraints =
         @UniqueConstraint(
-            name = "uq_drones_organization_serial",
-            columnNames = {"organization_id", "serial_number"}))
+            name = "uq_drones_owner_customer_serial",
+            columnNames = {"owner_customer_id", "serial_number"}))
 public class Drone {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id")
-  private UUID organizationId;
-
   @Column(name = "inspector_owner_id")
   private UUID inspectorOwnerId;
+
+  @Column(name = "owner_customer_id")
+  private UUID ownerCustomerId;
 
   @Column(name = "serial_number", nullable = false, length = 128)
   private String serialNumber;
@@ -78,6 +78,9 @@ public class Drone {
   @Column(name = "max_wind_resistance_mps", precision = 4, scale = 1)
   private BigDecimal maxWindResistanceMps;
 
+  @Column(name = "max_altitude_meters", precision = 8, scale = 1)
+  private BigDecimal maxAltitudeMeters;
+
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
 
@@ -107,22 +110,22 @@ public class Drone {
 
   protected Drone() {}
 
-  public Drone(UUID organizationId, String serialNumber) {
-    this(organizationId, serialNumber, null, null, null, DroneServiceability.ACTIVE);
+  public Drone(UUID ownerCustomerId, String serialNumber) {
+    this(ownerCustomerId, serialNumber, null, null, null, DroneServiceability.ACTIVE);
   }
 
   public Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability) {
-    this(organizationId, serialNumber, model, manufacturer, payloadMetadata, serviceability, null);
+    this(ownerCustomerId, serialNumber, model, manufacturer, payloadMetadata, serviceability, null);
   }
 
   public Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
@@ -132,21 +135,23 @@ public class Drone {
       String registrationNumber,
       String registrationFileKey,
       Instant registrationExpiresAt) {
-    this(organizationId, serialNumber, model, manufacturer, payloadMetadata, serviceability, notes);
+    this(
+        ownerCustomerId, serialNumber, model, manufacturer, payloadMetadata, serviceability, notes);
     this.registrationNumber = registrationNumber;
     this.registrationFileKey = registrationFileKey;
     this.registrationExpiresAt = registrationExpiresAt;
   }
 
   public Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
       String payloadMetadata,
       DroneServiceability serviceability,
       String notes) {
-    this.organizationId = Objects.requireNonNull(organizationId, "Drone organization is required");
+    this.ownerCustomerId =
+        Objects.requireNonNull(ownerCustomerId, "Drone owner customer is required");
     if (serialNumber == null || serialNumber.isBlank()) {
       throw new IllegalArgumentException("Drone serial number must not be blank");
     }
@@ -162,7 +167,7 @@ public class Drone {
   }
 
   private Drone(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID inspectorOwnerId,
       String serialNumber,
       String model,
@@ -170,13 +175,13 @@ public class Drone {
       String registrationNumber,
       String registrationFileKey,
       Instant registrationExpiresAt) {
-    if ((organizationId == null) == (inspectorOwnerId == null)) {
+    if ((ownerCustomerId == null) == (inspectorOwnerId == null)) {
       throw new IllegalArgumentException("Exactly one Drone owner scope is required.");
     }
     if (serialNumber == null || serialNumber.isBlank()) {
       throw new IllegalArgumentException("Drone serial number must not be blank.");
     }
-    this.organizationId = organizationId;
+    this.ownerCustomerId = ownerCustomerId;
     this.inspectorOwnerId = inspectorOwnerId;
     this.serialNumber = serialNumber.trim();
     this.model = model;
@@ -208,8 +213,8 @@ public class Drone {
         registrationExpiresAt);
   }
 
-  public static Drone createOrganizationOwned(
-      UUID organizationId,
+  public static Drone createCustomerOwned(
+      UUID ownerCustomerId,
       String serialNumber,
       String model,
       String manufacturer,
@@ -217,7 +222,7 @@ public class Drone {
       String registrationFileKey,
       Instant registrationExpiresAt) {
     return new Drone(
-        organizationId,
+        ownerCustomerId,
         null,
         serialNumber,
         model,
@@ -231,12 +236,18 @@ public class Drone {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
-  }
-
   public UUID getInspectorOwnerId() {
     return inspectorOwnerId;
+  }
+
+  public UUID getOwnerCustomerId() {
+    return ownerCustomerId;
+  }
+
+  /** Phase 1 bridge: records the owning customer user for organization-owned drones. */
+  public void markCustomerOwned(UUID ownerCustomerId) {
+    this.ownerCustomerId = ownerCustomerId;
+    this.updatedAt = Instant.now();
   }
 
   public String getSerialNumber() {
@@ -291,6 +302,7 @@ public class Drone {
 
   public void applyCapabilitiesAndDocuments(
       BigDecimal maxWindResistanceMps,
+      BigDecimal maxAltitudeMeters,
       String opticalZoomLevel,
       boolean hasThermalCamera,
       boolean hasRtk,
@@ -298,6 +310,7 @@ public class Drone {
       List<String> imageFileKeys,
       List<String> features) {
     this.maxWindResistanceMps = maxWindResistanceMps;
+    this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
     this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
@@ -309,6 +322,10 @@ public class Drone {
 
   public List<String> getFeatures() {
     return features != null ? features : List.of();
+  }
+
+  public boolean hasKnownCapabilityDeclaration() {
+    return features != null;
   }
 
   public List<String> getImageFileKeys() {
@@ -327,8 +344,20 @@ public class Drone {
     return maxWindResistanceMps;
   }
 
+  public BigDecimal getMaxAltitudeMeters() {
+    return maxAltitudeMeters;
+  }
+
   public String getOpticalZoomLevel() {
     return opticalZoomLevel;
+  }
+
+  public boolean hasThermalCamera() {
+    return hasThermalCamera;
+  }
+
+  public boolean hasRtk() {
+    return hasRtk;
   }
 
   public boolean isHasThermalCamera() {
@@ -337,6 +366,27 @@ public class Drone {
 
   public boolean isHasRtk() {
     return hasRtk;
+  }
+
+  public void renewRegistration(
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt) {
+    if (serviceability == DroneServiceability.RETIRED) {
+      throw new IllegalStateException("Retired drones cannot renew registration");
+    }
+    if (model != null && !model.isBlank()) {
+      this.model = model;
+    }
+    if (manufacturer != null && !manufacturer.isBlank()) {
+      this.manufacturer = manufacturer;
+    }
+    this.registrationNumber = registrationNumber;
+    this.registrationFileKey = registrationFileKey;
+    this.registrationExpiresAt = registrationExpiresAt;
+    this.updatedAt = Instant.now();
   }
 
   public Instant getCreatedAt() {
@@ -410,13 +460,21 @@ public class Drone {
     return mtow != null && mtow >= 2.0;
   }
 
+  public boolean hasKnownMtow() {
+    Double mtow = resolveMtowKg();
+    return mtow != null && mtow > 0;
+  }
+
   /**
    * Classifies this airframe into one of the 5 statutory MTOW categories under Article 4 of Decree
    * 288/2025/ND-CP (`CATEGORY_1` through `CATEGORY_5`).
    */
   public String resolveLegalCategory() {
     Double mtow = resolveMtowKg();
-    double effectiveMtow = mtow != null && mtow > 0 ? mtow : 0.92;
+    if (mtow == null || mtow <= 0) {
+      return "UNKNOWN";
+    }
+    double effectiveMtow = mtow;
     if (effectiveMtow < 0.25) {
       return "CATEGORY_1";
     }

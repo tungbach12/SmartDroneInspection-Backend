@@ -24,8 +24,8 @@ public class ServiceRequest {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
+  @Column(name = "owner_customer_id", nullable = false)
+  private UUID ownerCustomerId;
 
   @Column(name = "asset_id", nullable = false)
   private UUID assetId;
@@ -103,7 +103,7 @@ public class ServiceRequest {
   protected ServiceRequest() {}
 
   public ServiceRequest(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID assetId,
       UUID createdByUserId,
       String description,
@@ -117,8 +117,8 @@ public class ServiceRequest {
       Integer recurrenceInterval,
       Integer occurrenceCount,
       LocalDate recurrenceEndDate) {
-    if (organizationId == null || assetId == null || createdByUserId == null) {
-      throw new IllegalArgumentException("Request organization, asset, and creator are required");
+    if (ownerCustomerId == null || assetId == null || createdByUserId == null) {
+      throw new IllegalArgumentException("Request owner, asset, and creator are required");
     }
     if (requestedFrom == null || requestedUntil == null || requestedUntil.isBefore(requestedFrom)) {
       throw new IllegalArgumentException("Requested date range is invalid");
@@ -175,7 +175,7 @@ public class ServiceRequest {
         throw new IllegalArgumentException("Recurrence end date must not precede requested start");
       }
     }
-    this.organizationId = organizationId;
+    this.ownerCustomerId = ownerCustomerId;
     this.assetId = assetId;
     this.createdByUserId = createdByUserId;
     this.description = StringUtils.hasText(description) ? description.trim() : "Inspection request";
@@ -195,8 +195,13 @@ public class ServiceRequest {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
+  public UUID getOwnerCustomerId() {
+    return ownerCustomerId;
+  }
+
+  public void markCustomerOwned(UUID ownerCustomerId) {
+    this.ownerCustomerId = ownerCustomerId;
+    this.updatedAt = Instant.now();
   }
 
   public UUID getAssetId() {
@@ -339,17 +344,18 @@ public class ServiceRequest {
   }
 
   private Map<String, Object> acceptedTerms(ServiceRequestQuote quote, Instant at, UUID userId) {
-    return Map.of(
-        "quoteId", quote.getId(),
-        "scopeSnapshot", quote.getScopeSnapshot(),
-        "firstOccurrenceStartAt", quote.getFirstOccurrenceStartAt(),
-        "firstOccurrenceEndAt", quote.getFirstOccurrenceEndAt(),
-        "inspectorId", quote.getInspectorId(),
-        "droneId", quote.getDroneId(),
-        "pricePerOccurrenceVnd", quote.getPricePerOccurrenceVnd(),
-        "issuedByUserId", quote.getIssuedByUserId(),
-        "acceptedAt", at,
-        "acceptedByUserId", userId);
+    return Map.ofEntries(
+        Map.entry("quoteId", quote.getId()),
+        Map.entry("scopeSnapshot", quote.getScopeSnapshot()),
+        Map.entry("firstOccurrenceStartAt", quote.getFirstOccurrenceStartAt()),
+        Map.entry("firstOccurrenceEndAt", quote.getFirstOccurrenceEndAt()),
+        Map.entry("inspectorId", quote.getInspectorId()),
+        Map.entry("droneId", quote.getDroneId()),
+        Map.entry("pricePerOccurrenceVnd", quote.getPricePerOccurrenceVnd()),
+        Map.entry("requiredDroneFeatureCodes", quote.getRequiredDroneFeatureCodes()),
+        Map.entry("issuedByUserId", quote.getIssuedByUserId()),
+        Map.entry("acceptedAt", at),
+        Map.entry("acceptedByUserId", userId));
   }
 
   public void recordSignedContract(String objectKey) {

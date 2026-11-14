@@ -76,7 +76,6 @@ class InspectionFinanceApiIntegrationTest {
 
   private MockMvc mockMvc;
 
-  private UUID orgId;
   private UUID customerUserId;
   private UUID managerUserId;
   private UUID adminUserId;
@@ -95,16 +94,6 @@ class InspectionFinanceApiIntegrationTest {
     jdbcTemplate.execute("DELETE FROM service_requests");
     jdbcTemplate.execute("DELETE FROM service_request_quotes");
 
-    // Organization
-    orgId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, display_name, registration_code, status)
-        VALUES (?, 'Finance Ltd', ?, 'ACTIVE')
-        """,
-        orgId,
-        "ORG-" + orgId.toString().substring(0, 18));
-
     // Platform Admin & Manager
     adminUserId =
         createPlatformUser(
@@ -118,18 +107,16 @@ class InspectionFinanceApiIntegrationTest {
     // Customer User in Organization
     customerUserId =
         createUser(
-            orgId,
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.CUSTOMER,
             "customer." + UUID.randomUUID() + "@finance.test",
             "Customer OrgAdmin");
 
     // Partner Inspector
     inspectorUserId =
         createUser(
-            null,
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR_PARTNER,
+            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@partner.test",
             "Partner Pilot");
     jdbcTemplate.update(
@@ -189,7 +176,7 @@ class InspectionFinanceApiIntegrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                orgId,
+                customerUserId,
                 category.getId(),
                 "BR-FIN-" + UUID.randomUUID().toString().substring(0, 8),
                 "Finance Test Bridge",
@@ -616,7 +603,8 @@ class InspectionFinanceApiIntegrationTest {
 
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(updatedOcc.getPayoutReference()).isNull();
     assertThat(updatedOcc.getPaymentReference()).isEqualTo("BANK-TRANSFER-5555");
     assertThat(updatedOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(updatedOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
@@ -647,6 +635,7 @@ class InspectionFinanceApiIntegrationTest {
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(updatedOcc.getPayoutReference()).isEqualTo("PAYOUT-BANK-8888");
+    assertThat(updatedOcc.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerUserId);
     assertThat(updatedOcc.getPayoutRecordedAt()).isNotNull();
 
     // 4.11 Duplicate payout recording is idempotent
@@ -768,14 +757,13 @@ class InspectionFinanceApiIntegrationTest {
   }
 
   private UUID createPlatformUser(UserRole role, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM, null);
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
 
-  private UUID createUser(
-      UUID organizationId, UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone, organizationId);
+  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

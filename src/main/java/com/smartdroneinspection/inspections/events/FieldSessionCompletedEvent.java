@@ -7,7 +7,7 @@ import java.util.UUID;
 public record FieldSessionCompletedEvent(
     UUID inspectionId,
     UUID sessionId,
-    UUID organizationId,
+    UUID ownerCustomerId,
     UUID inspectorId,
     UUID droneId,
     UUID assetId,

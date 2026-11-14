@@ -24,7 +24,6 @@ import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.repository.OrganizationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -75,7 +74,6 @@ class ConnectedMainFlowE2eIntegrationTest {
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired ObjectMapper objectMapper;
-  @Autowired OrganizationRepository organizations;
   @Autowired UserRepository users;
   @Autowired AssetCategoryRepository categories;
   @Autowired AssetRepository assets;
@@ -107,37 +105,19 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[FOUNDATION] Step 0.1: Setting up Organization, Platform Admin, and Org Admin...");
 
     UUID platformAdminId = createPlatformAdmin();
-    UUID organizationId = UUID.randomUUID();
-    jdbcTemplate.update(
-        """
-        INSERT INTO organizations (id, legal_name, display_name, registration_code, timezone, status)
-        VALUES (?, 'SkyView Infrastructure Ltd', 'SkyView Ltd', ?, 'Asia/Ho_Chi_Minh', 'ACTIVE')
-        """,
-        organizationId,
-        "ORG-" + organizationId.toString().substring(0, 18));
 
     UUID orgAdminId =
         createUser(
-            organizationId,
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
+            ActorZone.CUSTOMER,
             "org.admin." + UUID.randomUUID() + "@skyview.test",
             "John OrgAdmin");
-
-    UUID reviewerId =
-        createUser(
-            organizationId,
-            UserRole.CUSTOMER,
-            ActorZone.CUSTOMER_ORGANIZATION,
-            "reviewer." + UUID.randomUUID() + "@skyview.test",
-            "Alice Reviewer");
 
     log.info("[FOUNDATION] Step 0.3: Provisioning Inspector...");
     UUID inspectorId =
         createUser(
-            null,
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR_PARTNER,
+            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@skyview.test",
             "David Inspector");
     jdbcTemplate.update(
@@ -145,7 +125,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         inspectorId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
-        Instant.now().plus(365, ChronoUnit.DAYS),
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
         "licenses/pilot-cert.pdf");
 
     // =========================================================================
@@ -176,7 +156,7 @@ class ConnectedMainFlowE2eIntegrationTest {
     Asset asset =
         assets.saveAndFlush(
             new Asset(
-                organizationId,
+                orgAdminId,
                 category.getId(),
                 "BR-E2E-" + UUID.randomUUID().toString().substring(0, 8),
                 "Thu Thiem River Bridge",
@@ -187,6 +167,8 @@ class ConnectedMainFlowE2eIntegrationTest {
                 null,
                 List.of("Girder G4", "Pier 2", "Main stay cables"),
                 orgAdminId));
+    asset.markCustomerOwned(orgAdminId);
+    asset = assets.saveAndFlush(asset);
     UUID assetId = asset.getId();
 
     log.info(
@@ -206,7 +188,6 @@ class ConnectedMainFlowE2eIntegrationTest {
                 .with(principal(platformAdminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("inspectorUserId", inspectorId))))
-        .andDo(org.springframework.test.web.servlet.result.MockMvcResultHandlers.print())
         .andExpect(status().isCreated());
     mockMvc
         .perform(
@@ -476,19 +457,9 @@ class ConnectedMainFlowE2eIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .param("approve", "true")
-                .with(principal(reviewerId, "CUSTOMER")))
+                .with(principal(orgAdminId, "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("APPROVED"));
-
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
-                    inspectionId,
-                    reportVersionId)
-                .with(principal(reviewerId, "CUSTOMER")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"));
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
         .isEqualTo(InspectionStatus.COMPLETED);
@@ -507,15 +478,13 @@ class ConnectedMainFlowE2eIntegrationTest {
             "Platform Administrator",
             null,
             UserStatus.ACTIVE,
-            ActorZone.PLATFORM,
-            null);
+            ActorZone.PLATFORM);
     admin.addRole(UserRole.MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 
-  private UUID createUser(
-      UUID organizationId, UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone, organizationId);
+  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

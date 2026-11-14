@@ -92,7 +92,6 @@ class ReportServiceReviewerScopeTest {
         new UserAccess.ActiveUser(
             managerId,
             Set.of(Roles.MANAGER),
-            null,
             "PLATFORM",
             "Platform Manager",
             "manager@platform.test",
@@ -168,7 +167,6 @@ class ReportServiceReviewerScopeTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.MANAGER, Roles.INSPECTOR),
-            null,
             "PLATFORM",
             "Inspector Manager",
             "inspector@platform.test",
@@ -199,8 +197,7 @@ class ReportServiceReviewerScopeTest {
         new UserAccess.ActiveUser(
             customerId,
             Set.of(Roles.CUSTOMER),
-            orgId,
-            "CUSTOMER_ORGANIZATION",
+            "CUSTOMER",
             "Customer Client",
             "client@asset.test",
             null,
@@ -234,8 +231,7 @@ class ReportServiceReviewerScopeTest {
         new UserAccess.ActiveUser(
             customerId,
             Set.of(Roles.CUSTOMER),
-            orgId,
-            "CUSTOMER_ORGANIZATION",
+            "CUSTOMER",
             "Customer Client",
             "client@asset.test",
             null,

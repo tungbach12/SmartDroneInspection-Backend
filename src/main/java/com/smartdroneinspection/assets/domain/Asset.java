@@ -29,7 +29,7 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Table(
     name = "assets",
-    uniqueConstraints = @UniqueConstraint(columnNames = {"organization_id", "asset_code"}))
+    uniqueConstraints = @UniqueConstraint(columnNames = {"owner_customer_id", "asset_code"}))
 public class Asset {
 
   private static final BigDecimal MINIMUM_LATITUDE = BigDecimal.valueOf(-90);
@@ -39,8 +39,8 @@ public class Asset {
 
   @Id @GeneratedValue private UUID id;
 
-  @Column(name = "organization_id", nullable = false)
-  private UUID organizationId;
+  @Column(name = "owner_customer_id", nullable = false)
+  private UUID ownerCustomerId;
 
   @Column(name = "category_id", nullable = false)
   private UUID categoryId;
@@ -67,6 +67,12 @@ public class Asset {
   @Column(name = "technical_profile", columnDefinition = "jsonb")
   @JdbcTypeCode(SqlTypes.JSON)
   private String ownershipInformation;
+
+  @Column(name = "structure_height_meters", precision = 8, scale = 2)
+  private BigDecimal structureHeightMeters;
+
+  @Column(name = "footprint_area_square_meters", precision = 12, scale = 2)
+  private BigDecimal footprintAreaSquareMeters;
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "inspection_items", columnDefinition = "jsonb", nullable = false)
@@ -97,7 +103,7 @@ public class Asset {
   protected Asset() {}
 
   public Asset(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID categoryId,
       String code,
       String name,
@@ -108,8 +114,41 @@ public class Asset {
       String ownershipInformation,
       List<String> inspectionItems,
       UUID createdByUserId) {
+    this(
+        ownerCustomerId,
+        categoryId,
+        code,
+        name,
+        description,
+        locationText,
+        latitude,
+        longitude,
+        ownershipInformation,
+        inspectionItems,
+        null,
+        null,
+        createdByUserId);
+  }
+
+  public Asset(
+      UUID ownerCustomerId,
+      UUID categoryId,
+      String code,
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      List<String> inspectionItems,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
+      UUID createdByUserId) {
     validateCoordinates(latitude, longitude);
-    this.organizationId = organizationId;
+    validateDimension(structureHeightMeters, "Structure height");
+    validateDimension(footprintAreaSquareMeters, "Footprint area");
+    this.ownerCustomerId =
+        java.util.Objects.requireNonNull(ownerCustomerId, "Asset owner customer is required");
     this.categoryId = categoryId;
     this.code = normalizeCode(code);
     this.name = name;
@@ -118,6 +157,8 @@ public class Asset {
     this.latitude = latitude;
     this.longitude = longitude;
     this.ownershipInformation = ownershipInformation;
+    this.structureHeightMeters = structureHeightMeters;
+    this.footprintAreaSquareMeters = footprintAreaSquareMeters;
     setInspectionItems(inspectionItems);
     this.status = AssetStatus.ACTIVE;
     this.createdAt = Instant.now();
@@ -125,7 +166,7 @@ public class Asset {
   }
 
   public Asset(
-      UUID organizationId,
+      UUID ownerCustomerId,
       UUID categoryId,
       String code,
       String name,
@@ -136,7 +177,7 @@ public class Asset {
       String ownershipInformation,
       UUID createdByUserId) {
     this(
-        organizationId,
+        ownerCustomerId,
         categoryId,
         code,
         name,
@@ -165,8 +206,24 @@ public class Asset {
     return location.append('}').toString();
   }
 
+  private String getLocationLabel() {
+    if (locationText == null || locationText.isBlank()) return null;
+    try {
+      var node = JSON_MAPPER.readTree(locationText);
+      var label = node.get("label");
+      return label == null || label.isNull() ? null : label.asText();
+    } catch (Exception ignored) {
+      return locationText;
+    }
+  }
+
   private static String escapeJson(String value) {
     return value.replace("\\", "\\\\").replace("\"", "\\\"");
+  }
+
+  public void removeDocument(AssetDocument document) {
+    documents.remove(document);
+    updatedAt = Instant.now();
   }
 
   public AssetDocument addDocument(
@@ -219,18 +276,93 @@ public class Asset {
       BigDecimal latitude,
       BigDecimal longitude,
       String ownershipInformation,
-      List<String> inspectionItems) {
+      List<String> inspectionItems,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
+      boolean clearCoordinates,
+      boolean clearStructureHeight,
+      boolean clearFootprintArea,
+      boolean clearDescription) {
     validateCoordinates(latitude, longitude);
+    validateDimension(structureHeightMeters, "Structure height");
+    validateDimension(footprintAreaSquareMeters, "Footprint area");
     if (name != null) this.name = name;
-    if (description != null) this.description = description;
-    if (locationText != null) this.locationText = toLocationJson(locationText, latitude, longitude);
-    if (latitude != null) this.latitude = latitude;
-    if (longitude != null) this.longitude = longitude;
+    if (clearDescription) this.description = null;
+    else if (description != null) this.description = description;
+    if (clearCoordinates) {
+      this.latitude = null;
+      this.longitude = null;
+    } else {
+      if (latitude != null) this.latitude = latitude;
+      if (longitude != null) this.longitude = longitude;
+    }
+    if (locationText != null || clearCoordinates) {
+      this.locationText =
+          toLocationJson(
+              locationText != null ? locationText : getLocationLabel(),
+              clearCoordinates ? null : (latitude != null ? latitude : this.latitude),
+              clearCoordinates ? null : (longitude != null ? longitude : this.longitude));
+    }
     if (ownershipInformation != null) this.ownershipInformation = ownershipInformation;
+    if (clearStructureHeight) this.structureHeightMeters = null;
+    else if (structureHeightMeters != null) this.structureHeightMeters = structureHeightMeters;
+    if (clearFootprintArea) this.footprintAreaSquareMeters = null;
+    else if (footprintAreaSquareMeters != null)
+      this.footprintAreaSquareMeters = footprintAreaSquareMeters;
     if (inspectionItems != null) {
       setInspectionItems(inspectionItems);
     }
     updatedAt = Instant.now();
+  }
+
+  public void update(
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      List<String> inspectionItems,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters) {
+    update(
+        name,
+        description,
+        locationText,
+        latitude,
+        longitude,
+        ownershipInformation,
+        inspectionItems,
+        structureHeightMeters,
+        footprintAreaSquareMeters,
+        false,
+        false,
+        false,
+        false);
+  }
+
+  public void update(
+      String name,
+      String description,
+      String locationText,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      List<String> inspectionItems) {
+    update(
+        name,
+        description,
+        locationText,
+        latitude,
+        longitude,
+        ownershipInformation,
+        inspectionItems,
+        null,
+        null,
+        false,
+        false,
+        false,
+        false);
   }
 
   public void update(
@@ -273,8 +405,13 @@ public class Asset {
     return id;
   }
 
-  public UUID getOrganizationId() {
-    return organizationId;
+  public UUID getOwnerCustomerId() {
+    return ownerCustomerId;
+  }
+
+  public void markCustomerOwned(UUID ownerCustomerId) {
+    this.ownerCustomerId = ownerCustomerId;
+    this.updatedAt = Instant.now();
   }
 
   public String getCode() {
@@ -309,6 +446,18 @@ public class Asset {
     return longitude;
   }
 
+  public String getOwnershipInformation() {
+    return ownershipInformation;
+  }
+
+  public BigDecimal getStructureHeightMeters() {
+    return structureHeightMeters;
+  }
+
+  public BigDecimal getFootprintAreaSquareMeters() {
+    return footprintAreaSquareMeters;
+  }
+
   public Instant getCreatedAt() {
     return createdAt;
   }
@@ -325,6 +474,12 @@ public class Asset {
 
   private static String normalizeCode(String value) {
     return value.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private static void validateDimension(BigDecimal value, String label) {
+    if (value != null && value.signum() < 0) {
+      throw new IllegalArgumentException(label + " must not be negative");
+    }
   }
 
   private static void validateCoordinates(BigDecimal latitude, BigDecimal longitude) {

@@ -49,6 +49,12 @@ public class ProspectiveCustomerRegistration {
   @Column(name = "ownership_information", length = 1000)
   private String ownershipInformation;
 
+  @Column(name = "structure_height_meters", precision = 8, scale = 2)
+  private BigDecimal structureHeightMeters;
+
+  @Column(name = "footprint_area_square_meters", precision = 12, scale = 2)
+  private BigDecimal footprintAreaSquareMeters;
+
   @Column(nullable = false, length = 32)
   private String status;
 
@@ -85,6 +91,8 @@ public class ProspectiveCustomerRegistration {
       BigDecimal latitude,
       BigDecimal longitude,
       String ownershipInformation,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
       String airspaceClassification) {
     this.userId = userId;
     this.organizationName = organizationName;
@@ -97,6 +105,8 @@ public class ProspectiveCustomerRegistration {
     this.latitude = latitude;
     this.longitude = longitude;
     this.ownershipInformation = ownershipInformation;
+    this.structureHeightMeters = structureHeightMeters;
+    this.footprintAreaSquareMeters = footprintAreaSquareMeters;
     this.airspaceClassification = airspaceClassification;
     this.status = "PENDING";
     this.createdAt = Instant.now();
@@ -108,6 +118,70 @@ public class ProspectiveCustomerRegistration {
 
   public void reject(UUID reviewerId, String note) {
     review("REJECTED", reviewerId, note);
+  }
+
+  public void resubmit(
+      String organizationName,
+      String organizationCode,
+      UUID assetCategoryId,
+      String assetCode,
+      String assetName,
+      String assetDescription,
+      String assetLocation,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      String airspaceClassification) {
+    resubmit(
+        organizationName,
+        organizationCode,
+        assetCategoryId,
+        assetCode,
+        assetName,
+        assetDescription,
+        assetLocation,
+        latitude,
+        longitude,
+        ownershipInformation,
+        null,
+        null,
+        airspaceClassification);
+  }
+
+  public void resubmit(
+      String organizationName,
+      String organizationCode,
+      UUID assetCategoryId,
+      String assetCode,
+      String assetName,
+      String assetDescription,
+      String assetLocation,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
+      String airspaceClassification) {
+    if (!"REJECTED".equals(status)) {
+      throw new IllegalStateException("Only rejected registrations may be resubmitted.");
+    }
+    this.organizationName = organizationName;
+    this.organizationCode = organizationCode;
+    this.assetCategoryId = assetCategoryId;
+    this.assetCode = assetCode;
+    this.assetName = assetName;
+    this.assetDescription = assetDescription;
+    this.assetLocation = assetLocation;
+    this.latitude = latitude;
+    this.longitude = longitude;
+    this.ownershipInformation = ownershipInformation;
+    this.structureHeightMeters = structureHeightMeters;
+    this.footprintAreaSquareMeters = footprintAreaSquareMeters;
+    this.airspaceClassification = airspaceClassification;
+    this.status = "PENDING";
+    this.reviewNote = null;
+    this.reviewedByUserId = null;
+    this.reviewedAt = null;
   }
 
   private void review(String nextStatus, UUID reviewerId, String note) {
@@ -166,6 +240,14 @@ public class ProspectiveCustomerRegistration {
 
   public String getOwnershipInformation() {
     return ownershipInformation;
+  }
+
+  public BigDecimal getStructureHeightMeters() {
+    return structureHeightMeters;
+  }
+
+  public BigDecimal getFootprintAreaSquareMeters() {
+    return footprintAreaSquareMeters;
   }
 
   public String getStatus() {
