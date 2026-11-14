@@ -52,6 +52,7 @@ class InspectionManagerDispatchApiIntegrationTest {
   @Autowired DroneRepository drones;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired jakarta.persistence.EntityManager entityManager;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
   private MockMvc mockMvc;
@@ -91,6 +92,13 @@ class InspectionManagerDispatchApiIntegrationTest {
             ActorZone.INSPECTOR);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        inspectorId,
+        "LIC-DISP-01",
+        "CLASS_B",
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        "licenses/pilot1.pdf");
 
     User inspector2 =
         new User(
@@ -101,6 +109,13 @@ class InspectionManagerDispatchApiIntegrationTest {
             ActorZone.INSPECTOR);
     inspector2.addRole(UserRole.INSPECTOR);
     newInspectorId = users.saveAndFlush(inspector2).getId();
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        newInspectorId,
+        "LIC-DISP-02",
+        "CLASS_B",
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        "licenses/pilot2.pdf");
 
     AssetCategory category =
         categories.saveAndFlush(
@@ -124,7 +139,21 @@ class InspectionManagerDispatchApiIntegrationTest {
                     managerId))
             .getId();
 
-    droneId = drones.saveAndFlush(new Drone(managerId, "DISP-DRONE-" + UUID.randomUUID())).getId();
+    droneId =
+        drones
+            .saveAndFlush(
+                new Drone(
+                    managerId,
+                    "DISP-DRONE-" + UUID.randomUUID(),
+                    "Mavic 3",
+                    "DJI",
+                    "{\"mtowKg\":1.05}",
+                    com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE,
+                    null,
+                    "REG-DISP-01",
+                    "drones/reg-disp.pdf",
+                    Instant.now().plus(365, ChronoUnit.DAYS)))
+            .getId();
 
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant end = start.plus(4, ChronoUnit.HOURS);
@@ -237,5 +266,70 @@ class InspectionManagerDispatchApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("reason", "Inspector cancel"))))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void rescheduleRejectsWhenPilotLicenseOrDroneRegistrationExpiresBeforeNewStart()
+      throws Exception {
+    Instant newStart = Instant.now().plus(400, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+    Instant newEnd = newStart.plus(4, ChronoUnit.HOURS);
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/schedule", inspectionId)
+                .with(manager())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "plannedStartAt",
+                            newStart.toString(),
+                            "plannedEndAt",
+                            newEnd.toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("PILOT_LICENSE_EXPIRED"));
+
+    jdbcTemplate.update(
+        "UPDATE inspector_profiles SET pilot_license_expires_at = ? WHERE user_id = ?",
+        java.sql.Timestamp.from(Instant.now().plus(800, ChronoUnit.DAYS)),
+        inspectorId);
+    entityManager.flush();
+    entityManager.clear();
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/schedule", inspectionId)
+                .with(manager())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "plannedStartAt",
+                            newStart.toString(),
+                            "plannedEndAt",
+                            newEnd.toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DRONE_REGISTRATION_EXPIRED"));
+  }
+
+  @Test
+  void reassignRejectsRetainedDroneWhenRegistrationExpired() throws Exception {
+    jdbcTemplate.update(
+        "UPDATE drones SET registration_expires_at = ? WHERE id = ?",
+        java.sql.Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+        droneId);
+    entityManager.flush();
+    entityManager.clear();
+
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/assignment", inspectionId)
+                .with(manager())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("inspectorId", newInspectorId.toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DRONE_REGISTRATION_EXPIRED"));
   }
 }

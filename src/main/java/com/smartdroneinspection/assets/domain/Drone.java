@@ -399,7 +399,30 @@ public class Drone {
 
   /** MF2 assignment eligibility; it is not a permit or flight-readiness decision. */
   public boolean isEligibleForAssignment() {
-    return serviceability == DroneServiceability.ACTIVE;
+    return isEligibleForAssignment(Instant.now());
+  }
+
+  /** Checks current serviceability and registration validity at the requested assignment time. */
+  public boolean isEligibleForAssignment(Instant at) {
+    Instant checkTime = at != null ? at : Instant.now();
+    return serviceability == DroneServiceability.ACTIVE
+        && registrationNumber != null
+        && !registrationNumber.isBlank()
+        && registrationFileKey != null
+        && !registrationFileKey.isBlank()
+        && registrationExpiresAt != null
+        && registrationExpiresAt.isAfter(checkTime);
+  }
+
+  /** True when registration evidence and expiry are present and current at the given instant. */
+  public boolean hasCurrentRegistration(Instant at) {
+    Instant checkTime = at != null ? at : Instant.now();
+    return registrationNumber != null
+        && !registrationNumber.isBlank()
+        && registrationFileKey != null
+        && !registrationFileKey.isBlank()
+        && registrationExpiresAt != null
+        && registrationExpiresAt.isAfter(checkTime);
   }
 
   private static final Pattern MTOW_PATTERN =
@@ -460,6 +483,13 @@ public class Drone {
     return mtow != null && mtow >= 2.0;
   }
 
+  /** Class B is mandatory when the measured/declared MTOW is heavy or unavailable. */
+  public boolean requiresClassBForSafety() {
+    Double mtow = resolveMtowKg();
+    return mtow == null || mtow >= 2.0;
+  }
+
+  /** Explicit MTOW is required for assignment; a guessed legal category is not sufficient. */
   public boolean hasKnownMtow() {
     Double mtow = resolveMtowKg();
     return mtow != null && mtow > 0;

@@ -79,7 +79,12 @@ class Mf2InspectionAssignmentAdapterTest {
     when(drone.getId()).thenReturn(droneId);
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
     when(drone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
+    when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-001");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/drone.pdf");
     when(drone.getRegistrationExpiresAt()).thenReturn(end.plusSeconds(3600));
+    when(drone.isEligibleForAssignment(start)).thenReturn(true);
+    when(drone.hasKnownMtow()).thenReturn(true);
+    when(drone.requiresClassBForSafety()).thenReturn(false);
     when(drones.findWithLockById(droneId)).thenReturn(Optional.of(drone));
     when(inspections.hasPlatformPartnerScheduleConflict(inspectorId, droneId, start, end))
         .thenReturn(false);
@@ -142,7 +147,12 @@ class Mf2InspectionAssignmentAdapterTest {
     when(heavyDrone.getId()).thenReturn(droneId);
     when(heavyDrone.getInspectorOwnerId()).thenReturn(inspectorId);
     when(heavyDrone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
+    when(heavyDrone.getRegistrationNumber()).thenReturn("VN-RPAS-HEAVY");
+    when(heavyDrone.getRegistrationFileKey()).thenReturn("registrations/heavy.pdf");
     when(heavyDrone.getRegistrationExpiresAt()).thenReturn(end.plusSeconds(3600));
+    when(heavyDrone.isEligibleForAssignment(start)).thenReturn(true);
+    when(heavyDrone.hasKnownMtow()).thenReturn(true);
+    when(heavyDrone.requiresClassBForSafety()).thenReturn(true);
     when(heavyDrone.requiresClassBLicense()).thenReturn(true);
     when(drones.findWithLockById(droneId)).thenReturn(Optional.of(heavyDrone));
 

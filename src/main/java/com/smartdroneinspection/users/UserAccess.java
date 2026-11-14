@@ -169,7 +169,10 @@ public interface UserAccess {
       java.time.Instant checkTime = at != null ? at : java.time.Instant.now();
       return pilotLicenseNumber != null
           && !pilotLicenseNumber.isBlank()
-          && (pilotLicenseExpiresAt == null || pilotLicenseExpiresAt.isAfter(checkTime));
+          && pilotLicenseFileKey != null
+          && !pilotLicenseFileKey.isBlank()
+          && pilotLicenseExpiresAt != null
+          && pilotLicenseExpiresAt.isAfter(checkTime);
     }
 
     /**
@@ -177,26 +180,45 @@ public interface UserAccess {
      * under Decree 288/2025/ND-CP Article 27. Explicit Class A ("CLASS_A", "HANG_A", "HẠNG A") is
      * restricted to < 2 kg (Category 2 VLOS) and is rejected for MTOW >= 2 kg.
      */
-    public boolean isLicenseClassQualifiedFor(boolean requiresClassB) {
-      if (!requiresClassB || pilotLicenseClass == null || pilotLicenseClass.isBlank()) {
-        return true;
-      }
-      String norm = pilotLicenseClass.trim().toUpperCase(java.util.Locale.ROOT);
-      if (norm.contains("CLASS_B")
-          || norm.contains("CLASS B")
-          || norm.contains("HẠNG B")
-          || norm.contains("HANG B")
-          || norm.equals("B")) {
-        return true;
-      }
-      if (norm.contains("CLASS_A")
-          || norm.contains("CLASS A")
-          || norm.contains("HẠNG A")
-          || norm.contains("HANG A")
-          || norm.equals("A")) {
+    public boolean hasRecognizedPilotLicenseClass() {
+      if (pilotLicenseClass == null || pilotLicenseClass.isBlank()) {
         return false;
       }
-      return true;
+      String norm = pilotLicenseClass.trim().toUpperCase(java.util.Locale.ROOT);
+      return isClassA(norm) || isClassB(norm);
+    }
+
+    public boolean isLicenseClassQualifiedFor(boolean requiresClassB) {
+      if (!hasRecognizedPilotLicenseClass()) {
+        return false;
+      }
+      if (!requiresClassB) {
+        return true;
+      }
+      return isClassB(pilotLicenseClass.trim().toUpperCase(java.util.Locale.ROOT));
+    }
+
+    /** Applies the conservative class requirement when MTOW is unknown. */
+    public boolean isLicenseClassQualifiedForDrone(boolean mtowKnown, boolean requiresClassB) {
+      return hasRecognizedPilotLicenseClass()
+          && mtowKnown
+          && isLicenseClassQualifiedFor(requiresClassB);
+    }
+
+    private static boolean isClassA(String normalized) {
+      return normalized.equals("CLASS_A")
+          || normalized.equals("CLASS A")
+          || normalized.equals("HẠNG A")
+          || normalized.equals("HANG A")
+          || normalized.equals("A");
+    }
+
+    private static boolean isClassB(String normalized) {
+      return normalized.equals("CLASS_B")
+          || normalized.equals("CLASS B")
+          || normalized.equals("HẠNG B")
+          || normalized.equals("HANG B")
+          || normalized.equals("B");
     }
 
     /**

@@ -11,11 +11,11 @@ import org.junit.jupiter.api.Test;
 class DroneTest {
 
   @Test
-  void aNewDroneStartsActiveAndIsEligibleForAssignment() {
+  void aNewDroneStartsActiveButCannotBeAssignedUntilRegistered() {
     Drone drone = new Drone(UUID.randomUUID(), "DJI-M350-RTK-001");
 
     assertThat(drone.getServiceability()).isEqualTo(DroneServiceability.ACTIVE);
-    assertThat(drone.isEligibleForAssignment()).isTrue();
+    assertThat(drone.isEligibleForAssignment()).isFalse();
   }
 
   @Test
@@ -24,6 +24,41 @@ class DroneTest {
     assertThatThrownBy(() -> new Drone(UUID.randomUUID(), "  "))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Drone serial number must not be blank");
+  }
+
+  @Test
+  void registrationExpiryMustBePresentAndFutureForAssignmentEligibility() {
+    Drone missingExpiry =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "DRN-NO-EXPIRY",
+            "DJI Matrice 350",
+            "DJI",
+            "REG-01",
+            "reg/key",
+            null);
+    Drone expired =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "DRN-EXPIRED",
+            "DJI Matrice 350",
+            "DJI",
+            "REG-02",
+            "reg/key",
+            java.time.Instant.now().minusSeconds(1));
+    Drone current =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "DRN-CURRENT",
+            "DJI Matrice 350",
+            "DJI",
+            "REG-03",
+            "reg/key",
+            java.time.Instant.now().plusSeconds(3600));
+
+    assertThat(missingExpiry.isEligibleForAssignment()).isFalse();
+    assertThat(expired.isEligibleForAssignment()).isFalse();
+    assertThat(current.isEligibleForAssignment()).isTrue();
   }
 
   @Test

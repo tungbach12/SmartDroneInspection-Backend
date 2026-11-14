@@ -51,6 +51,7 @@ class InspectionFieldSessionServiceTest {
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired UserAccess userAccess;
   @Autowired EntityManager entityManager;
+  @Autowired InspectionFieldSessionService service;
 
   private UUID ownerCustomerId;
   private UUID otherOrganizationId;
@@ -60,7 +61,6 @@ class InspectionFieldSessionServiceTest {
   private UUID droneId;
   private UUID inspectionId;
   private long initialSessionCount;
-  private InspectionFieldSessionService service;
 
   @BeforeEach
   void setUp() {
@@ -69,6 +69,16 @@ class InspectionFieldSessionServiceTest {
     otherOrganizationId = fixture.otherClientId();
     reviewerId = createUser(UserRole.CUSTOMER, "reviewer");
     inspectorId = createUser(UserRole.INSPECTOR, "inspector");
+    var pilotProfile = new com.smartdroneinspection.users.domain.InspectorProfile(inspectorId);
+    pilotProfile.updatePilotLicense(
+        "LIC-VALID-01", "CLASS_B", Instant.parse("2027-01-01T00:00:00Z"), "licenses/pilot.pdf");
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        inspectorId,
+        pilotProfile.getPilotLicenseNumber(),
+        pilotProfile.getPilotLicenseClass(),
+        Timestamp.from(pilotProfile.getPilotLicenseExpiresAt()),
+        pilotProfile.getPilotLicenseFileKey());
 
     assetId =
         assets
@@ -85,16 +95,25 @@ class InspectionFieldSessionServiceTest {
                     null,
                     reviewerId))
             .getId();
-    droneId =
-        drones.saveAndFlush(new Drone(ownerCustomerId, "READY-DRONE-" + UUID.randomUUID())).getId();
+    Drone readyDrone =
+        new Drone(
+            ownerCustomerId,
+            "READY-DRONE-" + UUID.randomUUID(),
+            "Mavic 3",
+            "DJI",
+            "{\"mtowKg\":1.05}",
+            com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE,
+            null,
+            "REG-VALID-01",
+            "drones/registration.pdf",
+            Instant.parse("2027-01-01T00:00:00Z"));
+    droneId = drones.saveAndFlush(readyDrone).getId();
     inspectionId = createReadyInspection();
     initialSessionCount =
         jdbcTemplate.queryForObject(
             "SELECT count(*) FROM field_sessions WHERE inspection_id = ?",
             Long.class,
             inspectionId);
-
-    service = new InspectionFieldSessionService(inspections, sessions, userAccess, entityManager);
   }
 
   @Test
@@ -111,6 +130,39 @@ class InspectionFieldSessionServiceTest {
                 Long.class,
                 inspectionId))
         .isEqualTo(initialSessionCount + 1);
+  }
+
+  @Test
+  void fieldSessionCannotStartAfterPilotLicenseExpires() {
+    jdbcTemplate.update(
+        "UPDATE inspector_profiles SET pilot_license_expires_at = ? WHERE user_id = ?",
+        Timestamp.from(Instant.now().minus(1, ChronoUnit.SECONDS)),
+        inspectorId);
+    entityManager.clear();
+
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code()).isEqualTo("PILOT_LICENSE_INVALID"));
+    assertNoSessionStarted();
+  }
+
+  @Test
+  void fieldSessionCannotStartAfterDroneRegistrationExpires() {
+    jdbcTemplate.update(
+        "UPDATE drones SET registration_expires_at = ? WHERE id = ?",
+        Timestamp.from(Instant.now().minus(1, ChronoUnit.SECONDS)),
+        droneId);
+    entityManager.clear();
+
+    assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("DRONE_REGISTRATION_EXPIRED"));
+    assertNoSessionStarted();
   }
 
   @Test

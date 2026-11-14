@@ -153,11 +153,15 @@ class ContractWorkflowServiceTest {
     when(lockedDrone.getSerialNumber()).thenReturn("SDI-TEST-001");
     when(lockedDrone.getModel()).thenReturn("Test Drone");
     when(lockedDrone.isEligibleForAssignment()).thenReturn(true);
+    when(lockedDrone.isEligibleForAssignment(any())).thenReturn(true);
     when(lockedDrone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2030-01-01T00:00:00Z"));
     when(lockedDrone.getRegistrationNumber()).thenReturn("REG-TEST-001");
+    when(lockedDrone.getRegistrationFileKey()).thenReturn("registrations/test.pdf");
     when(lockedDrone.getFeatures()).thenReturn(List.of());
     when(lockedDrone.resolveMtowKg()).thenReturn(1.0);
+    when(lockedDrone.hasKnownMtow()).thenReturn(true);
     when(lockedDrone.requiresClassBLicense()).thenReturn(false);
+    when(lockedDrone.requiresClassBForSafety()).thenReturn(false);
     when(partners.lockEligibleDrone(eq(droneId), eq(inspectorId), any(Instant.class)))
         .thenReturn(lockedDrone);
     when(partners.evaluateCandidate(

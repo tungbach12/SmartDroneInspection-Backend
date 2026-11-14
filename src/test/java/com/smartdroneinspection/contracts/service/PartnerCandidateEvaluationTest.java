@@ -26,8 +26,10 @@ class PartnerCandidateEvaluationTest {
     Drone drone = mock(Drone.class);
     when(drone.getId()).thenReturn(droneId);
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
-    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.isEligibleForAssignment(startAt)).thenReturn(true);
     when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-001");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/drone.pdf");
+    when(drone.hasKnownMtow()).thenReturn(true);
     when(drone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2027-12-31T00:00:00Z"));
     when(drone.resolveMtowKg()).thenReturn(6.47);
     when(drone.requiresClassBLicense()).thenReturn(true);
@@ -76,8 +78,10 @@ class PartnerCandidateEvaluationTest {
   @Test
   void returnsRegisteredDroneCapabilityCodesEvenWithoutRequiredCapabilities() {
     Drone drone = mock(Drone.class);
-    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.isEligibleForAssignment(startAt)).thenReturn(true);
     when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-CAP");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/drone.pdf");
+    when(drone.hasKnownMtow()).thenReturn(true);
     when(drone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2027-12-31T00:00:00Z"));
     when(drone.resolveMtowKg()).thenReturn(1.0);
     when(drone.requiresClassBLicense()).thenReturn(false);
@@ -121,7 +125,7 @@ class PartnerCandidateEvaluationTest {
     Drone drone = mock(Drone.class);
     when(drone.getId()).thenReturn(droneId);
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
-    when(drone.isEligibleForAssignment()).thenReturn(false);
+    when(drone.isEligibleForAssignment(startAt)).thenReturn(false);
     when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-002");
     when(drone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2026-11-01T00:00:00Z"));
     when(drone.resolveMtowKg()).thenReturn(6.47);
@@ -167,8 +171,9 @@ class PartnerCandidateEvaluationTest {
     Drone drone = mock(Drone.class);
     when(drone.getId()).thenReturn(droneId);
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
-    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.isEligibleForAssignment(startAt)).thenReturn(false);
     when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-003");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/drone.pdf");
     when(drone.getRegistrationExpiresAt()).thenReturn(null);
     when(drone.resolveMtowKg()).thenReturn(null);
     when(drone.getFeatures()).thenReturn(List.of());
@@ -203,7 +208,7 @@ class PartnerCandidateEvaluationTest {
             null,
             List.of("LIDAR_3D"));
 
-    assertThat(result.eligibility()).isEqualTo(PartnerCandidateEvaluation.Status.UNKNOWN);
+    assertThat(result.eligibility()).isEqualTo(PartnerCandidateEvaluation.Status.FAIL);
     assertThat(result.capabilityFit()).isEqualTo(PartnerCandidateEvaluation.Status.UNKNOWN);
   }
 
