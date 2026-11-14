@@ -90,50 +90,70 @@ public class InspectionFieldSessionService {
   @Transactional
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
     requireInspector(inspectorId);
-    userAccess
-        .findActiveUser(inspectorId)
-        .ifPresent(
-            user -> {
-              if (user.pilotLicenseExpiresAt() != null
-                  && !user.pilotLicenseExpiresAt().isAfter(Instant.now())) {
-                throw sessionFailure(
-                    "PILOT_LICENSE_EXPIRED",
-                    "Cannot start field work because the assigned inspector's pilot license has expired.");
-              }
-            });
+    Inspection inspection = lockInspection(inspectionId, inspectorId);
+    if (!inspection.isInspectedBy(inspectorId)) {
+      throw sessionFailure(SESSION_SCOPE_DENIED, "This inspection is not assigned to you.");
+    }
+    UserAccess.ActiveUser inspector =
+        userAccess
+            .findActiveUser(inspectorId)
+            .orElseThrow(
+                () ->
+                    sessionFailure("INSPECTOR_NOT_FOUND", "The assigned Inspector is not active."));
+    Instant checkAt = Instant.now();
+    if (!inspector.hasValidPilotLicense(checkAt)) {
+      throw sessionFailure(
+          "PILOT_LICENSE_INVALID",
+          "Cannot start field work without a current pilot license number, expiry, and uploaded scan.");
+    }
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
           "PREFLIGHT_CHECKLIST_REQUIRED",
           "Record the completed pre-flight checklist before starting the session.");
     }
 
-    Inspection inspection = lockInspection(inspectionId, inspectorId);
-    if (!inspection.isInspectedBy(inspectorId)) {
-      throw sessionFailure(SESSION_SCOPE_DENIED, "This inspection is not assigned to you.");
-    }
     requireNoOpenSession(inspectionId);
     if (!inspection.hasFlightPermit()) {
       throw sessionFailure(
           "FLIGHT_PERMIT_REQUIRED",
           "A flight permit must be uploaded before starting the field session.");
     }
-    if (dronesProvider != null && inspection.getDroneId() != null) {
-      DroneRepository droneRepo = dronesProvider.getIfAvailable();
-      if (droneRepo != null) {
-        Drone drone = droneRepo.findById(inspection.getDroneId()).orElse(null);
-        if (drone != null) {
-          if (drone.getServiceability() != DroneServiceability.ACTIVE) {
-            throw sessionFailure(
-                "INVALID_DRONE",
-                "Cannot start field work because the assigned drone is no longer active.");
-          }
-          if (drone.getRegistrationExpiresAt() != null
-              && !drone.getRegistrationExpiresAt().isAfter(Instant.now())) {
-            throw sessionFailure(
-                "DRONE_REGISTRATION_EXPIRED",
-                "Cannot start field work because the assigned drone registration has expired.");
-          }
-        }
+    Instant flightAt =
+        inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : checkAt;
+    if (!inspector.hasValidPilotLicense(flightAt)) {
+      throw sessionFailure(
+          "PILOT_LICENSE_INVALID",
+          "Cannot start field work because the pilot license will not be valid at the planned flight time.");
+    }
+    if (inspection.getDroneId() != null) {
+      DroneRepository droneRepo = dronesProvider != null ? dronesProvider.getIfAvailable() : null;
+      Drone assignedDrone =
+          droneRepo != null ? droneRepo.findById(inspection.getDroneId()).orElse(null) : null;
+      if (assignedDrone == null
+          || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+        throw sessionFailure(
+            "INVALID_DRONE",
+            "Cannot start field work because the assigned drone is missing or no longer active.");
+      }
+      if (assignedDrone.getRegistrationExpiresAt() != null
+          && (!assignedDrone.getRegistrationExpiresAt().isAfter(checkAt)
+              || !assignedDrone.getRegistrationExpiresAt().isAfter(flightAt))) {
+        throw sessionFailure(
+            "DRONE_REGISTRATION_EXPIRED",
+            "Cannot start field work because the assigned drone registration has expired.");
+      }
+      if (!assignedDrone.hasCurrentRegistration(checkAt)
+          || !assignedDrone.hasCurrentRegistration(flightAt)
+          || !assignedDrone.hasKnownMtow()) {
+        throw sessionFailure(
+            "DRONE_REGISTRATION_INVALID",
+            "Cannot start field work without a current drone registration and known MTOW.");
+      }
+      if (!inspector.isLicenseClassQualifiedForDrone(
+          assignedDrone.hasKnownMtow(), assignedDrone.requiresClassBForSafety())) {
+        throw sessionFailure(
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "The assigned pilot license class does not qualify for the drone MTOW.");
       }
     }
     if (inspection.getStatus() != InspectionStatus.SCHEDULED

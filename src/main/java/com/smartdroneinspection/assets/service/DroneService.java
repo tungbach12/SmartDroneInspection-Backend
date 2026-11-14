@@ -9,6 +9,7 @@ import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -40,6 +41,10 @@ public class DroneService {
     requireOwnerCustomer(actor);
     requireJsonDocument(
         request.payloadMetadata(), "Payload metadata must be a valid JSON document.");
+    requireCurrentRegistrationInput(
+        request.registrationNumber(),
+        request.registrationFileKey(),
+        request.registrationExpiresAt());
     String serialNumber = request.serialNumber().trim();
     if (drones.existsBySerialNumberIgnoreCase(serialNumber)) {
       throw new BusinessException(
@@ -96,10 +101,20 @@ public class DroneService {
       UUID droneId,
       com.smartdroneinspection.assets.api.dto.request.UpdateDroneRegistrationRequest request) {
     Drone drone = requireOwnedDrone(actorId, droneId);
-    drone.updateRegistration(
-        request.registrationNumber(),
-        request.registrationFileKey(),
-        request.registrationExpiresAt());
+    String registrationNumber =
+        request.registrationNumber() != null
+            ? request.registrationNumber()
+            : drone.getRegistrationNumber();
+    String registrationFileKey =
+        request.registrationFileKey() != null
+            ? request.registrationFileKey()
+            : drone.getRegistrationFileKey();
+    Instant registrationExpiresAt =
+        request.registrationExpiresAt() != null
+            ? request.registrationExpiresAt()
+            : drone.getRegistrationExpiresAt();
+    requireCurrentRegistrationInput(registrationNumber, registrationFileKey, registrationExpiresAt);
+    drone.updateRegistration(registrationNumber, registrationFileKey, registrationExpiresAt);
     return DroneResponse.from(drones.saveAndFlush(drone));
   }
 
@@ -110,9 +125,12 @@ public class DroneService {
   @Transactional(readOnly = true)
   public List<DroneSelectionResponse> selection(UUID actorId) {
     UUID ownerCustomerId = requireOwnerCustomer(requireActive(actorId));
+    Instant now = Instant.now();
     return drones
         .findAllByOwnerCustomerIdAndServiceability(ownerCustomerId, DroneServiceability.ACTIVE)
         .stream()
+        .filter(drone -> drone.isEligibleForAssignment(now))
+        .filter(Drone::hasKnownMtow)
         .map(DroneSelectionResponse::from)
         .toList();
   }
@@ -127,6 +145,21 @@ public class DroneService {
   }
 
   /** Rejects malformed JSON before it reaches the PostgreSQL jsonb column as an opaque 500. */
+  private void requireCurrentRegistrationInput(
+      String registrationNumber, String registrationFileKey, Instant registrationExpiresAt) {
+    if (registrationNumber == null
+        || registrationNumber.isBlank()
+        || registrationFileKey == null
+        || registrationFileKey.isBlank()
+        || registrationExpiresAt == null
+        || !registrationExpiresAt.isAfter(Instant.now())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_REGISTRATION_INVALID",
+          "Registration number, evidence and a future expiry date are required.");
+    }
+  }
+
   private void requireJsonDocument(String value, String message) {
     if (value == null) {
       return;

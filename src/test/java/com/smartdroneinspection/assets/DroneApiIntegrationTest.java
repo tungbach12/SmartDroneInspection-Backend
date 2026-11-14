@@ -18,6 +18,10 @@ import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +48,7 @@ class DroneApiIntegrationTest {
   @Autowired AssetRepository assets;
   @Autowired UserRepository users;
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired EntityManager entityManager;
 
   private AssetTestFixture.Data fixture;
   private MockMvc mockMvc;
@@ -66,7 +71,8 @@ class DroneApiIntegrationTest {
                 .content(
                     "{\"serialNumber\":\"%s\",\"model\":\"Mavic 3\",\"manufacturer\":\"DJI\","
                             .formatted(serial)
-                        + "\"notes\":\"Primary airframe\"}"))
+                        + "\"notes\":\"Primary airframe\",\"registrationNumber\":\"REG-01\","
+                        + "\"registrationFileKey\":\"drones/reg-01.pdf\",\"registrationExpiresAt\":\"2030-01-01T00:00:00Z\"}"))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.serialNumber").value(serial))
@@ -118,7 +124,9 @@ class DroneApiIntegrationTest {
                 .with(orgAdmin(fixture.clientId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    "{\"serialNumber\":\"%s\",\"payloadMetadata\":\"{\\\"camera\\\":true}\"}"
+                    ("{\"serialNumber\":\"%s\",\"payloadMetadata\":\"{\\\"camera\\\":true}\","
+                            + "\"registrationNumber\":\"REG-01\",\"registrationFileKey\":\"drones/reg-01.pdf\","
+                            + "\"registrationExpiresAt\":\"2030-01-01T00:00:00Z\"}")
                         .formatted(serial)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.serialNumber").value(serial));
@@ -147,7 +155,11 @@ class DroneApiIntegrationTest {
             post("/api/v1/drones")
                 .with(orgAdmin(fixture.otherClientId()))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"serialNumber\":\"%s\"}".formatted(serial)))
+                .content(
+                    ("{\"serialNumber\":\"%s\",\"registrationNumber\":\"REG-02\","
+                            + "\"registrationFileKey\":\"drones/reg-02.pdf\","
+                            + "\"registrationExpiresAt\":\"2030-01-01T00:00:00Z\"}")
+                        .formatted(serial)))
         .andExpect(status().isConflict());
 
     assertThat(droneCount()).isEqualTo(before + 1);
@@ -230,6 +242,20 @@ class DroneApiIntegrationTest {
   }
 
   @Test
+  void rejectsDroneRegistrationWithoutExpiryEvidenceOrNumber() throws Exception {
+    long before = droneCount();
+    mockMvc
+        .perform(
+            post("/api/v1/drones")
+                .with(orgAdmin(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"serialNumber\":\"" + serial() + "\",\"model\":\"Mavic 3\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DRONE_REGISTRATION_INVALID"));
+    assertThat(droneCount()).isEqualTo(before);
+  }
+
+  @Test
   void selectionReturnsOnlyActiveDronesOfTheOwnOrganization() throws Exception {
     UUID active = createDroneId(fixture.clientId(), serial());
     UUID inMaintenance = createDroneId(fixture.clientId(), serial());
@@ -253,6 +279,60 @@ class DroneApiIntegrationTest {
     assertThat(body).doesNotContain(inMaintenance.toString());
     assertThat(body).doesNotContain(suspended.toString());
     assertThat(body).doesNotContain(retired.toString());
+  }
+
+  @Test
+  void selectionExcludesDroneWhenRegistrationExpiresOrIsRemoved() throws Exception {
+    UUID expired = createDroneId(fixture.clientId(), serial());
+    UUID removedRegistration = createDroneId(fixture.clientId(), serial());
+    jdbcTemplate.update(
+        "UPDATE drones SET registration_expires_at = ? WHERE id = ?",
+        Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+        expired);
+    jdbcTemplate.update(
+        "UPDATE drones SET registration_expires_at = NULL WHERE id = ?", removedRegistration);
+    entityManager.flush();
+    entityManager.clear();
+
+    String body =
+        mockMvc
+            .perform(get("/api/v1/drones/selection").with(orgAdmin(fixture.clientId())))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(body).doesNotContain(expired.toString());
+    assertThat(body).doesNotContain(removedRegistration.toString());
+  }
+
+  @Test
+  void updateRegistrationAllowsPartialExpiryRenewalAndRejectsPastExpiry() throws Exception {
+    UUID droneId = createDroneId(fixture.clientId(), serial());
+    Instant renewedExpiry =
+        Instant.now().plus(730, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+
+    mockMvc
+        .perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                    "/api/v1/drones/{id}/registration", droneId)
+                .with(orgAdmin(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"registrationExpiresAt\":\"" + renewedExpiry + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.registrationNumber").value("REG-01"))
+        .andExpect(jsonPath("$.data.registrationExpiresAt").value(renewedExpiry.toString()));
+
+    Instant pastExpiry = Instant.now().minus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+    mockMvc
+        .perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                    "/api/v1/drones/{id}/registration", droneId)
+                .with(orgAdmin(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"registrationExpiresAt\":\"" + pastExpiry + "\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DRONE_REGISTRATION_INVALID"));
   }
 
   @Test
@@ -322,8 +402,10 @@ class DroneApiIntegrationTest {
             .with(orgAdmin(actorId))
             .contentType(MediaType.APPLICATION_JSON)
             .content(
-                "{\"serialNumber\":\"%s\",\"model\":\"Mavic 3\",\"manufacturer\":\"DJI\"}"
-                    .formatted(serial)));
+                "{\"serialNumber\":\"%s\",\"model\":\"Mavic 3\",\"manufacturer\":\"DJI\","
+                        .formatted(serial)
+                    + "\"registrationNumber\":\"REG-01\",\"registrationFileKey\":\"drones/reg-01.pdf\","
+                    + "\"registrationExpiresAt\":\"2030-01-01T00:00:00Z\",\"payloadMetadata\":\"{\\\"mtowKg\\\":1.05}\"}"));
   }
 
   private UUID createDroneId(UUID actorId, String serial) throws Exception {

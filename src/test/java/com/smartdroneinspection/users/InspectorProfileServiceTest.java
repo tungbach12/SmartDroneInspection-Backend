@@ -1,6 +1,7 @@
 package com.smartdroneinspection.users;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -71,7 +72,7 @@ class InspectorProfileServiceTest {
     profile.updateFlightExperience(BigDecimal.valueOf(50), null, null, null);
     profile.updatePilotLicense(
         "VN-UAV-12345",
-        "Hạng 2 (2-25kg)",
+        "CLASS_B",
         LocalDate.of(2025, 1, 10),
         Instant.now().plus(120, ChronoUnit.DAYS),
         "Cục Tác chiến - BQP",
@@ -148,7 +149,7 @@ class InspectorProfileServiceTest {
             "Quan 1, TP. HCM",
             "Phi cong xuat sac",
             "VN-UAV-99999",
-            "BVLOS Nang cao",
+            "CLASS_B",
             LocalDate.of(2025, 6, 1),
             Instant.now().plus(400, ChronoUnit.DAYS),
             "Cuc Hang khong Viet Nam",
@@ -165,7 +166,7 @@ class InspectorProfileServiceTest {
     assertThat(response.dateOfBirth()).isEqualTo(LocalDate.of(1992, 5, 20));
     assertThat(response.address()).isEqualTo("Quan 1, TP. HCM");
     assertThat(response.pilotLicenseNumber()).isEqualTo("VN-UAV-99999");
-    assertThat(response.pilotLicenseClass()).isEqualTo("BVLOS Nang cao");
+    assertThat(response.pilotLicenseClass()).isEqualTo("CLASS_B");
     assertThat(response.pilotLicenseAuthority()).isEqualTo("Cuc Hang khong Viet Nam");
     assertThat(response.priorFlightHours()).isEqualByComparingTo(BigDecimal.valueOf(120));
     assertThat(response.certifiedDroneModels()).isEqualTo("DJI M350, Autel Max 4T");
@@ -282,10 +283,103 @@ class InspectorProfileServiceTest {
     assertThat(response.address()).isEqualTo("Ha Noi");
     assertThat(response.phoneNumber()).isEqualTo("0901234567");
     assertThat(response.pilotLicenseNumber()).isEqualTo("VN-UAV-12345");
-    assertThat(response.pilotLicenseClass()).isEqualTo("Hạng 2 (2-25kg)");
+    assertThat(response.pilotLicenseClass()).isEqualTo("CLASS_B");
     assertThat(response.pilotLicenseIssuedDate()).isEqualTo(LocalDate.of(2025, 1, 10));
     assertThat(response.pilotLicenseExpiresAt()).isNotNull();
     assertThat(response.pilotLicenseAuthority()).isEqualTo("Cục Tác chiến - BQP");
     assertThat(response.priorFlightHours()).isEqualByComparingTo(BigDecimal.valueOf(50));
+  }
+
+  @Test
+  void updateProfile_allowsPersonalDetailsUpdateWhenLicenseFieldsAreBlank() {
+    InspectorProfile blankProfile = new InspectorProfile(inspectorId);
+    when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(blankProfile));
+    when(profileRepository.save(any(InspectorProfile.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(flightLogRepository.findByInspectorUserIdOrderByFlightDateDesc(inspector.getId()))
+        .thenReturn(List.of());
+
+    UpdateInspectorProfileRequest request =
+        new UpdateInspectorProfileRequest(
+            "Nguyen Van Bay",
+            "0901234567",
+            null,
+            null,
+            "Ha Noi",
+            null,
+            "",
+            "",
+            null,
+            null,
+            "",
+            BigDecimal.ZERO,
+            null,
+            null,
+            null);
+
+    InspectorProfileResponse response = service.updateProfile(inspectorId, request, actorId);
+    assertThat(response.address()).isEqualTo("Ha Noi");
+    assertThat(response.pilotLicenseNumber()).isNull();
+    assertThat(response.pilotLicenseClass()).isNull();
+  }
+
+  @Test
+  void updateProfile_rejectsUnrecognizedLicenseClassAndExpiredLicense() {
+    when(userRepository.findById(inspectorId)).thenReturn(Optional.of(inspector));
+    when(profileRepository.findById(inspectorId)).thenReturn(Optional.of(profile));
+
+    UpdateInspectorProfileRequest badClass =
+        new UpdateInspectorProfileRequest(
+            "Nguyen Van Bay",
+            null,
+            null,
+            null,
+            null,
+            null,
+            "VN-UAV-99999",
+            "CLASS_3",
+            LocalDate.of(2025, 6, 1),
+            Instant.now().plus(30, ChronoUnit.DAYS),
+            "CAAV",
+            null,
+            null,
+            null,
+            null);
+
+    assertThatThrownBy(() -> service.updateProfile(inspectorId, badClass, actorId))
+        .isInstanceOf(com.smartdroneinspection.shared.exception.BusinessException.class)
+        .satisfies(
+            ex ->
+                assertThat(
+                        ((com.smartdroneinspection.shared.exception.BusinessException) ex).code())
+                    .isEqualTo("PILOT_LICENSE_CLASS_INVALID"));
+
+    UpdateInspectorProfileRequest expired =
+        new UpdateInspectorProfileRequest(
+            "Nguyen Van Bay",
+            null,
+            null,
+            null,
+            null,
+            null,
+            "VN-UAV-99999",
+            "CLASS_B",
+            LocalDate.of(2020, 6, 1),
+            Instant.now().minus(1, ChronoUnit.DAYS),
+            "CAAV",
+            null,
+            null,
+            null,
+            null);
+
+    assertThatThrownBy(() -> service.updateProfile(inspectorId, expired, actorId))
+        .isInstanceOf(com.smartdroneinspection.shared.exception.BusinessException.class)
+        .satisfies(
+            ex ->
+                assertThat(
+                        ((com.smartdroneinspection.shared.exception.BusinessException) ex).code())
+                    .isEqualTo("PILOT_LICENSE_INVALID"));
   }
 }

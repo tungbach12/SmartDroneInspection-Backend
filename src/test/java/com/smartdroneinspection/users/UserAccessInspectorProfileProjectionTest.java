@@ -71,6 +71,103 @@ class UserAccessInspectorProfileProjectionTest {
   }
 
   @Test
+  void pilotLicenseMustHaveExpiryAndUploadedScan() {
+    Instant future = Instant.now().plusSeconds(3600);
+    var noExpiry =
+        new UserAccess.ActiveUser(
+            UUID.randomUUID(),
+            java.util.Set.of("INSPECTOR"),
+            "INSPECTOR",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-1",
+            "CLASS_A",
+            null,
+            "licenses/scan.pdf",
+            null);
+    var noScan =
+        new UserAccess.ActiveUser(
+            UUID.randomUUID(),
+            java.util.Set.of("INSPECTOR"),
+            "INSPECTOR",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-1",
+            "CLASS_A",
+            future,
+            null,
+            null);
+    var current =
+        new UserAccess.ActiveUser(
+            UUID.randomUUID(),
+            java.util.Set.of("INSPECTOR"),
+            "INSPECTOR",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-1",
+            "CLASS_A",
+            future,
+            "licenses/scan.pdf",
+            null);
+
+    assertThat(noExpiry.hasValidPilotLicense(Instant.now())).isFalse();
+    assertThat(noScan.hasValidPilotLicense(Instant.now())).isFalse();
+    assertThat(current.hasValidPilotLicense(Instant.now())).isTrue();
+  }
+
+  @Test
+  void unknownLicenseClassAndUnknownMtowAreNotQualified() {
+    var inspector =
+        new UserAccess.ActiveUser(
+            UUID.randomUUID(),
+            java.util.Set.of("INSPECTOR"),
+            "INSPECTOR",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-1",
+            "CLASS-2",
+            Instant.now().plusSeconds(3600),
+            "licenses/scan.pdf",
+            null);
+
+    assertThat(inspector.hasRecognizedPilotLicenseClass()).isFalse();
+    assertThat(inspector.isLicenseClassQualifiedForDrone(false, false)).isFalse();
+    assertThat(inspector.isLicenseClassQualifiedForDrone(true, false)).isFalse();
+  }
+
+  @Test
+  void classAMustNotQualifyForHeavyDroneAndClassBDoes() {
+    var classA =
+        new UserAccess.ActiveUser(
+            UUID.randomUUID(),
+            java.util.Set.of("INSPECTOR"),
+            "INSPECTOR",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-1",
+            "CLASS_A",
+            Instant.now().plusSeconds(3600),
+            "licenses/scan.pdf",
+            null);
+    var classB =
+        new UserAccess.ActiveUser(
+            UUID.randomUUID(),
+            java.util.Set.of("INSPECTOR"),
+            "INSPECTOR",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-2",
+            "CLASS_B",
+            Instant.now().plusSeconds(3600),
+            "licenses/scan.pdf",
+            null);
+
+    assertThat(classA.isLicenseClassQualifiedForDrone(true, true)).isFalse();
+    assertThat(classB.isLicenseClassQualifiedForDrone(true, true)).isTrue();
+    assertThat(classA.isLicenseClassQualifiedForDrone(true, false)).isTrue();
+  }
+
+  @Test
   void activeUserWithoutInspectorProfileKeepsNullLicenseProjection() {
     UUID userId = UUID.randomUUID();
     User user =

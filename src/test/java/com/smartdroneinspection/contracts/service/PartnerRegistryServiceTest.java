@@ -2,6 +2,7 @@ package com.smartdroneinspection.contracts.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -74,10 +75,12 @@ class PartnerRegistryServiceTest {
     Drone partnerDrone = mock(Drone.class);
     when(partnerDrone.getId()).thenReturn(droneId);
     when(partnerDrone.getInspectorOwnerId()).thenReturn(inspectorId);
-    when(partnerDrone.isEligibleForAssignment()).thenReturn(true);
+    when(partnerDrone.isEligibleForAssignment(any())).thenReturn(true);
+    when(partnerDrone.hasKnownMtow()).thenReturn(true);
+    when(partnerDrone.requiresClassBForSafety()).thenReturn(false);
     when(partnerDrone.getSerialNumber()).thenReturn("SDI-001");
-    when(partnerDrone.getModel()).thenReturn("M350");
-    when(partnerDrone.getRegistrationExpiresAt()).thenReturn(null);
+    when(partnerDrone.getModel()).thenReturn("M3T");
+    when(partnerDrone.getRegistrationExpiresAt()).thenReturn(Instant.now().plusSeconds(3600));
     when(drones.findActivePartnerDrones()).thenReturn(List.of(partnerDrone));
     when(users.findActiveUser(inspectorId))
         .thenReturn(
@@ -188,10 +191,15 @@ class PartnerRegistryServiceTest {
     Drone drone = mock(Drone.class);
     when(drone.getId()).thenReturn(droneId);
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
-    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.isEligibleForAssignment(any()))
+        .thenAnswer(invocation -> droneRegistrationExpiresAt.isAfter(invocation.getArgument(0)));
+    when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-001");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/drone.pdf");
+    when(drone.hasKnownMtow()).thenReturn(true);
     when(drone.getRegistrationExpiresAt()).thenReturn(droneRegistrationExpiresAt);
     when(drone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
     when(drone.requiresClassBLicense()).thenReturn(false);
+    when(drone.requiresClassBForSafety()).thenReturn(false);
     when(drones.findById(droneId)).thenReturn(Optional.of(drone));
     UserAccess.ActiveUser inspector =
         new UserAccess.ActiveUser(
@@ -223,8 +231,13 @@ class PartnerRegistryServiceTest {
     when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
     when(drone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
     when(drone.getSerialNumber()).thenReturn("SDI-002");
-    when(drone.getModel()).thenReturn("M350");
+    when(drone.getModel()).thenReturn("Mavic 3");
+    when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-002");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/drone.pdf");
     when(drone.getRegistrationExpiresAt()).thenReturn(Instant.now().plusSeconds(3600));
+    when(drone.isEligibleForAssignment(any())).thenReturn(true);
+    when(drone.hasKnownMtow()).thenReturn(true);
+    when(drone.requiresClassBForSafety()).thenReturn(false);
     when(drones.findWithLockById(droneId)).thenReturn(Optional.of(drone));
     when(users.findActiveUser(inspectorId))
         .thenReturn(
@@ -252,8 +265,12 @@ class PartnerRegistryServiceTest {
     Drone heavyDrone = mock(Drone.class);
     when(heavyDrone.getId()).thenReturn(droneId);
     when(heavyDrone.getInspectorOwnerId()).thenReturn(inspectorId);
-    when(heavyDrone.isEligibleForAssignment()).thenReturn(true);
+    when(heavyDrone.isEligibleForAssignment(any())).thenReturn(true);
+    when(heavyDrone.getRegistrationNumber()).thenReturn("VN-RPAS-HEAVY");
+    when(heavyDrone.getRegistrationFileKey()).thenReturn("registrations/heavy.pdf");
+    when(heavyDrone.hasKnownMtow()).thenReturn(true);
     when(heavyDrone.requiresClassBLicense()).thenReturn(true);
+    when(heavyDrone.requiresClassBForSafety()).thenReturn(true);
     when(heavyDrone.getRegistrationExpiresAt()).thenReturn(Instant.now().plusSeconds(7200));
     when(drones.findWithLockById(droneId)).thenReturn(Optional.of(heavyDrone));
     when(drones.findById(droneId)).thenReturn(Optional.of(heavyDrone));
@@ -288,8 +305,10 @@ class PartnerRegistryServiceTest {
     when(drone.getSerialNumber()).thenReturn("SDI-700");
     when(drone.getModel()).thenReturn("Matrice 350 RTK");
     when(drone.getImageFileKeys()).thenReturn(List.of("drones/sdi-700-0.png"));
-    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.isEligibleForAssignment(startAt)).thenReturn(true);
     when(drone.getRegistrationNumber()).thenReturn("VN-RPAS-700");
+    when(drone.getRegistrationFileKey()).thenReturn("registrations/sdi-700.pdf");
+    when(drone.hasKnownMtow()).thenReturn(true);
     when(drone.getRegistrationExpiresAt()).thenReturn(Instant.parse("2027-12-31T00:00:00Z"));
     when(drone.resolveMtowKg()).thenReturn(6.47);
     when(drone.requiresClassBLicense()).thenReturn(true);

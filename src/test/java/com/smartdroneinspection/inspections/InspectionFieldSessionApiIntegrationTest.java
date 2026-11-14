@@ -72,6 +72,13 @@ class InspectionFieldSessionApiIntegrationTest {
     ownerCustomerId = fixture.clientId();
     reviewerId = ownerCustomerId;
     inspectorId = createUser(UserRole.INSPECTOR, "inspector");
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        inspectorId,
+        "LIC-SESSION-01",
+        "CLASS_B",
+        Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        "licenses/pilot.pdf");
 
     assetId =
         assets
@@ -89,7 +96,20 @@ class InspectionFieldSessionApiIntegrationTest {
                     reviewerId))
             .getId();
     droneId =
-        drones.saveAndFlush(new Drone(ownerCustomerId, "READY-DRONE-" + UUID.randomUUID())).getId();
+        drones
+            .saveAndFlush(
+                new Drone(
+                    ownerCustomerId,
+                    "READY-DRONE-" + UUID.randomUUID(),
+                    "Mavic 3",
+                    "DJI",
+                    "{\"mtowKg\":1.05}",
+                    com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE,
+                    null,
+                    "REG-SESSION-01",
+                    "drones/registration.pdf",
+                    Instant.now().plus(365, ChronoUnit.DAYS)))
+            .getId();
     inspectionId = createReadyInspection();
   }
 

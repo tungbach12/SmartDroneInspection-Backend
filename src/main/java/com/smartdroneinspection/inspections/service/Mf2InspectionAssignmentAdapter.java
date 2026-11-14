@@ -3,7 +3,6 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
-import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -101,11 +100,8 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
         drones
             .findWithLockById(droneId)
             .filter(value -> inspector.id().equals(value.getInspectorOwnerId()))
-            .filter(value -> value.getServiceability() == DroneServiceability.ACTIVE)
-            .filter(
-                value ->
-                    value.getRegistrationExpiresAt() == null
-                        || value.getRegistrationExpiresAt().isAfter(plannedStartAt))
+            .filter(value -> value.isEligibleForAssignment(plannedStartAt))
+            .filter(Drone::hasKnownMtow)
             .orElseThrow(
                 () ->
                     failure(
@@ -113,7 +109,8 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
                         "INVALID_DRONE",
                         "Partner drone must be approved for the selected Inspector and currently registered"));
 
-    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+    if (!inspector.isLicenseClassQualifiedForDrone(
+        drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_CLASS_INSUFFICIENT",
