@@ -15,11 +15,13 @@ import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.events.PilotLicenseUpdatedEvent;
 import com.smartdroneinspection.users.repository.InspectorFlightLogRepository;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.service.InspectorPartnerLicenseDocumentService;
 import com.smartdroneinspection.users.service.InspectorProfileService;
+import com.smartdroneinspection.users.service.PilotLicenseClassService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockMultipartFile;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +44,8 @@ class InspectorProfileServiceTest {
   @Mock private InspectorFlightLogRepository flightLogRepository;
   @Mock private InspectorProfileRepository profileRepository;
   @Mock private InspectorPartnerLicenseDocumentService licenseDocumentService;
+  @Mock private PilotLicenseClassService pilotLicenseClassService;
+  @Mock private ApplicationEventPublisher eventPublisher;
 
   private InspectorProfile profile;
 
@@ -53,7 +58,12 @@ class InspectorProfileServiceTest {
   void setUp() {
     service =
         new InspectorProfileService(
-            userRepository, flightLogRepository, profileRepository, licenseDocumentService);
+            userRepository,
+            flightLogRepository,
+            profileRepository,
+            licenseDocumentService,
+            pilotLicenseClassService);
+    service.setEventPublisher(eventPublisher);
     inspectorId = UUID.randomUUID();
     actorId = UUID.randomUUID();
 
@@ -138,7 +148,9 @@ class InspectorProfileServiceTest {
     when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
     when(flightLogRepository.findByInspectorUserIdOrderByFlightDateDesc(inspector.getId()))
         .thenReturn(List.of());
+    when(pilotLicenseClassService.requireActiveName("BVLOS Nang cao")).thenReturn("BVLOS Nang cao");
 
+    Instant expiresAt = Instant.now().plus(400, ChronoUnit.DAYS);
     UpdateInspectorProfileRequest request =
         new UpdateInspectorProfileRequest(
             "Nguyen Van Bay Update",
@@ -150,7 +162,7 @@ class InspectorProfileServiceTest {
             "VN-UAV-99999",
             "BVLOS Nang cao",
             LocalDate.of(2025, 6, 1),
-            Instant.now().plus(400, ChronoUnit.DAYS),
+            expiresAt,
             "Cuc Hang khong Viet Nam",
             BigDecimal.valueOf(120),
             "DJI M350, Autel Max 4T",
@@ -171,6 +183,7 @@ class InspectorProfileServiceTest {
     assertThat(response.certifiedDroneModels()).isEqualTo("DJI M350, Autel Max 4T");
     assertThat(response.specializations()).isEqualTo("Duong day dien cao the, Tuabin gio");
     assertThat(response.experienceSummary()).contains("5 nam kinh nghiem");
+    verify(eventPublisher).publishEvent(new PilotLicenseUpdatedEvent(inspectorId, expiresAt));
   }
 
   @Test

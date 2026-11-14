@@ -5,6 +5,7 @@
       "shared::api",
       "shared::exception",
       "inspections::events",
-      "users"
+      "users",
+      "users::events"
     })
 package com.smartdroneinspection.notifications;

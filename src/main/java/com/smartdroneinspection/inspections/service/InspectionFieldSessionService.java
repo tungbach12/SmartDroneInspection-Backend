@@ -112,6 +112,18 @@ public class InspectionFieldSessionService {
       throw sessionFailure(SESSION_SCOPE_DENIED, "This inspection is not assigned to you.");
     }
     requireNoOpenSession(inspectionId);
+    userAccess
+        .findActiveUser(inspectorId)
+        .filter(
+            actor ->
+                actor.pilotLicenseExpiresAt() != null
+                    && !actor.pilotLicenseExpiresAt().isAfter(Instant.now()))
+        .ifPresent(
+            actor -> {
+              throw sessionFailure(
+                  "PILOT_LICENSE_EXPIRED",
+                  "Your UAV pilot license has expired. Renew and update your license before starting a flight session.");
+            });
     if (!inspection.hasFlightPermit()) {
       throw sessionFailure(
           "FLIGHT_PERMIT_REQUIRED",

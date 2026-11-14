@@ -62,11 +62,13 @@ class FullDatabaseSchemaMigrationTest {
             "platform_ai_settings",
             "inspector_flight_logs",
             "inspector_profiles",
+            "pilot_license_classes",
+            "inspector_applications",
             "otp_challenges",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(36);
+    assertThat(expected).hasSize(38);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -141,12 +143,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV46AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV51AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(46);
-    assertThat(versions.getLast()).isEqualTo("46");
+    assertThat(versions).hasSize(51);
+    assertThat(versions.getLast()).isEqualTo("51");
 
     assertColumns("assets", "owner_customer_id");
     assertColumns("drones", "owner_customer_id");
@@ -365,5 +367,10 @@ class FullDatabaseSchemaMigrationTest {
             "experience_summary",
             "notes",
             "updated_at");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'pilot_license_classes'",
+                Integer.class))
+        .isEqualTo(1);
   }
 }
