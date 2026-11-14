@@ -257,6 +257,7 @@ public class DroneRegistrationApplication {
   }
 
   public void resubmit(
+      String serial,
       String model,
       String manufacturer,
       String registrationNumber,
@@ -272,6 +273,7 @@ public class DroneRegistrationApplication {
       List<String> imageFileKeys,
       List<String> features) {
     resubmit(
+        serial,
         model,
         manufacturer,
         registrationNumber,
@@ -305,9 +307,48 @@ public class DroneRegistrationApplication {
       boolean hasRtk,
       List<String> imageFileKeys,
       List<String> features) {
+    resubmit(
+        null,
+        model,
+        manufacturer,
+        registrationNumber,
+        registrationFileKey,
+        registrationExpiresAt,
+        ownershipFileKey,
+        inspectionFileKey,
+        documentFiles,
+        maxWindResistanceMps,
+        maxAltitudeMeters,
+        opticalZoomLevel,
+        hasThermalCamera,
+        hasRtk,
+        imageFileKeys,
+        features);
+  }
+
+  public void resubmit(
+      String serial,
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt,
+      String ownershipFileKey,
+      String inspectionFileKey,
+      Map<String, String> documentFiles,
+      BigDecimal maxWindResistanceMps,
+      BigDecimal maxAltitudeMeters,
+      String opticalZoomLevel,
+      boolean hasThermalCamera,
+      boolean hasRtk,
+      List<String> imageFileKeys,
+      List<String> features) {
     if (!"REJECTED".equals(status) && !"APPROVED".equals(status)) {
       throw new IllegalStateException(
           "Only rejected or approved applications may be resubmitted or renewed.");
+    }
+    if (serial != null && !serial.isBlank()) {
+      this.serialNumber = serial.trim();
     }
     this.model = model;
     this.manufacturer = manufacturer;

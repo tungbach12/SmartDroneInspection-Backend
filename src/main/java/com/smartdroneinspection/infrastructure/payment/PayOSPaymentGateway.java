@@ -165,6 +165,27 @@ public class PayOSPaymentGateway implements PayOSGateway {
   }
 
   @Override
+  public boolean cancelPaymentLink(long orderCode) {
+    try {
+      JsonNode response =
+          client
+              .post()
+              .uri("/v2/payment-requests/" + orderCode + "/cancel")
+              .contentType(MediaType.APPLICATION_JSON)
+              .header("x-client-id", properties.clientId())
+              .header("x-api-key", properties.apiKey())
+              .body(Map.of("cancellationReason", "Cancelled by authorized platform manager"))
+              .retrieve()
+              .body(JsonNode.class);
+      return response != null
+          && "00".equals(text(response, "code"))
+          && "CANCELLED".equalsIgnoreCase(text(response.path("data"), "status"));
+    } catch (RestClientException exception) {
+      return false;
+    }
+  }
+
+  @Override
   public boolean verifyWebhookSignature(Map<String, Object> data, String receivedSignature) {
     if (properties.checksumKey() == null || properties.checksumKey().isBlank()) {
       return false;

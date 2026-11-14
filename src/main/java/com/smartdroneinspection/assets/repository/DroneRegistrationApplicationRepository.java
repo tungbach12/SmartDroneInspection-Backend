@@ -17,4 +17,7 @@ public interface DroneRegistrationApplicationRepository
   Optional<DroneRegistrationApplication> findByIdAndStatus(UUID id, String status);
 
   boolean existsBySerialNumberIgnoreCaseAndStatus(String serialNumber, String status);
+
+  boolean existsBySerialNumberIgnoreCaseAndStatusAndIdNot(
+      String serialNumber, String status, UUID id);
 }

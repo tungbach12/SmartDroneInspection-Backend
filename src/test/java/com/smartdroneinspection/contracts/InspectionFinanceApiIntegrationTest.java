@@ -603,7 +603,8 @@ class InspectionFinanceApiIntegrationTest {
 
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(updatedOcc.getPayoutReference()).isNull();
     assertThat(updatedOcc.getPaymentReference()).isEqualTo("BANK-TRANSFER-5555");
     assertThat(updatedOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(updatedOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
@@ -634,6 +635,7 @@ class InspectionFinanceApiIntegrationTest {
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
     assertThat(updatedOcc.getPayoutReference()).isEqualTo("PAYOUT-BANK-8888");
+    assertThat(updatedOcc.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerUserId);
     assertThat(updatedOcc.getPayoutRecordedAt()).isNotNull();
 
     // 4.11 Duplicate payout recording is idempotent

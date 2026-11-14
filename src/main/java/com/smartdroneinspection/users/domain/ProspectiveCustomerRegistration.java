@@ -120,6 +120,70 @@ public class ProspectiveCustomerRegistration {
     review("REJECTED", reviewerId, note);
   }
 
+  public void resubmit(
+      String organizationName,
+      String organizationCode,
+      UUID assetCategoryId,
+      String assetCode,
+      String assetName,
+      String assetDescription,
+      String assetLocation,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      String airspaceClassification) {
+    resubmit(
+        organizationName,
+        organizationCode,
+        assetCategoryId,
+        assetCode,
+        assetName,
+        assetDescription,
+        assetLocation,
+        latitude,
+        longitude,
+        ownershipInformation,
+        null,
+        null,
+        airspaceClassification);
+  }
+
+  public void resubmit(
+      String organizationName,
+      String organizationCode,
+      UUID assetCategoryId,
+      String assetCode,
+      String assetName,
+      String assetDescription,
+      String assetLocation,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String ownershipInformation,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
+      String airspaceClassification) {
+    if (!"REJECTED".equals(status)) {
+      throw new IllegalStateException("Only rejected registrations may be resubmitted.");
+    }
+    this.organizationName = organizationName;
+    this.organizationCode = organizationCode;
+    this.assetCategoryId = assetCategoryId;
+    this.assetCode = assetCode;
+    this.assetName = assetName;
+    this.assetDescription = assetDescription;
+    this.assetLocation = assetLocation;
+    this.latitude = latitude;
+    this.longitude = longitude;
+    this.ownershipInformation = ownershipInformation;
+    this.structureHeightMeters = structureHeightMeters;
+    this.footprintAreaSquareMeters = footprintAreaSquareMeters;
+    this.airspaceClassification = airspaceClassification;
+    this.status = "PENDING";
+    this.reviewNote = null;
+    this.reviewedByUserId = null;
+    this.reviewedAt = null;
+  }
+
   private void review(String nextStatus, UUID reviewerId, String note) {
     if (!"PENDING".equals(status)) {
       throw new IllegalStateException("Only pending registrations may be reviewed.");

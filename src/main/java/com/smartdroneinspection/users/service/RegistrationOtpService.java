@@ -2,13 +2,18 @@ package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.domain.OtpChallenge;
+import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.LoginOtpChannel;
 import com.smartdroneinspection.users.domain.enums.OtpChallengePurpose;
+import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.OtpChallengeRepository;
+import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +26,7 @@ public class RegistrationOtpService {
 
   private final OtpChallengeRepository challenges;
   private final UserRepository users;
+  private final Optional<ProspectiveCustomerRegistrationRepository> prospectiveRegistrations;
   private final LoginOtpProperties properties;
   private final LoginOtpDelivery delivery;
 
@@ -29,8 +35,19 @@ public class RegistrationOtpService {
       UserRepository users,
       LoginOtpProperties properties,
       LoginOtpDelivery delivery) {
+    this(challenges, users, Optional.empty(), properties, delivery);
+  }
+
+  @Autowired
+  public RegistrationOtpService(
+      OtpChallengeRepository challenges,
+      UserRepository users,
+      Optional<ProspectiveCustomerRegistrationRepository> prospectiveRegistrations,
+      LoginOtpProperties properties,
+      LoginOtpDelivery delivery) {
     this.challenges = challenges;
     this.users = users;
+    this.prospectiveRegistrations = prospectiveRegistrations;
     this.properties = properties;
     this.delivery = delivery;
   }
@@ -64,10 +81,22 @@ public class RegistrationOtpService {
     String normalizedDest = destination.trim().toLowerCase(java.util.Locale.ROOT);
 
     if (channel == LoginOtpChannel.EMAIL) {
-      if (users.findByNormalizedEmail(normalizedDest).isPresent()) {
-        throw new AuthException(
-            HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already registered.");
-      }
+      users
+          .findByNormalizedEmail(normalizedDest)
+          .ifPresent(
+              existing -> {
+                boolean isRejectedProspect =
+                    existing.getActorZone() == ActorZone.CUSTOMER
+                        && existing.getStatus() == UserStatus.DISABLED
+                        && prospectiveRegistrations
+                            .flatMap(repo -> repo.findByUserId(existing.getId()))
+                            .filter(reg -> "REJECTED".equals(reg.getStatus()))
+                            .isPresent();
+                if (!isRejectedProspect) {
+                  throw new AuthException(
+                      HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already registered.");
+                }
+              });
     }
 
     Instant now = Instant.now();

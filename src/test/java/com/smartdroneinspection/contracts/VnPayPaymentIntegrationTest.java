@@ -344,7 +344,8 @@ class VnPayPaymentIntegrationTest {
 
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(settledOcc.getPayoutReference()).isNull();
     assertThat(settledOcc.getPaymentMethod()).isEqualTo("VNPAY");
     assertThat(settledOcc.getPaymentReference()).isEqualTo("VNPAY-14226112");
 
