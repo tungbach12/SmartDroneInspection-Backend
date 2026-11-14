@@ -422,7 +422,7 @@ public final class ReportHtmlTemplate {
       case "Civil & Industrial Infrastructure" -> "Hạ tầng dân dụng và công nghiệp";
       case "REF" -> "MÃ";
       case "DRAFT PREVIEW — NOT AN OFFICIAL RECORD" ->
-          "BẢN XEM TRƯỚC — KHÔNG PHẢI HỒ SƠ CHÍNH THỨC";
+          "BẢN XEM TRƯỚC (CHƯA THANH TOÁN ĐỦ / CHƯA CÓ GIÁ TRỊ PHÁP LÝ CHÍNH THỨC)";
       case "Infrastructure Asset Inspection Report" -> "Báo cáo kiểm tra công trình hạ tầng";
       case "Report reference" -> "Mã báo cáo";
       case "Version" -> "Phiên bản";

@@ -49,6 +49,9 @@ class RuntimePersistenceInventoryTest {
           "service_invoices",
           "service_payments",
           "inspector_payouts",
+          "service_refunds",
+          "inspector_receivables",
+          "inspector_receivable_recoveries",
           "inspection_finance_settings");
 
   private static final Set<String> TARGET_APPLICATION_TABLES =
@@ -79,6 +82,9 @@ class RuntimePersistenceInventoryTest {
           "service_invoices",
           "service_payments",
           "inspector_payouts",
+          "service_refunds",
+          "inspector_receivables",
+          "inspector_receivable_recoveries",
           "inspection_finance_settings",
           "inspector_profiles",
           "otp_challenges",
@@ -115,7 +121,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(31);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(34);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

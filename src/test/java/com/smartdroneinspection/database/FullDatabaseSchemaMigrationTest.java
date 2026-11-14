@@ -55,6 +55,9 @@ class FullDatabaseSchemaMigrationTest {
             "service_invoices",
             "service_payments",
             "inspector_payouts",
+            "service_refunds",
+            "inspector_receivables",
+            "inspector_receivable_recoveries",
             "inspection_finance_settings",
             "platform_ai_settings",
             "inspector_flight_logs",
@@ -63,7 +66,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(33);
+    assertThat(expected).hasSize(36);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -138,12 +141,12 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV43AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV46AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(43);
-    assertThat(versions.getLast()).isEqualTo("43");
+    assertThat(versions).hasSize(46);
+    assertThat(versions.getLast()).isEqualTo("46");
 
     assertColumns("assets", "owner_customer_id");
     assertColumns("drones", "owner_customer_id");
@@ -221,14 +224,65 @@ class FullDatabaseSchemaMigrationTest {
         "occurrence_id",
         "payment_status",
         "payos_order_code",
-        "payment_method");
+        "payment_method",
+        "refunded_amount",
+        "refund_status");
     assertColumns(
         "inspector_payouts",
         "occurrence_id",
         "inspector_id",
         "payout_status",
         "payout_reference",
-        "payout_recorded_at");
+        "payout_recorded_at",
+        "payout_held_for_refund",
+        "refund_reconciliation_reference",
+        "refund_reconciled_by_user_id",
+        "payout_recorded_by_user_id");
+    assertColumns(
+        "service_refunds",
+        "id",
+        "occurrence_id",
+        "amount",
+        "inspector_payout_reduction",
+        "platform_commission_adjustment",
+        "vat_adjustment",
+        "tncn_adjustment",
+        "platform_absorbed_amount",
+        "refund_reference",
+        "recorded_by_user_id",
+        "recorded_at",
+        "request_reference",
+        "inspector_receivable_amount",
+        "platform_absorbed_plan_amount",
+        "refund_status",
+        "initiated_by_user_id",
+        "initiated_at",
+        "completed_by_user_id",
+        "completed_at",
+        "cancelled_by_user_id",
+        "cancelled_at",
+        "cancellation_reason");
+    assertColumns(
+        "inspector_receivables",
+        "id",
+        "refund_id",
+        "occurrence_id",
+        "inspector_id",
+        "assessed_amount",
+        "source_reference",
+        "reason",
+        "recorded_by_user_id",
+        "recorded_at",
+        "row_version");
+    assertColumns(
+        "inspector_receivable_recoveries",
+        "id",
+        "receivable_id",
+        "amount",
+        "external_reference",
+        "note",
+        "recorded_by_user_id",
+        "recorded_at");
 
     List<String> quoteColumns =
         jdbcTemplate.queryForList(

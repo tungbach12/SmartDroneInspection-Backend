@@ -85,10 +85,26 @@ public class OrganizationRegistrationService {
       requiresAirspaceReview = evaluation.status() != CustomerAirspaceStatus.CLEAR_ZONE;
     }
 
-    if (users.findByNormalizedEmail(email).isPresent()) {
-      throw new AuthException(
-          HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already in use.");
+    User rejectedProspect = null;
+    ProspectiveCustomerRegistration rejectedRegistration = null;
+    var existingUserOpt = users.findByNormalizedEmail(email);
+    if (existingUserOpt.isPresent()) {
+      User existingUser = existingUserOpt.get();
+      if (existingUser.getActorZone() == ActorZone.CUSTOMER
+          && existingUser.getStatus() == UserStatus.DISABLED) {
+        rejectedRegistration =
+            prospectiveRegistrations
+                .findByUserId(existingUser.getId())
+                .filter(reg -> "REJECTED".equals(reg.getStatus()))
+                .orElse(null);
+      }
+      if (rejectedRegistration == null) {
+        throw new AuthException(
+            HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already in use.");
+      }
+      rejectedProspect = existingUser;
     }
+
     if (prospectiveRegistrations.existsByOrganizationCodeIgnoreCaseAndStatus(
         organizationCode, "PENDING")) {
       throw new AuthException(
@@ -113,44 +129,68 @@ public class OrganizationRegistrationService {
       validateFirstAsset(request.firstAsset());
     }
 
+    String normalizedPhone = request.phoneNumber() != null ? request.phoneNumber().trim() : null;
     if (requiresAirspaceReview) {
-      User prospect =
-          new User(
-              email,
-              fullName,
-              request.phoneNumber() != null ? request.phoneNumber().trim() : null,
-              null,
-              passwords.encode(request.password()),
-              UserStatus.DISABLED,
-              ActorZone.CUSTOMER);
-      prospect.setOtpVerified(true);
-      prospect.addRole(UserRole.CUSTOMER);
-      prospect = users.saveAndFlush(prospect);
-      ProspectiveCustomerRegistration registration =
-          prospectiveRegistrations.saveAndFlush(
-              new ProspectiveCustomerRegistration(
-                  prospect.getId(),
-                  organizationName,
-                  organizationCode,
-                  firstAsset.categoryId(),
-                  firstAsset.code().trim().toUpperCase(Locale.ROOT),
-                  firstAsset.name().trim(),
-                  firstAsset.description(),
-                  firstAsset.locationText().trim(),
-                  firstAsset.latitude(),
-                  firstAsset.longitude(),
-                  firstAsset.ownershipInformation(),
-                  firstAsset.structureHeightMeters(),
-                  firstAsset.footprintAreaSquareMeters(),
-                  evaluation.status().name()));
+      User prospect;
+      ProspectiveCustomerRegistration registration;
+      String auditAction;
+      if (rejectedProspect != null) {
+        rejectedProspect.setFullName(fullName);
+        rejectedProspect.setPhoneNumber(normalizedPhone);
+        rejectedProspect.setPasswordHash(passwords.encode(request.password()));
+        rejectedProspect.setOtpVerified(true);
+        rejectedProspect.incrementAuthVersion();
+        prospect = users.saveAndFlush(rejectedProspect);
+        rejectedRegistration.resubmit(
+            organizationName,
+            organizationCode,
+            firstAsset.categoryId(),
+            firstAsset.code().trim().toUpperCase(Locale.ROOT),
+            firstAsset.name().trim(),
+            firstAsset.description(),
+            firstAsset.locationText().trim(),
+            firstAsset.latitude(),
+            firstAsset.longitude(),
+            firstAsset.ownershipInformation(),
+            firstAsset.structureHeightMeters(),
+            firstAsset.footprintAreaSquareMeters(),
+            evaluation.status().name());
+        registration = prospectiveRegistrations.saveAndFlush(rejectedRegistration);
+        auditAction = "CUSTOMER_AIRSPACE_REVIEW_RESUBMITTED";
+      } else {
+        prospect =
+            new User(
+                email,
+                fullName,
+                normalizedPhone,
+                null,
+                passwords.encode(request.password()),
+                UserStatus.DISABLED,
+                ActorZone.CUSTOMER);
+        prospect.setOtpVerified(true);
+        prospect.addRole(UserRole.CUSTOMER);
+        prospect = users.saveAndFlush(prospect);
+        registration =
+            prospectiveRegistrations.saveAndFlush(
+                new ProspectiveCustomerRegistration(
+                    prospect.getId(),
+                    organizationName,
+                    organizationCode,
+                    firstAsset.categoryId(),
+                    firstAsset.code().trim().toUpperCase(Locale.ROOT),
+                    firstAsset.name().trim(),
+                    firstAsset.description(),
+                    firstAsset.locationText().trim(),
+                    firstAsset.latitude(),
+                    firstAsset.longitude(),
+                    firstAsset.ownershipInformation(),
+                    firstAsset.structureHeightMeters(),
+                    firstAsset.footprintAreaSquareMeters(),
+                    evaluation.status().name()));
+        auditAction = "CUSTOMER_AIRSPACE_REVIEW_REQUESTED";
+      }
       audit.record(
-          null,
-          prospect.getId(),
-          "CUSTOMER_AIRSPACE_REVIEW_REQUESTED",
-          "SUCCESS",
-          ipAddress,
-          userAgent,
-          correlationId);
+          null, prospect.getId(), auditAction, "SUCCESS", ipAddress, userAgent, correlationId);
       return new OrganizationRegistrationResponse(
           organizationName,
           organizationCode,
@@ -166,18 +206,27 @@ public class OrganizationRegistrationService {
           evaluation.message());
     }
 
-    User customer =
-        new User(
-            email,
-            fullName,
-            request.phoneNumber() != null ? request.phoneNumber().trim() : null,
-            null,
-            passwords.encode(request.password()),
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
-    customer.setOtpVerified(true);
-    customer.addRole(UserRole.CUSTOMER);
-    customer = users.saveAndFlush(customer);
+    User customer;
+    if (rejectedProspect != null) {
+      rejectedProspect.setFullName(fullName);
+      rejectedProspect.setPhoneNumber(normalizedPhone);
+      rejectedProspect.setPasswordHash(passwords.encode(request.password()));
+      rejectedProspect.approveAsCustomer();
+      customer = users.saveAndFlush(rejectedProspect);
+    } else {
+      customer =
+          new User(
+              email,
+              fullName,
+              normalizedPhone,
+              null,
+              passwords.encode(request.password()),
+              UserStatus.ACTIVE,
+              ActorZone.CUSTOMER);
+      customer.setOtpVerified(true);
+      customer.addRole(UserRole.CUSTOMER);
+      customer = users.saveAndFlush(customer);
+    }
 
     if (firstAsset != null) {
       events.publishEvent(

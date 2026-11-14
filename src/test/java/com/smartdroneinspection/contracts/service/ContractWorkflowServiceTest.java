@@ -17,17 +17,21 @@ import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
 import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
+import com.smartdroneinspection.contracts.domain.ServiceRefund;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.ServiceRequestStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
+import com.smartdroneinspection.contracts.gateway.PayOSGateway;
+import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
@@ -71,6 +75,8 @@ class ContractWorkflowServiceTest {
   private EvidenceObjectStore objectStore;
   private InspectionFinanceSettingsService financeSettingsService;
   private InspectionReportAccess reportAccess;
+  private PayOSGateway payOSGateway;
+  private VnPayGateway vnPayGateway;
   private ContractWorkflowService service;
 
   private final UUID customerId = UUID.randomUUID();
@@ -94,6 +100,8 @@ class ContractWorkflowServiceTest {
     objectStore = mock(EvidenceObjectStore.class);
     financeSettingsService = mock(InspectionFinanceSettingsService.class);
     reportAccess = mock(InspectionReportAccess.class);
+    payOSGateway = mock(PayOSGateway.class);
+    vnPayGateway = mock(VnPayGateway.class);
 
     service =
         new ContractWorkflowService(
@@ -108,7 +116,9 @@ class ContractWorkflowServiceTest {
             assignment,
             Optional.of(objectStore),
             financeSettingsService,
-            Optional.of(reportAccess));
+            Optional.of(reportAccess),
+            payOSGateway,
+            vnPayGateway);
 
     when(users.findActiveUser(customerId))
         .thenReturn(
@@ -1117,8 +1127,28 @@ class ContractWorkflowServiceTest {
               assertThat(value.plannedStartAt()).isEqualTo(assignedStart);
               assertThat(value.plannedEndAt()).isEqualTo(assignedEnd);
             });
+    verify(partners).lockEligibleDrone(droneId, inspectorId, assignedStart);
     verify(assignment)
         .assign(orgId, assetId, inspectorId, droneId, assignedStart, assignedEnd, managerId);
+  }
+
+  @Test
+  void issueQuoteChecksDroneEligibilityAcrossAllPlannedOccurrences() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    Instant firstStart = Instant.parse("2027-02-01T09:00:00Z");
+    Instant firstEnd = Instant.parse("2027-02-01T11:00:00Z");
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(partners.isEligibleDroneForAllDates(eq(droneId), eq(inspectorId), any()))
+        .thenReturn(false);
+
+    IssueServiceQuoteRequest quoteInput = quote(firstStart, firstEnd);
+    assertThatThrownBy(() -> service.saveQuote(managerId, requestId, quoteInput))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Selected drone must remain approved");
+
+    verify(partners).isEligibleDroneForAllDates(eq(droneId), eq(inspectorId), any());
   }
 
   @Test
@@ -1778,18 +1808,194 @@ class ContractWorkflowServiceTest {
     // Manager confirms payment
     occurrence.confirmPayment("TXN-12345", new BigDecimal("11000000.00"), managerId);
 
-    // Both gates satisfied: payout succeeds!
+    // Both gates satisfied: payout is now explicitly recorded by the Manager.
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
 
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
     assertThat(occurrence.getPayoutReference()).isEqualTo("PAYOUT-REF-999");
+    assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
     assertThat(occurrence.getPayoutRecordedAt()).isNotNull();
 
     // Duplicate payout recording is idempotent
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+  }
+
+  @Test
+  void unpaidPaymentOrderCannotBeOverwrittenAndPayosMustConfirmCancellation() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.assignPayOSOrder(123456L);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(payOSGateway.getPaymentLink(123456L))
+        .thenReturn(
+            new PayOSGateway.PayOSPaymentLink(
+                123456L, "https://pay.test/123456", "qr", 100000L, "link-1", "PENDING"));
+    when(payOSGateway.cancelPaymentLink(123456L)).thenReturn(true);
+
+    service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId);
+    assertThat(occurrence.getPayosOrderCode()).isNull();
+    assertThat(occurrence.getPaymentMethod()).isNull();
+
+    occurrence.assignPayOSOrder(123456L);
+    when(payOSGateway.getPaymentLink(123456L))
+        .thenReturn(
+            new PayOSGateway.PayOSPaymentLink(
+                123456L, "https://pay.test/123456", "qr", 100000L, "link-1", "PENDING"));
+    when(payOSGateway.cancelPaymentLink(123456L)).thenReturn(false);
+    assertThatThrownBy(() -> service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("did not confirm order cancellation");
+    assertThat(occurrence.getPayosOrderCode()).isEqualTo(123456L);
+  }
+
+  @Test
+  void refundInitiationHoldsPayoutBeforeTransferThenCompletesAndAllowsActualPayout() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+    occurrence.snapshotFinance(
+        "VND",
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("1000000.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("1500000.00"),
+        new BigDecimal("8500000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("850000.00"),
+        new BigDecimal("7650000.00"));
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.confirmOnlinePayment("PAYOS-REFUND-TEST", new BigDecimal("11000000.00"), "PAYOS");
+
+    ServiceRefund partial =
+        occurrence.initiateRefund(
+            new BigDecimal("2500000.00"),
+            "REFUND-001",
+            "Service partially cancelled before execution",
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            managerId);
+    ReflectionTestUtils.setField(partial, "id", UUID.randomUUID());
+    assertThat(partial.getInitiatedByUserId()).isEqualTo(managerId);
+    assertThat(partial.getStatus()).isEqualTo(ServiceRefund.RefundStatus.INITIATED);
+    assertThat(occurrence.getRefundedAmount()).isEqualByComparingTo("0.00");
+    assertThat(occurrence.isPayoutHeldForRefund()).isTrue();
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING);
+
+    assertThatThrownBy(
+            () ->
+                occurrence.initiateRefund(
+                    new BigDecimal("9000000.00"),
+                    "REFUND-002",
+                    "Would exceed captured amount",
+                    BigDecimal.ZERO,
+                    new BigDecimal("9000000.00"),
+                    managerId))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("An existing refund must be completed or cancelled first");
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    ReflectionTestUtils.setField(
+        service,
+        "receivables",
+        Optional.of(
+            mock(
+                com.smartdroneinspection.contracts.repository.InspectorReceivableRepository
+                    .class)));
+
+    assertThatThrownBy(
+            () ->
+                service.recordOccurrencePayout(
+                    managerId,
+                    requestId,
+                    occurrenceId,
+                    new RecordOccurrencePayoutRequest(
+                        "PAYOUT-001", "Attempt before external refund completion")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("held while a customer refund");
+
+    service.completeOccurrenceRefund(
+        managerId,
+        requestId,
+        occurrenceId,
+        partial.getId(),
+        new CompleteOccurrenceRefundRequest(
+            new BigDecimal("1000000.00"),
+            new BigDecimal("250000.00"),
+            new BigDecimal("250000.00"),
+            new BigDecimal("100000.00"),
+            new BigDecimal("900000.00"),
+            "BANK-REFUND-001"));
+    assertThat(partial.getStatus()).isEqualTo(ServiceRefund.RefundStatus.COMPLETED);
+    assertThat(occurrence.getRefundedAmount()).isEqualByComparingTo("2500000.00");
+    assertThat(occurrence.getRefundStatus()).isEqualTo("PARTIAL");
+    assertThat(occurrence.isPayoutHeldForRefund()).isFalse();
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
+
+    service.recordOccurrencePayout(
+        managerId,
+        requestId,
+        occurrenceId,
+        new RecordOccurrencePayoutRequest("PAYOUT-001", "Paid after refund completion"));
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+    assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
+  }
+
+  @Test
+  void payoutRequiresRecorderIdentityAndDoesNotAutoDisburseOnPayment() {
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            UUID.randomUUID(),
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+    occurrence.snapshotFinance(new BigDecimal("100.00"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.confirmOnlinePayment("PAY-100", new BigDecimal("100.00"), "PAYOS");
+
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(occurrence.getPayoutReference()).isNull();
+    assertThatThrownBy(() -> occurrence.recordPayout("PAYOUT-100", null))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Payout recorder is required");
   }
 
   private ServiceRequest request(LocalDate from, LocalDate until) {
