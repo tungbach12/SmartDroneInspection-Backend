@@ -5,7 +5,6 @@ import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.api.dto.request.InspectorApplicationSubmissionRequest;
 import com.smartdroneinspection.users.api.dto.response.InspectorApplicationResponse;
-import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.InspectorApplication;
 import com.smartdroneinspection.users.domain.InspectorProfile;
@@ -171,6 +170,13 @@ public class InspectorApplicationService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "APPLICATION_NOT_PENDING", "Application is not pending review");
     }
+    if (application.getSignedContractFileKey() == null
+        || application.getSignedContractFileKey().isBlank()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SIGNED_CONTRACT_REQUIRED",
+          "Upload the signed offline contract before approving this application");
+    }
     if (users.findByNormalizedEmail(application.getNormalizedEmail()).isPresent()) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -189,17 +195,18 @@ public class InspectorApplicationService {
             ActorZone.INSPECTOR_PARTNER,
             null);
     inspector.setOtpVerified(true);
-    inspector.requirePasswordChange();
     inspector.addRole(UserRole.INSPECTOR);
     inspector = users.saveAndFlush(inspector);
     InspectorProfile profile = new InspectorProfile(inspector.getId());
-    profile.setOnboardingStatus("PENDING_REVIEW");
     profile.updatePersonalDetails(application.getCitizenId(), null, application.getAddress(), null);
     profile.updatePilotLicense(
         application.getPilotLicenseNumber(),
         application.getPilotLicenseClass(),
         application.getPilotLicenseExpiresAt(),
         application.getLicenseScanFileKey());
+    profile.recordSignedPartnerContract(
+        application.getSignedContractFileKey(), application.getSignedContractSha256());
+    profile.approveOnboarding(managerId);
     profiles.saveAndFlush(profile);
     application.approve(managerId, inspector.getId());
     applications.saveAndFlush(application);
@@ -215,7 +222,7 @@ public class InspectorApplicationService {
         application.getEmail(),
         application.getFullName(),
         "[SmartDroneInspection] Inspector application approved",
-        "Hồ sơ Inspector của bạn đã được chấp thuận. Manager sẽ liên hệ để hẹn gặp trực tiếp ký hợp đồng. Sau buổi ký, Manager tải bản hợp đồng đã ký lên hệ thống.");
+        "Hồ sơ và hợp đồng Inspector của bạn đã được phê duyệt. Tài khoản của bạn đã được kích hoạt trên hệ thống.");
     sendAccountSetupEmail(inspector);
     return new UserResponse(
         inspector.getId(),
@@ -251,29 +258,45 @@ public class InspectorApplicationService {
     return documents.openApplicationLicenseScan(find(id).getLicenseScanFileKey());
   }
 
+  @Transactional(readOnly = true)
+  public InspectorPartnerLicenseDocumentService.InputStreamContent openSignedContract(UUID id) {
+    String fileKey = find(id).getSignedContractFileKey();
+    if (fileKey == null || fileKey.isBlank()) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND,
+          "SIGNED_CONTRACT_NOT_FOUND",
+          "Signed contract has not been uploaded");
+    }
+    return documents.openContract(fileKey);
+  }
+
   @Transactional
-  public InspectorProfileResponse uploadSignedContract(
+  public InspectorApplicationResponse uploadSignedContract(
       UUID id, MultipartFile file, UUID managerId) {
     InspectorApplication application = find(id);
-    if (!"APPROVED".equals(application.getStatus()) || application.getApprovedUserId() == null) {
+    if (!"PENDING_REVIEW".equals(application.getStatus())
+        && !"APPROVED".equals(application.getStatus())) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
-          "APPLICATION_NOT_APPROVED",
-          "Approve the application before uploading its signed agreement");
+          "APPLICATION_INVALID_STATE",
+          "Signed contract can only be uploaded for pending or approved applications");
     }
     var stored = documents.uploadContract(file);
-    InspectorProfileResponse response =
-        inspectorProfileService.recordSignedPartnerContract(
-            application.getApprovedUserId(), stored.fileKey(), stored.sha256Hex(), managerId);
+    application.attachSignedContract(stored.fileKey(), stored.sha256Hex());
+    applications.saveAndFlush(application);
+    if (application.getApprovedUserId() != null) {
+      inspectorProfileService.recordSignedPartnerContract(
+          application.getApprovedUserId(), stored.fileKey(), stored.sha256Hex(), managerId);
+    }
     audit.record(
         managerId,
         application.getApprovedUserId(),
         "INSPECTOR_SIGNED_CONTRACT_UPLOADED",
-        "APPROVED",
+        application.getStatus(),
         null,
         null,
         application.getCorrelationId());
-    return response;
+    return toResponse(application);
   }
 
   public void retryRejectionCleanup(UUID id) {
@@ -352,8 +375,8 @@ public class InspectorApplicationService {
     sendDecisionEmail(
         inspector.getEmail(),
         inspector.getFullName(),
-        "[SmartDroneInspection] Thiết lập tài khoản Inspector",
-        "Tài khoản đã được tạo. Vui lòng dùng chức năng Quên mật khẩu tại trang đăng nhập để thiết lập mật khẩu mới.");
+        "[SmartDroneInspection] Tài khoản Inspector đã sẵn sàng",
+        "Tài khoản của bạn đã được kích hoạt. Bạn có thể đăng nhập ngay bằng email và mật khẩu đã tạo khi nộp hồ sơ.");
   }
 
   private void sendDecisionEmail(String email, String fullName, String subject, String body) {
@@ -416,6 +439,8 @@ public class InspectorApplicationService {
         app.getPilotLicenseClass(),
         app.getPilotLicenseExpiresAt(),
         app.getLicenseScanFileKey() != null,
+        app.getSignedContractFileKey() != null && !app.getSignedContractFileKey().isBlank(),
+        app.getSignedContractSha256(),
         app.getCleanupAttempts() > 0,
         app.getStatus(),
         app.getApprovedUserId(),

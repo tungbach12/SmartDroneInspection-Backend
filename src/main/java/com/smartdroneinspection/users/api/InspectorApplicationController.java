@@ -5,7 +5,6 @@ import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.users.api.dto.request.InspectorApplicationReviewRequest;
 import com.smartdroneinspection.users.api.dto.request.InspectorApplicationSubmissionRequest;
 import com.smartdroneinspection.users.api.dto.response.InspectorApplicationResponse;
-import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.service.InspectorApplicationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -127,9 +126,20 @@ public class InspectorApplicationController {
     return ApiResponse.success(null);
   }
 
+  @GetMapping("/{id}/signed-contract")
+  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
+  public ResponseEntity<InputStreamResource> signedContract(@PathVariable UUID id) {
+    var content = service.openSignedContract(id);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(content.contentType()))
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().build().toString())
+        .header(HttpHeaders.CACHE_CONTROL, "no-store")
+        .body(new InputStreamResource(content.stream()));
+  }
+
   @PostMapping(path = "/{id}/signed-contract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
-  public ApiResponse<InspectorProfileResponse> uploadSignedContract(
+  public ApiResponse<InspectorApplicationResponse> uploadSignedContract(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID id,
       @RequestParam("file") MultipartFile file) {

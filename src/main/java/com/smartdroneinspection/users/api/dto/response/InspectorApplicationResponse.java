@@ -14,6 +14,8 @@ public record InspectorApplicationResponse(
     String pilotLicenseClass,
     Instant pilotLicenseExpiresAt,
     boolean hasLicenseScan,
+    boolean hasSignedContract,
+    String signedContractSha256,
     boolean hasCleanupFailure,
     String status,
     UUID approvedUserId,

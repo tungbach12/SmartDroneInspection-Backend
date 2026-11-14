@@ -6,6 +6,7 @@ import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplica
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneDocumentConfig;
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
+import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneDocumentConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
@@ -360,11 +361,56 @@ public class DroneRegistrationApplicationService {
     requireInspector(inspectorId);
     var inspector = userAccess.findUser(inspectorId).orElse(null);
     return drones.findAllByInspectorOwnerId(inspectorId).stream()
+        .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
         .map(
             d ->
                 com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse.from(
                     d, inspector))
         .toList();
+  }
+
+  @Transactional
+  public com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse
+      updateMyDroneServiceability(UUID inspectorId, UUID droneId, DroneServiceability target) {
+    requireInspector(inspectorId);
+    Drone drone =
+        drones
+            .findById(droneId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "DRONE_NOT_FOUND", "Drone not found"));
+    if (!inspectorId.equals(drone.getInspectorOwnerId())) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not own this drone");
+    }
+    if (drone.getServiceability() == DroneServiceability.RETIRED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Retired drones cannot change serviceability");
+    }
+    drone.changeServiceability(target);
+    Drone saved = drones.saveAndFlush(drone);
+    var inspector = userAccess.findUser(inspectorId).orElse(null);
+    return com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse.from(
+        saved, inspector);
+  }
+
+  @Transactional
+  public void deleteMyDrone(UUID inspectorId, UUID droneId) {
+    requireInspector(inspectorId);
+    Drone drone =
+        drones
+            .findById(droneId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "DRONE_NOT_FOUND", "Drone not found"));
+    if (!inspectorId.equals(drone.getInspectorOwnerId())) {
+      throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not own this drone");
+    }
+    if (drone.getServiceability() != DroneServiceability.RETIRED) {
+      drone.changeServiceability(DroneServiceability.RETIRED);
+      drones.saveAndFlush(drone);
+    }
   }
 
   @Transactional(readOnly = true)

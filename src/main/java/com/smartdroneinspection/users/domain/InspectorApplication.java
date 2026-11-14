@@ -46,6 +46,12 @@ public class InspectorApplication {
   @Column(name = "license_scan_file_key", length = 1000)
   private String licenseScanFileKey;
 
+  @Column(name = "signed_contract_file_key", length = 1000)
+  private String signedContractFileKey;
+
+  @Column(name = "signed_contract_sha256", length = 128)
+  private String signedContractSha256;
+
   @Column(name = "password_hash", nullable = false, length = 1024)
   private String passwordHash;
 
@@ -205,6 +211,19 @@ public class InspectorApplication {
 
   public UUID getApprovedUserId() {
     return approvedUserId;
+  }
+
+  public String getSignedContractFileKey() {
+    return signedContractFileKey;
+  }
+
+  public String getSignedContractSha256() {
+    return signedContractSha256;
+  }
+
+  public void attachSignedContract(String fileKey, String sha256) {
+    this.signedContractFileKey = fileKey;
+    this.signedContractSha256 = sha256;
   }
 
   public Instant getSetupEmailSentAt() {
