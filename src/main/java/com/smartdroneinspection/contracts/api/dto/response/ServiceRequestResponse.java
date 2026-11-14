@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record ServiceRequestResponse(
@@ -25,19 +26,22 @@ public record ServiceRequestResponse(
     Integer occurrenceCount,
     LocalDate recurrenceEndDate,
     ServiceRequestStatus status,
-    Integer acceptedQuoteVersion,
+    UUID acceptedQuoteId,
+    Instant acceptedAt,
+    UUID acceptedByUserId,
+    Map<String, Object> acceptedTermsSnapshot,
     String contractFileName,
     String contractContentType,
     Long contractSizeBytes,
     Instant contractUploadedAt,
     Instant createdAt,
-    List<ServiceRequestQuoteResponse> quotes,
+    ServiceRequestQuoteResponse currentQuote,
     List<ServiceRequestOccurrenceResponse> occurrences,
     List<ServiceRequestMessageResponse> messages) {
 
   public static ServiceRequestResponse from(
       ServiceRequest request,
-      List<ServiceRequestQuoteResponse> quotes,
+      ServiceRequestQuoteResponse currentQuote,
       List<ServiceRequestOccurrenceResponse> occurrences,
       List<ServiceRequestMessageResponse> messages) {
     return new ServiceRequestResponse(
@@ -56,13 +60,16 @@ public record ServiceRequestResponse(
         request.getOccurrenceCount(),
         request.getRecurrenceEndDate(),
         request.getStatus(),
-        request.getAcceptedQuoteVersion(),
+        request.getAcceptedQuoteId(),
+        request.getAcceptedAt(),
+        request.getAcceptedByUserId(),
+        request.getAcceptedTermsSnapshot(),
         request.getContractFileName(),
         request.getContractContentType(),
         request.getContractSizeBytes(),
         request.getContractUploadedAt(),
         request.getCreatedAt(),
-        List.copyOf(quotes),
+        currentQuote,
         List.copyOf(occurrences),
         List.copyOf(messages));
   }

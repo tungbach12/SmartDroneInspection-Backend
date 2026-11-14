@@ -10,9 +10,9 @@ import java.util.UUID;
 
 public record CreateServiceRequest(
     @NotNull UUID assetId,
-    @NotBlank @Size(max = 4000) String description,
+    @Size(max = 4000) String description,
     @NotNull LocalDate requestedFrom,
-    @NotNull LocalDate requestedUntil,
+    LocalDate requestedUntil,
     @NotBlank @Size(max = 64) String timezone,
     LocalTime windowStart,
     LocalTime windowEnd,

@@ -56,15 +56,15 @@ class AdminUserApiIntegrationTest {
     String unique = UUID.randomUUID().toString().replace("-", "");
     Organization organization =
         organizations.saveAndFlush(
-            new Organization("Engineer organization", "ENG-" + unique, "Test fixture"));
+            new Organization("Customer organization", "CUS-" + unique, "Test fixture"));
     String body =
         """
         {
           "email": "engineer-%s@example.test",
-          "fullName": "Maintenance Engineer",
+          "fullName": "Customer Manager",
           "actorZone": "CUSTOMER_ORGANIZATION",
           "organizationId": "%s",
-          "roles": ["MAINTENANCE_ENGINEER"]
+          "roles": ["CUSTOMER"]
         }
         """
             .formatted(unique, organization.getId());
@@ -79,13 +79,13 @@ class AdminUserApiIntegrationTest {
                     .content(body))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data.user.roles", hasItem("MAINTENANCE_ENGINEER")))
+            .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")))
             .andExpect(jsonPath("$.data.temporaryPassword").isNotEmpty())
             .andReturn();
 
     String email = "engineer-" + unique + "@example.test";
     User created = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
-    assertThat(created.roleValues()).containsExactly("MAINTENANCE_ENGINEER");
+    assertThat(created.roleValues()).containsExactly("CUSTOMER");
 
     Integer auditRows =
         jdbcTemplate.queryForObject(

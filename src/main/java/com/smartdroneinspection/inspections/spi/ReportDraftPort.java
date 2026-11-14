@@ -31,9 +31,6 @@ public interface ReportDraftPort {
   record AiSummary(
       String summary, List<String> keyHighlights, String recommendedActions, String overallRisk) {}
 
-  record DefectVerificationSummary(
-      String defectLabel, String severity, String resolutionStatus, String inspectorNotes) {}
-
   record SectionDraft(
       String executiveSummary,
       String purposeScopeCriteria,
@@ -48,25 +45,14 @@ public interface ReportDraftPort {
       List<EvidenceSummary> evidence,
       List<CandidateSummary> candidates,
       List<FieldSessionSummary> fieldSessions,
-      Locale locale,
-      List<DefectVerificationSummary> defectVerifications) {
-    public DraftContext(
-        InspectionSummary inspection,
-        List<FindingSummary> findings,
-        List<EvidenceSummary> evidence,
-        List<CandidateSummary> candidates,
-        List<FieldSessionSummary> fieldSessions,
-        Locale locale) {
-      this(inspection, findings, evidence, candidates, fieldSessions, locale, List.of());
-    }
-
+      Locale locale) {
     public DraftContext(
         InspectionSummary inspection,
         List<FindingSummary> findings,
         List<EvidenceSummary> evidence,
         List<CandidateSummary> candidates,
         List<FieldSessionSummary> fieldSessions) {
-      this(inspection, findings, evidence, candidates, fieldSessions, Locale.ENGLISH, List.of());
+      this(inspection, findings, evidence, candidates, fieldSessions, Locale.ENGLISH);
     }
   }
 

@@ -27,19 +27,8 @@ class RolePolicyTest {
                 policy.validate(
                     ActorZone.CUSTOMER_ORGANIZATION,
                     UUID.randomUUID(),
-                    Set.of(UserRole.CUSTOMER, UserRole.MAINTENANCE_ENGINEER)))
+                    Set.of(UserRole.CUSTOMER, UserRole.ADMIN)))
         .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void permitsMaintenanceEngineerAsAnIndividualOrganizationRole() {
-    assertThatCode(
-            () ->
-                policy.validate(
-                    ActorZone.CUSTOMER_ORGANIZATION,
-                    UUID.randomUUID(),
-                    Set.of(UserRole.MAINTENANCE_ENGINEER)))
-        .doesNotThrowAnyException();
   }
 
   @Test

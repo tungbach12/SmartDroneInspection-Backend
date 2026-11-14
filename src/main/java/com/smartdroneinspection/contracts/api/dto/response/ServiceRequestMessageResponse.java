@@ -10,7 +10,8 @@ public record ServiceRequestMessageResponse(
     String authorName,
     String authorRole,
     String body,
-    Instant createdAt) {
+    Instant createdAt,
+    Instant readAt) {
 
   public static ServiceRequestMessageResponse from(ServiceRequestMessage message) {
     return new ServiceRequestMessageResponse(
@@ -19,7 +20,8 @@ public record ServiceRequestMessageResponse(
         null,
         null,
         message.getBody(),
-        message.getCreatedAt());
+        message.getCreatedAt(),
+        message.getReadAt());
   }
 
   public static ServiceRequestMessageResponse from(
@@ -30,6 +32,7 @@ public record ServiceRequestMessageResponse(
         authorName,
         authorRole,
         message.getBody(),
-        message.getCreatedAt());
+        message.getCreatedAt(),
+        message.getReadAt());
   }
 }

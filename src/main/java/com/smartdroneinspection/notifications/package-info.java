@@ -4,7 +4,6 @@
       "shared",
       "shared::api",
       "shared::exception",
-      "maintenance::events",
       "inspections::events",
       "users",
       "users::events"

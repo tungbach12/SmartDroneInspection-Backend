@@ -262,7 +262,7 @@ class InspectionFinanceApiIntegrationTest {
     // -------------------------------------------------------------------------
 
     ZoneId utc = ZoneId.of("UTC");
-    LocalDate reqDate = LocalDate.now(utc).plusDays(2);
+    LocalDate reqDate = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
     Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
     Instant end = start.plus(2, ChronoUnit.HOURS);
 
@@ -283,7 +283,7 @@ class InspectionFinanceApiIntegrationTest {
                                 "requestedFrom",
                                 reqDate,
                                 "requestedUntil",
-                                reqDate.plusDays(1),
+                                reqDate,
                                 "timezone",
                                 "UTC",
                                 "requestType",
@@ -311,15 +311,14 @@ class InspectionFinanceApiIntegrationTest {
                             "droneId", droneId,
                             "pricePerOccurrenceVnd", 11000000.00))))
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.quotes[0].currency").value("VND"))
-        .andExpect(jsonPath("$.data.quotes[0].pricePerOccurrenceVnd").value(11000000.00));
+        .andExpect(jsonPath("$.data.currentQuote.currency").value("VND"))
+        .andExpect(jsonPath("$.data.currentQuote.pricePerOccurrenceVnd").value(11000000.00));
 
     // 2.3 Customer accepts the quote
     mockMvc
         .perform(
             post("/api/v1/contracts/requests/{requestId}/accept", requestId)
-                .with(principal(customerUserId, "CUSTOMER"))
-                .param("versionNo", "1"))
+                .with(principal(customerUserId, "CUSTOMER")))
         .andExpect(status().isOk());
 
     ServiceRequestOccurrence occurrence =

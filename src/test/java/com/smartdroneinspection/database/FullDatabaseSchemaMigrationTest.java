@@ -34,6 +34,8 @@ class FullDatabaseSchemaMigrationTest {
             "auth_sessions",
             "prospective_customer_registrations",
             "drone_registration_applications",
+            "drone_document_configs",
+            "drone_feature_configs",
             "drones",
             "asset_categories",
             "checklist_templates",
@@ -45,19 +47,8 @@ class FullDatabaseSchemaMigrationTest {
             "evidence",
             "findings",
             "inspection_reports",
-            "maintenance_work_orders",
-            "maintenance_tasks",
-            "maintenance_team_members",
-            "maintenance_estimate_versions",
-            "maintenance_cost_lines",
-            "maintenance_change_orders",
-            "maintenance_work_logs",
-            "maintenance_reports",
-            "maintenance_acceptance_decisions",
             "audit_events",
             "notifications",
-            "reinspection_defect_verifications",
-            "repair_knowledge_chunks",
             "service_requests",
             "service_request_messages",
             "service_request_quotes",
@@ -66,16 +57,16 @@ class FullDatabaseSchemaMigrationTest {
             "service_payments",
             "inspector_payouts",
             "inspection_finance_settings",
+            "platform_ai_settings",
             "inspector_flight_logs",
             "inspector_profiles",
             "pilot_license_classes",
             "inspector_applications",
-            "platform_ai_settings",
             "otp_challenges",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(45);
+    assertThat(expected).hasSize(36);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -88,7 +79,18 @@ class FullDatabaseSchemaMigrationTest {
             "inspector_partner_applications",
             "login_otp_challenges",
             "registration_otp_challenges",
-            "password_reset_otp_challenges");
+            "password_reset_otp_challenges",
+            "maintenance_work_orders",
+            "maintenance_tasks",
+            "maintenance_team_members",
+            "maintenance_estimate_versions",
+            "maintenance_cost_lines",
+            "maintenance_change_orders",
+            "maintenance_work_logs",
+            "maintenance_reports",
+            "maintenance_acceptance_decisions",
+            "reinspection_defect_verifications",
+            "repair_knowledge_chunks");
     assertThat(actual).contains("inspector_flight_logs");
   }
 
@@ -126,8 +128,7 @@ class FullDatabaseSchemaMigrationTest {
             "ix_notifications_recipient_status",
             "uq_users_id_organization",
             "uq_assets_id_organization");
-    assertThat(constraints)
-        .contains("fk_inspections_asset_tenant", "fk_maintenance_work_orders_asset_tenant");
+    assertThat(constraints).contains("fk_inspections_asset_tenant");
   }
 
   @Test
@@ -135,8 +136,16 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(36);
-    assertThat(versions.getLast()).isEqualTo("36");
+    assertThat(versions).hasSize(43);
+    assertThat(versions.getLast()).isEqualTo("43");
+
+    String recurrenceConstraint =
+        jdbcTemplate.queryForObject(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_service_requests_recurrence'",
+            String.class);
+    assertThat(recurrenceConstraint)
+        .contains(
+            "MONTH", "120", "DAY", "WEEK", "occurrence_count >= 2", "occurrence_count <= 100");
 
     List<String> sequences =
         jdbcTemplate.queryForList(
@@ -177,6 +186,23 @@ class FullDatabaseSchemaMigrationTest {
         "payout_status",
         "payout_reference",
         "payout_recorded_at");
+
+    List<String> quoteColumns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'service_request_quotes'",
+            String.class);
+    assertThat(quoteColumns)
+        .contains("request_id", "updated_at", "updated_by_user_id", "row_version")
+        .doesNotContain("version_no");
+
+    List<String> requestColumns =
+        jdbcTemplate.queryForList(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'service_requests'",
+            String.class);
+    assertThat(requestColumns)
+        .contains(
+            "accepted_quote_id", "accepted_at", "accepted_by_user_id", "accepted_terms_snapshot")
+        .doesNotContain("accepted_quote_version");
 
     List<String> otpColumns =
         jdbcTemplate.queryForList(

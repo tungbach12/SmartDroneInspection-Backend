@@ -24,6 +24,9 @@ public class ServiceRequestMessage {
   @Column(nullable = false, length = 4000)
   private String body;
 
+  @Column(name = "read_at")
+  private Instant readAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
@@ -59,5 +62,15 @@ public class ServiceRequestMessage {
 
   public Instant getCreatedAt() {
     return createdAt;
+  }
+
+  public Instant getReadAt() {
+    return readAt;
+  }
+
+  public void markRead(Instant at) {
+    if (this.readAt == null) {
+      this.readAt = at != null ? at : Instant.now();
+    }
   }
 }

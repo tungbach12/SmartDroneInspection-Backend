@@ -22,7 +22,7 @@ public class DashboardController {
   }
 
   @GetMapping("/analytics")
-  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CUSTOMER', 'INSPECTOR', 'MAINTENANCE_ENGINEER')")
+  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CUSTOMER', 'INSPECTOR')")
   public ApiResponse<DashboardAnalyticsResponse> getAnalytics(@AuthenticationPrincipal Jwt jwt) {
     UUID actorId = UUID.fromString(jwt.getSubject());
     return ApiResponse.success(analyticsService.getAnalytics(actorId));

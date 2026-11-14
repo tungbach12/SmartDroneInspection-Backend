@@ -64,30 +64,30 @@ class PlatformUserListApiIntegrationTest {
     Organization organization =
         organizations.saveAndFlush(
             new Organization("Operator organization", "OPS-" + unique, "Test fixture"));
-    User engineer =
+    User customer =
         new User(
-            "engineer-" + unique + "@example.test",
-            "Maintenance Engineer",
+            "customer-" + unique + "@example.test",
+            "Customer Manager",
             "{argon2}encoded-password",
             UserStatus.ACTIVE,
             ActorZone.CUSTOMER_ORGANIZATION,
             organization.getId());
-    engineer.addRole(UserRole.MAINTENANCE_ENGINEER);
-    users.saveAndFlush(engineer);
+    customer.addRole(UserRole.CUSTOMER);
+    users.saveAndFlush(customer);
 
     mockMvc
         .perform(get("/api/v1/platform/users").with(admin(admin.getId())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data[*].email", hasItem(engineer.getEmail())))
+        .andExpect(jsonPath("$.data[*].email", hasItem(customer.getEmail())))
         .andExpect(jsonPath("$.data[*].email", hasItem(admin.getEmail())))
         .andExpect(
-            jsonPath("$.data[?(@.email == '" + engineer.getEmail() + "')].actorZone")
+            jsonPath("$.data[?(@.email == '" + customer.getEmail() + "')].actorZone")
                 .value("CUSTOMER_ORGANIZATION"))
         .andExpect(
             jsonPath(
-                "$.data[?(@.email == '" + engineer.getEmail() + "')].roles[0]",
-                hasItem("MAINTENANCE_ENGINEER")));
+                "$.data[?(@.email == '" + customer.getEmail() + "')].roles[0]",
+                hasItem("CUSTOMER")));
   }
 
   @Test

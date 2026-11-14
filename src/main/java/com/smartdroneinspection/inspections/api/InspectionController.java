@@ -5,13 +5,11 @@ import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.AnalyzeVideoRequest;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
-import com.smartdroneinspection.inspections.api.dto.request.FindingHandoffRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
 import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
-import com.smartdroneinspection.inspections.api.dto.request.UpdateDefectVerificationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
@@ -20,9 +18,7 @@ import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
-import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
-import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VideoAutoDetectResponse;
@@ -31,7 +27,6 @@ import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
-import com.smartdroneinspection.inspections.service.ReinspectionVerificationService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -61,7 +56,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -81,7 +75,6 @@ public class InspectionController {
   private final ReportService reportService;
   private final InspectionWorkflowService workflowService;
   private final InspectionCreationService creationService;
-  private final ReinspectionVerificationService reinspectionVerificationService;
   private final java.util.Optional<
           com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
       reportAcceptancePort;
@@ -91,15 +84,13 @@ public class InspectionController {
       FindingService findingService,
       ReportService reportService,
       InspectionWorkflowService workflowService,
-      InspectionCreationService creationService,
-      ReinspectionVerificationService reinspectionVerificationService) {
+      InspectionCreationService creationService) {
     this(
         evidenceService,
         findingService,
         reportService,
         workflowService,
         creationService,
-        reinspectionVerificationService,
         java.util.Optional.empty());
   }
 
@@ -110,7 +101,6 @@ public class InspectionController {
       ReportService reportService,
       InspectionWorkflowService workflowService,
       InspectionCreationService creationService,
-      ReinspectionVerificationService reinspectionVerificationService,
       java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
           reportAcceptancePort) {
     this.evidenceService = evidenceService;
@@ -118,7 +108,6 @@ public class InspectionController {
     this.reportService = reportService;
     this.workflowService = workflowService;
     this.creationService = creationService;
-    this.reinspectionVerificationService = reinspectionVerificationService;
     this.reportAcceptancePort = reportAcceptancePort;
   }
 
@@ -529,19 +518,6 @@ public class InspectionController {
         reportService.requestCustomerClarification(actorId(jwt), inspectionId, versionId, reason));
   }
 
-  @PostMapping("/reinspections")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
-  @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<InspectionResponse> createDirectReinspection(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @RequestParam(required = false) String repairNotes,
-      @RequestParam(required = false) String repairProofUrl) {
-    return ApiResponse.success(
-        reinspectionVerificationService.createDirectReinspection(
-            actorId(jwt), inspectionId, repairNotes, repairProofUrl));
-  }
-
   @PostMapping("/payos/create-payment-link")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionReportAcceptancePort.PayOSCheckoutDetails> createPayOSPaymentLink(
@@ -588,17 +564,6 @@ public class InspectionController {
     }
     return ApiResponse.success(
         reportAcceptancePort.get().getPaymentStatus(actorId(jwt), inspectionId));
-  }
-
-  @PostMapping("/report/corrective-handoff")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
-  public ApiResponse<ReportPublishedResponse> completeCorrectiveHandoff(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @Valid @RequestBody FindingHandoffRequest request) {
-    return ApiResponse.success(
-        reportService.completeCorrectiveActionHandoff(
-            actorId(jwt), inspectionId, request.findingIds()));
   }
 
   @PutMapping("/report/versions/{versionId}/sections")
@@ -658,26 +623,6 @@ public class InspectionController {
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.getVersion(actorId(jwt), inspectionId, versionId));
-  }
-
-  @GetMapping("/reinspection-verifications")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
-  public ApiResponse<List<ReinspectionVerificationResponse>> getReinspectionVerifications(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
-    return ApiResponse.success(
-        reinspectionVerificationService.getVerifications(actorId(jwt), inspectionId));
-  }
-
-  @PutMapping("/reinspection-verifications/{verificationId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
-  public ApiResponse<ReinspectionVerificationResponse> updateReinspectionVerification(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID verificationId,
-      @Valid @RequestBody UpdateDefectVerificationRequest request) {
-    return ApiResponse.success(
-        reinspectionVerificationService.updateVerification(
-            actorId(jwt), inspectionId, verificationId, request));
   }
 
   private static UUID actorId(Jwt jwt) {

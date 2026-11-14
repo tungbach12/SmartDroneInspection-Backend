@@ -125,6 +125,78 @@ class PartnerRegistryServiceTest {
   }
 
   @Test
+  void inspectorLicenseMustCoverEveryScheduledOccurrence() {
+    UUID inspectorId = UUID.randomUUID();
+    Instant expiresAt = Instant.parse("2027-10-27T00:00:00Z");
+    UserAccess.ActiveUser inspector =
+        new UserAccess.ActiveUser(
+            inspectorId,
+            Set.of(Roles.INSPECTOR),
+            null,
+            "INSPECTOR_PARTNER",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-001",
+            "CLASS_B",
+            expiresAt,
+            "licenses/pilot.pdf");
+    when(users.findActiveUser(inspectorId)).thenReturn(Optional.of(inspector));
+
+    assertThat(
+            service.isEligibleInspectorForAllDates(
+                inspectorId,
+                List.of(
+                    Instant.parse("2026-12-04T01:00:00Z"),
+                    Instant.parse("2027-04-04T01:00:00Z"),
+                    Instant.parse("2027-10-27T01:00:00Z"),
+                    Instant.parse("2028-04-04T01:00:00Z"))))
+        .isFalse();
+    assertThat(
+            service.isEligibleInspectorForAllDates(
+                inspectorId,
+                List.of(
+                    Instant.parse("2026-12-04T01:00:00Z"),
+                    Instant.parse("2027-04-04T01:00:00Z"),
+                    Instant.parse("2027-10-26T23:59:59Z"))))
+        .isTrue();
+  }
+
+  @Test
+  void partnerDroneRegistrationMustCoverEveryScheduledOccurrence() {
+    UUID inspectorId = UUID.randomUUID();
+    Instant droneRegistrationExpiresAt = Instant.parse("2027-10-27T00:00:00Z");
+    Drone drone = mock(Drone.class);
+    when(drone.getId()).thenReturn(droneId);
+    when(drone.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(drone.isEligibleForAssignment()).thenReturn(true);
+    when(drone.getRegistrationExpiresAt()).thenReturn(droneRegistrationExpiresAt);
+    when(drone.getServiceability()).thenReturn(DroneServiceability.ACTIVE);
+    when(drone.requiresClassBLicense()).thenReturn(false);
+    when(drones.findById(droneId)).thenReturn(Optional.of(drone));
+    UserAccess.ActiveUser inspector =
+        new UserAccess.ActiveUser(
+            inspectorId,
+            Set.of(Roles.INSPECTOR),
+            null,
+            "INSPECTOR_PARTNER",
+            "Pilot",
+            "pilot@example.test",
+            "LIC-001",
+            "CLASS_B",
+            Instant.parse("2028-12-31T00:00:00Z"),
+            "licenses/pilot.pdf");
+    when(users.findActiveUser(inspectorId)).thenReturn(Optional.of(inspector));
+
+    assertThat(
+            service.isEligibleDroneForAllDates(
+                droneId,
+                inspectorId,
+                List.of(
+                    Instant.parse("2026-12-04T01:00:00Z"), Instant.parse("2028-04-04T01:00:00Z"))))
+        .isFalse();
+  }
+
+  @Test
   void verifiesPartnerDroneAndInspectorEligibility() {
     UUID inspectorId = UUID.randomUUID();
     Drone drone = mock(Drone.class);

@@ -17,13 +17,13 @@ class ModulithArchitectureTest {
   @Test
   void discoversTargetModuleRoots() {
     assertThat(modules.getModuleByName("inspections")).isPresent();
-    assertThat(modules.getModuleByName("maintenance")).isPresent();
+    assertThat(modules.getModuleByName("maintenance")).isEmpty();
     assertThat(modules.getModuleByName("notifications")).isPresent();
     assertThat(modules.getModuleByName("dashboard")).isPresent();
     assertThat(modules.getModuleByName("infrastructure")).isPresent();
     assertThat(modules.getModuleByName("assets")).isPresent();
     assertThat(modules.getModuleByName("users")).isPresent();
-    assertThat(modules.getModuleByName("workforce")).isPresent();
+    assertThat(modules.getModuleByName("workforce")).isEmpty();
     assertThat(modules.getModuleByName("contracts")).isPresent();
   }
 

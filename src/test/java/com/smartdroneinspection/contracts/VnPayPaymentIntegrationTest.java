@@ -400,7 +400,7 @@ class VnPayPaymentIntegrationTest {
 
   private PreparedInspection prepareInspectionReadyForPayment() throws Exception {
     ZoneId utc = ZoneId.of("UTC");
-    LocalDate reqDate = LocalDate.now(utc).plusDays(2);
+    LocalDate reqDate = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
     Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
     Instant end = start.plus(2, ChronoUnit.HOURS);
 
@@ -420,7 +420,7 @@ class VnPayPaymentIntegrationTest {
                                 "requestedFrom",
                                 reqDate,
                                 "requestedUntil",
-                                reqDate.plusDays(1),
+                                reqDate,
                                 "timezone",
                                 "UTC",
                                 "requestType",
@@ -450,8 +450,7 @@ class VnPayPaymentIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/contracts/requests/{id}/accept", requestId)
-                .with(principal(customerUserId, "CUSTOMER"))
-                .param("versionNo", "1"))
+                .with(principal(customerUserId, "CUSTOMER")))
         .andExpect(status().isOk());
 
     ServiceRequestOccurrence occurrence =

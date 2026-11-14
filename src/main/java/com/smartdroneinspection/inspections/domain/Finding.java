@@ -62,9 +62,6 @@ public class Finding {
   @Column(name = "confidence", precision = 6, scale = 5)
   private BigDecimal confidence;
 
-  @Column(name = "forwarded_to_maintenance_at")
-  private Instant forwardedToMaintenanceAt;
-
   @Column(name = "is_deleted", nullable = false)
   private boolean isDeleted;
 
@@ -136,18 +133,6 @@ public class Finding {
     status = FindingStatus.PENDING;
   }
 
-  /** Marks this confirmed finding as handed to the maintenance workflow. */
-  public void forwardToMaintenance() {
-    if (!isOfficial()) {
-      throw new IllegalStateException(
-          "Only an Inspector-confirmed finding can be forwarded to maintenance");
-    }
-    if (forwardedToMaintenanceAt != null) {
-      throw new IllegalStateException("This finding was already forwarded to maintenance");
-    }
-    forwardedToMaintenanceAt = Instant.now();
-  }
-
   public void confirmByInspector() {
     this.status = FindingStatus.CONFIRMED;
   }
@@ -206,14 +191,6 @@ public class Finding {
 
   public BigDecimal getConfidence() {
     return confidence;
-  }
-
-  public Instant getForwardedToMaintenanceAt() {
-    return forwardedToMaintenanceAt;
-  }
-
-  public boolean isForwardedToMaintenance() {
-    return forwardedToMaintenanceAt != null;
   }
 
   public Instant getCreatedAt() {

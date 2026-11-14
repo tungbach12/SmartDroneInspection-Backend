@@ -338,7 +338,7 @@ public class UserAccessService implements UserAccess {
   }
 
   private static boolean isWorkforceRoles(Set<String> roles) {
-    return roles != null && roles.size() == 1 && roles.contains(Roles.MAINTENANCE_ENGINEER);
+    return roles != null && roles.size() == 1 && roles.contains(Roles.INSPECTOR);
   }
 
   /**

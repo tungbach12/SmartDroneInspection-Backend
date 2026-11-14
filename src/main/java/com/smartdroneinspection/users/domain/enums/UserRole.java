@@ -6,8 +6,7 @@ public enum UserRole {
   ADMIN(Roles.ADMIN),
   MANAGER(Roles.MANAGER),
   CUSTOMER(Roles.CUSTOMER),
-  INSPECTOR(Roles.INSPECTOR),
-  MAINTENANCE_ENGINEER(Roles.MAINTENANCE_ENGINEER);
+  INSPECTOR(Roles.INSPECTOR);
 
   public static final UserRole PLATFORM_MANAGER = MANAGER;
   public static final UserRole ORG_MANAGER = CUSTOMER;

@@ -125,7 +125,7 @@ class ServicePaymentSchemaMigrationTest {
                 customer.getId(),
                 "Payment Test Request",
                 LocalDate.now(),
-                LocalDate.now().plusDays(2),
+                LocalDate.now(),
                 "UTC",
                 LocalTime.of(8, 0),
                 LocalTime.of(17, 0),
