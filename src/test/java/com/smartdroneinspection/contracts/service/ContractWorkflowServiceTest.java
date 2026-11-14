@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.assets.domain.Asset;
@@ -529,6 +530,86 @@ class ContractWorkflowServiceTest {
             () -> service.acceptQuote(customerId, requestId, new AcceptServiceQuoteRequest(2L)))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("The quote changed");
+  }
+
+  @Test
+  void customerFinanceHistoryUsesOnlyTheirPaidOccurrences() {
+    var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+    var page =
+        new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+            List.of(), pageable, 0);
+    when(users.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    when(occurrences.pagePaidByCustomer(customerId, pageable)).thenReturn(page);
+
+    var result = service.customerFinanceHistory(customerId, 0, 20);
+
+    assertThat(result.content()).isEmpty();
+    verify(occurrences).pagePaidByCustomer(customerId, pageable);
+    verify(occurrences, never()).pagePaidByInspector(any(), any());
+  }
+
+  @Test
+  void inspectorFinanceHistoryUsesOnlyTheirRecordedPayouts() {
+    var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+    var page =
+        new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+            List.of(), pageable, 0);
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId, Set.of(Roles.INSPECTOR), "INSPECTOR", "Inspector")));
+    when(occurrences.pagePaidByInspector(inspectorId, pageable)).thenReturn(page);
+
+    var result = service.inspectorFinanceHistory(inspectorId, 0, 20);
+
+    assertThat(result.content()).isEmpty();
+    verify(occurrences).pagePaidByInspector(inspectorId, pageable);
+    verify(occurrences, never()).pagePaidByCustomer(any(), any());
+  }
+
+  @Test
+  void customerCannotLoadPaidHistoryOutsideTheirScope() {
+    when(users.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    UUID occurrenceId = UUID.randomUUID();
+    when(occurrences.findPaidByCustomer(customerId, occurrenceId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.customerFinanceHistoryDetail(customerId, occurrenceId))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void inspectorCannotLoadPayoutHistoryOutsideTheirScope() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId, Set.of(Roles.INSPECTOR), "INSPECTOR", "Inspector")));
+    UUID occurrenceId = UUID.randomUUID();
+    when(occurrences.findPaidByInspector(inspectorId, occurrenceId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.inspectorFinanceHistoryDetail(inspectorId, occurrenceId))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void financeHistoryRejectsInvalidPageSize() {
+    when(users.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    assertThatThrownBy(() -> service.customerFinanceHistory(customerId, 0, 101))
+        .isInstanceOf(BusinessException.class);
+    verifyNoInteractions(occurrences);
   }
 
   @Test

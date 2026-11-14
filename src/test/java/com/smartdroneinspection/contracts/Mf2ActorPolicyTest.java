@@ -31,7 +31,8 @@ class Mf2ActorPolicyTest {
   }
 
   @Test
-  void inspectorHasNoMf2ActorKind() {
-    assertThat(policy.actorKind(Set.of(Roles.INSPECTOR))).isEqualTo(Mf2ActorPolicy.ActorKind.NONE);
+  void inspectorHasInspectorActorKindForPayoutHistory() {
+    assertThat(policy.actorKind(Set.of(Roles.INSPECTOR)))
+        .isEqualTo(Mf2ActorPolicy.ActorKind.INSPECTOR);
   }
 }

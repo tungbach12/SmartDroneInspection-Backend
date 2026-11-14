@@ -16,6 +16,7 @@ import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteReque
 import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocationRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryItemResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
@@ -41,6 +42,7 @@ import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteReposito
 import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
 import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
+import com.smartdroneinspection.shared.PagedResult;
 import com.smartdroneinspection.shared.api.InspectionPaymentGate;
 import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -1241,6 +1243,101 @@ public class ContractWorkflowService
       return OccurrenceFinanceResponse.forInspector(occurrence);
     }
     throw forbidden();
+  }
+
+  @Transactional(readOnly = true)
+  public PagedResult<FinanceHistoryItemResponse> customerFinanceHistory(
+      UUID actorId, int page, int size) {
+    UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
+    return financeHistoryPage(actor, page, size, true);
+  }
+
+  @Transactional(readOnly = true)
+  public PagedResult<FinanceHistoryItemResponse> inspectorFinanceHistory(
+      UUID actorId, int page, int size) {
+    UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.INSPECTOR);
+    return financeHistoryPage(actor, page, size, false);
+  }
+
+  private PagedResult<FinanceHistoryItemResponse> financeHistoryPage(
+      UserAccess.ActiveUser actor, int page, int size, boolean customer) {
+    if (page < 0 || size < 1 || size > 100) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "INVALID_PAGE", "Page must be nonnegative and size 1-100");
+    }
+    var pageable = org.springframework.data.domain.PageRequest.of(page, size);
+    var result =
+        customer
+            ? occurrences.pagePaidByCustomer(actor.ownerCustomerId(), pageable)
+            : occurrences.pagePaidByInspector(actor.id(), pageable);
+    List<FinanceHistoryItemResponse> content =
+        result.getContent().stream()
+            .map(
+                occurrence -> {
+                  ServiceRequest request =
+                      requests.findById(occurrence.getRequestId()).orElse(null);
+                  UUID assetId = request != null ? request.getAssetId() : null;
+                  String assetName =
+                      assetId != null
+                          ? assets.findById(assetId).map(Asset::getName).orElse(null)
+                          : null;
+                  UUID counterpartyId =
+                      customer ? occurrence.getInspectorId() : actor.ownerCustomerId();
+                  String counterpartyName =
+                      counterpartyId != null
+                          ? users
+                              .findActiveUser(counterpartyId)
+                              .map(UserAccess.ActiveUser::fullName)
+                              .orElse(null)
+                          : null;
+                  if (!customer && request != null) {
+                    counterpartyId = request.getOwnerCustomerId();
+                    counterpartyName =
+                        users
+                            .findActiveUser(counterpartyId)
+                            .map(UserAccess.ActiveUser::fullName)
+                            .orElse(null);
+                  }
+                  return customer
+                      ? FinanceHistoryItemResponse.customer(
+                          occurrence,
+                          request != null ? request.getDescription() : null,
+                          assetId,
+                          assetName,
+                          counterpartyId,
+                          counterpartyName)
+                      : FinanceHistoryItemResponse.inspector(
+                          occurrence,
+                          request != null ? request.getDescription() : null,
+                          assetId,
+                          assetName,
+                          counterpartyId,
+                          counterpartyName);
+                })
+            .toList();
+    return PagedResult.of(content, result.getTotalElements(), page, size);
+  }
+
+  @Transactional(readOnly = true)
+  public OccurrenceFinanceResponse customerFinanceHistoryDetail(UUID actorId, UUID occurrenceId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findPaidByCustomer(actor.ownerCustomerId(), occurrenceId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment not found"));
+    return OccurrenceFinanceResponse.forCustomer(occurrence);
+  }
+
+  @Transactional(readOnly = true)
+  public OccurrenceFinanceResponse inspectorFinanceHistoryDetail(UUID actorId, UUID occurrenceId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.INSPECTOR);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findPaidByInspector(actor.id(), occurrenceId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, "PAYOUT_NOT_FOUND", "Payout not found"));
+    return OccurrenceFinanceResponse.forInspector(occurrence);
   }
 
   /** Customer creates a PayOS VietQR payment link for an occurrence awaiting payment. */
