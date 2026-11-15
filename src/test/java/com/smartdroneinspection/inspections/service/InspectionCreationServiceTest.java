@@ -336,7 +336,13 @@ class InspectionCreationServiceTest {
                     "permits/p.pdf",
                     "p.pdf",
                     null,
-                    "application/pdf"))
+                    "application/pdf",
+                    "GP-2026-001",
+                    "Cục Tác chiến - BTTM",
+                    start.minus(1, ChronoUnit.HOURS),
+                    end.plus(1, ChronoUnit.HOURS),
+                    "SN-01",
+                    120))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             ex ->
@@ -354,7 +360,13 @@ class InspectionCreationServiceTest {
                     "permits/p.pdf",
                     "p.pdf",
                     null,
-                    "application/pdf"))
+                    "application/pdf",
+                    "GP-2026-001",
+                    "Cục Tác chiến - BTTM",
+                    start.minus(1, ChronoUnit.HOURS),
+                    end.plus(1, ChronoUnit.HOURS),
+                    "SN-01",
+                    120))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             ex ->

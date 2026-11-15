@@ -297,7 +297,10 @@ class ConnectedMainFlowE2eIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.assignmentStatus").value("ACCEPTED"));
 
-    log.info("[MF2] Step 2.1: Inspector uploads Flight Permit -> READY_FOR_FLIGHT...");
+    log.info("[MF2] Step 2.1: Inspector uploads Flight Permit -> PENDING_REVIEW...");
+    Instant permitValidFrom =
+        Instant.now().minus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.SECONDS);
+    Instant permitValidTo = plannedEnd.plus(12, ChronoUnit.HOURS);
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/flight-permit", inspectionId)
@@ -306,11 +309,40 @@ class ConnectedMainFlowE2eIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of(
-                            "fileKey", "permits/vca-2026-permit.pdf",
-                            "fileName", "vca-2026-permit.pdf"))))
+                            "fileKey",
+                            "permits/vca-2026-permit.pdf",
+                            "fileName",
+                            "vca-2026-permit.pdf",
+                            "permitNumber",
+                            "GP-2026-VCA-01",
+                            "issuingAuthority",
+                            "Cục Tác chiến - BTTM",
+                            "validFrom",
+                            permitValidFrom,
+                            "validTo",
+                            permitValidTo,
+                            "maxAltitudeM",
+                            120))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
-        .andExpect(jsonPath("$.data.flightPermitFileName").value("vca-2026-permit.pdf"));
+        .andExpect(jsonPath("$.data.flightPermitFileName").value("vca-2026-permit.pdf"))
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"));
+
+    log.info("[MF2] Step 2.2: Manager verifies and approves Flight Permit -> APPROVED...");
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
+                .with(principal(platformAdminId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "decision",
+                            "APPROVED",
+                            "notes",
+                            "Permit number and schedule window verified."))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"));
 
     assertThat(inspections.findById(inspectionId).orElseThrow().getStatus())
         .isEqualTo(InspectionStatus.SCHEDULED);

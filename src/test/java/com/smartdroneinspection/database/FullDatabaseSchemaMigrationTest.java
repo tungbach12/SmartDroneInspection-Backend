@@ -145,12 +145,31 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV55AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV56AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(55);
-    assertThat(versions.getLast()).isEqualTo("55");
+    assertThat(versions).hasSize(56);
+    assertThat(versions.getLast()).isEqualTo("56");
+
+    assertColumns(
+        "inspections",
+        "flight_permit_number",
+        "flight_permit_authority",
+        "flight_permit_valid_from",
+        "flight_permit_valid_to",
+        "flight_permit_drone_serial",
+        "flight_permit_max_altitude_m",
+        "flight_permit_file_sha256",
+        "flight_permit_file_size_bytes",
+        "flight_permit_content_type",
+        "flight_permit_uploaded_at",
+        "flight_permit_uploaded_by",
+        "flight_permit_verification_status",
+        "flight_permit_verified_by",
+        "flight_permit_verified_at",
+        "flight_permit_rejection_reason",
+        "flight_permit_review_notes");
 
     assertColumns(
         "evidence",

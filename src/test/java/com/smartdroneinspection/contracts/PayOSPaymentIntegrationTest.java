@@ -594,8 +594,30 @@ class PayOSPaymentIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("fileKey", "permits/p1.pdf", "fileName", "p1.pdf"))))
-        .andExpect(status().isOk());
+                        Map.of(
+                            "fileKey",
+                            "permits/p1.pdf",
+                            "fileName",
+                            "p1.pdf",
+                            "permitNumber",
+                            "GP-PAYOS-001",
+                            "issuingAuthority",
+                            "Cục Tác chiến - BTTM",
+                            "validFrom",
+                            Instant.now().minus(1, ChronoUnit.HOURS),
+                            "validTo",
+                            Instant.now().plus(30, ChronoUnit.DAYS)))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("decision", "APPROVED"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"));
 
     // 8. Start & end field session
     String sessionResp =

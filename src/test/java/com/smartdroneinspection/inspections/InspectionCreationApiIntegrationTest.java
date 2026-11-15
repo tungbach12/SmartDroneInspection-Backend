@@ -337,7 +337,10 @@ class InspectionCreationApiIntegrationTest {
     managed.markPartnerAssignment();
     inspections.saveAndFlush(managed);
     MockMultipartFile permitFile =
-        new MockMultipartFile("file", "permit.pdf", "application/pdf", "%PDF-sample".getBytes());
+        new MockMultipartFile(
+            "file", "permit.pdf", "application/pdf", "%PDF-1.4 sample".getBytes());
+    String permitValidFrom = start.minus(1, ChronoUnit.HOURS).toString();
+    String permitValidTo = end.plus(1, ChronoUnit.HOURS).toString();
 
     // Flight permit upload is gated until the assigned inspector accepts the mission
     mockMvc
@@ -345,6 +348,10 @@ class InspectionCreationApiIntegrationTest {
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
+                .param("permitNumber", "GP-2026-001")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", permitValidFrom)
+                .param("validTo", permitValidTo)
                 .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("ASSIGNMENT_NOT_ACCEPTED"));
@@ -371,6 +378,10 @@ class InspectionCreationApiIntegrationTest {
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
+                .param("permitNumber", "GP-2026-001")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", permitValidFrom)
+                .param("validTo", permitValidTo)
                 .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("PILOT_LICENSE_REQUIRED"));
@@ -395,6 +406,10 @@ class InspectionCreationApiIntegrationTest {
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
+                .param("permitNumber", "GP-2026-001")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", permitValidFrom)
+                .param("validTo", permitValidTo)
                 .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("DRONE_REGISTRATION_EXPIRED"));
@@ -415,6 +430,10 @@ class InspectionCreationApiIntegrationTest {
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
+                .param("permitNumber", "GP-2026-001")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", permitValidFrom)
+                .param("validTo", permitValidTo)
                 .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("PILOT_LICENSE_CLASS_INSUFFICIENT"));
@@ -423,17 +442,26 @@ class InspectionCreationApiIntegrationTest {
         "VN-UAV-12345", "CLASS_B", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
     inspectorProfiles.saveAndFlush(profile);
 
-    // Inspector uploads flight permit -> status remains SCHEDULED with permit attached
+    // Inspector uploads flight permit -> status remains SCHEDULED with permit PENDING_REVIEW
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart(
                     "/api/v1/inspections/" + inspectionId + "/flight-permit")
                 .file(permitFile)
+                .param("permitNumber", "GP-2026-001")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", permitValidFrom)
+                .param("validTo", permitValidTo)
+                .param("maxAltitudeM", "120")
                 .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
-        .andExpect(jsonPath("$.data.flightPermitFileName").value("permit.pdf"));
+        .andExpect(jsonPath("$.data.flightPermitFileName").value("permit.pdf"))
+        .andExpect(jsonPath("$.data.flightPermitNumber").value("GP-2026-001"))
+        .andExpect(jsonPath("$.data.flightPermitAuthority").value("Cục Tác chiến - BTTM"))
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"))
+        .andExpect(jsonPath("$.data.flightPermitFileSha256").isNotEmpty());
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor jwtUser(

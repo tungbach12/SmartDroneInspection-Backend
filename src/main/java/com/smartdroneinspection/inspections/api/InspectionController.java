@@ -153,7 +153,15 @@ public class InspectionController {
       uploadFlightPermit(
           @AuthenticationPrincipal Jwt jwt,
           @PathVariable UUID inspectionId,
-          @RequestParam("file") MultipartFile file)
+          @RequestParam("file") MultipartFile file,
+          @RequestParam("permitNumber") String permitNumber,
+          @RequestParam("issuingAuthority") String issuingAuthority,
+          @RequestParam("validFrom") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+              Instant validFrom,
+          @RequestParam("validTo") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+              Instant validTo,
+          @RequestParam(value = "droneSerial", required = false) String droneSerial,
+          @RequestParam(value = "maxAltitudeM", required = false) Integer maxAltitudeM)
           throws java.io.IOException {
     return ApiResponse.success(
         creationService.uploadFlightPermit(
@@ -162,7 +170,13 @@ public class InspectionController {
             null,
             file.getOriginalFilename(),
             file.getBytes(),
-            file.getContentType()));
+            file.getContentType(),
+            permitNumber,
+            issuingAuthority,
+            validFrom,
+            validTo,
+            droneSerial,
+            maxAltitudeM));
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -176,7 +190,32 @@ public class InspectionController {
                   request) {
     return ApiResponse.success(
         creationService.uploadFlightPermit(
-            actorId(jwt), inspectionId, request.fileKey(), request.fileName(), null, null));
+            actorId(jwt),
+            inspectionId,
+            request.fileKey(),
+            request.fileName(),
+            null,
+            null,
+            request.permitNumber(),
+            request.issuingAuthority(),
+            request.validFrom(),
+            request.validTo(),
+            request.droneSerial(),
+            request.maxAltitudeM()));
+  }
+
+  @PostMapping("/flight-permit/review")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      reviewFlightPermit(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @Valid @RequestBody
+              com.smartdroneinspection.inspections.api.dto.request.ReviewFlightPermitRequest
+                  request) {
+    return ApiResponse.success(
+        creationService.reviewFlightPermit(
+            actorId(jwt), inspectionId, request.decision(), request.reason(), request.notes()));
   }
 
   @GetMapping("/flight-permit/content")

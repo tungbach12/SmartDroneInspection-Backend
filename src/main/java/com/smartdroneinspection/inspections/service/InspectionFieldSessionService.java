@@ -170,11 +170,6 @@ public class InspectionFieldSessionService {
                   "PILOT_LICENSE_EXPIRED",
                   "Your UAV pilot license has expired. Renew and update your license before starting a flight session.");
             });
-    if (!inspection.hasFlightPermit()) {
-      throw sessionFailure(
-          "FLIGHT_PERMIT_REQUIRED",
-          "A flight permit must be uploaded before starting the field session.");
-    }
     Instant flightAt =
         inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : checkAt;
     if (!inspector.hasValidPilotLicense(flightAt)) {
@@ -182,9 +177,10 @@ public class InspectionFieldSessionService {
           "PILOT_LICENSE_INVALID",
           "Cannot start field work because the pilot license will not be valid at the planned flight time.");
     }
+    Drone assignedDrone = null;
     if (inspection.getDroneId() != null) {
       DroneRepository droneRepo = dronesProvider != null ? dronesProvider.getIfAvailable() : null;
-      Drone assignedDrone =
+      assignedDrone =
           droneRepo != null ? droneRepo.findById(inspection.getDroneId()).orElse(null) : null;
       if (assignedDrone == null
           || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
@@ -219,6 +215,7 @@ public class InspectionFieldSessionService {
           "INSPECTION_NOT_READY_FOR_FLIGHT",
           "The inspection is not ready for flight, so no session may start.");
     }
+    FlightPermitPolicy.requireApprovedForFlight(inspection, assignedDrone, checkAt);
 
     FieldSession session = FieldSession.opening(inspectionId);
     session.recordPreFlightChecklistNote(preFlightChecklistNote);
