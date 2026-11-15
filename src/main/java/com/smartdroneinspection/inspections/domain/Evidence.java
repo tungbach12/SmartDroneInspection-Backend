@@ -1,7 +1,10 @@
 package com.smartdroneinspection.inspections.domain;
 
+import com.smartdroneinspection.inspections.domain.enums.EvidenceProcessingStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -34,8 +37,45 @@ public class Evidence {
   @Column(name = "size_bytes", nullable = false)
   private long sizeBytes;
 
+  @Column(name = "original_size_bytes")
+  private Long originalSizeBytes;
+
   @Column(name = "object_key", nullable = false, length = 1000)
   private String objectKey;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "processing_status", nullable = false, length = 32)
+  private EvidenceProcessingStatus processingStatus = EvidenceProcessingStatus.READY;
+
+  @Column(name = "processing_error")
+  private String processingError;
+
+  @Column(name = "raw_object_key", length = 1000)
+  private String rawObjectKey;
+
+  @Column(name = "thumbnail_object_key", length = 1000)
+  private String thumbnailObjectKey;
+
+  @Column(name = "thumbnail_size_bytes")
+  private Long thumbnailSizeBytes;
+
+  @Column(name = "media_width")
+  private Integer mediaWidth;
+
+  @Column(name = "media_height")
+  private Integer mediaHeight;
+
+  @Column(name = "duration_seconds")
+  private Double durationSeconds;
+
+  @Column(name = "processed_at")
+  private Instant processedAt;
+
+  @Column(name = "processing_attempts", nullable = false)
+  private int processingAttempts;
+
+  @Column(name = "processing_locked_at")
+  private Instant processingLockedAt;
 
   @Column(name = "capture_time")
   private Instant captureTime;
@@ -74,7 +114,10 @@ public class Evidence {
     this.fileName = fileName;
     this.contentType = contentType;
     this.sizeBytes = sizeBytes;
+    this.originalSizeBytes = sizeBytes;
     this.objectKey = objectKey;
+    this.processingStatus = EvidenceProcessingStatus.READY;
+    this.processingAttempts = 0;
     this.captureTime = captureTime;
     this.latitude = latitude;
     this.longitude = longitude;
@@ -85,6 +128,88 @@ public class Evidence {
 
   public boolean isImage() {
     return contentType != null && contentType.startsWith("image/");
+  }
+
+  public boolean isVideo() {
+    return contentType != null && contentType.startsWith("video/");
+  }
+
+  public boolean isReady() {
+    return processingStatus == null || processingStatus == EvidenceProcessingStatus.READY;
+  }
+
+  public void applyImageOptimization(
+      String normalizedObjectKey,
+      String normalizedContentType,
+      long normalizedSizeBytes,
+      long originalSizeBytes,
+      String thumbnailObjectKey,
+      Long thumbnailSizeBytes,
+      Integer mediaWidth,
+      Integer mediaHeight,
+      Instant processedAt) {
+    this.objectKey = normalizedObjectKey;
+    this.contentType = normalizedContentType;
+    this.sizeBytes = normalizedSizeBytes;
+    this.originalSizeBytes = originalSizeBytes;
+    this.thumbnailObjectKey = thumbnailObjectKey;
+    this.thumbnailSizeBytes = thumbnailSizeBytes;
+    this.mediaWidth = mediaWidth;
+    this.mediaHeight = mediaHeight;
+    this.processingStatus = EvidenceProcessingStatus.READY;
+    this.processingError = null;
+    this.processedAt = processedAt != null ? processedAt : Instant.now();
+  }
+
+  public void markVideoPending(String rawObjectKey, long originalSizeBytes) {
+    this.rawObjectKey = rawObjectKey;
+    this.originalSizeBytes = originalSizeBytes;
+    this.processingStatus = EvidenceProcessingStatus.PENDING;
+    this.processingError = null;
+    this.processingLockedAt = null;
+  }
+
+  public void markVideoReady(
+      String processedObjectKey,
+      long processedSizeBytes,
+      String thumbnailObjectKey,
+      long thumbnailSizeBytes,
+      int mediaWidth,
+      int mediaHeight,
+      double durationSeconds,
+      Instant processedAt) {
+    this.objectKey = processedObjectKey;
+    this.contentType = "video/mp4";
+    this.sizeBytes = processedSizeBytes;
+    this.thumbnailObjectKey = thumbnailObjectKey;
+    this.thumbnailSizeBytes = thumbnailSizeBytes;
+    this.mediaWidth = mediaWidth;
+    this.mediaHeight = mediaHeight;
+    this.durationSeconds = durationSeconds;
+    this.processingStatus = EvidenceProcessingStatus.READY;
+    this.processingError = null;
+    this.processingLockedAt = null;
+    this.processedAt = processedAt != null ? processedAt : Instant.now();
+  }
+
+  public void clearRawObjectKey() {
+    this.rawObjectKey = null;
+  }
+
+  public void markProcessingFailed(String error) {
+    this.processingStatus = EvidenceProcessingStatus.FAILED;
+    this.processingError =
+        error == null || error.isBlank() ? "Media processing failed" : error.trim();
+    this.processingLockedAt = null;
+  }
+
+  public void requestRetry() {
+    if (this.rawObjectKey == null || this.rawObjectKey.isBlank()) {
+      throw new IllegalStateException("Raw media source is no longer available for retry");
+    }
+    this.processingStatus = EvidenceProcessingStatus.PENDING;
+    this.processingError = null;
+    this.processingLockedAt = null;
   }
 
   /** Retiring keeps the original bytes while marking it deleted from the active set. */
@@ -138,8 +263,56 @@ public class Evidence {
     return sizeBytes;
   }
 
+  public Long getOriginalSizeBytes() {
+    return originalSizeBytes;
+  }
+
   public String getObjectKey() {
     return objectKey;
+  }
+
+  public EvidenceProcessingStatus getProcessingStatus() {
+    return processingStatus;
+  }
+
+  public String getProcessingError() {
+    return processingError;
+  }
+
+  public String getRawObjectKey() {
+    return rawObjectKey;
+  }
+
+  public String getThumbnailObjectKey() {
+    return thumbnailObjectKey;
+  }
+
+  public Long getThumbnailSizeBytes() {
+    return thumbnailSizeBytes;
+  }
+
+  public Integer getMediaWidth() {
+    return mediaWidth;
+  }
+
+  public Integer getMediaHeight() {
+    return mediaHeight;
+  }
+
+  public Double getDurationSeconds() {
+    return durationSeconds;
+  }
+
+  public Instant getProcessedAt() {
+    return processedAt;
+  }
+
+  public int getProcessingAttempts() {
+    return processingAttempts;
+  }
+
+  public Instant getProcessingLockedAt() {
+    return processingLockedAt;
   }
 
   public Instant getCaptureTime() {

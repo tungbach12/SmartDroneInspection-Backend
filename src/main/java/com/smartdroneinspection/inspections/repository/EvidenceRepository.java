@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.repository;
 
 import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.enums.EvidenceProcessingStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -9,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -37,6 +39,29 @@ public interface EvidenceRepository
   Page<Evidence> findByInspectionIdAndIsDeletedFalse(UUID inspectionId, Pageable pageable);
 
   Page<Evidence> findByInspectionIdAndIsDeletedTrue(UUID inspectionId, Pageable pageable);
+
+  @Query(
+      "select e from Evidence e where e.isDeleted = false and (e.processingStatus ="
+          + " :pendingStatus or (e.processingStatus = :processingStatus and e.processingLockedAt"
+          + " < :staleBefore)) order by e.createdAt asc")
+  List<Evidence> findDueForProcessing(
+      @Param("pendingStatus") EvidenceProcessingStatus pendingStatus,
+      @Param("processingStatus") EvidenceProcessingStatus processingStatus,
+      @Param("staleBefore") Instant staleBefore,
+      Pageable pageable);
+
+  @Modifying
+  @Query(
+      "update Evidence e set e.processingStatus = :processingStatus, e.processingAttempts ="
+          + " e.processingAttempts + 1, e.processingLockedAt = :now where e.id = :id and"
+          + " e.isDeleted = false and (e.processingStatus = :pendingStatus or"
+          + " (e.processingStatus = :processingStatus and e.processingLockedAt < :staleBefore))")
+  int claimForProcessing(
+      @Param("id") UUID id,
+      @Param("pendingStatus") EvidenceProcessingStatus pendingStatus,
+      @Param("processingStatus") EvidenceProcessingStatus processingStatus,
+      @Param("now") Instant now,
+      @Param("staleBefore") Instant staleBefore);
 
   @Query(
       "select e from Evidence e join Inspection i on i.id = e.inspectionId where e.id = :id and"

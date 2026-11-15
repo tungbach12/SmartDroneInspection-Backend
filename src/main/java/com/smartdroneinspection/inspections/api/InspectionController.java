@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections.api;
 import com.smartdroneinspection.inspections.api.dto.EvidenceMediaTypeFilter;
 import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.AnalyzeVideoRequest;
+import com.smartdroneinspection.inspections.api.dto.request.BeginEvidenceUploadRequest;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.DeclineInspectionRequest;
@@ -15,18 +16,22 @@ import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
+import com.smartdroneinspection.inspections.api.dto.response.EvidenceUploadSessionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
+import com.smartdroneinspection.inspections.api.dto.response.MediaTicketResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VideoAutoDetectResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
+import com.smartdroneinspection.inspections.service.EvidenceUploadSessionService;
 import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
+import com.smartdroneinspection.inspections.service.MediaTicketService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -34,14 +39,17 @@ import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -54,6 +62,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -78,6 +87,8 @@ public class InspectionController {
   private final java.util.Optional<
           com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
       reportAcceptancePort;
+  private final Optional<EvidenceUploadSessionService> uploadSessionService;
+  private final Optional<MediaTicketService> mediaTicketService;
 
   public InspectionController(
       EvidenceService evidenceService,
@@ -91,7 +102,28 @@ public class InspectionController {
         reportService,
         workflowService,
         creationService,
-        java.util.Optional.empty());
+        java.util.Optional.empty(),
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  public InspectionController(
+      EvidenceService evidenceService,
+      FindingService findingService,
+      ReportService reportService,
+      InspectionWorkflowService workflowService,
+      InspectionCreationService creationService,
+      java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+          reportAcceptancePort) {
+    this(
+        evidenceService,
+        findingService,
+        reportService,
+        workflowService,
+        creationService,
+        reportAcceptancePort,
+        Optional.empty(),
+        Optional.empty());
   }
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -102,13 +134,17 @@ public class InspectionController {
       InspectionWorkflowService workflowService,
       InspectionCreationService creationService,
       java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
-          reportAcceptancePort) {
+          reportAcceptancePort,
+      Optional<EvidenceUploadSessionService> uploadSessionService,
+      Optional<MediaTicketService> mediaTicketService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
     this.workflowService = workflowService;
     this.creationService = creationService;
     this.reportAcceptancePort = reportAcceptancePort;
+    this.uploadSessionService = uploadSessionService;
+    this.mediaTicketService = mediaTicketService;
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -302,20 +338,116 @@ public class InspectionController {
             actorId(jwt), inspectionId, request == null ? null : request.evidenceIds()));
   }
 
+  @PostMapping("/evidence/uploads")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceUploadSessionResponse> beginEvidenceUpload(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @Valid @RequestBody BeginEvidenceUploadRequest request) {
+    return ApiResponse.success(
+        requireUploadSessionService().beginUpload(actorId(jwt), inspectionId, request));
+  }
+
+  @GetMapping("/evidence/uploads/{sessionId}")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceUploadSessionResponse> getEvidenceUploadStatus(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(
+        requireUploadSessionService().getStatus(actorId(jwt), inspectionId, sessionId));
+  }
+
+  @PutMapping(
+      path = "/evidence/uploads/{sessionId}/parts/{partNumber}",
+      consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceUploadSessionResponse> uploadEvidencePart(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId,
+      @PathVariable int partNumber,
+      @RequestParam("file") MultipartFile file) {
+    return ApiResponse.success(
+        requireUploadSessionService()
+            .uploadPart(actorId(jwt), inspectionId, sessionId, partNumber, file));
+  }
+
+  @PostMapping("/evidence/uploads/{sessionId}/complete")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceUploadSessionResponse> completeEvidenceUpload(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(
+        requireUploadSessionService().completeUpload(actorId(jwt), inspectionId, sessionId));
+  }
+
+  @DeleteMapping("/evidence/uploads/{sessionId}")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceUploadSessionResponse> cancelEvidenceUpload(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(
+        requireUploadSessionService().cancelUpload(actorId(jwt), inspectionId, sessionId));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/retry-processing")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<EvidenceResponse> retryEvidenceProcessing(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId) {
+    return ApiResponse.success(
+        evidenceService.retryProcessing(actorId(jwt), inspectionId, evidenceId));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/media-ticket")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<MediaTicketResponse> createMediaTicket(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestParam(name = "variant", defaultValue = "primary") String variant) {
+    UUID actor = actorId(jwt);
+    evidenceService.resolveMediaDescriptor(actor, inspectionId, evidenceId, variant, true);
+    return ApiResponse.success(
+        requireMediaTicketService().issueTicket(actor, inspectionId, evidenceId, variant));
+  }
+
   @GetMapping("/evidence/{evidenceId}/content")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<InputStreamResource> evidenceContent(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
-      @PathVariable UUID evidenceId) {
-    EvidenceService.EvidenceContent content =
-        evidenceService.open(actorId(jwt), inspectionId, evidenceId);
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(content.contentType()))
-        .header(
-            HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename(content.fileName()).build().toString())
-        .body(new InputStreamResource(content.stream()));
+      @PathVariable UUID evidenceId,
+      @RequestParam(name = "variant", defaultValue = "primary") String variant,
+      @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader,
+      @RequestHeader(value = HttpHeaders.IF_RANGE, required = false) String ifRangeHeader,
+      HttpServletRequest request) {
+    EvidenceService.MediaDescriptor descriptor =
+        evidenceService.resolveMediaDescriptor(
+            actorId(jwt), inspectionId, evidenceId, variant, false);
+    boolean inline =
+        "thumb".equals(MediaTicketService.normalizeVariant(variant)) || rangeHeader != null;
+    return serveMedia(descriptor, rangeHeader, ifRangeHeader, request, inline);
+  }
+
+  @GetMapping("/evidence/{evidenceId}/stream")
+  public ResponseEntity<InputStreamResource> streamEvidenceMedia(
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestParam("ticket") String ticket,
+      @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader,
+      @RequestHeader(value = HttpHeaders.IF_RANGE, required = false) String ifRangeHeader,
+      HttpServletRequest request) {
+    MediaTicketService.VerifiedTicket verified =
+        requireMediaTicketService().verifyTicket(ticket, inspectionId, evidenceId);
+    EvidenceService.MediaDescriptor descriptor =
+        evidenceService.resolveMediaDescriptor(
+            verified.actorId(), inspectionId, evidenceId, verified.variant(), true);
+    return serveMedia(descriptor, rangeHeader, ifRangeHeader, request, true);
   }
 
   @PostMapping("/evidence/{evidenceId}/analyze")
@@ -642,6 +774,153 @@ public class InspectionController {
       @PathVariable UUID versionId) {
     return ApiResponse.success(reportService.getVersion(actorId(jwt), inspectionId, versionId));
   }
+
+  private EvidenceUploadSessionService requireUploadSessionService() {
+    return uploadSessionService.orElseThrow(
+        () ->
+            new BusinessException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "UPLOAD_SESSION_UNAVAILABLE",
+                "Resumable upload service is not configured"));
+  }
+
+  private MediaTicketService requireMediaTicketService() {
+    return mediaTicketService.orElseThrow(
+        () ->
+            new BusinessException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "MEDIA_TICKET_UNAVAILABLE",
+                "Media ticket service is not configured"));
+  }
+
+  private ResponseEntity<InputStreamResource> serveMedia(
+      EvidenceService.MediaDescriptor descriptor,
+      String rangeHeader,
+      String ifRangeHeader,
+      HttpServletRequest request,
+      boolean inlineDisposition) {
+    long totalBytes = descriptor.totalBytes();
+    String etag =
+        "\""
+            + Integer.toHexString(descriptor.objectKey().hashCode())
+            + "-"
+            + Long.toHexString(totalBytes)
+            + "\"";
+    ContentDisposition disposition =
+        (inlineDisposition ? ContentDisposition.inline() : ContentDisposition.attachment())
+            .filename(descriptor.fileName())
+            .build();
+    MediaType mediaType = MediaType.parseMediaType(descriptor.contentType());
+    boolean isHead = HttpMethod.HEAD.matches(request.getMethod());
+
+    boolean applyRange =
+        rangeHeader != null
+            && !rangeHeader.isBlank()
+            && (ifRangeHeader == null
+                || ifRangeHeader.isBlank()
+                || ifRangeHeader.trim().equals(etag));
+
+    if (!applyRange) {
+      ResponseEntity.BodyBuilder builder =
+          ResponseEntity.ok()
+              .contentType(mediaType)
+              .contentLength(totalBytes)
+              .eTag(etag)
+              .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+              .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+              .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
+      if (isHead) {
+        return builder.build();
+      }
+      InputStream stream = evidenceService.openStream(descriptor.objectKey());
+      return builder.body(new SizedInputStreamResource(stream, totalBytes));
+    }
+
+    ByteRange parsedRange = parseSingleByteRange(rangeHeader, totalBytes);
+    if (parsedRange == null) {
+      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+          .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + totalBytes)
+          .build();
+    }
+
+    long rangeLength = parsedRange.end() - parsedRange.start() + 1;
+    ResponseEntity.BodyBuilder builder =
+        ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+            .contentType(mediaType)
+            .contentLength(rangeLength)
+            .eTag(etag)
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+            .header(
+                HttpHeaders.CONTENT_RANGE,
+                "bytes " + parsedRange.start() + "-" + parsedRange.end() + "/" + totalBytes)
+            .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+            .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
+    if (isHead) {
+      return builder.build();
+    }
+    InputStream stream =
+        evidenceService.openRangeStream(descriptor.objectKey(), parsedRange.start(), rangeLength);
+    return builder.body(new SizedInputStreamResource(stream, rangeLength));
+  }
+
+  private static final class SizedInputStreamResource extends InputStreamResource {
+    private final long sizeBytes;
+
+    private SizedInputStreamResource(InputStream inputStream, long sizeBytes) {
+      super(inputStream);
+      this.sizeBytes = sizeBytes;
+    }
+
+    @Override
+    public long contentLength() {
+      return sizeBytes;
+    }
+  }
+
+  private static ByteRange parseSingleByteRange(String header, long totalBytes) {
+    if (totalBytes <= 0 || header == null) {
+      return null;
+    }
+    String trimmed = header.trim();
+    if (!trimmed.regionMatches(true, 0, "bytes=", 0, 6)) {
+      return null;
+    }
+    String spec = trimmed.substring(6).trim();
+    if (spec.isEmpty() || spec.contains(",")) {
+      return null;
+    }
+    int dash = spec.indexOf('-');
+    if (dash < 0) {
+      return null;
+    }
+    String startPart = spec.substring(0, dash).trim();
+    String endPart = spec.substring(dash + 1).trim();
+    try {
+      if (startPart.isEmpty()) {
+        long suffixLength = Long.parseLong(endPart);
+        if (suffixLength <= 0) {
+          return null;
+        }
+        long start = Math.max(0L, totalBytes - suffixLength);
+        return new ByteRange(start, totalBytes - 1);
+      }
+      long start = Long.parseLong(startPart);
+      if (start < 0 || start >= totalBytes) {
+        return null;
+      }
+      long end =
+          endPart.isEmpty() ? totalBytes - 1 : Math.min(Long.parseLong(endPart), totalBytes - 1);
+      if (end < start) {
+        return null;
+      }
+      return new ByteRange(start, end);
+    } catch (NumberFormatException ex) {
+      return null;
+    }
+  }
+
+  private record ByteRange(long start, long end) {}
 
   private static UUID actorId(Jwt jwt) {
     return UUID.fromString(jwt.getSubject());

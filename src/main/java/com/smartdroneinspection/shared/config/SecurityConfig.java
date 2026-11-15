@@ -112,7 +112,12 @@ public class SecurityConfig {
                         "/actuator/health/**",
                         "/error")
                     .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/v1/pilot-license-classes")
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/v1/pilot-license-classes",
+                        "/api/v1/inspections/*/evidence/*/stream")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.HEAD, "/api/v1/inspections/*/evidence/*/stream")
                     .permitAll()
                     .requestMatchers(
                         HttpMethod.POST,
@@ -153,11 +158,14 @@ public class SecurityConfig {
     configuration.addAllowedOriginPattern("http://localhost:[*]");
     configuration.addAllowedOriginPattern("http://127.0.0.1:[*]");
     configuration.addAllowedOriginPattern("https://*.duckdns.org");
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    configuration.setAllowedMethods(
+        List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
         List.of(
             "Authorization",
             "Content-Type",
+            "Range",
+            "If-Range",
             "X-XSRF-TOKEN",
             "X-CSRF-TOKEN",
             "X-Correlation-ID",
@@ -165,7 +173,8 @@ public class SecurityConfig {
             "Accept",
             "Origin",
             "X-Requested-With"));
-    configuration.setExposedHeaders(List.of("X-Correlation-ID"));
+    configuration.setExposedHeaders(
+        List.of("X-Correlation-ID", "Accept-Ranges", "Content-Range", "Content-Length", "ETag"));
     configuration.setAllowCredentials(true);
     configuration.setMaxAge(3600L);
     var source = new UrlBasedCorsConfigurationSource();

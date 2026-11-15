@@ -58,6 +58,10 @@ class PersistenceEntityOwnershipTest {
         Arguments.of(
             "inspections", "evidence", "com.smartdroneinspection.inspections.domain.Evidence"),
         Arguments.of(
+            "inspections",
+            "evidence_upload_sessions",
+            "com.smartdroneinspection.inspections.domain.EvidenceUploadSession"),
+        Arguments.of(
             "inspections", "findings", "com.smartdroneinspection.inspections.domain.Finding"),
         Arguments.of(
             "inspections",

@@ -66,6 +66,81 @@ public final class ExifMetadataExtractor {
     return null;
   }
 
+  /** Reads the EXIF IFD0 Orientation tag (0x0112) from JPEG bytes, returning 1 when absent. */
+  public static int extractOrientation(byte[] data) {
+    if (data == null || data.length < 12) {
+      return 1;
+    }
+    if ((data[0] & 0xFF) != 0xFF || (data[1] & 0xFF) != 0xD8) {
+      return 1;
+    }
+    try {
+      int offset = 2;
+      while (offset < data.length - 4) {
+        if ((data[offset] & 0xFF) != 0xFF) {
+          break;
+        }
+        int marker = data[offset + 1] & 0xFF;
+        offset += 2;
+        if (marker == 0xDA || marker == 0xD9) {
+          break;
+        }
+        int length = readUint16BE(data, offset);
+        if (length < 2 || offset + length > data.length) {
+          break;
+        }
+        if (marker == 0xE1 && offset + 8 <= data.length) {
+          String header = new String(data, offset + 2, 4, StandardCharsets.US_ASCII);
+          if ("Exif".equals(header) && data[offset + 6] == 0 && data[offset + 7] == 0) {
+            return parseOrientation(data, offset + 8, length - 8);
+          }
+        }
+        offset += length;
+      }
+    } catch (Exception ignored) {
+      return 1;
+    }
+    return 1;
+  }
+
+  private static int parseOrientation(byte[] data, int tiffBase, int tiffLength) {
+    if (tiffLength < 8 || tiffBase + tiffLength > data.length) {
+      return 1;
+    }
+    boolean littleEndian;
+    if (data[tiffBase] == 'I' && data[tiffBase + 1] == 'I') {
+      littleEndian = true;
+    } else if (data[tiffBase] == 'M' && data[tiffBase + 1] == 'M') {
+      littleEndian = false;
+    } else {
+      return 1;
+    }
+    if (readUint16(data, tiffBase + 2, littleEndian) != 42) {
+      return 1;
+    }
+    long ifd0Offset = readUint32(data, tiffBase + 4, littleEndian);
+    if (ifd0Offset < 8 || ifd0Offset >= tiffLength) {
+      return 1;
+    }
+    int ifd0Pos = (int) (tiffBase + ifd0Offset);
+    if (ifd0Pos + 2 > tiffBase + tiffLength) {
+      return 1;
+    }
+    int numEntries = readUint16(data, ifd0Pos, littleEndian);
+    for (int i = 0; i < numEntries; i++) {
+      int entryPos = ifd0Pos + 2 + (i * 12);
+      if (entryPos + 12 > tiffBase + tiffLength) {
+        break;
+      }
+      int tag = readUint16(data, entryPos, littleEndian);
+      if (tag == 0x0112) {
+        int value = readUint16(data, entryPos + 8, littleEndian);
+        return (value >= 1 && value <= 8) ? value : 1;
+      }
+    }
+    return 1;
+  }
+
   private static ExtractedMetadata parseTiff(byte[] data, int tiffBase, int tiffLength) {
     if (tiffLength < 8 || tiffBase + tiffLength > data.length) {
       return null;
