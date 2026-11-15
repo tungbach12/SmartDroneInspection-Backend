@@ -12,7 +12,6 @@ public record InspectorProfileResponse(
     String phoneNumber,
     String avatarUrl,
     String status,
-    String actorZone,
     String citizenId,
     LocalDate dateOfBirth,
     String address,

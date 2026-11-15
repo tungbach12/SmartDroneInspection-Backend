@@ -85,7 +85,6 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    "INSPECTOR",
                     "Pilot",
                     "pilot@example.test",
                     "LIC-001",
@@ -105,7 +104,6 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -153,7 +151,6 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -197,7 +194,6 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-001",
@@ -232,7 +228,6 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    "INSPECTOR",
                     "Pilot",
                     "pilot@example.test",
                     "LIC-001",
@@ -264,7 +259,6 @@ class PartnerRegistryServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    "INSPECTOR",
                     "Pilot Class A",
                     "pilota@example.test",
                     "LIC-001",
@@ -300,7 +294,6 @@ class PartnerRegistryServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Tran Minh Quan",
             "quan@example.test",
             "LIC-700",

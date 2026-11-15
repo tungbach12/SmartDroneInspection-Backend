@@ -25,7 +25,6 @@ import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -108,7 +107,6 @@ class InspectionFinanceApiIntegrationTest {
     customerUserId =
         createUser(
             UserRole.CUSTOMER,
-            ActorZone.CUSTOMER,
             "customer." + UUID.randomUUID() + "@finance.test",
             "Customer OrgAdmin");
 
@@ -116,7 +114,6 @@ class InspectionFinanceApiIntegrationTest {
     inspectorUserId =
         createUser(
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@partner.test",
             "Partner Pilot");
     jdbcTemplate.update(
@@ -395,8 +392,14 @@ class InspectionFinanceApiIntegrationTest {
             objectMapper.readTree(assignResp).at("/data/occurrences/0/inspectionId").stringValue());
 
     // -------------------------------------------------------------------------
-    // Phase 3: Field Session, Findings, Report Publication & Payment Due
+    // Phase 3: Inspector Accept, Field Session, Findings, Report Publication & Payment Due
     // -------------------------------------------------------------------------
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/accept", inspectionId)
+                .with(principal(inspectorUserId, "INSPECTOR")))
+        .andExpect(status().isOk());
 
     // 3.1 Upload flight permit
     mockMvc
@@ -757,13 +760,13 @@ class InspectionFinanceApiIntegrationTest {
   }
 
   private UUID createPlatformUser(UserRole role, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM);
+    User user = new User(email, fullName, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
 
-  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
+  private UUID createUser(UserRole role, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

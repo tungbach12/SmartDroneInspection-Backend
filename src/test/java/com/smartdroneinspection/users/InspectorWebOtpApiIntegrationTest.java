@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -64,8 +63,7 @@ class InspectorWebOtpApiIntegrationTest {
             "+14155550123",
             null,
             passwords.encode(password),
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     users.saveAndFlush(inspector);
   }
@@ -191,8 +189,7 @@ class InspectorWebOtpApiIntegrationTest {
             "+14155550123",
             null,
             passwords.encode(temporaryPassword),
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     inspector.requirePasswordChange();
     users.saveAndFlush(inspector);

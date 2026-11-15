@@ -74,9 +74,7 @@ public class AdminUserService {
                     && !actor
                         .roleValues()
                         .contains(com.smartdroneinspection.shared.auth.Roles.ADMIN)) {
-                  if (request.actorZone()
-                          != com.smartdroneinspection.users.domain.enums.ActorZone.INSPECTOR
-                      || request.roles() == null
+                  if (request.roles() == null
                       || request.roles().size() != 1
                       || !request
                           .roles()
@@ -90,7 +88,7 @@ public class AdminUserService {
                 }
               });
     }
-    rolePolicy.validate(request.actorZone(), request.roles());
+    rolePolicy.validate(request.roles());
     String normalizedEmail = User.normalizeEmail(request.email());
     if (users.findByNormalizedEmail(normalizedEmail).isPresent()) {
       throw new AuthException(
@@ -104,8 +102,7 @@ public class AdminUserService {
             request.phoneNumber() != null ? request.phoneNumber().trim() : null,
             request.avatarUrl() != null ? request.avatarUrl().trim() : null,
             passwords.encode(temporaryPassword),
-            UserStatus.ACTIVE,
-            request.actorZone());
+            UserStatus.ACTIVE);
     user.requirePasswordChange();
     for (var role : request.roles()) {
       user.addRole(role);
@@ -143,9 +140,9 @@ public class AdminUserService {
       String userAgent,
       String correlationId) {
     requireDifferentUser(actorId, userId);
-    rolePolicy.validate(request.actorZone(), request.roles());
+    rolePolicy.validate(request.roles());
     User user = requireUser(userId);
-    user.updateAccessProfile(request.actorZone(), new ArrayList<>(request.roles()));
+    user.updateAccessProfile(new ArrayList<>(request.roles()));
     auth.revokeAllSessions(userId, "roles-changed");
     audit.record(
         actorId, userId, "USER_ROLES_CHANGED", "SUCCESS", ipAddress, userAgent, correlationId);
@@ -197,7 +194,6 @@ public class AdminUserService {
         user.getPhoneNumber(),
         user.getAvatarUrl(),
         user.roleValues(),
-        user.getActorZone().name(),
         user.isVisionFallbackEnabled());
   }
 

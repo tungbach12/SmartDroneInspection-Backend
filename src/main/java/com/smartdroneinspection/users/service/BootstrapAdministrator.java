@@ -2,7 +2,6 @@ package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.config.AuthProperties;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -49,12 +48,7 @@ public class BootstrapAdministrator implements ApplicationRunner {
     }
     passwordPolicy.validate(password, email, fullName);
     User administrator =
-        new User(
-            email.trim(),
-            fullName.trim(),
-            passwords.encode(password),
-            UserStatus.ACTIVE,
-            ActorZone.PLATFORM);
+        new User(email.trim(), fullName.trim(), passwords.encode(password), UserStatus.ACTIVE);
     administrator.addRole(UserRole.ADMIN);
     administrator.requirePasswordChange();
     users.save(administrator);

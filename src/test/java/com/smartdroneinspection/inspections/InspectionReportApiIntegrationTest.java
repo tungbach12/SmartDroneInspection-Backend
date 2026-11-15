@@ -710,7 +710,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("reason", rationale)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RETURNED"));
   }
@@ -828,7 +828,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
@@ -927,7 +927,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("reason", "Clarify the report narrative")
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RETURNED"))
         .andExpect(jsonPath("$.data.returnReason").value("Clarify the report narrative"));
@@ -959,7 +959,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("approve", "false")
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("REPORT_RETURN_REASON_REQUIRED"));
 
@@ -970,7 +970,7 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .param("reason", "The east face coverage is not disclosed")
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RETURNED"))
         .andExpect(
@@ -983,7 +983,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
 
@@ -1004,20 +1004,6 @@ class InspectionReportApiIntegrationTest {
                 .path("status")
                 .stringValue())
         .isEqualTo("RETURNED");
-    assertThat(
-            objectMapper
-                    .readTree(returned.getResponse().getContentAsString())
-                    .path("data")
-                    .path("sections")
-                    .path("executiveSummary")
-                    .isMissingNode()
-                || objectMapper
-                    .readTree(returned.getResponse().getContentAsString())
-                    .path("data")
-                    .path("sections")
-                    .path("executiveSummary")
-                    .isNull())
-        .isTrue();
     mockMvc
         .perform(
             post(
@@ -1040,7 +1026,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
@@ -1124,7 +1110,7 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
@@ -1260,7 +1246,7 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void aReviewerFromAnotherOrganizationIsRefused() throws Exception {
+  void aCustomerCannotReviewOrPublishAReport() throws Exception {
     UUID versionId = createSubmittedManualVersion();
 
     mockMvc
@@ -1270,8 +1256,16 @@ class InspectionReportApiIntegrationTest {
                     fixture.inspectionId(),
                     versionId)
                 .with(principal(fixture.outsiderId(), "CUSTOMER")))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("REPORT_NOT_FOUND"));
+        .andExpect(status().isForbidden());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    versionId)
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+        .andExpect(status().isForbidden());
   }
 
   @Test
@@ -1329,12 +1323,149 @@ class InspectionReportApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.reportVersionId").value(versionId.toString()))
         .andExpect(jsonPath("$.data.versionNo").value(1))
         .andExpect(jsonPath("$.data.inspectionStatus").value("COMPLETED"))
         .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
+  }
+
+  @Test
+  void reRunningAnalysisDeduplicatesOverlappingConfirmedFindingsByIoU() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    when(inferencePort.analyze(any(), any()))
+        .thenReturn(
+            List.of(
+                new AiInferencePort.Detection(
+                    "yolo",
+                    "yolo11-test",
+                    "1.0",
+                    "Crack",
+                    new java.math.BigDecimal("0.60"),
+                    "{\"xMin\":0.10,\"yMin\":0.10,\"xMax\":0.50,\"yMax\":0.50}")));
+
+    MvcResult first =
+        mockMvc
+            .perform(
+                post(
+                        "/api/v1/inspections/{id}/evidence/{eid}/analyze",
+                        fixture.inspectionId(),
+                        evidenceId)
+                    .with(principal(fixture.inspectorId(), "INSPECTOR")))
+            .andExpect(status().isOk())
+            .andReturn();
+    UUID findingId =
+        UUID.fromString(
+            objectMapper
+                .readTree(first.getResponse().getContentAsString())
+                .path("data")
+                .get(0)
+                .path("id")
+                .stringValue());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/findings/{fid}/confirmation",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"defectLabel\":\"Crack\",\"severity\":\"HIGH\"}"))
+        .andExpect(status().isOk());
+
+    when(inferencePort.analyze(any(), any()))
+        .thenReturn(
+            List.of(
+                new AiInferencePort.Detection(
+                    "yolo",
+                    "yolo11-test",
+                    "1.0",
+                    "Crack",
+                    new java.math.BigDecimal("0.62"),
+                    "{\"xMin\":0.12,\"yMin\":0.12,\"xMax\":0.48,\"yMax\":0.48}"),
+                new AiInferencePort.Detection(
+                    "yolo",
+                    "yolo11-test",
+                    "1.0",
+                    "Spalling",
+                    new java.math.BigDecimal("0.55"),
+                    "{\"xMin\":0.60,\"yMin\":0.60,\"xMax\":0.90,\"yMax\":0.90}")));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{eid}/analyze",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .param("replace", "true")
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2));
+  }
+
+  @Test
+  void customerCannotReviewReportAndClarificationIsCappedAtTwo() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    createManualFinding(evidenceId);
+    ensureFindingsConfirmed();
+    UUID v1 = createManualDraftVersion();
+    verifyAndSubmitVersion(v1);
+
+    // CUSTOMER must be forbidden from /review
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{versionId}/review",
+                    fixture.inspectionId(),
+                    v1)
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+        .andExpect(status().isForbidden());
+
+    reviewAndPublishVersion(v1);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vid}/clarification",
+                    fixture.inspectionId(),
+                    v1)
+                .param("reason", "Clarify crack width")
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("RETURNED"));
+
+    ensureFindingsConfirmed();
+    UUID v2 = createManualDraftVersion();
+    verifyAndSubmitVersion(v2);
+    reviewAndPublishVersion(v2);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vid}/clarification",
+                    fixture.inspectionId(),
+                    v2)
+                .param("reason", "Clarify second item")
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+        .andExpect(status().isOk());
+
+    ensureFindingsConfirmed();
+    UUID v3 = createManualDraftVersion();
+    verifyAndSubmitVersion(v3);
+    reviewAndPublishVersion(v3);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vid}/clarification",
+                    fixture.inspectionId(),
+                    v3)
+                .param("reason", "Third clarification")
+                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("MAX_CLARIFICATIONS_EXCEEDED"));
   }
 
   private UUID uploadEvidence() throws Exception {

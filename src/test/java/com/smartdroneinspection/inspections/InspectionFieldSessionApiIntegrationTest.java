@@ -17,7 +17,6 @@ import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -46,7 +45,7 @@ import org.springframework.web.context.WebApplicationContext;
 @Transactional
 class InspectionFieldSessionApiIntegrationTest {
 
-  private static final Instant PLANNED_START = Instant.parse("2026-11-01T09:00:00Z");
+  private static final Instant PLANNED_START = Instant.now().plus(1, ChronoUnit.DAYS);
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired UserRepository users;
@@ -346,12 +345,7 @@ class InspectionFieldSessionApiIntegrationTest {
 
   private UUID createUser(UserRole role, String label) {
     User user =
-        new User(
-            label + "-" + UUID.randomUUID() + "@example.test",
-            label,
-            null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+        new User(label + "-" + UUID.randomUUID() + "@example.test", label, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

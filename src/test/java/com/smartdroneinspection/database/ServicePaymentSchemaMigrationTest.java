@@ -16,7 +16,6 @@ import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.math.BigDecimal;
@@ -144,16 +143,14 @@ class ServicePaymentSchemaMigrationTest {
                 "payment-test-" + UUID.randomUUID() + "@example.test",
                 "Payment Test Customer",
                 "test-password-hash",
-                UserStatus.ACTIVE,
-                ActorZone.CUSTOMER));
+                UserStatus.ACTIVE));
     User inspector =
         users.saveAndFlush(
             new User(
                 "payment-inspector-" + UUID.randomUUID() + "@example.test",
                 "Payment Test Inspector",
                 "test-password-hash",
-                UserStatus.ACTIVE,
-                ActorZone.INSPECTOR));
+                UserStatus.ACTIVE));
     AssetCategory category =
         categories.saveAndFlush(
             new AssetCategory(

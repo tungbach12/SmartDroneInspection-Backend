@@ -1546,6 +1546,21 @@ public class ContractWorkflowService
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public boolean isAcceptedOrPaid(UUID inspectionId) {
+    if (inspectionId == null) {
+      return false;
+    }
+    return occurrences
+        .findByInspectionId(inspectionId)
+        .map(
+            occurrence ->
+                occurrence.getReportAcceptedAt() != null
+                    || occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID)
+        .orElse(false);
+  }
+
+  @Override
   @Transactional
   public void acceptReport(UUID actorId, UUID inspectionId, UUID reportVersionId) {
     if (actorId == null || inspectionId == null || reportVersionId == null) {

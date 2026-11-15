@@ -140,6 +140,7 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       "select count(i) > 0 from Inspection i where i.ownerCustomerId = :ownerCustomerId "
           + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.reassignmentRequired = false "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
@@ -151,8 +152,25 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
       @Param("end") java.time.Instant end);
 
   @Query(
+      "select count(i) > 0 from Inspection i where i.ownerCustomerId = :ownerCustomerId "
+          + "and i.id <> :excludeInspectionId "
+          + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.reassignmentRequired = false "
+          + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
+          + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
+          + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
+  boolean hasScheduleConflictByOwnerExcluding(
+      @Param("ownerCustomerId") UUID ownerCustomerId,
+      @Param("inspectorId") UUID inspectorId,
+      @Param("droneId") UUID droneId,
+      @Param("start") java.time.Instant start,
+      @Param("end") java.time.Instant end,
+      @Param("excludeInspectionId") UUID excludeInspectionId);
+
+  @Query(
       "select count(i) > 0 from Inspection i where "
           + "(i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.reassignmentRequired = false "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
@@ -161,6 +179,29 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
       @Param("droneId") UUID droneId,
       @Param("start") java.time.Instant start,
       @Param("end") java.time.Instant end);
+
+  @Query(
+      "select count(i) > 0 from Inspection i where "
+          + "i.id <> :excludeInspectionId "
+          + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
+          + "and i.reassignmentRequired = false "
+          + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
+          + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
+          + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
+  boolean hasPlatformPartnerScheduleConflictExcluding(
+      @Param("inspectorId") UUID inspectorId,
+      @Param("droneId") UUID droneId,
+      @Param("start") java.time.Instant start,
+      @Param("end") java.time.Instant end,
+      @Param("excludeInspectionId") UUID excludeInspectionId);
+
+  @Query(
+      "select i from Inspection i where i.status = com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED "
+          + "and i.reassignmentRequired = false "
+          + "and i.overdueNotifiedAt is null "
+          + "and i.plannedEndAt is not null and i.plannedEndAt < :cutoff "
+          + "and not exists (select fs.id from FieldSession fs where fs.inspectionId = i.id)")
+  List<Inspection> findScheduledOverdueWithoutSession(@Param("cutoff") java.time.Instant cutoff);
 
   @Query(
       "select count(i) > 0 from Inspection i where i.id = :inspectionId "

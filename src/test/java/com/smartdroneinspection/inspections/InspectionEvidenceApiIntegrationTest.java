@@ -352,7 +352,7 @@ class InspectionEvidenceApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
 
@@ -367,6 +367,31 @@ class InspectionEvidenceApiIntegrationTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM evidence WHERE id = ?", Long.class, evidenceId))
         .isEqualTo(1L);
+  }
+
+  @Test
+  void evidenceUploadIsRejectedWhenInspectionIsScheduledOrCancelled() throws Exception {
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'SCHEDULED' WHERE id = ?", fixture.inspectionId());
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "pre.png", "image/png", PNG_BYTES))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTION_STATE_CONFLICT"));
+
+    jdbcTemplate.update(
+        "UPDATE inspections SET status = 'CANCELLED' WHERE id = ?", fixture.inspectionId());
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "cancelled.png", "image/png", PNG_BYTES))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTION_STATE_CONFLICT"));
   }
 
   private UUID createSubmittedManualVersion() throws Exception {

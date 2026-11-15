@@ -15,6 +15,7 @@ import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
@@ -187,8 +188,9 @@ public class FindingService {
       UUID actorId, UUID inspectionId, UUID evidenceId, boolean replace) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
-    if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
+    if (inspection.getStatus() == InspectionStatus.SCHEDULED
+        || inspection.getStatus() == InspectionStatus.IN_PROGRESS
+        || inspection.getStatus() == InspectionStatus.CANCELLED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",
@@ -266,6 +268,9 @@ public class FindingService {
         aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
     int autoConfirmedCount = 0;
     for (AiInferencePort.Detection detection : detections) {
+      if (isDuplicateConfirmedDetection(detection, reviewed)) {
+        continue;
+      }
       Finding createdFinding =
           new Finding(
               inspectionId,
@@ -305,8 +310,9 @@ public class FindingService {
       UUID actorId, UUID inspectionId, UUID videoEvidenceId, AnalyzeVideoRequest request) {
     Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
     rejectLockedFindingEdits(inspectionId);
-    if (inspection.getStatus()
-        != com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED) {
+    if (inspection.getStatus() == InspectionStatus.SCHEDULED
+        || inspection.getStatus() == InspectionStatus.IN_PROGRESS
+        || inspection.getStatus() == InspectionStatus.CANCELLED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FINDINGS_LOCKED",
@@ -766,12 +772,99 @@ public class FindingService {
   }
 
   private void syncFindingsConfirmationAfterEdit(Inspection inspection) {
-    if (inspection.getStatus()
-            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.FIELD_COMPLETED
+    if (inspection.getStatus() == InspectionStatus.FIELD_COMPLETED
         && inspection.hasFindingsConfirmation()) {
       inspection.reopenFindings();
       inspections.saveAndFlush(inspection);
     }
+  }
+
+  private static final double DUPLICATE_IOU_THRESHOLD = 0.5;
+  private static final tools.jackson.databind.ObjectMapper BBOX_MAPPER =
+      new tools.jackson.databind.ObjectMapper();
+
+  private static boolean isDuplicateConfirmedDetection(
+      AiInferencePort.Detection detection, List<Finding> reviewed) {
+    if (detection == null || reviewed == null || reviewed.isEmpty()) {
+      return false;
+    }
+    double[] candidateBox = parseBox(detection.boundingBox());
+    if (candidateBox == null) {
+      return false;
+    }
+    String label = detection.predictedLabel();
+    for (Finding existing : reviewed) {
+      if (existing.getStatus() != FindingStatus.CONFIRMED) {
+        continue;
+      }
+      if (label != null
+          && existing.getDefectLabel() != null
+          && !label.equalsIgnoreCase(existing.getDefectLabel())) {
+        continue;
+      }
+      double[] existingBox = parseBox(existing.getBoundingBox());
+      if (existingBox != null
+          && intersectionOverUnion(candidateBox, existingBox) >= DUPLICATE_IOU_THRESHOLD) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Parses normalized {xMin,yMin,xMax,yMax} or {x,y,w,h} bounding box JSON; null if invalid. */
+  private static double[] parseBox(String rawJson) {
+    if (rawJson == null || rawJson.isBlank()) {
+      return null;
+    }
+    try {
+      tools.jackson.databind.JsonNode node = BBOX_MAPPER.readTree(rawJson);
+      if (node == null || !node.isObject()) {
+        return null;
+      }
+      if (node.hasNonNull("xMin")
+          && node.hasNonNull("yMin")
+          && node.hasNonNull("xMax")
+          && node.hasNonNull("yMax")) {
+        double xMin = node.get("xMin").asDouble();
+        double yMin = node.get("yMin").asDouble();
+        double xMax = node.get("xMax").asDouble();
+        double yMax = node.get("yMax").asDouble();
+        if (xMax > xMin && yMax > yMin) {
+          return new double[] {xMin, yMin, xMax, yMax};
+        }
+      } else if (node.hasNonNull("x")
+          && node.hasNonNull("y")
+          && node.hasNonNull("w")
+          && node.hasNonNull("h")) {
+        double x = node.get("x").asDouble();
+        double y = node.get("y").asDouble();
+        double w = node.get("w").asDouble();
+        double h = node.get("h").asDouble();
+        if (w > 0 && h > 0) {
+          return new double[] {x, y, x + w, y + h};
+        }
+      }
+      return null;
+    } catch (Exception ex) {
+      return null;
+    }
+  }
+
+  private static double intersectionOverUnion(double[] a, double[] b) {
+    double interXMin = Math.max(a[0], b[0]);
+    double interYMin = Math.max(a[1], b[1]);
+    double interXMax = Math.min(a[2], b[2]);
+    double interYMax = Math.min(a[3], b[3]);
+    double interW = Math.max(0.0, interXMax - interXMin);
+    double interH = Math.max(0.0, interYMax - interYMin);
+    double interArea = interW * interH;
+    if (interArea <= 0.0) {
+      return 0.0;
+    }
+    double areaA = Math.max(0.0, a[2] - a[0]) * Math.max(0.0, a[3] - a[1]);
+    double areaB = Math.max(0.0, b[2] - b[0]) * Math.max(0.0, b[3] - b[1]);
+    double union = areaA + areaB - interArea;
+    return union <= 0.0 ? 0.0 : interArea / union;
   }
 
   private void rejectFinalizedReportFindingEdits(UUID inspectionId) {

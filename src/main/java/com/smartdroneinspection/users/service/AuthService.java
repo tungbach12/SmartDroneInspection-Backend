@@ -266,8 +266,7 @@ public class AuthService {
             null,
             avatarUrl,
             null,
-            com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE,
-            com.smartdroneinspection.users.domain.enums.ActorZone.CUSTOMER);
+            com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE);
     newUser.addRole(com.smartdroneinspection.users.domain.enums.UserRole.CUSTOMER);
     newUser.recordSuccessfulLogin(ipAddress);
     User saved = users.save(newUser);
@@ -596,7 +595,6 @@ public class AuthService {
         user.getPhoneNumber(),
         user.getAvatarUrl(),
         user.roleValues(),
-        user.getActorZone().name(),
         user.isVisionFallbackEnabled(),
         profile.getPilotLicenseNumber(),
         profile.getPilotLicenseClass(),

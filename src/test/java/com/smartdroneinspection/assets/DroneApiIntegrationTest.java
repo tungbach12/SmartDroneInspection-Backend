@@ -14,7 +14,6 @@ import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -309,8 +308,7 @@ class DroneApiIntegrationTest {
             "unentitled-" + organizationId + "@example.test",
             "unentitled-admin",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     admin.addRole(UserRole.CUSTOMER);
     return users.saveAndFlush(admin).getId();
   }

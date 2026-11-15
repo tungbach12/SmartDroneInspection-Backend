@@ -1,6 +1,5 @@
 package com.smartdroneinspection.users.domain;
 
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import jakarta.persistence.Column;
@@ -45,10 +44,6 @@ public class User {
   @Column(nullable = false, length = 32)
   private UserStatus status;
 
-  @Enumerated(EnumType.STRING)
-  @Column(name = "actor_zone", nullable = false, length = 32)
-  private ActorZone actorZone;
-
   @Column(name = "auth_version", nullable = false)
   private int authVersion;
 
@@ -78,9 +73,8 @@ public class User {
 
   protected User() {}
 
-  public User(
-      String email, String fullName, String passwordHash, UserStatus status, ActorZone actorZone) {
-    this(email, fullName, null, null, passwordHash, status, actorZone);
+  public User(String email, String fullName, String passwordHash, UserStatus status) {
+    this(email, fullName, null, null, passwordHash, status);
   }
 
   public User(
@@ -89,8 +83,7 @@ public class User {
       String phoneNumber,
       String avatarUrl,
       String passwordHash,
-      UserStatus status,
-      ActorZone actorZone) {
+      UserStatus status) {
     this.email = email;
     this.normalizedEmail = normalizeEmail(email);
     this.fullName = fullName;
@@ -98,7 +91,6 @@ public class User {
     this.avatarUrl = avatarUrl;
     this.passwordHash = passwordHash;
     this.status = status;
-    this.actorZone = actorZone;
     this.createdAt = Instant.now();
     this.updatedAt = this.createdAt;
   }
@@ -153,17 +145,13 @@ public class User {
     return status;
   }
 
-  public ActorZone getActorZone() {
-    return actorZone;
-  }
-
   public void setFullName(String fullName) {
     this.fullName = fullName;
     this.updatedAt = Instant.now();
   }
 
   public void approveAsCustomer() {
-    updateAccessProfile(ActorZone.CUSTOMER, List.of(UserRole.CUSTOMER));
+    updateAccessProfile(List.of(UserRole.CUSTOMER));
     this.status = UserStatus.ACTIVE;
     this.otpVerified = true;
     this.updatedAt = Instant.now();
@@ -263,8 +251,7 @@ public class User {
     this.updatedAt = Instant.now();
   }
 
-  public void updateAccessProfile(ActorZone actorZone, List<UserRole> roles) {
-    this.actorZone = actorZone;
+  public void updateAccessProfile(List<UserRole> roles) {
     replaceRoles(roles);
     incrementAuthVersion();
   }

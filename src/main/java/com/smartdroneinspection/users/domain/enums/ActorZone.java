@@ -1,7 +1,0 @@
-package com.smartdroneinspection.users.domain.enums;
-
-public enum ActorZone {
-  PLATFORM,
-  CUSTOMER,
-  INSPECTOR
-}

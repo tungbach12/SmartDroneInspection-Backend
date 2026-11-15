@@ -12,7 +12,6 @@ import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.domain.InspectorFlightLog;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorFlightLogRepository;
@@ -64,8 +63,7 @@ class InspectorProfileServiceTest {
             "0901234567",
             null,
             "hash",
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     profile = new InspectorProfile(inspectorId);
     profile.updateFlightExperience(BigDecimal.valueOf(50), null, null, null);

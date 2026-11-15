@@ -36,6 +36,7 @@ class InspectionCreationServiceTest {
   private final UUID ownerCustomerId = UUID.randomUUID();
   private final UUID inspectorId = UUID.randomUUID();
   private final UUID partnerInspectorId = UUID.randomUUID();
+  private final UUID managerId = UUID.randomUUID();
   private final UUID assetId = UUID.randomUUID();
   private final UUID droneId = UUID.randomUUID();
   private final UUID inspectionId = UUID.randomUUID();
@@ -59,6 +60,9 @@ class InspectionCreationServiceTest {
         .thenReturn(
             Optional.of(
                 new UserAccess.ActiveUser(ownerCustomerId, Set.of(Roles.CUSTOMER), "Customer")));
+    when(userAccess.findActiveUser(managerId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Manager")));
   }
 
   @Test
@@ -86,7 +90,6 @@ class InspectionCreationServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",
@@ -123,7 +126,6 @@ class InspectionCreationServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",
@@ -169,7 +171,6 @@ class InspectionCreationServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",
@@ -178,7 +179,7 @@ class InspectionCreationServiceTest {
             null);
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(soonExpiringPilot));
 
-    assertThatThrownBy(() -> service.reschedule(ownerCustomerId, inspectionId, newStart, newEnd))
+    assertThatThrownBy(() -> service.reschedule(managerId, inspectionId, newStart, newEnd))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             ex ->
@@ -190,7 +191,6 @@ class InspectionCreationServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",
@@ -211,7 +211,7 @@ class InspectionCreationServiceTest {
     ReflectionTestUtils.setField(expiringDrone, "id", droneId);
     when(drones.findById(droneId)).thenReturn(Optional.of(expiringDrone));
 
-    assertThatThrownBy(() -> service.reschedule(ownerCustomerId, inspectionId, newStart, newEnd))
+    assertThatThrownBy(() -> service.reschedule(managerId, inspectionId, newStart, newEnd))
         .isInstanceOf(BusinessException.class)
         .satisfies(
             ex ->
@@ -240,7 +240,6 @@ class InspectionCreationServiceTest {
         new UserAccess.ActiveUser(
             partnerInspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Partner 2",
             "p2@test.local",
             "LIC-2",
@@ -308,7 +307,6 @@ class InspectionCreationServiceTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",
