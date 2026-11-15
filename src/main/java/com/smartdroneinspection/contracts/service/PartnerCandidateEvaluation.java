@@ -49,6 +49,9 @@ public final class PartnerCandidateEvaluation {
           check("PILOT_LICENSE_CLASS_MATCH", Status.FAIL, "No active partner pilot profile."));
     } else if (inspector.pilotLicenseNumber() == null || inspector.pilotLicenseNumber().isBlank()) {
       hardGates.add(check("PILOT_LICENSE_VALID", Status.FAIL, "Pilot license number is missing."));
+    } else if (inspector.pilotLicenseFileKey() == null
+        || inspector.pilotLicenseFileKey().isBlank()) {
+      hardGates.add(check("PILOT_LICENSE_VALID", Status.FAIL, "Pilot license scan is missing."));
     } else if (occurrenceStart == null) {
       hardGates.add(check("PILOT_LICENSE_VALID", Status.UNKNOWN, "Occurrence time is missing."));
     } else if (inspector.pilotLicenseExpiresAt() == null) {
@@ -71,7 +74,7 @@ public final class PartnerCandidateEvaluation {
       hardGates.add(check("DRONE_REGISTRATION", Status.UNKNOWN, "Registration is unknown."));
       hardGates.add(check("DRONE_MTOW_UNKNOWN", Status.UNKNOWN, "Drone MTOW is not known."));
     } else {
-      boolean available = drone.isEligibleForAssignment();
+      boolean available = drone.isEligibleForAssignment(occurrenceStart) && drone.hasKnownMtow();
       hardGates.add(
           check(
               "DRONE_AVAILABLE",
@@ -89,9 +92,15 @@ public final class PartnerCandidateEvaluation {
                   : "Drone belongs to another Inspector."));
       if (drone.getRegistrationNumber() == null || drone.getRegistrationNumber().isBlank()) {
         hardGates.add(check("DRONE_REGISTRATION", Status.FAIL, "Registration number is missing."));
-      } else if (drone.getRegistrationExpiresAt() == null || occurrenceStart == null) {
+      } else if (drone.getRegistrationFileKey() == null
+          || drone.getRegistrationFileKey().isBlank()
+          || drone.getRegistrationExpiresAt() == null
+          || occurrenceStart == null) {
         hardGates.add(
-            check("DRONE_REGISTRATION", Status.UNKNOWN, "Registration validity is incomplete."));
+            check(
+                "DRONE_REGISTRATION",
+                Status.UNKNOWN,
+                "Registration evidence or validity is incomplete."));
       } else {
         boolean registrationValid = drone.getRegistrationExpiresAt().isAfter(occurrenceStart);
         hardGates.add(
@@ -104,15 +113,20 @@ public final class PartnerCandidateEvaluation {
       }
 
       if (drone.resolveMtowKg() == null) {
-        hardGates.add(check("DRONE_MTOW_UNKNOWN", Status.UNKNOWN, "Drone MTOW is unknown."));
-      }
-      if (inspector == null
-          || inspector.pilotLicenseClass() == null
-          || inspector.pilotLicenseClass().isBlank()) {
-        hardGates.add(
-            check("PILOT_LICENSE_CLASS_MATCH", Status.UNKNOWN, "License class is not recorded."));
+        hardGates.add(check("DRONE_MTOW_UNKNOWN", Status.FAIL, "Drone MTOW is unknown."));
       } else {
-        boolean qualified = inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense());
+        hardGates.add(check("DRONE_MTOW_UNKNOWN", Status.PASS, "Drone MTOW is recorded."));
+      }
+      if (inspector == null || !inspector.hasRecognizedPilotLicenseClass()) {
+        hardGates.add(
+            check(
+                "PILOT_LICENSE_CLASS_MATCH",
+                Status.FAIL,
+                "A recognized Class A or Class B license is required."));
+      } else {
+        boolean qualified =
+            inspector.isLicenseClassQualifiedForDrone(
+                drone.hasKnownMtow(), drone.requiresClassBForSafety());
         hardGates.add(
             check(
                 "PILOT_LICENSE_CLASS_MATCH",

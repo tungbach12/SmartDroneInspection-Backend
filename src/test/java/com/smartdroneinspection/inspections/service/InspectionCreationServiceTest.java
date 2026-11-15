@@ -95,7 +95,7 @@ class InspectionCreationServiceTest {
             "LIC-01",
             "CLASS_B",
             plannedStart.minus(1, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(expiredPilot));
 
     Drone validDrone =
@@ -131,7 +131,7 @@ class InspectionCreationServiceTest {
             "LIC-01",
             "CLASS_B",
             plannedStart.plus(30, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(validPilot));
 
     Drone expiringDrone =
@@ -176,7 +176,7 @@ class InspectionCreationServiceTest {
             "LIC-01",
             "CLASS_B",
             Instant.now().plus(15, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(soonExpiringPilot));
 
     assertThatThrownBy(() -> service.reschedule(managerId, inspectionId, newStart, newEnd))
@@ -196,7 +196,7 @@ class InspectionCreationServiceTest {
             "LIC-01",
             "CLASS_B",
             Instant.now().plus(365, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(validPilot));
 
     Drone expiringDrone =
@@ -245,7 +245,7 @@ class InspectionCreationServiceTest {
             "LIC-2",
             "CLASS_B",
             start.plus(60, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(partnerInspectorId)).thenReturn(Optional.of(newPartner));
 
     // Old partner's drone left unreplaced -> rejected
@@ -312,7 +312,7 @@ class InspectionCreationServiceTest {
             "LIC-01",
             "CLASS_B",
             Instant.now().plus(90, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(validPilot));
 
     Drone maintenanceDrone =

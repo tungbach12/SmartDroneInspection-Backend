@@ -64,6 +64,24 @@ public class InspectorProfileService {
     }
     user.setPhoneNumber(resolveOptionalText(request.phoneNumber(), user.getPhoneNumber()));
     InspectorProfile profile = findOrCreateProfile(inspectorUserId);
+    String nextLicenseNumber =
+        resolveOptionalText(request.pilotLicenseNumber(), profile.getPilotLicenseNumber());
+    String nextLicenseClass =
+        resolveOptionalText(request.pilotLicenseClass(), profile.getPilotLicenseClass());
+    java.time.LocalDate nextIssuedDate =
+        request.pilotLicenseIssuedDate() != null
+            ? request.pilotLicenseIssuedDate()
+            : profile.getPilotLicenseIssuedDate();
+    Instant nextExpiresAt =
+        request.pilotLicenseExpiresAt() != null
+            ? request.pilotLicenseExpiresAt()
+            : profile.getPilotLicenseExpiresAt();
+    String nextAuthority =
+        resolveOptionalText(request.pilotLicenseAuthority(), profile.getPilotLicenseAuthority());
+
+    validatePilotLicenseUpdate(
+        request, nextLicenseNumber, nextLicenseClass, nextIssuedDate, nextExpiresAt, nextAuthority);
+
     profile.updatePersonalDetails(
         resolveOptionalText(request.citizenId(), profile.getCitizenId()),
         request.dateOfBirth() != null ? request.dateOfBirth() : profile.getDateOfBirth(),
@@ -72,16 +90,7 @@ public class InspectorProfileService {
 
     // Update Pilot license (null preserves existing values so partial updates do not wipe records)
     profile.updatePilotLicense(
-        resolveOptionalText(request.pilotLicenseNumber(), profile.getPilotLicenseNumber()),
-        resolveOptionalText(request.pilotLicenseClass(), profile.getPilotLicenseClass()),
-        request.pilotLicenseIssuedDate() != null
-            ? request.pilotLicenseIssuedDate()
-            : profile.getPilotLicenseIssuedDate(),
-        request.pilotLicenseExpiresAt() != null
-            ? request.pilotLicenseExpiresAt()
-            : profile.getPilotLicenseExpiresAt(),
-        resolveOptionalText(request.pilotLicenseAuthority(), profile.getPilotLicenseAuthority()),
-        null);
+        nextLicenseNumber, nextLicenseClass, nextIssuedDate, nextExpiresAt, nextAuthority, null);
 
     // Update Flight experience
     profile.updateFlightExperience(
@@ -242,6 +251,80 @@ public class InspectorProfileService {
 
   private InspectorProfile loadProfile(UUID userId) {
     return profileRepository.findById(userId).orElseGet(() -> new InspectorProfile(userId));
+  }
+
+  private void validatePilotLicenseUpdate(
+      UpdateInspectorProfileRequest request,
+      String licenseNumber,
+      String licenseClass,
+      java.time.LocalDate issuedDate,
+      Instant expiresAt,
+      String authority) {
+    boolean anyLicenseFieldTouched =
+        request.pilotLicenseNumber() != null
+            || request.pilotLicenseClass() != null
+            || request.pilotLicenseIssuedDate() != null
+            || request.pilotLicenseExpiresAt() != null
+            || request.pilotLicenseAuthority() != null;
+    if (!anyLicenseFieldTouched) {
+      return;
+    }
+
+    boolean anyLicenseValuePresent =
+        licenseNumber != null
+            || licenseClass != null
+            || issuedDate != null
+            || expiresAt != null
+            || authority != null;
+    if (!anyLicenseValuePresent) {
+      return;
+    }
+
+    if (issuedDate != null && issuedDate.isAfter(java.time.LocalDate.now())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_INVALID",
+          "Pilot license issue date cannot be in the future.");
+    }
+    if (issuedDate != null
+        && expiresAt != null
+        && !issuedDate.isBefore(expiresAt.atZone(java.time.ZoneOffset.UTC).toLocalDate())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_INVALID",
+          "Pilot license expiry must be after its issue date.");
+    }
+
+    if (licenseNumber == null || expiresAt == null || !expiresAt.isAfter(Instant.now())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_INVALID",
+          "Pilot license number and a future expiry date are required.");
+    }
+    if (!isRecognizedLicenseClass(licenseClass)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INVALID",
+          "Pilot license class must be CLASS_A or CLASS_B.");
+    }
+  }
+
+  private static boolean isRecognizedLicenseClass(String licenseClass) {
+    if (licenseClass == null) return false;
+    return switch (licenseClass.trim().toUpperCase(java.util.Locale.ROOT)) {
+      case "CLASS_A",
+          "CLASS A",
+          "HẠNG A",
+          "HANG A",
+          "A",
+          "CLASS_B",
+          "CLASS B",
+          "HẠNG B",
+          "HANG B",
+          "B" ->
+          true;
+      default -> false;
+    };
   }
 
   private InspectorProfileResponse toProfileResponse(User user, InspectorProfile profile) {
