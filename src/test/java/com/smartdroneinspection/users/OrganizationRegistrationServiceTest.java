@@ -17,7 +17,6 @@ import com.smartdroneinspection.users.api.dto.request.FirstAssetRegistrationRequ
 import com.smartdroneinspection.users.api.dto.request.OrganizationRegistrationRequest;
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.LoginOtpChannel;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
@@ -84,9 +83,7 @@ class OrganizationRegistrationServiceTest {
     UUID regId = UUID.randomUUID();
     UUID adminId = UUID.randomUUID();
 
-    User rejectedUser =
-        new User(
-            email, "Old Name", null, null, "old-hash", UserStatus.DISABLED, ActorZone.CUSTOMER);
+    User rejectedUser = new User(email, "Old Name", null, null, "old-hash", UserStatus.DISABLED);
     rejectedUser.addRole(UserRole.CUSTOMER);
     ReflectionTestUtils.setField(rejectedUser, "id", userId);
 
@@ -163,9 +160,7 @@ class OrganizationRegistrationServiceTest {
     UUID userId = UUID.randomUUID();
     UUID adminId = UUID.randomUUID();
 
-    User rejectedUser =
-        new User(
-            email, "Old Name", null, null, "old-hash", UserStatus.DISABLED, ActorZone.CUSTOMER);
+    User rejectedUser = new User(email, "Old Name", null, null, "old-hash", UserStatus.DISABLED);
     rejectedUser.addRole(UserRole.CUSTOMER);
     ReflectionTestUtils.setField(rejectedUser, "id", userId);
 
@@ -219,7 +214,7 @@ class OrganizationRegistrationServiceTest {
 
     assertThat(response.registrationStatus()).isEqualTo("ACTIVE");
     assertThat(rejectedUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
-    assertThat(rejectedUser.getActorZone()).isEqualTo(ActorZone.CUSTOMER);
+    assertThat(rejectedUser.roleValues()).containsExactly("CUSTOMER");
     verify(events).publishEvent(any(CustomerRegistrationEvent.class));
   }
 
@@ -228,14 +223,8 @@ class OrganizationRegistrationServiceTest {
     String pendingEmail = "pending@company.test";
     UUID pendingUserId = UUID.randomUUID();
     User pendingUser =
-        new User(
-            pendingEmail,
-            "Pending Name",
-            null,
-            null,
-            "hash",
-            UserStatus.DISABLED,
-            ActorZone.CUSTOMER);
+        new User(pendingEmail, "Pending Name", null, null, "hash", UserStatus.DISABLED);
+    pendingUser.addRole(UserRole.CUSTOMER);
     ReflectionTestUtils.setField(pendingUser, "id", pendingUserId);
     ProspectiveCustomerRegistration pendingReg =
         new ProspectiveCustomerRegistration(
@@ -300,8 +289,8 @@ class OrganizationRegistrationServiceTest {
     String rejectedEmail = "rejected@company.test";
     UUID rejectedId = UUID.randomUUID();
     User rejectedUser =
-        new User(
-            rejectedEmail, "Rejected", null, null, "hash", UserStatus.DISABLED, ActorZone.CUSTOMER);
+        new User(rejectedEmail, "Rejected", null, null, "hash", UserStatus.DISABLED);
+    rejectedUser.addRole(UserRole.CUSTOMER);
     ReflectionTestUtils.setField(rejectedUser, "id", rejectedId);
     ProspectiveCustomerRegistration rejectedReg =
         new ProspectiveCustomerRegistration(
@@ -331,8 +320,8 @@ class OrganizationRegistrationServiceTest {
     assertThat(otpResult.challengeToken()).isNotBlank();
 
     String activeEmail = "active@company.test";
-    User activeUser =
-        new User(activeEmail, "Active", null, null, "hash", UserStatus.ACTIVE, ActorZone.CUSTOMER);
+    User activeUser = new User(activeEmail, "Active", null, null, "hash", UserStatus.ACTIVE);
+    activeUser.addRole(UserRole.CUSTOMER);
     when(users.findByNormalizedEmail(activeEmail)).thenReturn(Optional.of(activeUser));
 
     assertThatThrownBy(() -> otpService.send(activeEmail, LoginOtpChannel.EMAIL, "127.0.0.1"))

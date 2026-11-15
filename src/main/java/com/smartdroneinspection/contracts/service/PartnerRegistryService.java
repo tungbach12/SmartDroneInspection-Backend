@@ -6,12 +6,15 @@ import com.smartdroneinspection.assets.domain.DroneFeatureConfig;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneFeatureConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.inspections.spi.PartnerReliabilityQuery;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,17 +30,27 @@ public class PartnerRegistryService {
   private final DroneRepository drones;
   private final UserAccess users;
   private final DroneFeatureConfigRepository featureConfigs;
+  private final ObjectProvider<PartnerReliabilityQuery> reliabilityProvider;
 
   public PartnerRegistryService(DroneRepository drones, UserAccess users) {
-    this(drones, users, null);
+    this(drones, users, null, null);
+  }
+
+  public PartnerRegistryService(
+      DroneRepository drones, UserAccess users, DroneFeatureConfigRepository featureConfigs) {
+    this(drones, users, featureConfigs, null);
   }
 
   @Autowired
   public PartnerRegistryService(
-      DroneRepository drones, UserAccess users, DroneFeatureConfigRepository featureConfigs) {
+      DroneRepository drones,
+      UserAccess users,
+      DroneFeatureConfigRepository featureConfigs,
+      ObjectProvider<PartnerReliabilityQuery> reliabilityProvider) {
     this.drones = drones;
     this.users = users;
     this.featureConfigs = featureConfigs;
+    this.reliabilityProvider = reliabilityProvider;
   }
 
   @Transactional
@@ -169,6 +182,12 @@ public class PartnerRegistryService {
         users.listActiveInspectorPartners().stream()
             .filter(UserAccess.ActiveUser::isInspectorPartner)
             .collect(java.util.stream.Collectors.toMap(UserAccess.ActiveUser::id, user -> user));
+    PartnerReliabilityQuery reliabilityQuery =
+        reliabilityProvider == null ? null : reliabilityProvider.getIfAvailable();
+    Map<UUID, PartnerReliabilityQuery.ReliabilityCounts> reliabilityByInspector =
+        reliabilityQuery == null
+            ? Map.of()
+            : reliabilityQuery.countsByInspectorIds(inspectorsById.keySet());
     return drones.findActivePartnerDrones().stream()
         .filter(drone -> drone.getInspectorOwnerId() != null)
         .filter(drone -> inspectorsById.containsKey(drone.getInspectorOwnerId()))
@@ -191,22 +210,28 @@ public class PartnerRegistryService {
                                   inspector.hasValidPilotLicense(start)
                                       && (drone.getRegistrationExpiresAt() == null
                                           || drone.getRegistrationExpiresAt().isAfter(start)));
-              return PartnerCandidateEvaluation.evaluate(
-                  inspector.id(),
-                  drone.getId(),
-                  inspector.fullName(),
-                  inspector.avatarUrl(),
-                  drone.getSerialNumber(),
-                  drone.getModel(),
-                  !drone.getImageFileKeys().isEmpty(),
-                  inspector,
-                  drone,
-                  startAt,
-                  contractConflict.test(inspector.id(), drone.getId()),
-                  inspectionConflict.test(inspector.id(), drone.getId()),
-                  ownerAndAvailable && qualifiesForWindow,
-                  asset,
-                  required);
+              PartnerCandidateEvaluation.Result evaluated =
+                  PartnerCandidateEvaluation.evaluate(
+                      inspector.id(),
+                      drone.getId(),
+                      inspector.fullName(),
+                      inspector.avatarUrl(),
+                      drone.getSerialNumber(),
+                      drone.getModel(),
+                      !drone.getImageFileKeys().isEmpty(),
+                      inspector,
+                      drone,
+                      startAt,
+                      contractConflict.test(inspector.id(), drone.getId()),
+                      inspectionConflict.test(inspector.id(), drone.getId()),
+                      ownerAndAvailable && qualifiesForWindow,
+                      asset,
+                      required);
+              PartnerReliabilityQuery.ReliabilityCounts counts =
+                  reliabilityByInspector.getOrDefault(
+                      inspector.id(), PartnerReliabilityQuery.ReliabilityCounts.ZERO);
+              return evaluated.withReliability(
+                  counts.declineCount(), counts.noShowCount(), counts.abortCount());
             })
         .sorted(
             java.util.Comparator.<PartnerCandidateEvaluation.Result>comparingInt(

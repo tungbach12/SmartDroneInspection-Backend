@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -57,10 +56,8 @@ class WorkflowBaselineTest {
     for (UserRole role : UserRole.values()) {
       String email = "w3-" + role.name().toLowerCase() + "-" + UUID.randomUUID() + "@example.test";
       String password = PASSWORD_PREFIX + UUID.randomUUID();
-      ActorZone actorZone = zoneFor(role);
       User user =
-          new User(
-              email, "W3 " + role.name(), passwords.encode(password), UserStatus.ACTIVE, actorZone);
+          new User(email, "W3 " + role.name(), passwords.encode(password), UserStatus.ACTIVE);
       user.addRole(role);
       users.saveAndFlush(user);
       credentials.put(role, new FixtureCredentials(email, password));
@@ -153,12 +150,6 @@ class WorkflowBaselineTest {
                 .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
         .andExpect(status().isNoContent())
         .andExpect(content().string(""));
-  }
-
-  private ActorZone zoneFor(UserRole role) {
-    return (role == UserRole.ADMIN || role == UserRole.MANAGER)
-        ? ActorZone.PLATFORM
-        : (role == UserRole.INSPECTOR ? ActorZone.INSPECTOR : ActorZone.CUSTOMER);
   }
 
   private record FixtureCredentials(String email, String password) {}

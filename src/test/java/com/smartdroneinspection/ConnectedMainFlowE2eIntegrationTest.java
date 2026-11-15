@@ -21,7 +21,6 @@ import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -108,16 +107,12 @@ class ConnectedMainFlowE2eIntegrationTest {
 
     UUID orgAdminId =
         createUser(
-            UserRole.CUSTOMER,
-            ActorZone.CUSTOMER,
-            "org.admin." + UUID.randomUUID() + "@skyview.test",
-            "John OrgAdmin");
+            UserRole.CUSTOMER, "org.admin." + UUID.randomUUID() + "@skyview.test", "John OrgAdmin");
 
     log.info("[FOUNDATION] Step 0.3: Provisioning Inspector...");
     UUID inspectorId =
         createUser(
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@skyview.test",
             "David Inspector");
     jdbcTemplate.update(
@@ -293,8 +288,15 @@ class ConnectedMainFlowE2eIntegrationTest {
     log.info("[MF2] SUCCESS: Partner inspection assigned with ID {}", inspectionId);
 
     // =========================================================================
-    // STEP 2: MF2 - Flight Permit -> Field Session
+    // STEP 2: MF2 - Inspector Accept -> Flight Permit -> Field Session
     // =========================================================================
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/accept", inspectionId)
+                .with(principal(inspectorId, "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.assignmentStatus").value("ACCEPTED"));
+
     log.info("[MF2] Step 2.1: Inspector uploads Flight Permit -> READY_FOR_FLIGHT...");
     mockMvc
         .perform(
@@ -457,7 +459,7 @@ class ConnectedMainFlowE2eIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .param("approve", "true")
-                .with(principal(orgAdminId, "CUSTOMER")))
+                .with(principal(platformAdminId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
@@ -477,14 +479,13 @@ class ConnectedMainFlowE2eIntegrationTest {
             "platform.admin." + UUID.randomUUID() + "@smartdrone.test",
             "Platform Administrator",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.PLATFORM);
+            UserStatus.ACTIVE);
     admin.addRole(UserRole.MANAGER);
     return users.saveAndFlush(admin).getId();
   }
 
-  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
+  private UUID createUser(UserRole role, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

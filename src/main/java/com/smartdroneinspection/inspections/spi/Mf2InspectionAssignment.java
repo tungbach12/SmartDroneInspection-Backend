@@ -9,6 +9,15 @@ public interface Mf2InspectionAssignment {
   boolean hasPlatformScheduleConflict(
       UUID inspectorId, UUID droneId, Instant plannedStartAt, Instant plannedEndAt);
 
+  default boolean hasPlatformScheduleConflictExcluding(
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID excludeInspectionId) {
+    return hasPlatformScheduleConflict(inspectorId, droneId, plannedStartAt, plannedEndAt);
+  }
+
   UUID assign(
       UUID ownerCustomerId,
       UUID assetId,

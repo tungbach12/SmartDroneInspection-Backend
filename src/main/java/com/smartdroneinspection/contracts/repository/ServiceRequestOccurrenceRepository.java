@@ -50,4 +50,17 @@ public interface ServiceRequestOccurrenceRepository
       @Param("droneId") UUID droneId,
       @Param("start") java.time.Instant start,
       @Param("end") java.time.Instant end);
+
+  @Query(
+      "select count(occurrence) > 0 from ServiceRequestOccurrence occurrence "
+          + "where (occurrence.inspectionId is null or occurrence.inspectionId <> :excludeInspectionId) "
+          + "and (occurrence.inspectorId = :inspectorId or occurrence.droneId = :droneId) "
+          + "and occurrence.status = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED "
+          + "and occurrence.plannedStartAt < :end and occurrence.plannedEndAt > :start")
+  boolean hasScheduleConflictExcludingInspection(
+      @Param("inspectorId") UUID inspectorId,
+      @Param("droneId") UUID droneId,
+      @Param("start") java.time.Instant start,
+      @Param("end") java.time.Instant end,
+      @Param("excludeInspectionId") UUID excludeInspectionId);
 }

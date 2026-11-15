@@ -279,7 +279,6 @@ public class InspectorProfileService {
         user.getPhoneNumber(),
         user.getAvatarUrl(),
         user.getStatus().name(),
-        user.getActorZone().name(),
         profile.getCitizenId(),
         profile.getDateOfBirth(),
         profile.getAddress(),

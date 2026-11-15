@@ -289,11 +289,76 @@ public final class PartnerCandidateEvaluation {
       BigDecimal footprintAreaSquareMeters,
       List<Check> hardGates,
       List<Check> capabilityChecks,
-      String disclaimer) {
+      String disclaimer,
+      long declineCount,
+      long noShowCount,
+      long abortCount) {
     public Result {
       droneFeatureCodes = List.copyOf(droneFeatureCodes);
       hardGates = List.copyOf(hardGates);
       capabilityChecks = List.copyOf(capabilityChecks);
+    }
+
+    public Result(
+        UUID inspectorId,
+        UUID droneId,
+        String inspectorName,
+        String inspectorAvatarUrl,
+        String droneSerialNumber,
+        String droneModel,
+        boolean droneHasImage,
+        List<String> droneFeatureCodes,
+        Status eligibility,
+        Status capabilityFit,
+        BigDecimal droneMaxAltitudeMeters,
+        BigDecimal structureHeightMeters,
+        BigDecimal footprintAreaSquareMeters,
+        List<Check> hardGates,
+        List<Check> capabilityChecks,
+        String disclaimer) {
+      this(
+          inspectorId,
+          droneId,
+          inspectorName,
+          inspectorAvatarUrl,
+          droneSerialNumber,
+          droneModel,
+          droneHasImage,
+          droneFeatureCodes,
+          eligibility,
+          capabilityFit,
+          droneMaxAltitudeMeters,
+          structureHeightMeters,
+          footprintAreaSquareMeters,
+          hardGates,
+          capabilityChecks,
+          disclaimer,
+          0L,
+          0L,
+          0L);
+    }
+
+    public Result withReliability(long declineCount, long noShowCount, long abortCount) {
+      return new Result(
+          inspectorId,
+          droneId,
+          inspectorName,
+          inspectorAvatarUrl,
+          droneSerialNumber,
+          droneModel,
+          droneHasImage,
+          droneFeatureCodes,
+          eligibility,
+          capabilityFit,
+          droneMaxAltitudeMeters,
+          structureHeightMeters,
+          footprintAreaSquareMeters,
+          hardGates,
+          capabilityChecks,
+          disclaimer,
+          declineCount,
+          noShowCount,
+          abortCount);
     }
   }
 }

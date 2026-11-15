@@ -149,8 +149,8 @@ class DronePersistenceTest {
     jdbcTemplate.update(
         """
         INSERT INTO users
-          (id, email, normalized_email, full_name, status, actor_zone)
-        VALUES (?, ?, ?, 'Test Pilot', 'ACTIVE', 'INSPECTOR')
+          (id, email, normalized_email, full_name, status)
+        VALUES (?, ?, ?, 'Test Pilot', 'ACTIVE')
         """,
         userId,
         email,

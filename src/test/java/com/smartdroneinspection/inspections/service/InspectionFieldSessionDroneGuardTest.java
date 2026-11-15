@@ -61,7 +61,6 @@ class InspectionFieldSessionDroneGuardTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",

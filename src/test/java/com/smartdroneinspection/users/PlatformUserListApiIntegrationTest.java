@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -56,15 +55,14 @@ class PlatformUserListApiIntegrationTest {
   }
 
   @Test
-  void listsEveryManagedAccountWithItsRolesAndZone() throws Exception {
+  void listsEveryManagedAccountWithItsRoles() throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
     User customer =
         new User(
             "customer-" + unique + "@example.test",
             "Customer Manager",
             "{argon2}encoded-password",
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     customer.addRole(UserRole.CUSTOMER);
     users.saveAndFlush(customer);
 
@@ -74,9 +72,6 @@ class PlatformUserListApiIntegrationTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data[*].email", hasItem(customer.getEmail())))
         .andExpect(jsonPath("$.data[*].email", hasItem(admin.getEmail())))
-        .andExpect(
-            jsonPath("$.data[?(@.email == '" + customer.getEmail() + "')].actorZone")
-                .value("CUSTOMER"))
         .andExpect(
             jsonPath(
                 "$.data[?(@.email == '" + customer.getEmail() + "')].roles[0]",
@@ -91,8 +86,7 @@ class PlatformUserListApiIntegrationTest {
             "orgadmin-" + unique + "@example.test",
             "Organization Admin",
             "{argon2}encoded-password",
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     orgAdmin.addRole(UserRole.CUSTOMER);
     users.saveAndFlush(orgAdmin);
 
@@ -114,8 +108,7 @@ class PlatformUserListApiIntegrationTest {
             "reset-" + unique + "@example.test",
             "Resettable Engineer",
             "{argon2}encoded-password",
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     engineer.addRole(UserRole.INSPECTOR);
     users.saveAndFlush(engineer);
 
@@ -135,8 +128,7 @@ class PlatformUserListApiIntegrationTest {
             "admin-" + UUID.randomUUID() + "@example.test",
             "Platform Admin",
             "{argon2}encoded-password",
-            UserStatus.ACTIVE,
-            ActorZone.PLATFORM);
+            UserStatus.ACTIVE);
     user.addRole(UserRole.ADMIN);
     return users.saveAndFlush(user);
   }

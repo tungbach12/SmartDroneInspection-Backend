@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 import com.smartdroneinspection.users.api.dto.request.CreateUserRequest;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.service.AdminUserService;
@@ -51,10 +50,7 @@ class AdminUserServiceTest {
         service.create(
             actorId,
             new CreateUserRequest(
-                "customer@example.com",
-                "Customer Manager",
-                ActorZone.CUSTOMER,
-                Set.of(UserRole.CUSTOMER)),
+                "customer@example.com", "Customer Manager", Set.of(UserRole.CUSTOMER)),
             "127.0.0.1",
             "JUnit",
             "test-correlation");

@@ -4,7 +4,6 @@ import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -25,11 +24,10 @@ public final class AssetTestFixture {
   }
 
   public Data create() {
-    User client = saveUser("client", UserStatus.ACTIVE, ActorZone.CUSTOMER, UserRole.CUSTOMER);
-    User otherClient =
-        saveUser("other-client", UserStatus.ACTIVE, ActorZone.CUSTOMER, UserRole.CUSTOMER);
-    User manager = saveUser("manager", UserStatus.ACTIVE, ActorZone.CUSTOMER, UserRole.CUSTOMER);
-    User admin = saveUser("admin", UserStatus.ACTIVE, ActorZone.PLATFORM, UserRole.ADMIN);
+    User client = saveUser("client", UserStatus.ACTIVE, UserRole.CUSTOMER);
+    User otherClient = saveUser("other-client", UserStatus.ACTIVE, UserRole.CUSTOMER);
+    User manager = saveUser("manager", UserStatus.ACTIVE, UserRole.CUSTOMER);
+    User admin = saveUser("admin", UserStatus.ACTIVE, UserRole.ADMIN);
 
     AssetCategory category =
         categories.saveAndFlush(
@@ -39,10 +37,10 @@ public final class AssetTestFixture {
         client.getId(), otherClient.getId(), manager.getId(), admin.getId(), category.getId());
   }
 
-  private User saveUser(String label, UserStatus status, ActorZone actorZone, UserRole role) {
+  private User saveUser(String label, UserStatus status, UserRole role) {
     UUID id = UUID.randomUUID();
     String email = label + "-" + id + "@example.test";
-    User user = new User(email, label, "{noop}password", status, actorZone);
+    User user = new User(email, label, "{noop}password", status);
     user.addRole(role);
     return users.saveAndFlush(user);
   }

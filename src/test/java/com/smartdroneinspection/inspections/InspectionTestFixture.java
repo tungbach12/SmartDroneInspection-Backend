@@ -4,7 +4,6 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -31,6 +30,7 @@ public final class InspectionTestFixture {
   public Data create() {
     User inspector = saveUser("mf3-inspector", UserRole.INSPECTOR);
     User reviewer = saveUser("mf3-reviewer", UserRole.CUSTOMER);
+    User manager = saveUser("mf3-manager", UserRole.MANAGER);
     // An INSPECTOR who is not the assignee, to prove assignment scope rather than role is enforced.
     User otherInspector = saveUser("mf3-other-inspector", UserRole.INSPECTOR);
     User outsider = saveUser("mf3-outsider", UserRole.CUSTOMER);
@@ -45,6 +45,7 @@ public final class InspectionTestFixture {
         inspection.getId(),
         inspector.getId(),
         reviewer.getId(),
+        manager.getId(),
         otherInspector.getId(),
         outsider.getId());
   }
@@ -87,12 +88,7 @@ public final class InspectionTestFixture {
 
   private User saveUser(String label, UserRole role) {
     User user =
-        new User(
-            label + "-" + UUID.randomUUID() + "@example.test",
-            label,
-            null,
-            UserStatus.ACTIVE,
-            role == UserRole.INSPECTOR ? ActorZone.INSPECTOR : ActorZone.CUSTOMER);
+        new User(label + "-" + UUID.randomUUID() + "@example.test", label, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user);
   }
@@ -102,6 +98,19 @@ public final class InspectionTestFixture {
       UUID inspectionId,
       UUID inspectorId,
       UUID reviewerId,
+      UUID managerId,
       UUID otherInspectorId,
-      UUID outsiderId) {}
+      UUID outsiderId) {
+
+    public Data(
+        UUID assetId,
+        UUID inspectionId,
+        UUID inspectorId,
+        UUID reviewerId,
+        UUID otherInspectorId,
+        UUID outsiderId) {
+      this(
+          assetId, inspectionId, inspectorId, reviewerId, reviewerId, otherInspectorId, outsiderId);
+    }
+  }
 }
