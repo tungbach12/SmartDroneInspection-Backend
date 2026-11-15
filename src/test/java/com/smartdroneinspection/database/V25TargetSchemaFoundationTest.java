@@ -25,9 +25,7 @@ class V25TargetSchemaFoundationTest {
   void createsTheTargetColumnContractAcrossAllTargetTables() {
     Map<String, Set<String>> targetColumns =
         Map.ofEntries(
-            Map.entry(
-                "users",
-                Set.of("normalized_email", "full_name", "auth_version", "roles", "actor_zone")),
+            Map.entry("users", Set.of("normalized_email", "full_name", "auth_version", "roles")),
             Map.entry(
                 "inspector_profiles",
                 Set.of(

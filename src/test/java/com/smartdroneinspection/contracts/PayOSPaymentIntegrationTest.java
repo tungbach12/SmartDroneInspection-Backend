@@ -31,7 +31,6 @@ import com.smartdroneinspection.infrastructure.payment.PayOSCrypto;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -163,22 +162,15 @@ class PayOSPaymentIntegrationTest {
 
     customerUserId =
         createUser(
-            UserRole.CUSTOMER,
-            ActorZone.CUSTOMER,
-            "customer." + UUID.randomUUID() + "@payos.test",
-            "Customer Primary");
+            UserRole.CUSTOMER, "customer." + UUID.randomUUID() + "@payos.test", "Customer Primary");
 
     otherCustomerUserId =
         createUser(
-            UserRole.CUSTOMER,
-            ActorZone.CUSTOMER,
-            "other." + UUID.randomUUID() + "@other.test",
-            "Customer Other Org");
+            UserRole.CUSTOMER, "other." + UUID.randomUUID() + "@other.test", "Customer Other Org");
 
     inspectorUserId =
         createUser(
             UserRole.INSPECTOR,
-            ActorZone.INSPECTOR,
             "inspector." + UUID.randomUUID() + "@partner.test",
             "Partner Pilot");
 
@@ -588,7 +580,13 @@ class PayOSPaymentIntegrationTest {
         UUID.fromString(
             objectMapper.readTree(assignResp).at("/data/occurrences/0/inspectionId").stringValue());
 
-    // 7. Upload flight permit
+    // 7. Inspector accepts assignment and uploads flight permit
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/accept", inspectionId)
+                .with(principal(inspectorUserId, "INSPECTOR")))
+        .andExpect(status().isOk());
+
     mockMvc
         .perform(
             post("/api/v1/inspections/{id}/flight-permit", inspectionId)
@@ -707,13 +705,13 @@ class PayOSPaymentIntegrationTest {
   }
 
   private UUID createPlatformUser(UserRole role, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, ActorZone.PLATFORM);
+    User user = new User(email, fullName, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }
 
-  private UUID createUser(UserRole role, ActorZone zone, String email, String fullName) {
-    User user = new User(email, fullName, null, UserStatus.ACTIVE, zone);
+  private UUID createUser(UserRole role, String email, String fullName) {
+    User user = new User(email, fullName, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

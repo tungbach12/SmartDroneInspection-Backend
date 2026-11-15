@@ -50,6 +50,21 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public boolean hasPlatformScheduleConflictExcluding(
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID excludeInspectionId) {
+    if (excludeInspectionId == null) {
+      return hasPlatformScheduleConflict(inspectorId, droneId, plannedStartAt, plannedEndAt);
+    }
+    return inspections.hasPlatformPartnerScheduleConflictExcluding(
+        inspectorId, droneId, plannedStartAt, plannedEndAt, excludeInspectionId);
+  }
+
+  @Override
   @Transactional
   public UUID assign(
       UUID ownerCustomerId,
@@ -134,6 +149,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
             plannedStartAt,
             plannedEndAt);
     inspection.markPartnerAssignment();
+    inspection.markPendingAcceptance();
     inspection.markCustomerOwned(
         asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId);
     Inspection saved = inspections.saveAndFlush(inspection);

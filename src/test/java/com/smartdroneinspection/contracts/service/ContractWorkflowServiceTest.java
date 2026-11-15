@@ -135,7 +135,6 @@ class ContractWorkflowServiceTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    "INSPECTOR",
                     "Inspector",
                     "inspector@example.test",
                     "LIC-TEST-001",

@@ -1,5 +1,6 @@
 package com.smartdroneinspection.inspections.domain;
 
+import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -57,6 +58,34 @@ public class Inspection {
 
   @Column(name = "partner_assignment", nullable = false)
   private boolean partnerAssignment;
+
+  @Column(name = "reassignment_required", nullable = false)
+  private boolean reassignmentRequired;
+
+  @Column(name = "decline_reason", length = 2000)
+  private String declineReason;
+
+  @Column(name = "declined_at")
+  private Instant declinedAt;
+
+  @Column(name = "declined_by_inspector_id")
+  private UUID declinedByInspectorId;
+
+  @Column(name = "cancellation_reason", length = 2000)
+  private String cancellationReason;
+
+  @Column(name = "overdue_notified_at")
+  private Instant overdueNotifiedAt;
+
+  @Column(name = "clarification_count", nullable = false)
+  private int clarificationCount;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "assignment_status", nullable = false, length = 32)
+  private AssignmentStatus assignmentStatus = AssignmentStatus.ACCEPTED;
+
+  @Column(name = "assignment_accepted_at")
+  private Instant assignmentAcceptedAt;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -279,12 +308,114 @@ public class Inspection {
     moveTo(InspectionStatus.FIELD_COMPLETED);
   }
 
+  public boolean isReassignmentRequired() {
+    return reassignmentRequired;
+  }
+
+  public String getDeclineReason() {
+    return declineReason;
+  }
+
+  public Instant getDeclinedAt() {
+    return declinedAt;
+  }
+
+  public UUID getDeclinedByInspectorId() {
+    return declinedByInspectorId;
+  }
+
+  public String getCancellationReason() {
+    return cancellationReason;
+  }
+
+  public Instant getOverdueNotifiedAt() {
+    return overdueNotifiedAt;
+  }
+
+  public int getClarificationCount() {
+    return clarificationCount;
+  }
+
+  public AssignmentStatus getAssignmentStatus() {
+    return assignmentStatus;
+  }
+
+  public Instant getAssignmentAcceptedAt() {
+    return assignmentAcceptedAt;
+  }
+
+  public boolean isAssignmentPendingAcceptance() {
+    return assignmentStatus == AssignmentStatus.PENDING_ACCEPTANCE;
+  }
+
+  public void markPendingAcceptance() {
+    this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
+    this.assignmentAcceptedAt = null;
+    this.updatedAt = Instant.now();
+  }
+
+  public void acceptAssignment(UUID actorId) {
+    if (status != InspectionStatus.SCHEDULED) {
+      throw new IllegalStateException("Only a scheduled inspection can be accepted");
+    }
+    if (reassignmentRequired || assignmentStatus == AssignmentStatus.DECLINED) {
+      throw new IllegalStateException(
+          "This inspection was declined and awaits manager reassignment");
+    }
+    if (!isInspectedBy(actorId)) {
+      throw new IllegalStateException("Only the assigned inspector may accept this assignment");
+    }
+    if (this.assignmentStatus == AssignmentStatus.ACCEPTED && this.assignmentAcceptedAt != null) {
+      return;
+    }
+    Instant now = Instant.now();
+    this.assignmentStatus = AssignmentStatus.ACCEPTED;
+    this.assignmentAcceptedAt = now;
+    this.updatedAt = now;
+  }
+
+  public void decline(UUID inspectorId, String reason) {
+    if (status != InspectionStatus.SCHEDULED) {
+      throw new IllegalStateException("Only a scheduled inspection can be declined");
+    }
+    if (reassignmentRequired || assignmentStatus == AssignmentStatus.DECLINED) {
+      throw new IllegalStateException("This inspection has already been declined for reassignment");
+    }
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("Decline reason is required");
+    }
+    this.reassignmentRequired = true;
+    this.assignmentStatus = AssignmentStatus.DECLINED;
+    this.assignmentAcceptedAt = null;
+    this.declineReason = reason.trim();
+    this.declinedAt = Instant.now();
+    this.declinedByInspectorId = Objects.requireNonNull(inspectorId, "Inspector ID is required");
+    this.updatedAt = this.declinedAt;
+  }
+
+  public void markOverdueNotified(Instant at) {
+    this.overdueNotifiedAt = Objects.requireNonNull(at, "Timestamp is required");
+    this.updatedAt = Instant.now();
+  }
+
+  public void incrementClarificationCount() {
+    this.clarificationCount += 1;
+    this.updatedAt = Instant.now();
+  }
+
   public void reassign(UUID newInspectorId, UUID newDroneId) {
     if (status != InspectionStatus.SCHEDULED) {
       throw new IllegalStateException("Only a scheduled inspection can be reassigned");
     }
     this.inspectorId = Objects.requireNonNull(newInspectorId, "Inspector ID is required");
     this.droneId = newDroneId;
+    this.reassignmentRequired = false;
+    this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
+    this.assignmentAcceptedAt = null;
+    this.declineReason = null;
+    this.declinedAt = null;
+    this.declinedByInspectorId = null;
+    this.overdueNotifiedAt = null;
     this.updatedAt = Instant.now();
   }
 
@@ -292,6 +423,7 @@ public class Inspection {
     if (status == InspectionStatus.COMPLETED || status == InspectionStatus.CANCELLED) {
       throw new IllegalStateException("Inspection cannot be cancelled from status " + status);
     }
+    this.cancellationReason = reason == null || reason.isBlank() ? null : reason.trim();
     moveTo(InspectionStatus.CANCELLED);
   }
 
@@ -304,6 +436,14 @@ public class Inspection {
     }
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
+    if (this.reassignmentRequired || this.assignmentStatus == AssignmentStatus.DECLINED) {
+      this.reassignmentRequired = false;
+      this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
+      this.assignmentAcceptedAt = null;
+      this.declineReason = null;
+      this.declinedAt = null;
+      this.declinedByInspectorId = null;
+    }
     this.updatedAt = Instant.now();
   }
 

@@ -19,7 +19,6 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -55,14 +54,19 @@ class InspectionManagerDispatchApiIntegrationTest {
   @Autowired jakarta.persistence.EntityManager entityManager;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
+  private final com.fasterxml.jackson.databind.ObjectMapper sessionObjectMapper =
+      new com.fasterxml.jackson.databind.ObjectMapper();
   private MockMvc mockMvc;
   private UUID organizationId;
   private UUID managerId;
+  private UUID customerId;
+  private UUID adminId;
   private UUID inspectorId;
   private UUID newInspectorId;
   private UUID droneId;
   private UUID assetId;
   private UUID inspectionId;
+  private UUID activeSessionId;
 
   @BeforeEach
   void setUp() {
@@ -78,18 +82,31 @@ class InspectionManagerDispatchApiIntegrationTest {
             "manager-" + UUID.randomUUID() + "@test.org",
             "Dispatch Manager",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
-    manager.addRole(UserRole.CUSTOMER);
+            UserStatus.ACTIVE);
+    manager.addRole(UserRole.MANAGER);
     managerId = users.saveAndFlush(manager).getId();
+
+    User customer =
+        new User(
+            "customer-" + UUID.randomUUID() + "@test.org",
+            "Dispatch Customer",
+            null,
+            UserStatus.ACTIVE);
+    customer.addRole(UserRole.CUSTOMER);
+    customerId = users.saveAndFlush(customer).getId();
+
+    User admin =
+        new User(
+            "admin-" + UUID.randomUUID() + "@test.org", "Dispatch Admin", null, UserStatus.ACTIVE);
+    admin.addRole(UserRole.ADMIN);
+    adminId = users.saveAndFlush(admin).getId();
 
     User inspector =
         new User(
             "inspector-" + UUID.randomUUID() + "@test.org",
             "Dispatch Inspector 1",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
     jdbcTemplate.update(
@@ -105,8 +122,7 @@ class InspectionManagerDispatchApiIntegrationTest {
             "inspector2-" + UUID.randomUUID() + "@test.org",
             "Dispatch Inspector 2",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector2.addRole(UserRole.INSPECTOR);
     newInspectorId = users.saveAndFlush(inspector2).getId();
     jdbcTemplate.update(
@@ -158,6 +174,7 @@ class InspectionManagerDispatchApiIntegrationTest {
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant end = start.plus(4, ChronoUnit.HOURS);
     Inspection inspection = new Inspection(managerId, assetId, inspectorId, droneId, start, end);
+    inspection.recordFlightPermit("permits/dispatch-test.pdf", "dispatch-test.pdf", Instant.now());
     inspectionId = inspections.saveAndFlush(inspection).getId();
   }
 
@@ -165,16 +182,27 @@ class InspectionManagerDispatchApiIntegrationTest {
     return jwt()
         .jwt(j -> j.subject(managerId.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_CUSTOMER"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_MANAGER"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor inspector() {
+    return principal(inspectorId, "INSPECTOR");
+  }
+
+  private org.springframework.test.web.servlet.request.RequestPostProcessor customer() {
+    return principal(customerId, "CUSTOMER");
+  }
+
+  private org.springframework.test.web.servlet.request.RequestPostProcessor admin() {
+    return principal(adminId, "ADMIN");
+  }
+
+  private org.springframework.test.web.servlet.request.RequestPostProcessor principal(
+      UUID userId, String role) {
     return jwt()
-        .jwt(j -> j.subject(inspectorId.toString()))
+        .jwt(j -> j.subject(userId.toString()))
         .authorities(
-            new org.springframework.security.core.authority.SimpleGrantedAuthority(
-                "ROLE_INSPECTOR"));
+            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role));
   }
 
   @Test
@@ -241,31 +269,76 @@ class InspectionManagerDispatchApiIntegrationTest {
   }
 
   @Test
-  void inspectorCannotRescheduleOrCancel() throws Exception {
+  void adminAndInspectorCannotForceAbortAnActiveSession() throws Exception {
+    String startedSession =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/field-sessions", inspectionId)
+                    .with(inspector())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(Map.of("preFlightChecklistNote", "Ready"))))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    activeSessionId =
+        UUID.fromString(sessionObjectMapper.readTree(startedSession).at("/data/id").asText());
+
+    for (var principal : List.of(inspector(), customer(), admin())) {
+      mockMvc
+          .perform(
+              post(
+                      "/api/v1/inspections/{id}/field-sessions/{sessionId}/force-abort",
+                      inspectionId,
+                      activeSessionId)
+                  .with(principal)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(objectMapper.writeValueAsString(Map.of("reason", "Not authorized"))))
+          .andExpect(status().isForbidden());
+    }
+  }
+
+  @Test
+  void nonManagersCannotRescheduleReassignOrCancel() throws Exception {
     Instant newStart = Instant.now().plus(3, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
     Instant newEnd = newStart.plus(5, ChronoUnit.HOURS);
+    Map<String, String> schedule =
+        Map.of("plannedStartAt", newStart.toString(), "plannedEndAt", newEnd.toString());
+    Map<String, String> assignment =
+        Map.of("inspectorId", newInspectorId.toString(), "droneId", droneId.toString());
+    Map<String, String> reason = Map.of("reason", "Not authorized");
 
-    mockMvc
-        .perform(
-            put("/api/v1/inspections/{id}/schedule", inspectionId)
-                .with(inspector())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "plannedStartAt",
-                            newStart.toString(),
-                            "plannedEndAt",
-                            newEnd.toString()))))
-        .andExpect(status().isForbidden());
+    for (var principal : List.of(inspector(), customer(), admin())) {
+      mockMvc
+          .perform(
+              put("/api/v1/inspections/{id}/schedule", inspectionId)
+                  .with(principal)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(objectMapper.writeValueAsString(schedule)))
+          .andExpect(status().isForbidden());
 
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/cancellation", inspectionId)
-                .with(inspector())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("reason", "Inspector cancel"))))
-        .andExpect(status().isForbidden());
+      mockMvc
+          .perform(
+              put("/api/v1/inspections/{id}/assignment", inspectionId)
+                  .with(principal)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(objectMapper.writeValueAsString(assignment)))
+          .andExpect(status().isForbidden());
+
+      mockMvc
+          .perform(
+              post("/api/v1/inspections/{id}/cancellation", inspectionId)
+                  .with(principal)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(objectMapper.writeValueAsString(reason)))
+          .andExpect(status().isForbidden());
+
+      mockMvc
+          .perform(
+              post("/api/v1/inspections/{id}/reassign-candidates", inspectionId).with(principal))
+          .andExpect(status().isForbidden());
+    }
   }
 
   @Test

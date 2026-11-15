@@ -194,9 +194,9 @@ class AssetPersistenceTest {
     jdbcTemplate.update(
         """
         INSERT INTO users (
-          id, email, normalized_email, full_name, status, actor_zone,
+          id, email, normalized_email, full_name, status,
           auth_version, failed_login_count, must_change_password
-        ) VALUES (?, ?, ?, ?, 'ACTIVE', 'CUSTOMER', 0, 0, FALSE)
+        ) VALUES (?, ?, ?, ?, 'ACTIVE', 0, 0, FALSE)
         """,
         userId,
         email,

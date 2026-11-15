@@ -8,7 +8,6 @@ import com.smartdroneinspection.users.api.dto.request.RejectProspectiveCustomerR
 import com.smartdroneinspection.users.api.dto.response.ProspectiveCustomerResponse;
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -58,8 +57,7 @@ public class ProspectiveCustomerReviewService {
     requireAdmin(adminId);
     ProspectiveCustomerRegistration registration = requirePending(registrationId);
     User prospect = users.findDetailedById(registration.getUserId()).orElseThrow(this::notFound);
-    if (prospect.getActorZone() != ActorZone.CUSTOMER
-        || prospect.getStatus() != com.smartdroneinspection.users.domain.enums.UserStatus.DISABLED
+    if (prospect.getStatus() != com.smartdroneinspection.users.domain.enums.UserStatus.DISABLED
         || !prospect.roleValues().contains("CUSTOMER")) {
       throw new AuthException(
           HttpStatus.CONFLICT,
@@ -142,7 +140,7 @@ public class ProspectiveCustomerReviewService {
 
   private void requireAdmin(UUID adminId) {
     User admin = users.findDetailedById(adminId).filter(User::active).orElseThrow(this::notFound);
-    if (admin.getActorZone() != ActorZone.PLATFORM || !admin.roleValues().contains("ADMIN")) {
+    if (!admin.roleValues().contains("ADMIN")) {
       throw new AuthException(
           HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "Platform Admin access is required.");
     }

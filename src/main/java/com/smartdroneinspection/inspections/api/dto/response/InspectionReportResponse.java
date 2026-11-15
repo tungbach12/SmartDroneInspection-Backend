@@ -18,9 +18,7 @@ public record InspectionReportResponse(
     Instant publishedAt,
     Instant createdAt,
     String summary,
-    String omissionDisclosure,
-    String contentSnapshot,
-    ReportSectionsResponse sections,
+    boolean clarificationRequested,
     InspectionReportContextResponse reportContext) {
 
   public InspectionReportResponse(
@@ -35,9 +33,7 @@ public record InspectionReportResponse(
       String returnReason,
       Instant publishedAt,
       Instant createdAt,
-      String omissionDisclosure,
-      String contentSnapshot,
-      ReportSectionsResponse sections,
+      String summary,
       InspectionReportContextResponse reportContext) {
     this(
         id,
@@ -51,10 +47,8 @@ public record InspectionReportResponse(
         returnReason,
         publishedAt,
         createdAt,
-        sections != null ? sections.executiveSummary() : null,
-        omissionDisclosure,
-        contentSnapshot,
-        sections,
+        summary,
+        false,
         reportContext);
   }
 }

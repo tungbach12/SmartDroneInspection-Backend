@@ -245,6 +245,18 @@ public class InspectionFieldSessionController {
         response(fieldSessions.abort(subject(jwt), inspectionId, sessionId, request.reason())));
   }
 
+  @PostMapping("/{sessionId}/force-abort")
+  @PreAuthorize("hasRole('MANAGER')")
+  public ApiResponse<FieldSessionResponse> forceAbort(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId,
+      @Valid @RequestBody AbortFieldSessionRequest request) {
+    return ApiResponse.success(
+        response(
+            fieldSessions.forceAbort(subject(jwt), inspectionId, sessionId, request.reason())));
+  }
+
   private static FieldSessionResponse response(FieldSession session) {
     return new FieldSessionResponse(
         session.getId(),

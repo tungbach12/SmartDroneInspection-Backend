@@ -16,6 +16,10 @@ public interface UserAccess {
     return List.of();
   }
 
+  default List<ActiveUser> listActiveManagers() {
+    return List.of();
+  }
+
   boolean isVisionFallbackEnabled(UUID userId);
 
   ProvisionedWorkforceMember provisionWorkforceUser(
@@ -51,7 +55,6 @@ public interface UserAccess {
   record ActiveUser(
       UUID id,
       Set<String> roles,
-      String actorZone,
       String fullName,
       String email,
       String pilotLicenseNumber,
@@ -72,7 +75,6 @@ public interface UserAccess {
       this(
           id,
           roles,
-          null,
           fullName,
           email,
           pilotLicenseNumber,
@@ -85,30 +87,6 @@ public interface UserAccess {
     public ActiveUser(
         UUID id,
         Set<String> roles,
-        String actorZone,
-        String fullName,
-        String email,
-        String pilotLicenseNumber,
-        String pilotLicenseClass,
-        java.time.Instant pilotLicenseExpiresAt,
-        String pilotLicenseFileKey) {
-      this(
-          id,
-          roles,
-          actorZone,
-          fullName,
-          email,
-          pilotLicenseNumber,
-          pilotLicenseClass,
-          pilotLicenseExpiresAt,
-          pilotLicenseFileKey,
-          null);
-    }
-
-    public ActiveUser(
-        UUID id,
-        Set<String> roles,
-        String actorZone,
         String pilotLicenseNumber,
         String pilotLicenseClass,
         java.time.LocalDate pilotLicenseExpiresAt,
@@ -116,7 +94,6 @@ public interface UserAccess {
       this(
           id,
           roles,
-          actorZone,
           null,
           null,
           pilotLicenseNumber,
@@ -129,15 +106,15 @@ public interface UserAccess {
     }
 
     public ActiveUser(UUID id, Set<String> roles, String fullName, String email) {
-      this(id, roles, null, fullName, email, null, null, null, null, null);
+      this(id, roles, fullName, email, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, String fullName) {
-      this(id, roles, null, fullName, null, null, null, null, null, null);
+      this(id, roles, fullName, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null, null, null, null, null, null, null);
+      this(id, roles, null, null, null, null, null, null, null);
     }
 
     public ActiveUser {

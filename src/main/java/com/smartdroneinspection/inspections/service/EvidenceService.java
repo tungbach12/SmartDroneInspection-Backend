@@ -364,11 +364,13 @@ public class EvidenceService {
   }
 
   private void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
-    if (inspection.getStatus() == InspectionStatus.COMPLETED) {
+    if (inspection.getStatus() == InspectionStatus.SCHEDULED
+        || inspection.getStatus() == InspectionStatus.CANCELLED
+        || inspection.getStatus() == InspectionStatus.COMPLETED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "INSPECTION_STATE_CONFLICT",
-          "Evidence is immutable after publication");
+          "Evidence cannot be modified while the inspection is " + inspection.getStatus());
     }
     InspectionReport report =
         reports.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);

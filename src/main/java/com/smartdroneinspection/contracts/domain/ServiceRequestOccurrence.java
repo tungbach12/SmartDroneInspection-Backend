@@ -653,6 +653,49 @@ public class ServiceRequestOccurrence {
     updatedAt = Instant.now();
   }
 
+  public void syncRescheduleFromInspection(Instant start, Instant end) {
+    if (status != OccurrenceStatus.ASSIGNED) {
+      return;
+    }
+    if (start == null || end == null || !end.isAfter(start)) {
+      throw new IllegalArgumentException("Occurrence end must be after start");
+    }
+    this.plannedStartAt = start;
+    this.plannedEndAt = end;
+    this.updatedAt = Instant.now();
+  }
+
+  public void syncReassignFromInspection(UUID newInspectorId, UUID newDroneId) {
+    if (status != OccurrenceStatus.ASSIGNED) {
+      return;
+    }
+    if (payout.getPayoutStatus() == OccurrencePayoutStatus.PAID) {
+      throw new IllegalStateException(
+          "Cannot reassign occurrence after inspector payout has been recorded");
+    }
+    if (newInspectorId == null) {
+      throw new IllegalArgumentException("Inspector ID is required");
+    }
+    this.inspectorId = newInspectorId;
+    if (newDroneId != null) {
+      this.droneId = newDroneId;
+    }
+    this.payout.assignInspector(newInspectorId);
+    this.updatedAt = Instant.now();
+  }
+
+  public void syncCancelFromInspection() {
+    if (status == OccurrenceStatus.CANCELLED) {
+      return;
+    }
+    if (getPaymentStatus() == OccurrencePaymentStatus.PAID || getReportAcceptedAt() != null) {
+      throw new IllegalStateException(
+          "Cannot cancel an occurrence whose report was accepted or payment was settled");
+    }
+    this.status = OccurrenceStatus.CANCELLED;
+    this.updatedAt = Instant.now();
+  }
+
   public Instant getPlannedStartAt() {
     return plannedStartAt;
   }

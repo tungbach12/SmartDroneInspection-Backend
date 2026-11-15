@@ -6,7 +6,6 @@ import static org.mockito.Mockito.when;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
@@ -37,13 +36,7 @@ class UserAccessInspectorProfileProjectionTest {
   @Test
   void activeUserLicenseProjectionReadsInspectorProfile() {
     UUID userId = UUID.randomUUID();
-    User user =
-        new User(
-            "inspector@example.test",
-            "Inspector",
-            "password-hash",
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+    User user = new User("inspector@example.test", "Inspector", "password-hash", UserStatus.ACTIVE);
     user.addRole(UserRole.INSPECTOR);
     ReflectionTestUtils.setField(user, "id", userId);
     InspectorProfile profile = new InspectorProfile(userId);
@@ -77,7 +70,6 @@ class UserAccessInspectorProfileProjectionTest {
         new UserAccess.ActiveUser(
             UUID.randomUUID(),
             java.util.Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-1",
@@ -89,7 +81,6 @@ class UserAccessInspectorProfileProjectionTest {
         new UserAccess.ActiveUser(
             UUID.randomUUID(),
             java.util.Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-1",
@@ -101,7 +92,6 @@ class UserAccessInspectorProfileProjectionTest {
         new UserAccess.ActiveUser(
             UUID.randomUUID(),
             java.util.Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-1",
@@ -121,7 +111,6 @@ class UserAccessInspectorProfileProjectionTest {
         new UserAccess.ActiveUser(
             UUID.randomUUID(),
             java.util.Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-1",
@@ -141,7 +130,6 @@ class UserAccessInspectorProfileProjectionTest {
         new UserAccess.ActiveUser(
             UUID.randomUUID(),
             java.util.Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-1",
@@ -153,7 +141,6 @@ class UserAccessInspectorProfileProjectionTest {
         new UserAccess.ActiveUser(
             UUID.randomUUID(),
             java.util.Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Pilot",
             "pilot@example.test",
             "LIC-2",
@@ -170,13 +157,7 @@ class UserAccessInspectorProfileProjectionTest {
   @Test
   void activeUserWithoutInspectorProfileKeepsNullLicenseProjection() {
     UUID userId = UUID.randomUUID();
-    User user =
-        new User(
-            "inspector@example.test",
-            "Inspector",
-            "password-hash",
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+    User user = new User("inspector@example.test", "Inspector", "password-hash", UserStatus.ACTIVE);
     ReflectionTestUtils.setField(user, "id", userId);
     when(users.findDetailedById(userId)).thenReturn(Optional.of(user));
     when(inspectorProfileRepository.findById(userId)).thenReturn(Optional.empty());

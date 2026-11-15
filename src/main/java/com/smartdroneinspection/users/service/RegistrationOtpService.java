@@ -2,9 +2,9 @@ package com.smartdroneinspection.users.service;
 
 import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.domain.OtpChallenge;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.LoginOtpChannel;
 import com.smartdroneinspection.users.domain.enums.OtpChallengePurpose;
+import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.OtpChallengeRepository;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
@@ -86,7 +86,7 @@ public class RegistrationOtpService {
           .ifPresent(
               existing -> {
                 boolean isRejectedProspect =
-                    existing.getActorZone() == ActorZone.CUSTOMER
+                    existing.roleValues().contains(UserRole.CUSTOMER.value())
                         && existing.getStatus() == UserStatus.DISABLED
                         && prospectiveRegistrations
                             .flatMap(repo -> repo.findByUserId(existing.getId()))

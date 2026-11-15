@@ -159,25 +159,35 @@ class InspectionNotificationServiceTest {
   }
 
   @Test
-  void recordFieldSessionAbortedCreatesNotificationForOwnerCustomer() {
+  void recordFieldSessionAbortedCreatesNotificationForOwnerCustomerAndManagers() {
     UUID inspectionId = UUID.randomUUID();
     UUID ownerCustomerId = UUID.randomUUID();
+    UUID managerId = UUID.randomUUID();
+    when(userAccess.listActiveManagers())
+        .thenReturn(
+            java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager")));
 
     service.recordFieldSessionAborted(
         inspectionId, ownerCustomerId, UUID.randomUUID(), "Heavy rain");
 
     ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-    verify(notificationRepository).saveAndFlush(captor.capture());
+    verify(notificationRepository, org.mockito.Mockito.times(2)).saveAndFlush(captor.capture());
 
-    Notification saved = captor.getValue();
-    assertThat(saved.getRecipientUserId()).isEqualTo(ownerCustomerId);
-    assertThat(saved.getEventType()).isEqualTo("FIELD_SESSION_ABORTED");
-    assertThat(saved.getBody()).contains("Heavy rain");
+    assertThat(captor.getAllValues())
+        .extracting(Notification::getRecipientUserId)
+        .containsExactlyInAnyOrder(ownerCustomerId, managerId);
+    assertThat(captor.getAllValues())
+        .allSatisfy(
+            n -> {
+              assertThat(n.getEventType()).isEqualTo("FIELD_SESSION_ABORTED");
+              assertThat(n.getBody()).contains("Heavy rain");
+            });
   }
 
   @Test
-  void recordFieldSessionAbortedSkipsWhenOwnerCustomerMissing() {
+  void recordFieldSessionAbortedSkipsWhenOwnerCustomerAndManagersMissing() {
     UUID inspectionId = UUID.randomUUID();
+    when(userAccess.listActiveManagers()).thenReturn(java.util.List.of());
     service.recordFieldSessionAborted(inspectionId, null, UUID.randomUUID(), "Reason");
     verify(notificationRepository, never()).saveAndFlush(any());
   }
@@ -186,5 +196,41 @@ class InspectionNotificationServiceTest {
   void recordFieldSessionAbortedSkipsWhenIdsMissing() {
     service.recordFieldSessionAborted(null, UUID.randomUUID(), UUID.randomUUID(), "Reason");
     verify(notificationRepository, never()).saveAndFlush(any());
+  }
+
+  @Test
+  void recordDeclinedOverdueHungForceAbortRescheduledAndRevokedSendNotifications() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID inspectorId = UUID.randomUUID();
+    UUID ownerCustomerId = UUID.randomUUID();
+    UUID managerId = UUID.randomUUID();
+    UUID sessionId = UUID.randomUUID();
+    when(userAccess.listActiveManagers())
+        .thenReturn(
+            java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager")));
+
+    service.recordInspectionDeclined(inspectionId, inspectorId, "Bad weather");
+    service.recordInspectionOverdue(inspectionId, inspectorId, Instant.now());
+    service.recordFieldSessionHung(inspectionId, sessionId, Instant.now());
+    service.recordFieldSessionForceAborted(
+        inspectionId, ownerCustomerId, inspectorId, sessionId, "Timeout");
+    service.recordInspectionRescheduled(
+        inspectionId, inspectorId, ownerCustomerId, Instant.now().plus(1, ChronoUnit.DAYS));
+    service.recordInspectionAssignmentRevoked(inspectionId, inspectorId);
+
+    ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+    verify(notificationRepository, org.mockito.Mockito.times(8)).saveAndFlush(captor.capture());
+
+    assertThat(captor.getAllValues())
+        .extracting(Notification::getEventType)
+        .containsExactlyInAnyOrder(
+            "INSPECTION_DECLINED",
+            "INSPECTION_OVERDUE",
+            "FIELD_SESSION_HUNG",
+            "FIELD_SESSION_FORCE_ABORTED",
+            "FIELD_SESSION_FORCE_ABORTED",
+            "INSPECTION_RESCHEDULED",
+            "INSPECTION_RESCHEDULED",
+            "INSPECTION_ASSIGNMENT_REVOKED");
   }
 }

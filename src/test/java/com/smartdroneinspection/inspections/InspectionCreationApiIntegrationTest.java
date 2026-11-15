@@ -16,7 +16,6 @@ import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -70,11 +69,7 @@ class InspectionCreationApiIntegrationTest {
 
     User admin =
         new User(
-            "admin-" + UUID.randomUUID() + "@example.test",
-            "Org Admin",
-            null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            "admin-" + UUID.randomUUID() + "@example.test", "Org Admin", null, UserStatus.ACTIVE);
     admin.addRole(UserRole.CUSTOMER);
     adminId = users.saveAndFlush(admin).getId();
 
@@ -83,8 +78,7 @@ class InspectionCreationApiIntegrationTest {
             "inspector-" + UUID.randomUUID() + "@example.test",
             "Inspector One",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
     jdbcTemplate.update(
@@ -174,8 +168,7 @@ class InspectionCreationApiIntegrationTest {
             "foreign-customer-" + UUID.randomUUID() + "@example.test",
             "Foreign Customer",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     foreignCustomer.addRole(UserRole.CUSTOMER);
     UUID foreignCustomerId = users.saveAndFlush(foreignCustomer).getId();
 
@@ -299,8 +292,7 @@ class InspectionCreationApiIntegrationTest {
             "customer-inspector-" + UUID.randomUUID() + "@example.test",
             "Customer Inspector",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     customerInspector.addRole(UserRole.INSPECTOR);
     UUID customerInspectorId = users.saveAndFlush(customerInspector).getId();
     jdbcTemplate.update(
@@ -346,6 +338,25 @@ class InspectionCreationApiIntegrationTest {
     inspections.saveAndFlush(managed);
     MockMultipartFile permitFile =
         new MockMultipartFile("file", "permit.pdf", "application/pdf", "%PDF-sample".getBytes());
+
+    // Flight permit upload is gated until the assigned inspector accepts the mission
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ASSIGNMENT_NOT_ACCEPTED"));
+
+    // Inspector accepts assignment -> assignmentStatus becomes ACCEPTED
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/" + inspectionId + "/accept")
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.assignmentStatus").value("ACCEPTED"))
+        .andExpect(jsonPath("$.data.assignmentAcceptedAt").isNotEmpty());
 
     // Simulate license expiration between dispatch and flight-permit upload.
     jdbcTemplate.update(

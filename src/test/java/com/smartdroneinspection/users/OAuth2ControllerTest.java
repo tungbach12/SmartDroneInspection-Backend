@@ -14,7 +14,6 @@ import com.smartdroneinspection.users.api.RefreshCookieService;
 import com.smartdroneinspection.users.api.dto.response.AuthFlowResponse;
 import com.smartdroneinspection.users.api.dto.response.AuthStep;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.service.AuthService;
@@ -87,7 +86,6 @@ class OAuth2ControllerTest {
             null,
             "http://avatar.jpg",
             List.of(UserRole.CUSTOMER.value()),
-            ActorZone.CUSTOMER.name(),
             false);
     AuthFlowResponse flowResponse =
         new AuthFlowResponse(
@@ -133,7 +131,6 @@ class OAuth2ControllerTest {
             null,
             "http://avatar.jpg",
             List.of(UserRole.CUSTOMER.value()),
-            ActorZone.CUSTOMER.name(),
             false);
     AuthFlowResponse flowResponse =
         new AuthFlowResponse(

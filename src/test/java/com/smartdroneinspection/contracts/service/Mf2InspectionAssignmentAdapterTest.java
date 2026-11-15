@@ -62,7 +62,6 @@ class Mf2InspectionAssignmentAdapterTest {
                 new UserAccess.ActiveUser(
                     inspectorId,
                     Set.of(Roles.INSPECTOR),
-                    "INSPECTOR",
                     "Inspector",
                     "inspector@example.test",
                     "LIC-001",

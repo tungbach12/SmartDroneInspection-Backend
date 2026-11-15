@@ -122,7 +122,6 @@ class DroneEvidenceUploadServiceTest {
                 new UserAccess.ActiveUser(
                     adminId,
                     Set.of("ADMIN"),
-                    "PLATFORM",
                     "Admin",
                     "admin@example.test",
                     null,
@@ -136,7 +135,6 @@ class DroneEvidenceUploadServiceTest {
                 new UserAccess.ActiveUser(
                     customerId,
                     Set.of("CUSTOMER"),
-                    "CUSTOMER",
                     "Customer",
                     "customer@example.test",
                     null,
@@ -167,7 +165,6 @@ class DroneEvidenceUploadServiceTest {
     return new UserAccess.ActiveUser(
         inspectorId,
         Set.of("INSPECTOR"),
-        "INSPECTOR",
         "Inspector",
         "inspector@example.test",
         "PILOT-1",

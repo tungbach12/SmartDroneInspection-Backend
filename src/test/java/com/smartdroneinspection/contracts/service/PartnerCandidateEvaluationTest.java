@@ -40,7 +40,6 @@ class PartnerCandidateEvaluationTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Tran Minh Quan",
             "quan@example.test",
             "LIC-700",
@@ -91,7 +90,6 @@ class PartnerCandidateEvaluationTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Inspector",
             "inspector@example.test",
             "LIC-CAP",
@@ -136,7 +134,6 @@ class PartnerCandidateEvaluationTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Le Van Nam",
             "nam@example.test",
             "LIC-800",
@@ -182,7 +179,6 @@ class PartnerCandidateEvaluationTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Pham Thi Hoa",
             "hoa@example.test",
             "LIC-900",
@@ -271,7 +267,6 @@ class PartnerCandidateEvaluationTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "INSPECTOR",
             "Tran Minh Quan",
             "quan@example.test",
             "LIC-700",

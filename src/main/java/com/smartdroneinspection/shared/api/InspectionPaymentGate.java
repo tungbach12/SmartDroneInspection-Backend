@@ -14,4 +14,12 @@ public interface InspectionPaymentGate {
    * have already been paid.
    */
   boolean isPaymentDue(UUID inspectionId);
+
+  /**
+   * Returns true if the inspection's linked occurrence has already been accepted by the customer
+   * (reportAcceptedAt != null) or paid (paymentStatus == PAID).
+   */
+  default boolean isAcceptedOrPaid(UUID inspectionId) {
+    return false;
+  }
 }

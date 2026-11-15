@@ -62,11 +62,12 @@ class FullDatabaseSchemaMigrationTest {
             "platform_ai_settings",
             "inspector_flight_logs",
             "inspector_profiles",
+            "inspector_reliability_events",
             "otp_challenges",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(36);
+    assertThat(expected).hasSize(37);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -141,12 +142,35 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV46AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV47AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(46);
-    assertThat(versions.getLast()).isEqualTo("46");
+    assertThat(versions).hasSize(49);
+    assertThat(versions.getLast()).isEqualTo("49");
+
+    assertColumns(
+        "inspections",
+        "reassignment_required",
+        "decline_reason",
+        "declined_at",
+        "declined_by_inspector_id",
+        "cancellation_reason",
+        "overdue_notified_at",
+        "clarification_count",
+        "assignment_status",
+        "assignment_accepted_at");
+    assertColumns("field_sessions", "hung_notified_at", "aborted_by_user_id");
+    assertColumns("inspection_reports", "clarification_requested");
+    assertColumns(
+        "inspector_reliability_events",
+        "id",
+        "inspector_id",
+        "inspection_id",
+        "field_session_id",
+        "event_type",
+        "reason",
+        "occurred_at");
 
     assertColumns("assets", "owner_customer_id");
     assertColumns("drones", "owner_customer_id");
@@ -157,6 +181,7 @@ class FullDatabaseSchemaMigrationTest {
     assertNoColumn("inspections", "organization_id");
     assertNoColumn("service_requests", "organization_id");
     assertNoColumn("users", "organization_id");
+    assertNoColumn("users", "actor_zone");
 
     // V43 dropped the organizations table outright; owner_customer_id is the sole tenant key.
     List<String> orgTables =
