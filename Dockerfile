@@ -19,6 +19,9 @@ RUN mvn -B -DskipTests -Dspotless.check.skip=true clean package
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
+# Install pinned Alpine FFmpeg/ffprobe binaries for async video normalization & poster extraction
+RUN apk add --no-cache ffmpeg
+
 # Run as non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 

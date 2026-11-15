@@ -44,6 +44,7 @@ class FullDatabaseSchemaMigrationTest {
             "inspections",
             "field_sessions",
             "evidence",
+            "evidence_upload_sessions",
             "findings",
             "inspection_reports",
             "audit_events",
@@ -69,7 +70,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(39);
+    assertThat(expected).hasSize(40);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -144,12 +145,44 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV54AndKeepsTargetPaymentColumns() {
+  void appliesAllMigrationsThroughV55AndKeepsTargetPaymentColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(54);
-    assertThat(versions.getLast()).isEqualTo("54");
+    assertThat(versions).hasSize(55);
+    assertThat(versions.getLast()).isEqualTo("55");
+
+    assertColumns(
+        "evidence",
+        "original_size_bytes",
+        "processing_status",
+        "processing_error",
+        "raw_object_key",
+        "thumbnail_object_key",
+        "thumbnail_size_bytes",
+        "media_width",
+        "media_height",
+        "duration_seconds",
+        "processed_at",
+        "processing_attempts",
+        "processing_locked_at");
+    assertColumns(
+        "evidence_upload_sessions",
+        "id",
+        "inspection_id",
+        "field_session_id",
+        "created_by_user_id",
+        "file_name",
+        "content_type",
+        "declared_size_bytes",
+        "chunk_size_bytes",
+        "total_parts",
+        "uploaded_parts_json",
+        "status",
+        "storage_upload_id",
+        "raw_object_key",
+        "evidence_id",
+        "expires_at");
 
     assertColumns(
         "inspections",

@@ -8,6 +8,7 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.enums.EvidenceProcessingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
@@ -31,6 +32,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import javax.imageio.ImageIO;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -46,10 +49,11 @@ import org.springframework.web.multipart.MultipartFile;
  * failure never leaves an available record behind.
  */
 @Service
+@EnableConfigurationProperties(EvidenceUploadProperties.class)
 public class EvidenceService {
 
   static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
-  static final long MAX_VIDEO_SIZE_BYTES = 500L * 1024 * 1024;
+  static final long MAX_VIDEO_SIZE_BYTES = 20L * 1024 * 1024;
   private static final int MAX_EVIDENCE_PAGE_SIZE = 100;
   private static final Sort EVIDENCE_ORDER =
       Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id"));
@@ -68,6 +72,8 @@ public class EvidenceService {
   private final FieldSessionRepository sessions;
   private final Optional<EvidenceObjectStore> objectStore;
   private final UserAccess userAccess;
+  private final EvidenceUploadProperties uploadProperties;
+  private final Optional<VideoProcessingWorker> videoWorker;
 
   public EvidenceService(
       InspectionRepository inspections,
@@ -77,6 +83,29 @@ public class EvidenceService {
       FieldSessionRepository sessions,
       Optional<EvidenceObjectStore> objectStore,
       UserAccess userAccess) {
+    this(
+        inspections,
+        evidence,
+        reports,
+        findings,
+        sessions,
+        objectStore,
+        userAccess,
+        new EvidenceUploadProperties(),
+        Optional.empty());
+  }
+
+  @Autowired
+  public EvidenceService(
+      InspectionRepository inspections,
+      EvidenceRepository evidence,
+      InspectionReportRepository reports,
+      FindingRepository findings,
+      FieldSessionRepository sessions,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      EvidenceUploadProperties uploadProperties,
+      Optional<VideoProcessingWorker> videoWorker) {
     this.inspections = inspections;
     this.evidence = evidence;
     this.reports = reports;
@@ -84,6 +113,9 @@ public class EvidenceService {
     this.sessions = sessions;
     this.objectStore = objectStore;
     this.userAccess = userAccess;
+    this.uploadProperties =
+        uploadProperties != null ? uploadProperties : new EvidenceUploadProperties();
+    this.videoWorker = videoWorker != null ? videoWorker : Optional.empty();
   }
 
   @Transactional
@@ -95,6 +127,22 @@ public class EvidenceService {
       Instant captureTime,
       BigDecimal latitude,
       BigDecimal longitude) {
+    if (file == null || file.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "The uploaded file is empty");
+    }
+    String rawContentType = file.getContentType();
+    String contentType = rawContentType == null ? "" : rawContentType.toLowerCase(Locale.ROOT);
+    long maxAllowedBytes =
+        "video/mp4".equals(contentType)
+            ? uploadProperties.getMaxSingleUploadVideoSizeBytes()
+            : uploadProperties.getMaxImageSizeBytes();
+    if (file.getSize() > maxAllowedBytes) {
+      throw new BusinessException(
+          HttpStatus.PAYLOAD_TOO_LARGE,
+          "EVIDENCE_TOO_LARGE",
+          "Maximum single-request evidence size is " + (maxAllowedBytes / (1024 * 1024)) + " MB");
+    }
     byte[] content;
     try {
       content = file.getBytes();
@@ -144,21 +192,18 @@ public class EvidenceService {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "The uploaded file is empty");
     }
-    long maxAllowedBytes = "video/mp4".equals(contentType) ? MAX_VIDEO_SIZE_BYTES : MAX_SIZE_BYTES;
+    long maxAllowedBytes =
+        "video/mp4".equals(contentType)
+            ? uploadProperties.getMaxSingleUploadVideoSizeBytes()
+            : uploadProperties.getMaxImageSizeBytes();
     if (content.length > maxAllowedBytes) {
       throw new BusinessException(
           HttpStatus.PAYLOAD_TOO_LARGE,
           "EVIDENCE_TOO_LARGE",
           "Maximum evidence size is " + (maxAllowedBytes / (1024 * 1024)) + " MB");
     }
-    // Report 3 MF3-02 requires corrupt input to be identified with a corrective action. Declared
-    // type alone is not proof of content, so image bytes must decode before they are stored.
-    if (DECODABLE_IMAGE_TYPES.contains(contentType) && !isDecodableImage(content)) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "EVIDENCE_INVALID",
-          "The uploaded file is not a readable " + contentType + " image");
-    }
+
+    // Extract EXIF GPS & capture time BEFORE any decoding or re-encoding strips metadata.
     if ((latitude == null && longitude == null) || captureTime == null) {
       ExifMetadataExtractor.ExtractedMetadata extracted = ExifMetadataExtractor.extract(content);
       if (extracted != null) {
@@ -172,24 +217,26 @@ public class EvidenceService {
       }
     }
 
-    // Missing GPS is acceptable; a half-specified pair is not.
-    if ((latitude == null) != (longitude == null)) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "EVIDENCE_INVALID",
-          "Latitude and longitude must be supplied together");
-    }
-    if (latitude != null
-        && (latitude.compareTo(BigDecimal.valueOf(-90)) < 0
-            || latitude.compareTo(BigDecimal.valueOf(90)) > 0)) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "Latitude must be between -90 and 90");
-    }
-    if (longitude != null
-        && (longitude.compareTo(BigDecimal.valueOf(-180)) < 0
-            || longitude.compareTo(BigDecimal.valueOf(180)) > 0)) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "Longitude must be between -180 and 180");
+    validateGpsPair(latitude, longitude);
+
+    // Report 3 MF3-02 requires corrupt input to be identified with a corrective action. Declared
+    // type alone is not proof of content, so image bytes must decode before they are stored.
+    ImageNormalizer.NormalizedImage normalizedImage = null;
+    if (DECODABLE_IMAGE_TYPES.contains(contentType)) {
+      try {
+        normalizedImage = ImageNormalizer.normalize(content, contentType);
+      } catch (IOException ex) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "EVIDENCE_INVALID",
+            "The uploaded file is not a readable " + contentType + " image");
+      }
+      if (normalizedImage == null) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "EVIDENCE_INVALID",
+            "The uploaded file is not a readable " + contentType + " image");
+      }
     }
 
     String fileName = sanitizeFileName(rawFileName);
@@ -206,11 +253,43 @@ public class EvidenceService {
       return toResponse(existing);
     }
 
-    String objectKey = "inspections/" + inspectionId + "/evidence/" + UUID.randomUUID();
+    UUID objectUuid = UUID.randomUUID();
+    String objectKey = "inspections/" + inspectionId + "/evidence/" + objectUuid;
     EvidenceObjectStore store = requireObjectStore();
+
+    byte[] storedBytes = normalizedImage != null ? normalizedImage.primaryBytes() : content;
+    String storedContentType =
+        normalizedImage != null ? normalizedImage.primaryContentType() : contentType;
+    String thumbObjectKey = null;
+    Long thumbSizeBytes = null;
+
+    boolean primaryUploaded = false;
+    boolean thumbUploaded = false;
     try {
-      store.put(objectKey, contentType, content.length, new ByteArrayInputStream(content));
+      store.put(
+          objectKey, storedContentType, storedBytes.length, new ByteArrayInputStream(storedBytes));
+      primaryUploaded = true;
+
+      if (normalizedImage != null) {
+        String thumbExt =
+            "image/png".equals(normalizedImage.thumbnailContentType()) ? ".png" : ".jpg";
+        thumbObjectKey = objectKey + "/thumb" + thumbExt;
+        byte[] thumbBytes = normalizedImage.thumbnailBytes();
+        store.put(
+            thumbObjectKey,
+            normalizedImage.thumbnailContentType(),
+            thumbBytes.length,
+            new ByteArrayInputStream(thumbBytes));
+        thumbUploaded = true;
+        thumbSizeBytes = (long) thumbBytes.length;
+      }
     } catch (IOException ex) {
+      if (thumbUploaded) {
+        deleteQuietly(store, thumbObjectKey);
+      }
+      if (primaryUploaded) {
+        deleteQuietly(store, objectKey);
+      }
       throw new BusinessException(
           HttpStatus.BAD_GATEWAY,
           "EVIDENCE_STORAGE_UNAVAILABLE",
@@ -226,17 +305,77 @@ public class EvidenceService {
             inspectionId,
             fieldSessionId,
             fileName,
-            contentType,
-            content.length,
+            storedContentType,
+            storedBytes.length,
             objectKey,
             captureTime,
             latitude,
             longitude,
             normalizedLocation,
             Instant.now());
-    Evidence savedRecord = evidence.saveAndFlush(record);
+    if (normalizedImage != null) {
+      record.applyImageOptimization(
+          objectKey,
+          storedContentType,
+          storedBytes.length,
+          content.length,
+          thumbObjectKey,
+          thumbSizeBytes,
+          normalizedImage.width(),
+          normalizedImage.height(),
+          Instant.now());
+    } else if ("video/mp4".equals(storedContentType) && videoWorker.isPresent()) {
+      record.markVideoPending(objectKey, content.length);
+    }
+
+    Evidence savedRecord;
+    try {
+      savedRecord = evidence.saveAndFlush(record);
+    } catch (RuntimeException ex) {
+      if (thumbUploaded) {
+        deleteQuietly(store, thumbObjectKey);
+      }
+      if (primaryUploaded) {
+        deleteQuietly(store, objectKey);
+      }
+      throw ex;
+    }
+
+    if (savedRecord.getProcessingStatus() == EvidenceProcessingStatus.PENDING) {
+      videoWorker.ifPresent(worker -> worker.scheduleAfterCommit(savedRecord.getId()));
+    }
+
     syncFindingsConfirmationAfterEvidenceEdit(inspection);
     return toResponse(savedRecord);
+  }
+
+  @Transactional
+  public EvidenceResponse retryProcessing(UUID actorId, UUID inspectionId, UUID evidenceId) {
+    Inspection inspection = requireAssignedInspection(actorId, inspectionId);
+    requireEvidenceEditable(inspectionId, inspection);
+    Evidence record =
+        evidence
+            .findByIdAndInspectionId(evidenceId, inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "EVIDENCE_NOT_FOUND", "Evidence not found"));
+    if (record.isDeleted()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "EVIDENCE_RETIRED", "Retired evidence cannot be reprocessed");
+    }
+    if (record.getProcessingStatus() != EvidenceProcessingStatus.FAILED) {
+      return toResponse(record);
+    }
+    try {
+      record.requestRetry();
+    } catch (IllegalStateException ex) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "EVIDENCE_RETRY_UNAVAILABLE", ex.getMessage());
+    }
+    Evidence saved = evidence.saveAndFlush(record);
+    videoWorker.ifPresent(worker -> worker.scheduleAfterCommit(saved.getId()));
+    return toResponse(saved);
   }
 
   @Transactional
@@ -336,7 +475,7 @@ public class EvidenceService {
     return saved.stream().map(this::toResponse).toList();
   }
 
-  private void syncFindingsConfirmationAfterEvidenceEdit(Inspection inspection) {
+  void syncFindingsConfirmationAfterEvidenceEdit(Inspection inspection) {
     if (inspection.getStatus() == InspectionStatus.FIELD_COMPLETED
         && inspection.hasFindingsConfirmation()) {
       inspection.reopenFindings();
@@ -344,7 +483,7 @@ public class EvidenceService {
     }
   }
 
-  private void requireSessionInScope(Inspection inspection, UUID fieldSessionId) {
+  void requireSessionInScope(Inspection inspection, UUID fieldSessionId) {
     FieldSession session =
         sessions
             .findByIdAndInspectionId(fieldSessionId, inspection.getId())
@@ -363,7 +502,7 @@ public class EvidenceService {
     }
   }
 
-  private void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
+  void requireEvidenceEditable(UUID inspectionId, Inspection inspection) {
     if (inspection.getStatus() == InspectionStatus.SCHEDULED
         || inspection.getStatus() == InspectionStatus.CANCELLED
         || inspection.getStatus() == InspectionStatus.COMPLETED) {
@@ -478,6 +617,24 @@ public class EvidenceService {
 
   @Transactional(readOnly = true)
   public EvidenceContent open(UUID actorId, UUID inspectionId, UUID evidenceId) {
+    MediaDescriptor descriptor =
+        resolveMediaDescriptor(actorId, inspectionId, evidenceId, "primary", false);
+    try {
+      return new EvidenceContent(
+          descriptor.contentType(),
+          descriptor.fileName(),
+          requireObjectStore().open(descriptor.objectKey()));
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY,
+          "EVIDENCE_STORAGE_UNAVAILABLE",
+          "Evidence storage is unavailable");
+    }
+  }
+
+  @Transactional(readOnly = true)
+  public MediaDescriptor resolveMediaDescriptor(
+      UUID actorId, UUID inspectionId, UUID evidenceId, String rawVariant, boolean rejectRetired) {
     requireInspectionInScope(actorId, inspectionId);
     Evidence record =
         evidence
@@ -486,11 +643,92 @@ public class EvidenceService {
                 () ->
                     new BusinessException(
                         HttpStatus.NOT_FOUND, "EVIDENCE_NOT_FOUND", "Evidence not found"));
+    if (rejectRetired && record.isDeleted()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "EVIDENCE_RETIRED", "Retired evidence cannot be streamed");
+    }
+    if (!record.isReady()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "EVIDENCE_NOT_READY",
+          "Evidence media is not ready for playback yet");
+    }
+    String variant = MediaTicketService.normalizeVariant(rawVariant);
+    String key;
+    String contentType;
+    long knownSize;
+    if ("thumb".equals(variant)) {
+      if (record.getThumbnailObjectKey() != null && !record.getThumbnailObjectKey().isBlank()) {
+        key = record.getThumbnailObjectKey();
+        contentType = key.endsWith(".png") ? "image/png" : "image/jpeg";
+        knownSize = record.getThumbnailSizeBytes() != null ? record.getThumbnailSizeBytes() : -1L;
+      } else if (record.isImage()) {
+        key = record.getObjectKey();
+        contentType = record.getContentType();
+        knownSize = record.getSizeBytes();
+      } else {
+        throw new BusinessException(
+            HttpStatus.NOT_FOUND,
+            "EVIDENCE_THUMBNAIL_UNAVAILABLE",
+            "No thumbnail is available for this evidence");
+      }
+    } else {
+      key = record.getObjectKey();
+      contentType = record.getContentType();
+      knownSize = record.getSizeBytes();
+    }
+
+    long totalBytes = knownSize;
+    EvidenceObjectStore store = requireObjectStore();
     try {
-      return new EvidenceContent(
-          record.getContentType(),
-          record.getFileName(),
-          requireObjectStore().open(record.getObjectKey()));
+      EvidenceObjectStore.ObjectMetadata meta = store.stat(key);
+      if (meta.sizeBytes() > 0) {
+        totalBytes = meta.sizeBytes();
+      }
+    } catch (UnsupportedOperationException ignored) {
+      // Custom mock stores in unit tests may not implement stat().
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY,
+          "EVIDENCE_STORAGE_UNAVAILABLE",
+          "Evidence storage is unavailable");
+    }
+
+    if (totalBytes <= 0) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY,
+          "EVIDENCE_STORAGE_UNAVAILABLE",
+          "Stored evidence size could not be determined");
+    }
+    return new MediaDescriptor(key, contentType, record.getFileName(), totalBytes);
+  }
+
+  public InputStream openStream(String objectKey) {
+    try {
+      return requireObjectStore().open(objectKey);
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY,
+          "EVIDENCE_STORAGE_UNAVAILABLE",
+          "Evidence storage is unavailable");
+    }
+  }
+
+  public InputStream openRangeStream(String objectKey, long offset, long length) {
+    try {
+      return requireObjectStore().openRange(objectKey, offset, length);
+    } catch (UnsupportedOperationException ex) {
+      // Fallback for unit test mocks that only implement open().
+      try {
+        InputStream full = requireObjectStore().open(objectKey);
+        full.skipNBytes(offset);
+        return new BoundedInputStream(full, length);
+      } catch (IOException ioEx) {
+        throw new BusinessException(
+            HttpStatus.BAD_GATEWAY,
+            "EVIDENCE_STORAGE_UNAVAILABLE",
+            "Evidence storage is unavailable");
+      }
     } catch (IOException ex) {
       throw new BusinessException(
           HttpStatus.BAD_GATEWAY,
@@ -515,6 +753,10 @@ public class EvidenceService {
     if (record.isRetired()) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "EVIDENCE_RETIRED", "Retired evidence cannot be analysed");
+    }
+    if (!record.isReady()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, "EVIDENCE_NOT_READY", "Media is still processing");
     }
     try {
       return new EvidenceContent(
@@ -562,6 +804,35 @@ public class EvidenceService {
     return inspection;
   }
 
+  static void validateGpsPair(BigDecimal latitude, BigDecimal longitude) {
+    if ((latitude == null) != (longitude == null)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_INVALID",
+          "Latitude and longitude must be supplied together");
+    }
+    if (latitude != null
+        && (latitude.compareTo(BigDecimal.valueOf(-90)) < 0
+            || latitude.compareTo(BigDecimal.valueOf(90)) > 0)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "Latitude must be between -90 and 90");
+    }
+    if (longitude != null
+        && (longitude.compareTo(BigDecimal.valueOf(-180)) < 0
+            || longitude.compareTo(BigDecimal.valueOf(180)) > 0)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "Longitude must be between -180 and 180");
+    }
+  }
+
+  static String sanitizeFileName(String name) {
+    if (name == null || name.isBlank()) {
+      return "evidence";
+    }
+    String cleaned = name.replaceAll("[\\\\/\\r\\n]", "_");
+    return cleaned.length() > 500 ? cleaned.substring(0, 500) : cleaned;
+  }
+
   private UserAccess.ActiveUser requireActiveUser(UUID actorId) {
     return userAccess
         .findActiveUser(actorId)
@@ -583,12 +854,14 @@ public class EvidenceService {
                 "Evidence storage is not configured"));
   }
 
-  private static String sanitizeFileName(String name) {
-    if (name == null || name.isBlank()) {
-      return "evidence";
+  private static void deleteQuietly(EvidenceObjectStore store, String objectKey) {
+    if (objectKey == null || objectKey.isBlank()) {
+      return;
     }
-    String cleaned = name.replaceAll("[\\\\/\\r\\n]", "_");
-    return cleaned.length() > 500 ? cleaned.substring(0, 500) : cleaned;
+    try {
+      store.delete(objectKey);
+    } catch (IOException ignored) {
+    }
   }
 
   /**
@@ -596,6 +869,7 @@ public class EvidenceService {
    * reader recognises the content, and throws when the header is valid but the data is truncated,
    * so both outcomes mean the evidence is not usable.
    */
+  @SuppressWarnings("unused")
   private static boolean isDecodableImage(byte[] content) {
     try {
       return ImageIO.read(new ByteArrayInputStream(content)) != null;
@@ -604,7 +878,7 @@ public class EvidenceService {
     }
   }
 
-  private EvidenceResponse toResponse(Evidence record) {
+  EvidenceResponse toResponse(Evidence record) {
     return new EvidenceResponse(
         record.getId(),
         record.getInspectionId(),
@@ -612,14 +886,65 @@ public class EvidenceService {
         record.getFileName(),
         record.getContentType(),
         record.getSizeBytes(),
+        record.getOriginalSizeBytes(),
         record.getObjectKey(),
         record.getCaptureTime(),
         record.getLatitude(),
         record.getLongitude(),
         record.getLocationDescription(),
         record.isDeleted(),
-        record.getCreatedAt());
+        record.getCreatedAt(),
+        record.getProcessingStatus(),
+        record.getProcessingError(),
+        record.getThumbnailObjectKey() != null && !record.getThumbnailObjectKey().isBlank(),
+        record.getMediaWidth(),
+        record.getMediaHeight(),
+        record.getDurationSeconds(),
+        record.getProcessedAt());
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}
+
+  public record MediaDescriptor(
+      String objectKey, String contentType, String fileName, long totalBytes) {}
+
+  private static final class BoundedInputStream extends InputStream {
+    private final InputStream delegate;
+    private long remaining;
+
+    private BoundedInputStream(InputStream delegate, long remaining) {
+      this.delegate = delegate;
+      this.remaining = remaining;
+    }
+
+    @Override
+    public int read() throws IOException {
+      if (remaining <= 0) {
+        return -1;
+      }
+      int b = delegate.read();
+      if (b >= 0) {
+        remaining--;
+      }
+      return b;
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+      if (remaining <= 0) {
+        return -1;
+      }
+      int toRead = (int) Math.min(len, remaining);
+      int read = delegate.read(b, off, toRead);
+      if (read > 0) {
+        remaining -= read;
+      }
+      return read;
+    }
+
+    @Override
+    public void close() throws IOException {
+      delegate.close();
+    }
+  }
 }

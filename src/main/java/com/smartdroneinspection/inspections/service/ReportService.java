@@ -679,7 +679,7 @@ public class ReportService {
     List<ReportRenderPort.EvidenceView> evidenceViews = new ArrayList<>();
     for (Evidence item :
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId)) {
-      byte[] content = loadEvidenceBytes(item);
+      byte[] content = !item.isVideo() && item.isReady() ? loadEvidenceBytes(item) : new byte[0];
       evidenceViews.add(
           new ReportRenderPort.EvidenceView(
               item.getId().toString(),
