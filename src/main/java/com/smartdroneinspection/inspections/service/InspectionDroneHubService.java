@@ -68,12 +68,7 @@ public class InspectionDroneHubService {
   public SmartDroneHubPort.Mission start(
       UUID actorId, UUID inspectionId, UUID sessionId, String telemetrySource) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
-    if (!scope.inspection().hasFlightPermit()) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "FLIGHT_PERMIT_REQUIRED",
-          "Upload the mission flight permit before starting the Hub session.");
-    }
+    FlightPermitPolicy.requireApprovedForFlight(scope.inspection(), null, Instant.now());
     if (scope.inspection().getStatus() != InspectionStatus.IN_PROGRESS
         || !scope.session().isInProgress()) {
       throw failure(
@@ -549,12 +544,7 @@ public class InspectionDroneHubService {
   }
 
   private static void requireActiveFlightSession(Scope scope) {
-    if (!scope.inspection().hasFlightPermit()) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "FLIGHT_PERMIT_REQUIRED",
-          "Upload the mission flight permit before recording flight data.");
-    }
+    FlightPermitPolicy.requireApprovedForFlight(scope.inspection(), null, Instant.now());
     if (scope.inspection().getStatus() != InspectionStatus.IN_PROGRESS
         || !scope.session().isInProgress()) {
       throw failure(

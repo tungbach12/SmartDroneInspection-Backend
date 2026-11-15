@@ -7,6 +7,7 @@ import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.ReviewFlightPermitRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -14,6 +15,8 @@ import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
 import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
 import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.events.FlightPermitReviewedEvent;
+import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
 import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
@@ -258,18 +261,15 @@ public class InspectionCreationService {
       String fileKey,
       String fileName,
       byte[] content,
-      String contentType) {
+      String contentType,
+      String permitNumber,
+      String issuingAuthority,
+      Instant validFrom,
+      Instant validTo,
+      String droneSerial,
+      Integer maxAltitudeM) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    UUID ownerCustomerId = actor.ownerCustomerId();
-
-    Inspection inspection =
-        (actor.isInspectorPartner()
-                ? inspections.findAssignedByInspector(inspectionId, actorId)
-                : inspections.findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId))
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    Inspection inspection = findInspectionForPermitUpload(actor, inspectionId);
 
     if (!inspection.isInspectedBy(actorId)
         && !actor.hasRole(Roles.ORG_MANAGER)
@@ -280,6 +280,13 @@ public class InspectionCreationService {
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
           "Only the assigned inspector or manager can upload the flight permit.");
+    }
+
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Flight permit can only be uploaded or replaced while the inspection is SCHEDULED.");
     }
 
     if (inspection.isReassignmentRequired()
@@ -296,6 +303,206 @@ public class InspectionCreationService {
           "The assigned inspector must accept this mission before uploading a flight permit.");
     }
 
+    Instant now = Instant.now();
+    Drone assignedDrone = requireValidPilotAndDroneForPermit(inspection, now);
+    FlightPermitPolicy.validateMetadataAndCrossChecks(
+        inspection,
+        assignedDrone,
+        permitNumber,
+        issuingAuthority,
+        validFrom,
+        validTo,
+        droneSerial,
+        maxAltitudeM,
+        now);
+
+    String effectiveName =
+        fileName != null && !fileName.isBlank() ? fileName.trim() : "flight-permit.pdf";
+    String effectiveContentType = FlightPermitPolicy.resolveContentType(contentType, effectiveName);
+    String fileSha256 = null;
+    Long fileSizeBytes = null;
+    String effectiveKey = fileKey;
+
+    if (content != null) {
+      FlightPermitPolicy.ValidatedPermitFile validated =
+          FlightPermitPolicy.validateFile(content, contentType, effectiveName);
+      effectiveContentType = validated.contentType();
+      fileSha256 = validated.sha256();
+      fileSizeBytes = validated.sizeBytes();
+      if (objectStore.isPresent()) {
+        effectiveKey =
+            "inspections/"
+                + inspectionId
+                + "/flight-permit/"
+                + UUID.randomUUID()
+                + "-"
+                + effectiveName;
+        try {
+          objectStore
+              .get()
+              .put(
+                  effectiveKey,
+                  effectiveContentType,
+                  content.length,
+                  new ByteArrayInputStream(content));
+        } catch (IOException e) {
+          throw new BusinessException(
+              HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Failed to store flight permit file.");
+        }
+      }
+    }
+
+    if (effectiveKey == null || effectiveKey.isBlank()) {
+      effectiveKey = "permits/" + UUID.randomUUID() + "-" + effectiveName;
+    }
+
+    inspection.recordFlightPermit(
+        effectiveKey,
+        effectiveName,
+        permitNumber,
+        issuingAuthority,
+        validFrom,
+        validTo,
+        droneSerial,
+        maxAltitudeM,
+        fileSha256,
+        fileSizeBytes,
+        effectiveContentType,
+        now,
+        actorId);
+    Inspection saved = inspections.saveAndFlush(inspection);
+    eventPublisher.publishEvent(
+        new FlightPermitSubmittedEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            saved.getInspectorId(),
+            actorId,
+            saved.getFlightPermitNumber(),
+            saved.getFlightPermitAuthority(),
+            now));
+    Asset asset =
+        assets
+            .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
+            .orElse(null);
+    return toResponse(saved, asset);
+  }
+
+  @Transactional
+  public InspectionResponse reviewFlightPermit(
+      UUID actorId,
+      UUID inspectionId,
+      ReviewFlightPermitRequest.Decision decision,
+      String reason,
+      String notes) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only a Platform Manager or Admin can verify flight permits.");
+    }
+
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+
+    if (inspection.isInspectedBy(actorId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SELF_REVIEW_FORBIDDEN",
+          "The assigned inspector cannot verify their own flight permit.");
+    }
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Flight permit can only be reviewed while the inspection is SCHEDULED.");
+    }
+    if (!inspection.hasFlightPermit()) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FLIGHT_PERMIT_REQUIRED",
+          "No flight permit has been uploaded for this inspection.");
+    }
+
+    Instant now = Instant.now();
+    boolean approved = decision == ReviewFlightPermitRequest.Decision.APPROVED;
+    if (approved) {
+      if (inspection.getFlightPermitVerificationStatus()
+          != com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
+              .PENDING_REVIEW) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "PERMIT_NOT_PENDING_REVIEW",
+            "Only a flight permit in PENDING_REVIEW status can be approved.");
+      }
+      Drone assignedDrone = requireValidPilotAndDroneForPermit(inspection, now);
+      FlightPermitPolicy.validateMetadataAndCrossChecks(
+          inspection,
+          assignedDrone,
+          inspection.getFlightPermitNumber(),
+          inspection.getFlightPermitAuthority(),
+          inspection.getFlightPermitValidFrom(),
+          inspection.getFlightPermitValidTo(),
+          inspection.getFlightPermitDroneSerial(),
+          inspection.getFlightPermitMaxAltitudeM(),
+          now);
+      inspection.approveFlightPermit(actorId, notes, now);
+    } else {
+      if (reason == null || reason.isBlank()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "REJECTION_REASON_REQUIRED",
+            "A rejection reason is required when rejecting a flight permit.");
+      }
+      if (inspection.getFlightPermitVerificationStatus()
+              != com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
+                  .PENDING_REVIEW
+          && inspection.getFlightPermitVerificationStatus()
+              != com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
+                  .APPROVED) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "PERMIT_NOT_REVIEWABLE",
+            "This flight permit cannot be rejected from its current state.");
+      }
+      inspection.rejectFlightPermit(actorId, reason, notes, now);
+    }
+
+    Inspection saved = inspections.saveAndFlush(inspection);
+    eventPublisher.publishEvent(
+        new FlightPermitReviewedEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            saved.getInspectorId(),
+            actorId,
+            approved,
+            saved.getFlightPermitRejectionReason(),
+            now));
+    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
+    return toResponse(saved, asset);
+  }
+
+  private Inspection findInspectionForPermitUpload(UserAccess.ActiveUser actor, UUID inspectionId) {
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+      return inspections
+          .findById(inspectionId)
+          .orElseThrow(
+              () ->
+                  new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    }
+    return (actor.isInspectorPartner()
+            ? inspections.findAssignedByInspector(inspectionId, actor.id())
+            : inspections.findByIdAndOwnerCustomerId(inspectionId, actor.ownerCustomerId()))
+        .orElseThrow(
+            () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+  }
+
+  private Drone requireValidPilotAndDroneForPermit(Inspection inspection, Instant permitCheckAt) {
     UserAccess.ActiveUser assignedInspector =
         userAccess
             .findActiveUser(inspection.getInspectorId())
@@ -306,7 +513,6 @@ public class InspectionCreationService {
                         "INVALID_INSPECTOR",
                         "Assigned inspector is no longer active."));
 
-    Instant permitCheckAt = Instant.now();
     Instant plannedFlightAt =
         inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : permitCheckAt;
     if (!assignedInspector.hasValidPilotLicense(permitCheckAt)
@@ -317,75 +523,38 @@ public class InspectionCreationService {
           "The assigned inspector must hold a current license with an uploaded license scan through the planned flight.");
     }
 
-    if (inspection.getDroneId() != null) {
-      Drone assignedDrone = drones.findById(inspection.getDroneId()).orElse(null);
-      if (assignedDrone == null
-          || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone is no longer active.");
-      }
-      if (assignedDrone.getRegistrationExpiresAt() != null
-          && (!assignedDrone.getRegistrationExpiresAt().isAfter(permitCheckAt)
-              || !assignedDrone.getRegistrationExpiresAt().isAfter(plannedFlightAt))) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "DRONE_REGISTRATION_EXPIRED",
-            "Assigned drone registration has expired or expires before the planned flight.");
-      }
-      if (!assignedDrone.hasCurrentRegistration(permitCheckAt)
-          || !assignedDrone.hasCurrentRegistration(plannedFlightAt)
-          || !assignedDrone.hasKnownMtow()) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "DRONE_REGISTRATION_INVALID",
-            "Assigned drone must have current registration evidence and known MTOW before a flight permit is uploaded.");
-      }
-      if (!assignedInspector.isLicenseClassQualifiedForDrone(
-          assignedDrone.hasKnownMtow(), assignedDrone.requiresClassBForSafety())) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "PILOT_LICENSE_CLASS_INSUFFICIENT",
-            "Assigned inspector must have a recognized license class matching a known drone MTOW.");
-      }
+    if (inspection.getDroneId() == null) {
+      return null;
     }
-
-    String effectiveKey = fileKey;
-    if (content != null && content.length > 0 && objectStore.isPresent()) {
-      effectiveKey =
-          "inspections/"
-              + inspectionId
-              + "/flight-permit/"
-              + UUID.randomUUID()
-              + "-"
-              + (fileName != null ? fileName : "permit.pdf");
-      try {
-        objectStore
-            .get()
-            .put(
-                effectiveKey,
-                contentType != null ? contentType : "application/pdf",
-                content.length,
-                new ByteArrayInputStream(content));
-      } catch (IOException e) {
-        throw new BusinessException(
-            HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Failed to store flight permit file.");
-      }
+    Drone assignedDrone = drones.findById(inspection.getDroneId()).orElse(null);
+    if (assignedDrone == null || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone is no longer active.");
     }
-
-    if (effectiveKey == null || effectiveKey.isBlank()) {
-      effectiveKey = "permits/" + UUID.randomUUID() + "-" + fileName;
+    if (assignedDrone.getRegistrationExpiresAt() != null
+        && (!assignedDrone.getRegistrationExpiresAt().isAfter(permitCheckAt)
+            || !assignedDrone.getRegistrationExpiresAt().isAfter(plannedFlightAt))) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_REGISTRATION_EXPIRED",
+          "Assigned drone registration has expired or expires before the planned flight.");
     }
-
-    inspection.recordFlightPermit(
-        effectiveKey,
-        fileName != null && !fileName.isBlank() ? fileName : "flight-permit.pdf",
-        Instant.now());
-    Inspection saved = inspections.saveAndFlush(inspection);
-    Asset asset =
-        assets
-            .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
-            .orElse(null);
-    return toResponse(saved, asset);
+    if (!assignedDrone.hasCurrentRegistration(permitCheckAt)
+        || !assignedDrone.hasCurrentRegistration(plannedFlightAt)
+        || !assignedDrone.hasKnownMtow()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_REGISTRATION_INVALID",
+          "Assigned drone must have current registration evidence and known MTOW before a flight permit is uploaded.");
+    }
+    if (!assignedInspector.isLicenseClassQualifiedForDrone(
+        assignedDrone.hasKnownMtow(), assignedDrone.requiresClassBForSafety())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INSUFFICIENT",
+          "Assigned inspector must have a recognized license class matching a known drone MTOW.");
+    }
+    return assignedDrone;
   }
 
   public record FlightPermitContent(String fileName, String contentType, byte[] bytes) {}
@@ -403,13 +572,10 @@ public class InspectionCreationService {
         detail.flightPermitFileName() != null && !detail.flightPermitFileName().isBlank()
             ? detail.flightPermitFileName()
             : "flight-permit.pdf";
-    String lower = fileName.toLowerCase(java.util.Locale.ROOT);
     String contentType =
-        lower.endsWith(".png")
-            ? "image/png"
-            : (lower.endsWith(".jpg") || lower.endsWith(".jpeg"))
-                ? "image/jpeg"
-                : lower.endsWith(".webp") ? "image/webp" : "application/pdf";
+        detail.flightPermitContentType() != null && !detail.flightPermitContentType().isBlank()
+            ? detail.flightPermitContentType()
+            : FlightPermitPolicy.resolveContentType(null, fileName);
 
     if (objectStore.isPresent()) {
       try (java.io.InputStream input = objectStore.get().open(detail.flightPermitFileKey())) {
@@ -1003,6 +1169,14 @@ public class InspectionCreationService {
                     .orElse(null))
             : null;
 
+    String verifiedByName =
+        inspection.getFlightPermitVerifiedBy() != null
+            ? userAccess
+                .findActiveUser(inspection.getFlightPermitVerifiedBy())
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null)
+            : null;
+
     return new InspectionResponse(
         inspection.getId(),
         inspection.getOwnerCustomerId(),
@@ -1037,7 +1211,24 @@ public class InspectionCreationService {
         inspection.getAssignmentStatus() != null
             ? inspection.getAssignmentStatus().name()
             : "ACCEPTED",
-        inspection.getAssignmentAcceptedAt());
+        inspection.getAssignmentAcceptedAt(),
+        inspection.getFlightPermitNumber(),
+        inspection.getFlightPermitAuthority(),
+        inspection.getFlightPermitValidFrom(),
+        inspection.getFlightPermitValidTo(),
+        inspection.getFlightPermitDroneSerial(),
+        inspection.getFlightPermitMaxAltitudeM(),
+        inspection.getFlightPermitFileSha256(),
+        inspection.getFlightPermitFileSizeBytes(),
+        inspection.getFlightPermitContentType(),
+        inspection.getFlightPermitUploadedAt(),
+        inspection.getFlightPermitUploadedBy(),
+        inspection.getFlightPermitVerificationStatus().name(),
+        inspection.getFlightPermitVerifiedBy(),
+        verifiedByName,
+        inspection.getFlightPermitVerifiedAt(),
+        inspection.getFlightPermitRejectionReason(),
+        inspection.getFlightPermitReviewNotes());
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {

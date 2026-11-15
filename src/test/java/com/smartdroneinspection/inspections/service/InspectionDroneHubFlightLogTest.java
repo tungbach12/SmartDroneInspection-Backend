@@ -70,6 +70,10 @@ class InspectionDroneHubFlightLogTest {
         .thenReturn(Optional.of(inspection));
     when(inspection.isPartnerAssignment()).thenReturn(false);
     when(inspection.hasFlightPermit()).thenReturn(true);
+    when(inspection.getFlightPermitVerificationStatus())
+        .thenReturn(
+            com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
+                .APPROVED);
     when(inspection.getStatus()).thenReturn(InspectionStatus.IN_PROGRESS);
     when(inspection.getAssetId()).thenReturn(assetId);
     when(inspection.getOwnerCustomerId()).thenReturn(actorId);

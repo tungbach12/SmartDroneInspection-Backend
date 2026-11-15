@@ -293,6 +293,79 @@ public class InspectionNotificationService {
         key);
   }
 
+  @Transactional
+  public void recordFlightPermitSubmitted(
+      UUID inspectionId, String permitNumber, String issuingAuthority, Instant submittedAt) {
+    if (inspectionId == null) {
+      return;
+    }
+    long epoch =
+        submittedAt != null ? submittedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String permitLabel = permitNumber != null && !permitNumber.isBlank() ? permitNumber : "N/A";
+    String authorityLabel =
+        issuingAuthority != null && !issuingAuthority.isBlank() ? issuingAuthority : "";
+    String body =
+        authorityLabel.isEmpty()
+            ? "Flight permit "
+                + permitLabel
+                + " for inspection "
+                + inspectionId
+                + " is awaiting verification."
+            : "Flight permit "
+                + permitLabel
+                + " ("
+                + authorityLabel
+                + ") for inspection "
+                + inspectionId
+                + " is awaiting verification.";
+    notifyActiveManagers(
+        "FLIGHT_PERMIT_SUBMITTED",
+        "Flight permit verification due",
+        body,
+        "/manager/inspections/" + inspectionId + "/audit",
+        "PERMIT_SUBMITTED:" + inspectionId + ":" + epoch);
+  }
+
+  @Transactional
+  public void recordFlightPermitReviewed(
+      UUID inspectionId,
+      UUID inspectorId,
+      boolean approved,
+      String rejectionReason,
+      Instant reviewedAt) {
+    if (inspectionId == null || inspectorId == null) {
+      return;
+    }
+    long epoch = reviewedAt != null ? reviewedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String key = "PERMIT_REVIEWED:" + inspectionId + ":" + inspectorId + ":" + epoch;
+    String title = approved ? "Flight permit approved" : "Flight permit rejected";
+    String body =
+        approved
+            ? "Your flight permit for inspection "
+                + inspectionId
+                + " was verified and approved. You may proceed to pre-flight checks."
+            : "Your flight permit for inspection "
+                + inspectionId
+                + " was rejected"
+                + (rejectionReason != null && !rejectionReason.isBlank()
+                    ? ": " + rejectionReason
+                    : ". Please upload a corrected permit.");
+    String targetPath =
+        approved
+            ? "/operations/inspections/" + inspectionId + "/pre-flight"
+            : "/operations/inspections/" + inspectionId + "/permit";
+    saveWithDeduplication(
+        new Notification(
+            inspectorId,
+            approved ? "FLIGHT_PERMIT_APPROVED" : "FLIGHT_PERMIT_REJECTED",
+            NotificationChannel.IN_APP,
+            title,
+            body,
+            targetPath,
+            key),
+        key);
+  }
+
   private void notifyActiveManagers(
       String type, String title, String body, String targetPath, String deduplicationPrefix) {
     List<ActiveUser> managers = userAccess.listActiveManagers();
