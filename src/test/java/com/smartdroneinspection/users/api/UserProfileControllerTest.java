@@ -37,12 +37,7 @@ class UserProfileControllerTest {
 
     UserResponse response =
         new UserResponse(
-            userId,
-            "inspector@example.test",
-            "Inspector Test",
-            List.of("INSPECTOR"),
-            "CUSTOMER",
-            true);
+            userId, "inspector@example.test", "Inspector Test", List.of("INSPECTOR"), true);
 
     when(authService.me(userId)).thenReturn(response);
 
@@ -74,7 +69,6 @@ class UserProfileControllerTest {
             null,
             null,
             List.of("INSPECTOR"),
-            "CUSTOMER",
             true,
             "RPL-VN-2026-0042",
             "CLASS_3",
@@ -101,12 +95,7 @@ class UserProfileControllerTest {
 
     UserResponse response =
         new UserResponse(
-            userId,
-            "inspector@example.test",
-            "Inspector Test",
-            List.of("INSPECTOR"),
-            "CUSTOMER",
-            true);
+            userId, "inspector@example.test", "Inspector Test", List.of("INSPECTOR"), true);
 
     when(authService.updateVisionFallbackPreference(userId, true)).thenReturn(response);
 

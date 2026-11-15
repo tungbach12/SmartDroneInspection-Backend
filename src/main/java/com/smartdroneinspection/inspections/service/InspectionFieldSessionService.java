@@ -5,12 +5,17 @@ import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
+import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionCompletedEvent;
+import com.smartdroneinspection.inspections.events.FieldSessionForceAbortedEvent;
 import com.smartdroneinspection.inspections.reportcontext.ReportContextAccess;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -38,6 +43,7 @@ public class InspectionFieldSessionService {
   private final ObjectProvider<ReportContextAccess> reportContextAccessProvider;
   private final ApplicationEventPublisher eventPublisher;
   private final ObjectProvider<DroneRepository> dronesProvider;
+  private final ObjectProvider<InspectorReliabilityEventRepository> reliabilityEventsProvider;
 
   private static final String SESSION_SCOPE_DENIED = "SESSION_SCOPE_DENIED";
   private static final String SESSION_NOT_FOUND = "SESSION_NOT_FOUND";
@@ -49,7 +55,7 @@ public class InspectionFieldSessionService {
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
-    this(inspections, sessions, userAccess, entityManager, null, null, null);
+    this(inspections, sessions, userAccess, entityManager, null, null, null, null);
   }
 
   public InspectionFieldSessionService(
@@ -66,6 +72,26 @@ public class InspectionFieldSessionService {
         entityManager,
         reportContextAccessProvider,
         eventPublisher,
+        null,
+        null);
+  }
+
+  public InspectionFieldSessionService(
+      InspectionRepository inspections,
+      FieldSessionRepository sessions,
+      UserAccess userAccess,
+      EntityManager entityManager,
+      ObjectProvider<ReportContextAccess> reportContextAccessProvider,
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<DroneRepository> dronesProvider) {
+    this(
+        inspections,
+        sessions,
+        userAccess,
+        entityManager,
+        reportContextAccessProvider,
+        eventPublisher,
+        dronesProvider,
         null);
   }
 
@@ -77,7 +103,8 @@ public class InspectionFieldSessionService {
       EntityManager entityManager,
       ObjectProvider<ReportContextAccess> reportContextAccessProvider,
       ApplicationEventPublisher eventPublisher,
-      ObjectProvider<DroneRepository> dronesProvider) {
+      ObjectProvider<DroneRepository> dronesProvider,
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityEventsProvider) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.userAccess = userAccess;
@@ -85,22 +112,12 @@ public class InspectionFieldSessionService {
     this.reportContextAccessProvider = reportContextAccessProvider;
     this.eventPublisher = eventPublisher;
     this.dronesProvider = dronesProvider;
+    this.reliabilityEventsProvider = reliabilityEventsProvider;
   }
 
   @Transactional
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
     requireInspector(inspectorId);
-    userAccess
-        .findActiveUser(inspectorId)
-        .ifPresent(
-            user -> {
-              if (user.pilotLicenseExpiresAt() != null
-                  && !user.pilotLicenseExpiresAt().isAfter(Instant.now())) {
-                throw sessionFailure(
-                    "PILOT_LICENSE_EXPIRED",
-                    "Cannot start field work because the assigned inspector's pilot license has expired.");
-              }
-            });
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
           "PREFLIGHT_CHECKLIST_REQUIRED",
@@ -110,6 +127,35 @@ public class InspectionFieldSessionService {
     Inspection inspection = lockInspection(inspectionId, inspectorId);
     if (!inspection.isInspectedBy(inspectorId)) {
       throw sessionFailure(SESSION_SCOPE_DENIED, "This inspection is not assigned to you.");
+    }
+    if (inspection.isReassignmentRequired()
+        || inspection.getAssignmentStatus() == AssignmentStatus.DECLINED) {
+      throw sessionFailure(
+          "REASSIGNMENT_REQUIRED",
+          "This inspection was declined and is awaiting manager reassignment or rescheduling.");
+    }
+    if (inspection.getAssignmentStatus() == AssignmentStatus.PENDING_ACCEPTANCE) {
+      throw sessionFailure(
+          "ASSIGNMENT_NOT_ACCEPTED",
+          "You must accept this mission assignment before starting the field session.");
+    }
+    if (inspection.getPlannedEndAt() != null
+        && Instant.now().isAfter(inspection.getPlannedEndAt())) {
+      throw sessionFailure(
+          "SCHEDULE_WINDOW_EXPIRED",
+          "Cannot start field work after the scheduled window has elapsed; ask a manager to reschedule.");
+    }
+    UserAccess.ActiveUser inspector =
+        userAccess
+            .findActiveUser(inspectorId)
+            .orElseThrow(
+                () ->
+                    sessionFailure("INSPECTOR_NOT_FOUND", "The assigned Inspector is not active."));
+    Instant checkAt = Instant.now();
+    if (!inspector.hasValidPilotLicense(checkAt)) {
+      throw sessionFailure(
+          "PILOT_LICENSE_INVALID",
+          "Cannot start field work without a current pilot license number, expiry, and uploaded scan.");
     }
     requireNoOpenSession(inspectionId);
     userAccess
@@ -129,23 +175,42 @@ public class InspectionFieldSessionService {
           "FLIGHT_PERMIT_REQUIRED",
           "A flight permit must be uploaded before starting the field session.");
     }
-    if (dronesProvider != null && inspection.getDroneId() != null) {
-      DroneRepository droneRepo = dronesProvider.getIfAvailable();
-      if (droneRepo != null) {
-        Drone drone = droneRepo.findById(inspection.getDroneId()).orElse(null);
-        if (drone != null) {
-          if (drone.getServiceability() != DroneServiceability.ACTIVE) {
-            throw sessionFailure(
-                "INVALID_DRONE",
-                "Cannot start field work because the assigned drone is no longer active.");
-          }
-          if (drone.getRegistrationExpiresAt() != null
-              && !drone.getRegistrationExpiresAt().isAfter(Instant.now())) {
-            throw sessionFailure(
-                "DRONE_REGISTRATION_EXPIRED",
-                "Cannot start field work because the assigned drone registration has expired.");
-          }
-        }
+    Instant flightAt =
+        inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : checkAt;
+    if (!inspector.hasValidPilotLicense(flightAt)) {
+      throw sessionFailure(
+          "PILOT_LICENSE_INVALID",
+          "Cannot start field work because the pilot license will not be valid at the planned flight time.");
+    }
+    if (inspection.getDroneId() != null) {
+      DroneRepository droneRepo = dronesProvider != null ? dronesProvider.getIfAvailable() : null;
+      Drone assignedDrone =
+          droneRepo != null ? droneRepo.findById(inspection.getDroneId()).orElse(null) : null;
+      if (assignedDrone == null
+          || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+        throw sessionFailure(
+            "INVALID_DRONE",
+            "Cannot start field work because the assigned drone is missing or no longer active.");
+      }
+      if (assignedDrone.getRegistrationExpiresAt() != null
+          && (!assignedDrone.getRegistrationExpiresAt().isAfter(checkAt)
+              || !assignedDrone.getRegistrationExpiresAt().isAfter(flightAt))) {
+        throw sessionFailure(
+            "DRONE_REGISTRATION_EXPIRED",
+            "Cannot start field work because the assigned drone registration has expired.");
+      }
+      if (!assignedDrone.hasCurrentRegistration(checkAt)
+          || !assignedDrone.hasCurrentRegistration(flightAt)
+          || !assignedDrone.hasKnownMtow()) {
+        throw sessionFailure(
+            "DRONE_REGISTRATION_INVALID",
+            "Cannot start field work without a current drone registration and known MTOW.");
+      }
+      if (!inspector.isLicenseClassQualifiedForDrone(
+          assignedDrone.hasKnownMtow(), assignedDrone.requiresClassBForSafety())) {
+        throw sessionFailure(
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "The assigned pilot license class does not qualify for the drone MTOW.");
       }
     }
     if (inspection.getStatus() != InspectionStatus.SCHEDULED
@@ -214,7 +279,7 @@ public class InspectionFieldSessionService {
     FieldSession session = requireOwnedOpenSession(inspectionId, sessionId, inspectorId);
 
     try {
-      session.abort(reason);
+      session.abort(reason, inspectorId);
     } catch (IllegalArgumentException exception) {
       throw sessionFailure("ABORT_REASON_REQUIRED", exception.getMessage());
     } catch (IllegalStateException exception) {
@@ -222,6 +287,7 @@ public class InspectionFieldSessionService {
           HttpStatus.CONFLICT, SESSION_NOT_IN_PROGRESS, exception.getMessage());
     }
     FieldSession savedSession = reopenInspection(session, inspectorId);
+    recordReliability(inspectorId, inspectionId, sessionId, EventType.ABORT, reason);
     if (eventPublisher != null) {
       Inspection inspection = inspections.findById(inspectionId).orElse(null);
       UUID ownerCustomerId = inspection == null ? null : inspection.getOwnerCustomerId();
@@ -230,6 +296,75 @@ public class InspectionFieldSessionService {
               inspectionId, ownerCustomerId, sessionId, inspectorId, reason, Instant.now()));
     }
     return savedSession;
+  }
+
+  @Transactional
+  public FieldSession forceAbort(UUID actorId, UUID inspectionId, UUID sessionId, String reason) {
+    ActiveUser manager =
+        userAccess
+            .findActiveUser(actorId)
+            .filter(u -> u.hasRole(Roles.MANAGER))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        SESSION_SCOPE_DENIED,
+                        "Only an active Manager may force-abort a field session."));
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection was not found."));
+    entityManager.refresh(inspection, LockModeType.PESSIMISTIC_WRITE);
+
+    FieldSession session =
+        sessions
+            .findByIdAndInspectionId(sessionId, inspectionId)
+            .orElseThrow(() -> sessionFailure(SESSION_NOT_FOUND, FIELD_SESSION_NOT_FOUND));
+    try {
+      session.abort(reason, manager.id());
+    } catch (IllegalArgumentException exception) {
+      throw sessionFailure("ABORT_REASON_REQUIRED", exception.getMessage());
+    } catch (IllegalStateException exception) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT, SESSION_NOT_IN_PROGRESS, exception.getMessage());
+    }
+    if (inspection.getStatus() == InspectionStatus.IN_PROGRESS) {
+      inspection.moveTo(InspectionStatus.SCHEDULED);
+      inspections.save(inspection);
+    }
+    FieldSession savedSession = sessions.saveAndFlush(session);
+    if (inspection.getInspectorId() != null) {
+      recordReliability(
+          inspection.getInspectorId(), inspectionId, sessionId, EventType.FORCE_ABORT, reason);
+    }
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new FieldSessionForceAbortedEvent(
+              inspectionId,
+              inspection.getOwnerCustomerId(),
+              sessionId,
+              inspection.getInspectorId(),
+              manager.id(),
+              reason,
+              Instant.now()));
+    }
+    return savedSession;
+  }
+
+  private void recordReliability(
+      UUID inspectorId, UUID inspectionId, UUID sessionId, EventType eventType, String reason) {
+    if (reliabilityEventsProvider == null || inspectorId == null) {
+      return;
+    }
+    InspectorReliabilityEventRepository repo = reliabilityEventsProvider.getIfAvailable();
+    if (repo != null) {
+      repo.save(
+          new InspectorReliabilityEvent(
+              inspectorId, inspectionId, sessionId, eventType, reason, Instant.now()));
+    }
   }
 
   @Transactional

@@ -61,13 +61,12 @@ class InspectionFieldSessionDroneGuardTest {
         new UserAccess.ActiveUser(
             inspectorId,
             Set.of(Roles.INSPECTOR),
-            "CUSTOMER",
             "Pilot",
             "pilot@org.test",
             "LIC-01",
             "CLASS_B",
             Instant.now().plus(60, ChronoUnit.DAYS),
-            null);
+            "licenses/pilot.pdf");
     when(userAccess.findActiveUser(inspectorId)).thenReturn(Optional.of(inspector));
 
     Inspection inspection =

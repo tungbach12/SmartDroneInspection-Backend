@@ -71,8 +71,7 @@ class OrganizationRegistrationApiIntegrationTest {
                 .content(body))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.registrationStatus").value("ACTIVE"))
-        .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")))
-        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER"));
+        .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")));
 
     User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(customer.roleValues()).containsExactly("CUSTOMER");
@@ -109,8 +108,7 @@ class OrganizationRegistrationApiIntegrationTest {
                 .content(body))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.registrationStatus").value("ACTIVE"))
-        .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")))
-        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER"));
+        .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")));
 
     User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(customer.roleValues()).containsExactly("CUSTOMER");
@@ -134,7 +132,7 @@ class OrganizationRegistrationApiIntegrationTest {
                 .content(registrationBody(email, assetCode, category.getId(), 10.9, 106.7)))
         .andExpect(status().isAccepted())
         .andExpect(jsonPath("$.data.registrationStatus").value("PENDING_AIRSPACE_REVIEW"))
-        .andExpect(jsonPath("$.data.user.actorZone").value("CUSTOMER"));
+        .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")));
 
     User prospect = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
     assertThat(prospect.getStatus().name()).isEqualTo("DISABLED");

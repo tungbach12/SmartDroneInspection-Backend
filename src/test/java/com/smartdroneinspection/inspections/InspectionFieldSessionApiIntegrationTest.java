@@ -17,7 +17,6 @@ import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -46,7 +45,7 @@ import org.springframework.web.context.WebApplicationContext;
 @Transactional
 class InspectionFieldSessionApiIntegrationTest {
 
-  private static final Instant PLANNED_START = Instant.parse("2026-11-01T09:00:00Z");
+  private static final Instant PLANNED_START = Instant.now().plus(1, ChronoUnit.DAYS);
 
   @Autowired WebApplicationContext webApplicationContext;
   @Autowired UserRepository users;
@@ -72,6 +71,13 @@ class InspectionFieldSessionApiIntegrationTest {
     ownerCustomerId = fixture.clientId();
     reviewerId = ownerCustomerId;
     inspectorId = createUser(UserRole.INSPECTOR, "inspector");
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        inspectorId,
+        "LIC-SESSION-01",
+        "CLASS_B",
+        Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        "licenses/pilot.pdf");
 
     assetId =
         assets
@@ -89,7 +95,20 @@ class InspectionFieldSessionApiIntegrationTest {
                     reviewerId))
             .getId();
     droneId =
-        drones.saveAndFlush(new Drone(ownerCustomerId, "READY-DRONE-" + UUID.randomUUID())).getId();
+        drones
+            .saveAndFlush(
+                new Drone(
+                    ownerCustomerId,
+                    "READY-DRONE-" + UUID.randomUUID(),
+                    "Mavic 3",
+                    "DJI",
+                    "{\"mtowKg\":1.05}",
+                    com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE,
+                    null,
+                    "REG-SESSION-01",
+                    "drones/registration.pdf",
+                    Instant.now().plus(365, ChronoUnit.DAYS)))
+            .getId();
     inspectionId = createReadyInspection();
   }
 
@@ -346,12 +365,7 @@ class InspectionFieldSessionApiIntegrationTest {
 
   private UUID createUser(UserRole role, String label) {
     User user =
-        new User(
-            label + "-" + UUID.randomUUID() + "@example.test",
-            label,
-            null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+        new User(label + "-" + UUID.randomUUID() + "@example.test", label, null, UserStatus.ACTIVE);
     user.addRole(role);
     return users.saveAndFlush(user).getId();
   }

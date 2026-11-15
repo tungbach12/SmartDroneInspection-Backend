@@ -11,7 +11,6 @@ public record UserResponse(
     String phoneNumber,
     String avatarUrl,
     List<String> roles,
-    String actorZone,
     boolean visionFallbackEnabled,
     String pilotLicenseNumber,
     String pilotLicenseClass,
@@ -25,7 +24,6 @@ public record UserResponse(
       String phoneNumber,
       String avatarUrl,
       List<String> roles,
-      String actorZone,
       boolean visionFallbackEnabled) {
     this(
         id,
@@ -34,7 +32,6 @@ public record UserResponse(
         phoneNumber,
         avatarUrl,
         roles,
-        actorZone,
         visionFallbackEnabled,
         null,
         null,
@@ -43,17 +40,11 @@ public record UserResponse(
   }
 
   public UserResponse(
-      UUID id,
-      String email,
-      String fullName,
-      List<String> roles,
-      String actorZone,
-      boolean visionFallbackEnabled) {
-    this(id, email, fullName, null, null, roles, actorZone, visionFallbackEnabled);
+      UUID id, String email, String fullName, List<String> roles, boolean visionFallbackEnabled) {
+    this(id, email, fullName, null, null, roles, visionFallbackEnabled);
   }
 
-  public UserResponse(
-      UUID id, String email, String fullName, List<String> roles, String actorZone) {
-    this(id, email, fullName, roles, actorZone, true);
+  public UserResponse(UUID id, String email, String fullName, List<String> roles) {
+    this(id, email, fullName, roles, true);
   }
 }

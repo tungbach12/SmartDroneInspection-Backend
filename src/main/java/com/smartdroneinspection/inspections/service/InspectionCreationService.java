@@ -8,9 +8,21 @@ import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
+import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
+import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
+import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
+import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
+import com.smartdroneinspection.shared.api.InspectionContractSyncPort;
+import com.smartdroneinspection.shared.api.InspectionReassignCandidatePort;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -18,8 +30,11 @@ import com.smartdroneinspection.users.UserAccess;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -34,6 +49,10 @@ public class InspectionCreationService {
   private final UserAccess userAccess;
   private final Optional<EvidenceObjectStore> objectStore;
   private final ApplicationEventPublisher eventPublisher;
+  private final ObjectProvider<FieldSessionRepository> sessionsProvider;
+  private final ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider;
+  private final ObjectProvider<InspectionContractSyncPort> contractSyncProvider;
+  private final ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider;
 
   public InspectionCreationService(
       InspectionRepository inspections,
@@ -42,12 +61,41 @@ public class InspectionCreationService {
       UserAccess userAccess,
       Optional<EvidenceObjectStore> objectStore,
       ApplicationEventPublisher eventPublisher) {
+    this(
+        inspections,
+        assets,
+        drones,
+        userAccess,
+        objectStore,
+        eventPublisher,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  @Autowired
+  public InspectionCreationService(
+      InspectionRepository inspections,
+      AssetRepository assets,
+      DroneRepository drones,
+      UserAccess userAccess,
+      Optional<EvidenceObjectStore> objectStore,
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<FieldSessionRepository> sessionsProvider,
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider,
+      ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
+      ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider) {
     this.inspections = inspections;
     this.assets = assets;
     this.drones = drones;
     this.userAccess = userAccess;
     this.objectStore = objectStore;
     this.eventPublisher = eventPublisher;
+    this.sessionsProvider = sessionsProvider;
+    this.reliabilityProvider = reliabilityProvider;
+    this.contractSyncProvider = contractSyncProvider;
+    this.reassignCandidatesProvider = reassignCandidatesProvider;
   }
 
   @Transactional
@@ -84,6 +132,21 @@ public class InspectionCreationService {
                         "INVALID_INSPECTOR",
                         "Assigned inspector must be an active inspector."));
 
+    if (inspector.pilotLicenseExpiresAt() != null
+        && !inspector.pilotLicenseExpiresAt().isAfter(request.plannedStartAt())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_EXPIRED",
+          "Assigned inspector's pilot license expires before the planned inspection start time.");
+    }
+
+    if (!inspector.hasValidPilotLicense(request.plannedStartAt())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_INVALID",
+          "Assigned inspector must have a current license and uploaded license scan at the planned start time.");
+    }
+
     Drone drone =
         drones
             .findWithLockByIdAndOwnerCustomerId(request.droneId(), ownerCustomerId)
@@ -95,14 +158,6 @@ public class InspectionCreationService {
                         "INVALID_DRONE",
                         "Assigned drone must be active and owned by the customer."));
 
-    if (inspector.pilotLicenseExpiresAt() != null
-        && !inspector.pilotLicenseExpiresAt().isAfter(request.plannedStartAt())) {
-      throw new BusinessException(
-          HttpStatus.BAD_REQUEST,
-          "PILOT_LICENSE_EXPIRED",
-          "Assigned inspector's pilot license expires before the planned inspection start time.");
-    }
-
     if (drone.getRegistrationExpiresAt() != null
         && !drone.getRegistrationExpiresAt().isAfter(request.plannedStartAt())) {
       throw new BusinessException(
@@ -111,7 +166,15 @@ public class InspectionCreationService {
           "Assigned drone registration expires before the planned inspection start time.");
     }
 
-    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+    if (!drone.hasCurrentRegistration(request.plannedStartAt()) || !drone.hasKnownMtow()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "DRONE_REGISTRATION_INVALID",
+          "Assigned drone must have current registration evidence and known MTOW at the planned start time.");
+    }
+
+    if (!inspector.isLicenseClassQualifiedForDrone(
+        drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_CLASS_INSUFFICIENT",
@@ -139,6 +202,7 @@ public class InspectionCreationService {
             request.plannedStartAt(),
             request.plannedEndAt());
     inspection.markCustomerOwned(actorId);
+    inspection.markPendingAcceptance();
 
     Inspection saved = inspections.saveAndFlush(inspection);
 
@@ -218,6 +282,20 @@ public class InspectionCreationService {
           "Only the assigned inspector or manager can upload the flight permit.");
     }
 
+    if (inspection.isReassignmentRequired()
+        || inspection.getAssignmentStatus() == AssignmentStatus.DECLINED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REASSIGNMENT_REQUIRED",
+          "This inspection was declined and is awaiting manager reassignment or rescheduling.");
+    }
+    if (inspection.getAssignmentStatus() == AssignmentStatus.PENDING_ACCEPTANCE) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "ASSIGNMENT_NOT_ACCEPTED",
+          "The assigned inspector must accept this mission before uploading a flight permit.");
+    }
+
     UserAccess.ActiveUser assignedInspector =
         userAccess
             .findActiveUser(inspection.getInspectorId())
@@ -228,33 +306,46 @@ public class InspectionCreationService {
                         "INVALID_INSPECTOR",
                         "Assigned inspector is no longer active."));
 
-    if (!assignedInspector.hasValidPilotLicense(Instant.now())) {
+    Instant permitCheckAt = Instant.now();
+    Instant plannedFlightAt =
+        inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : permitCheckAt;
+    if (!assignedInspector.hasValidPilotLicense(permitCheckAt)
+        || !assignedInspector.hasValidPilotLicense(plannedFlightAt)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_REQUIRED",
-          "The assigned inspector must hold an active, non-expired pilot license.");
+          "The assigned inspector must hold a current license with an uploaded license scan through the planned flight.");
     }
 
     if (inspection.getDroneId() != null) {
       Drone assignedDrone = drones.findById(inspection.getDroneId()).orElse(null);
-      if (assignedDrone != null) {
-        if (assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone is no longer active.");
-        }
-        if (assignedDrone.getRegistrationExpiresAt() != null
-            && !assignedDrone.getRegistrationExpiresAt().isAfter(Instant.now())) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST,
-              "DRONE_REGISTRATION_EXPIRED",
-              "Assigned drone registration has expired.");
-        }
-        if (!assignedInspector.isLicenseClassQualifiedFor(assignedDrone.requiresClassBLicense())) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST,
-              "PILOT_LICENSE_CLASS_INSUFFICIENT",
-              "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
-        }
+      if (assignedDrone == null
+          || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone is no longer active.");
+      }
+      if (assignedDrone.getRegistrationExpiresAt() != null
+          && (!assignedDrone.getRegistrationExpiresAt().isAfter(permitCheckAt)
+              || !assignedDrone.getRegistrationExpiresAt().isAfter(plannedFlightAt))) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_EXPIRED",
+            "Assigned drone registration has expired or expires before the planned flight.");
+      }
+      if (!assignedDrone.hasCurrentRegistration(permitCheckAt)
+          || !assignedDrone.hasCurrentRegistration(plannedFlightAt)
+          || !assignedDrone.hasKnownMtow()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_INVALID",
+            "Assigned drone must have current registration evidence and known MTOW before a flight permit is uploaded.");
+      }
+      if (!assignedInspector.isLicenseClassQualifiedForDrone(
+          assignedDrone.hasKnownMtow(), assignedDrone.requiresClassBForSafety())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned inspector must have a recognized license class matching a known drone MTOW.");
       }
     }
 
@@ -403,13 +494,9 @@ public class InspectionCreationService {
   public InspectionResponse reschedule(
       UUID actorId, UUID inspectionId, Instant plannedStartAt, Instant plannedEndAt) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.MANAGER)
-        && !actor.hasRole(Roles.ADMIN)
-        && !actor.hasRole(Roles.CUSTOMER)) {
+    if (!actor.hasRole(Roles.MANAGER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "FORBIDDEN",
-          "Only managers or admins can reschedule an inspection.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only Managers can reschedule an inspection.");
     }
     Inspection inspection =
         inspections
@@ -435,42 +522,84 @@ public class InspectionCreationService {
           HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
     }
 
-    if (inspection.getInspectorId() != null) {
-      userAccess
-          .findActiveUser(inspection.getInspectorId())
-          .ifPresent(
-              assignedInspector -> {
-                if (assignedInspector.pilotLicenseExpiresAt() != null
-                    && !assignedInspector.pilotLicenseExpiresAt().isAfter(plannedStartAt)) {
-                  throw new BusinessException(
-                      HttpStatus.BAD_REQUEST,
-                      "PILOT_LICENSE_EXPIRED",
-                      "Assigned inspector's pilot license expires before the rescheduled inspection start time.");
-                }
-              });
+    UserAccess.ActiveUser assignedInspector =
+        userAccess
+            .findActiveUser(inspection.getInspectorId())
+            .filter(user -> user.hasRole(Roles.INSPECTOR))
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_INSPECTOR",
+                        "Assigned inspector must be active."));
+    if (assignedInspector.pilotLicenseExpiresAt() != null
+        && !assignedInspector.pilotLicenseExpiresAt().isAfter(plannedStartAt)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_EXPIRED",
+          "Assigned inspector's pilot license expires before the rescheduled inspection start time.");
     }
-
+    if (!assignedInspector.hasValidPilotLicense(plannedStartAt)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_INVALID",
+          "Assigned inspector must have a current license and uploaded scan at the planned start time.");
+    }
     if (inspection.getDroneId() != null) {
-      drones
-          .findById(inspection.getDroneId())
-          .ifPresent(
-              assignedDrone -> {
-                if (assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
-                  throw new BusinessException(
-                      HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active.");
-                }
-                if (assignedDrone.getRegistrationExpiresAt() != null
-                    && !assignedDrone.getRegistrationExpiresAt().isAfter(plannedStartAt)) {
-                  throw new BusinessException(
-                      HttpStatus.BAD_REQUEST,
-                      "DRONE_REGISTRATION_EXPIRED",
-                      "Assigned drone registration expires before the rescheduled inspection start time.");
-                }
-              });
+      Drone assignedDrone = drones.findById(inspection.getDroneId()).orElse(null);
+      if (assignedDrone == null
+          || assignedDrone.getServiceability() != DroneServiceability.ACTIVE) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active.");
+      }
+      if (assignedDrone.getRegistrationExpiresAt() != null
+          && !assignedDrone.getRegistrationExpiresAt().isAfter(plannedStartAt)) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_EXPIRED",
+            "Assigned drone registration expires before the rescheduled inspection start time.");
+      }
+      if (!assignedDrone.hasCurrentRegistration(plannedStartAt) || !assignedDrone.hasKnownMtow()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_INVALID",
+            "Assigned drone must have a current registration and known MTOW.");
+      }
+      if (!assignedInspector.isLicenseClassQualifiedForDrone(
+          assignedDrone.hasKnownMtow(), assignedDrone.requiresClassBForSafety())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned inspector must have a recognized license class matching drone MTOW.");
+      }
     }
 
+    if (!inspection.isReassignmentRequired()
+        && hasScheduleConflictExcluding(
+            inspection,
+            inspection.getInspectorId(),
+            inspection.getDroneId(),
+            plannedStartAt,
+            plannedEndAt)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SCHEDULE_CONFLICT",
+          "The assigned inspector or drone has a schedule conflict in the rescheduled window.");
+    }
     inspection.updatePlannedWindow(plannedStartAt, plannedEndAt);
     Inspection saved = inspections.saveAndFlush(inspection);
+    InspectionContractSyncPort syncPort =
+        contractSyncProvider == null ? null : contractSyncProvider.getIfAvailable();
+    if (syncPort != null) {
+      syncPort.syncRescheduleFromInspection(saved.getId(), plannedStartAt, plannedEndAt);
+    }
+    eventPublisher.publishEvent(
+        new InspectionRescheduledEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            saved.getInspectorId(),
+            saved.getPlannedStartAt(),
+            saved.getPlannedEndAt()));
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
   }
@@ -479,11 +608,9 @@ public class InspectionCreationService {
   public InspectionResponse reassign(
       UUID actorId, UUID inspectionId, UUID newInspectorId, UUID newDroneId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.MANAGER)
-        && !actor.hasRole(Roles.ADMIN)
-        && !actor.hasRole(Roles.CUSTOMER)) {
+    if (!actor.hasRole(Roles.MANAGER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only managers or admins can reassign an inspection.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only Managers can reassign an inspection.");
     }
     Inspection inspection =
         inspections
@@ -517,12 +644,24 @@ public class InspectionCreationService {
 
     Instant checkAt =
         inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : Instant.now();
-    if (newInspector.pilotLicenseExpiresAt() != null
-        && !newInspector.pilotLicenseExpiresAt().isAfter(checkAt)) {
+    if (!newInspector.hasValidPilotLicense(checkAt)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_REQUIRED",
-          "The assigned inspector must hold an active, non-expired pilot license.");
+          "The assigned inspector must hold a current pilot license with uploaded evidence.");
+    }
+
+    UUID effectiveDroneId = newDroneId;
+    if (effectiveDroneId == null
+        && inspection.isPartnerAssignment()
+        && !newInspector.id().equals(inspection.getInspectorId())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_DRONE",
+          "Partner inspection reassignment requires selecting a drone owned by the new Inspector.");
+    }
+    if (effectiveDroneId == null) {
+      effectiveDroneId = inspection.getDroneId();
     }
 
     if (newDroneId != null) {
@@ -548,44 +687,77 @@ public class InspectionCreationService {
             "DRONE_REGISTRATION_EXPIRED",
             "Assigned drone registration expires before the planned inspection start time.");
       }
-      if (!newInspector.isLicenseClassQualifiedFor(newDrone.requiresClassBLicense())) {
+      if (!newDrone.hasCurrentRegistration(checkAt) || !newDrone.hasKnownMtow()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_INVALID",
+            "Assigned drone must have current registration evidence and known MTOW.");
+      }
+      if (!newInspector.isLicenseClassQualifiedForDrone(
+          newDrone.hasKnownMtow(), newDrone.requiresClassBForSafety())) {
         throw new BusinessException(
             HttpStatus.BAD_REQUEST,
             "PILOT_LICENSE_CLASS_INSUFFICIENT",
             "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
       }
-    } else if (inspection.getDroneId() != null) {
-      Drone currentDrone = drones.findById(inspection.getDroneId()).orElse(null);
-      if (currentDrone != null) {
-        if (currentDrone.getServiceability() != DroneServiceability.ACTIVE) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active.");
-        }
-        if (inspection.isPartnerAssignment()
-            && !newInspector.id().equals(currentDrone.getInspectorOwnerId())) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST,
-              "INVALID_DRONE",
-              "Partner inspection reassignment requires a drone owned by the new Inspector.");
-        }
-        if (currentDrone.getRegistrationExpiresAt() != null
-            && !currentDrone.getRegistrationExpiresAt().isAfter(checkAt)) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST,
-              "DRONE_REGISTRATION_EXPIRED",
-              "Assigned drone registration expires before the planned inspection start time.");
-        }
-        if (!newInspector.isLicenseClassQualifiedFor(currentDrone.requiresClassBLicense())) {
-          throw new BusinessException(
-              HttpStatus.BAD_REQUEST,
-              "PILOT_LICENSE_CLASS_INSUFFICIENT",
-              "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
-        }
+    } else if (effectiveDroneId != null) {
+      Drone currentDrone = drones.findById(effectiveDroneId).orElse(null);
+      if (currentDrone == null || currentDrone.getServiceability() != DroneServiceability.ACTIVE) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST, "INVALID_DRONE", "Assigned drone must be active.");
+      }
+      if (inspection.isPartnerAssignment()
+          && !newInspector.id().equals(currentDrone.getInspectorOwnerId())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_DRONE",
+            "Partner inspection reassignment requires a drone owned by the new Inspector.");
+      }
+      if (currentDrone.getRegistrationExpiresAt() != null
+          && !currentDrone.getRegistrationExpiresAt().isAfter(checkAt)) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_EXPIRED",
+            "Assigned drone registration expires before the planned inspection start time.");
+      }
+      if (!currentDrone.hasCurrentRegistration(checkAt) || !currentDrone.hasKnownMtow()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_INVALID",
+            "The assigned drone must have a current registration and known MTOW.");
+      }
+      if (!newInspector.isLicenseClassQualifiedForDrone(
+          currentDrone.hasKnownMtow(), currentDrone.requiresClassBForSafety())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license.");
       }
     }
 
-    inspection.reassign(newInspector.id(), newDroneId);
+    if (inspection.getPlannedStartAt() != null
+        && inspection.getPlannedEndAt() != null
+        && hasScheduleConflictExcluding(
+            inspection,
+            newInspector.id(),
+            effectiveDroneId,
+            inspection.getPlannedStartAt(),
+            inspection.getPlannedEndAt())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SCHEDULE_CONFLICT",
+          "The selected inspector or drone has a schedule conflict during this planned window.");
+    }
+
+    UUID previousInspectorId = inspection.getInspectorId();
+    inspection.reassign(newInspector.id(), effectiveDroneId);
     Inspection saved = inspections.saveAndFlush(inspection);
+
+    InspectionContractSyncPort syncPort =
+        contractSyncProvider == null ? null : contractSyncProvider.getIfAvailable();
+    if (syncPort != null) {
+      syncPort.syncReassignFromInspection(saved.getId(), newInspector.id(), effectiveDroneId);
+    }
 
     eventPublisher.publishEvent(
         new InspectionAssignedEvent(
@@ -593,19 +765,158 @@ public class InspectionCreationService {
             saved.getOwnerCustomerId(),
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
+    if (previousInspectorId != null && !previousInspectorId.equals(newInspector.id())) {
+      eventPublisher.publishEvent(
+          new InspectionAssignmentRevokedEvent(
+              saved.getId(), previousInspectorId, newInspector.id(), Instant.now()));
+    }
 
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
   }
 
   @Transactional
+  public InspectionResponse acceptAssignment(UUID actorId, UUID inspectionId) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.INSPECTOR)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only the assigned inspector may accept a scheduled inspection.");
+    }
+    Inspection inspection =
+        inspections
+            .findAssignedByInspectorWithLock(inspectionId, actorId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Only a scheduled inspection can be accepted before field work starts.");
+    }
+    if (inspection.isReassignmentRequired()
+        || inspection.getAssignmentStatus() == AssignmentStatus.DECLINED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REASSIGNMENT_REQUIRED",
+          "This inspection was declined and is awaiting manager reassignment or rescheduling.");
+    }
+    try {
+      inspection.acceptAssignment(actorId);
+    } catch (IllegalStateException ex) {
+      throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATE", ex.getMessage());
+    }
+    Inspection saved = inspections.saveAndFlush(inspection);
+    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
+    return toResponse(saved, asset);
+  }
+
+  @Transactional
+  public InspectionResponse decline(UUID actorId, UUID inspectionId, String reason) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.INSPECTOR)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only the assigned inspector may decline a scheduled inspection.");
+    }
+    Inspection inspection =
+        inspections
+            .findAssignedByInspectorWithLock(inspectionId, actorId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Only a scheduled inspection can be declined before field work starts.");
+    }
+    FieldSessionRepository sessionRepo =
+        sessionsProvider == null ? null : sessionsProvider.getIfAvailable();
+    if (sessionRepo != null) {
+      boolean hasOpen =
+          sessionRepo.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
+              .anyMatch(FieldSession::isOpen);
+      if (hasOpen) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "SESSION_ALREADY_IN_PROGRESS",
+            "Cannot decline while a field session is open; abort the active session instead.");
+      }
+    }
+    try {
+      inspection.decline(actorId, reason);
+    } catch (IllegalArgumentException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "DECLINE_REASON_REQUIRED", ex.getMessage());
+    } catch (IllegalStateException ex) {
+      throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATE", ex.getMessage());
+    }
+    Inspection saved = inspections.saveAndFlush(inspection);
+    InspectorReliabilityEventRepository reliabilityRepo =
+        reliabilityProvider == null ? null : reliabilityProvider.getIfAvailable();
+    if (reliabilityRepo != null) {
+      reliabilityRepo.save(
+          new InspectorReliabilityEvent(
+              actorId, saved.getId(), null, EventType.DECLINE, reason, saved.getDeclinedAt()));
+    }
+    eventPublisher.publishEvent(
+        new InspectionDeclinedEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            actorId,
+            saved.getDeclineReason(),
+            saved.getDeclinedAt()));
+    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
+    return toResponse(saved, asset);
+  }
+
+  @Transactional(readOnly = true)
+  public List<InspectionReassignCandidatePort.ReassignCandidate> evaluateReassignCandidates(
+      UUID actorId, UUID inspectionId) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole(Roles.MANAGER)) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only Managers can evaluate reassignment candidates.");
+    }
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    InspectionReassignCandidatePort port =
+        reassignCandidatesProvider == null ? null : reassignCandidatesProvider.getIfAvailable();
+    if (port == null) {
+      return List.of();
+    }
+    Instant startAt =
+        inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : Instant.now();
+    Instant endAt =
+        inspection.getPlannedEndAt() != null
+            ? inspection.getPlannedEndAt()
+            : startAt.plusSeconds(3600);
+    return port.evaluateReassignCandidates(
+        actor.id(),
+        inspection.getId(),
+        inspection.getAssetId(),
+        inspection.getOwnerCustomerId(),
+        startAt,
+        endAt);
+  }
+
+  @Transactional
   public InspectionResponse cancel(UUID actorId, UUID inspectionId, String reason) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.MANAGER)
-        && !actor.hasRole(Roles.ADMIN)
-        && !actor.hasRole(Roles.CUSTOMER)) {
+    if (!actor.hasRole(Roles.MANAGER)) {
       throw new BusinessException(
-          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only managers or admins can cancel an inspection.");
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only Managers can cancel an inspection.");
     }
     Inspection inspection =
         inspections
@@ -630,10 +941,49 @@ public class InspectionCreationService {
           "Inspection cannot be cancelled from status " + inspection.getStatus());
     }
 
+    InspectionContractSyncPort syncPort =
+        contractSyncProvider == null ? null : contractSyncProvider.getIfAvailable();
+    if (syncPort != null && syncPort.isLinkedOccurrencePaidOrAccepted(inspectionId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "OCCURRENCE_ALREADY_SETTLED",
+          "Cannot cancel an inspection whose commercial occurrence has already been accepted or paid.");
+    }
+
     inspection.cancel(reason);
     Inspection saved = inspections.saveAndFlush(inspection);
+    if (syncPort != null) {
+      syncPort.syncCancelFromInspection(saved.getId(), reason);
+    }
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
+  }
+
+  private boolean hasScheduleConflictExcluding(
+      Inspection inspection, UUID inspectorId, UUID droneId, Instant start, Instant end) {
+    if (start == null || end == null || inspectorId == null) {
+      return false;
+    }
+    UUID effectiveDrone = droneId != null ? droneId : inspectorId;
+    boolean inspectionConflict =
+        inspection.isPartnerAssignment()
+            ? inspections.hasPlatformPartnerScheduleConflictExcluding(
+                inspectorId, effectiveDrone, start, end, inspection.getId())
+            : inspections.hasScheduleConflictByOwnerExcluding(
+                inspection.getOwnerCustomerId(),
+                inspectorId,
+                effectiveDrone,
+                start,
+                end,
+                inspection.getId());
+    if (inspectionConflict) {
+      return true;
+    }
+    InspectionContractSyncPort syncPort =
+        contractSyncProvider == null ? null : contractSyncProvider.getIfAvailable();
+    return syncPort != null
+        && syncPort.hasScheduleConflict(
+            inspectorId, effectiveDrone, start, end, inspection.getId());
   }
 
   private InspectionResponse toResponse(Inspection inspection, Asset asset) {
@@ -676,7 +1026,18 @@ public class InspectionCreationService {
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        null);
+        null,
+        inspection.isReassignmentRequired(),
+        inspection.getDeclineReason(),
+        inspection.getDeclinedAt(),
+        inspection.getDeclinedByInspectorId(),
+        inspection.getCancellationReason(),
+        inspection.getOverdueNotifiedAt(),
+        inspection.getClarificationCount(),
+        inspection.getAssignmentStatus() != null
+            ? inspection.getAssignmentStatus().name()
+            : "ACCEPTED",
+        inspection.getAssignmentAcceptedAt());
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {

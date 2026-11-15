@@ -3,15 +3,17 @@ package com.smartdroneinspection.contracts.service;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneFeatureConfig;
-import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneFeatureConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.inspections.spi.PartnerReliabilityQuery;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,17 +29,27 @@ public class PartnerRegistryService {
   private final DroneRepository drones;
   private final UserAccess users;
   private final DroneFeatureConfigRepository featureConfigs;
+  private final ObjectProvider<PartnerReliabilityQuery> reliabilityProvider;
 
   public PartnerRegistryService(DroneRepository drones, UserAccess users) {
-    this(drones, users, null);
+    this(drones, users, null, null);
+  }
+
+  public PartnerRegistryService(
+      DroneRepository drones, UserAccess users, DroneFeatureConfigRepository featureConfigs) {
+    this(drones, users, featureConfigs, null);
   }
 
   @Autowired
   public PartnerRegistryService(
-      DroneRepository drones, UserAccess users, DroneFeatureConfigRepository featureConfigs) {
+      DroneRepository drones,
+      UserAccess users,
+      DroneFeatureConfigRepository featureConfigs,
+      ObjectProvider<PartnerReliabilityQuery> reliabilityProvider) {
     this.drones = drones;
     this.users = users;
     this.featureConfigs = featureConfigs;
+    this.reliabilityProvider = reliabilityProvider;
   }
 
   @Transactional
@@ -74,16 +86,23 @@ public class PartnerRegistryService {
   public DroneOption registerDrone(UUID managerId, UUID droneId) {
     requireManager(managerId);
     Drone drone = drones.findWithLockById(droneId).orElseThrow(this::droneNotFound);
+    Instant checkAt = Instant.now();
     if (drone.getInspectorOwnerId() == null
-        || drone.getServiceability() != DroneServiceability.ACTIVE
-        || (drone.getRegistrationExpiresAt() != null
-            && !drone.getRegistrationExpiresAt().isAfter(Instant.now()))) {
+        || !drone.isEligibleForAssignment(checkAt)
+        || !drone.hasKnownMtow()) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "PARTNER_DRONE_INVALID",
           "Drone must be approved for an active Inspector partner with current registration");
     }
-    requireActivePartnerInspector(drone.getInspectorOwnerId());
+    UserAccess.ActiveUser inspector = requireActivePartnerInspector(drone.getInspectorOwnerId());
+    if (!inspector.isLicenseClassQualifiedForDrone(
+        drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INSUFFICIENT",
+          "Inspector license class must qualify for the drone MTOW.");
+    }
     return new DroneOption(
         drone.getId(),
         drone.getInspectorOwnerId(),
@@ -111,7 +130,16 @@ public class PartnerRegistryService {
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, PARTNER_NOT_FOUND, "Partner drone not found"));
     if (active) {
-      requireActivePartnerInspector(drone.getInspectorOwnerId());
+      UserAccess.ActiveUser inspector = requireActivePartnerInspector(drone.getInspectorOwnerId());
+      if (!drone.isEligibleForAssignment(Instant.now())
+          || !drone.hasKnownMtow()
+          || !inspector.isLicenseClassQualifiedForDrone(
+              drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "PARTNER_DRONE_INVALID",
+            "Drone registration, MTOW and Inspector license class must qualify before activation.");
+      }
     }
   }
 
@@ -135,11 +163,8 @@ public class PartnerRegistryService {
     Instant now = Instant.now();
     return drones.findActivePartnerDrones().stream()
         .filter(drone -> drone.getInspectorOwnerId() != null)
-        .filter(Drone::isEligibleForAssignment)
-        .filter(
-            drone ->
-                drone.getRegistrationExpiresAt() == null
-                    || drone.getRegistrationExpiresAt().isAfter(now))
+        .filter(drone -> drone.isEligibleForAssignment(now))
+        .filter(Drone::hasKnownMtow)
         .filter(drone -> isEligibleInspector(drone.getInspectorOwnerId(), now))
         .map(
             drone ->
@@ -169,6 +194,12 @@ public class PartnerRegistryService {
         users.listActiveInspectorPartners().stream()
             .filter(UserAccess.ActiveUser::isInspectorPartner)
             .collect(java.util.stream.Collectors.toMap(UserAccess.ActiveUser::id, user -> user));
+    PartnerReliabilityQuery reliabilityQuery =
+        reliabilityProvider == null ? null : reliabilityProvider.getIfAvailable();
+    Map<UUID, PartnerReliabilityQuery.ReliabilityCounts> reliabilityByInspector =
+        reliabilityQuery == null
+            ? Map.of()
+            : reliabilityQuery.countsByInspectorIds(inspectorsById.keySet());
     return drones.findActivePartnerDrones().stream()
         .filter(drone -> drone.getInspectorOwnerId() != null)
         .filter(drone -> inspectorsById.containsKey(drone.getInspectorOwnerId()))
@@ -176,37 +207,41 @@ public class PartnerRegistryService {
             drone -> {
               UserAccess.ActiveUser inspector = inspectorsById.get(drone.getInspectorOwnerId());
               boolean ownerAndAvailable =
-                  drone.isEligibleForAssignment()
-                      && (drone.getRegistrationExpiresAt() == null
-                          || drone.getRegistrationExpiresAt().isAfter(now));
+                  drone.isEligibleForAssignment(now) && drone.hasKnownMtow();
               List<Instant> windowStarts =
                   recurringStarts == null || recurringStarts.isEmpty()
                       ? List.of(now)
                       : recurringStarts;
               boolean qualifiesForWindow =
-                  inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())
+                  inspector.isLicenseClassQualifiedForDrone(
+                          drone.hasKnownMtow(), drone.requiresClassBForSafety())
                       && windowStarts.stream()
                           .allMatch(
                               start ->
                                   inspector.hasValidPilotLicense(start)
-                                      && (drone.getRegistrationExpiresAt() == null
-                                          || drone.getRegistrationExpiresAt().isAfter(start)));
-              return PartnerCandidateEvaluation.evaluate(
-                  inspector.id(),
-                  drone.getId(),
-                  inspector.fullName(),
-                  inspector.avatarUrl(),
-                  drone.getSerialNumber(),
-                  drone.getModel(),
-                  !drone.getImageFileKeys().isEmpty(),
-                  inspector,
-                  drone,
-                  startAt,
-                  contractConflict.test(inspector.id(), drone.getId()),
-                  inspectionConflict.test(inspector.id(), drone.getId()),
-                  ownerAndAvailable && qualifiesForWindow,
-                  asset,
-                  required);
+                                      && drone.isEligibleForAssignment(start));
+              PartnerCandidateEvaluation.Result evaluated =
+                  PartnerCandidateEvaluation.evaluate(
+                      inspector.id(),
+                      drone.getId(),
+                      inspector.fullName(),
+                      inspector.avatarUrl(),
+                      drone.getSerialNumber(),
+                      drone.getModel(),
+                      !drone.getImageFileKeys().isEmpty(),
+                      inspector,
+                      drone,
+                      startAt,
+                      contractConflict.test(inspector.id(), drone.getId()),
+                      inspectionConflict.test(inspector.id(), drone.getId()),
+                      ownerAndAvailable && qualifiesForWindow,
+                      asset,
+                      required);
+              PartnerReliabilityQuery.ReliabilityCounts counts =
+                  reliabilityByInspector.getOrDefault(
+                      inspector.id(), PartnerReliabilityQuery.ReliabilityCounts.ZERO);
+              return evaluated.withReliability(
+                  counts.declineCount(), counts.noShowCount(), counts.abortCount());
             })
         .sorted(
             java.util.Comparator.<PartnerCandidateEvaluation.Result>comparingInt(
@@ -238,10 +273,13 @@ public class PartnerRegistryService {
         inspector != null
             && drone != null
             && inspector.isInspectorPartner()
-            && inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())
-            && (startAt == null || inspector.hasValidPilotLicense(startAt))
-            && (drone.getRegistrationExpiresAt() == null
-                || (startAt != null && drone.getRegistrationExpiresAt().isAfter(startAt)));
+            && inspector.isLicenseClassQualifiedForDrone(
+                drone.hasKnownMtow(), drone.requiresClassBForSafety())
+            && startAt != null
+            && inspector.hasValidPilotLicense(Instant.now())
+            && inspector.hasValidPilotLicense(startAt)
+            && drone.isEligibleForAssignment(Instant.now())
+            && drone.isEligibleForAssignment(startAt);
     return PartnerCandidateEvaluation.evaluate(
         inspectorId,
         droneId,
@@ -324,18 +362,16 @@ public class PartnerRegistryService {
         drones
             .findWithLockById(droneId)
             .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
-            .filter(Drone::isEligibleForAssignment)
-            .filter(
-                value ->
-                    value.getRegistrationExpiresAt() == null
-                        || value.getRegistrationExpiresAt().isAfter(checkTime))
+            .filter(value -> value.isEligibleForAssignment(checkTime))
+            .filter(Drone::hasKnownMtow)
             .orElseThrow(
                 () ->
                     failure(
                         HttpStatus.BAD_REQUEST,
                         INVALID_PARTNER_DRONE,
                         "Partner drone is not eligible or registration expires before the scheduled mission"));
-    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+    if (!inspector.isLicenseClassQualifiedForDrone(
+        drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_CLASS_INSUFFICIENT",
@@ -387,12 +423,12 @@ public class PartnerRegistryService {
     return drones
         .findById(droneId)
         .filter(drone -> inspectorUserId.equals(drone.getInspectorOwnerId()))
-        .filter(Drone::isEligibleForAssignment)
+        .filter(drone -> drone.isEligibleForAssignment(checkTime))
+        .filter(Drone::hasKnownMtow)
         .filter(
             drone ->
-                drone.getRegistrationExpiresAt() == null
-                    || drone.getRegistrationExpiresAt().isAfter(checkTime))
-        .filter(drone -> inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense()))
+                inspector.isLicenseClassQualifiedForDrone(
+                    drone.hasKnownMtow(), drone.requiresClassBForSafety()))
         .isPresent();
   }
 
@@ -406,7 +442,8 @@ public class PartnerRegistryService {
         drones
             .findById(droneId)
             .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
-            .filter(Drone::isEligibleForAssignment)
+            .filter(value -> value.isEligibleForAssignment(Instant.now()))
+            .filter(Drone::hasKnownMtow)
             .orElse(null);
     UserAccess.ActiveUser inspector =
         users
@@ -417,16 +454,14 @@ public class PartnerRegistryService {
       return false;
     }
     boolean droneClassQualified =
-        inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense());
+        inspector.isLicenseClassQualifiedForDrone(
+            drone.hasKnownMtow(), drone.requiresClassBForSafety());
     if (!droneClassQualified) {
       return false;
     }
     return scheduledStarts.stream()
         .allMatch(
-            start ->
-                inspector.hasValidPilotLicense(start)
-                    && (drone.getRegistrationExpiresAt() == null
-                        || drone.getRegistrationExpiresAt().isAfter(start)));
+            start -> inspector.hasValidPilotLicense(start) && drone.isEligibleForAssignment(start));
   }
 
   @Transactional(readOnly = true)
@@ -436,21 +471,27 @@ public class PartnerRegistryService {
 
   @Transactional(readOnly = true)
   public Drone requireEligibleDrone(UUID droneId, UUID inspectorUserId) {
-    requireActivePartnerInspector(inspectorUserId);
-    return drones
-        .findById(droneId)
-        .filter(drone -> inspectorUserId.equals(drone.getInspectorOwnerId()))
-        .filter(Drone::isEligibleForAssignment)
-        .filter(
-            drone ->
-                drone.getRegistrationExpiresAt() == null
-                    || drone.getRegistrationExpiresAt().isAfter(Instant.now()))
-        .orElseThrow(
-            () ->
-                failure(
-                    HttpStatus.BAD_REQUEST,
-                    INVALID_PARTNER_DRONE,
-                    "Partner drone is not eligible"));
+    UserAccess.ActiveUser inspector = requireActivePartnerInspector(inspectorUserId);
+    Drone drone =
+        drones
+            .findById(droneId)
+            .filter(value -> inspectorUserId.equals(value.getInspectorOwnerId()))
+            .filter(value -> value.isEligibleForAssignment(Instant.now()))
+            .filter(Drone::hasKnownMtow)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.BAD_REQUEST,
+                        INVALID_PARTNER_DRONE,
+                        "Partner drone is not eligible"));
+    if (!inspector.isLicenseClassQualifiedForDrone(
+        drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PILOT_LICENSE_CLASS_INSUFFICIENT",
+          "Inspector license class must qualify for the drone MTOW.");
+    }
+    return drone;
   }
 
   private UserAccess.ActiveUser requireActivePartnerInspector(UUID inspectorUserId) {

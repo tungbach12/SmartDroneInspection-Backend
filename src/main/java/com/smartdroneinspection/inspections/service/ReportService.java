@@ -2,20 +2,17 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.reportcontext.ReportContextAccess;
 import com.smartdroneinspection.assets.reportcontext.ReportContextAccess.Identity;
-import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
-import com.smartdroneinspection.inspections.api.dto.response.ReportSectionsResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
-import com.smartdroneinspection.inspections.domain.ReportSections;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
@@ -52,10 +49,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ObjectNode;
 
 /**
  * MF3-07 to MF3-13: drafting, human verification, qualified review, publication and handoff.
@@ -69,9 +63,6 @@ import tools.jackson.databind.node.ObjectNode;
 public class ReportService {
 
   private static final String PROMPT_VERSION = "mf3-report-v3-bilingual";
-
-  /** Recorded as the version model when the Inspector authors the draft without automated help. */
-  private static final String MANUAL_MODEL_NAME = "manual-authoring";
 
   private static final String PDF_MEDIA_TYPE = "application/pdf";
 
@@ -252,42 +243,6 @@ public class ReportService {
         .toList();
   }
 
-  /**
-   * MF3-08: the author reads and edits the entire draft; verify identifiers, equipment, coverage,
-   * findings, uncertainty and recommendations against sources; submit the reviewed version.
-   */
-  @Transactional
-  public InspectionReportResponse saveSections(
-      UUID actorId, UUID inspectionId, UUID versionId, ReportSectionsRequest request) {
-    InspectionReport version = requireVersion(inspectionId, versionId);
-    Inspection inspection =
-        inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
-    if (!inspection.getInspectorId().equals(actorId)) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "REPORT_SCOPE_DENIED",
-          "Only the report author may edit this draft");
-    }
-
-    requireCurrentFindingsConfirmation(inspection);
-    requireFreshFindingsSnapshot(inspectionId, version);
-    ReportSections sections =
-        new ReportSections(
-            request.executiveSummary(),
-            request.purposeScopeCriteria(),
-            request.inspectorCoverageAssessment(),
-            request.methodEquipmentConditions(),
-            request.conclusionsRecommendations(),
-            request.overallCondition(),
-            request.omissionDisclosure());
-    try {
-      version.editContent(sections.executiveSummary());
-    } catch (IllegalStateException ex) {
-      throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
-    }
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
-  }
-
   /** MF3-08: the author verifies the draft against its sources. */
   @Transactional
   public InspectionReportResponse verifyVersion(UUID actorId, UUID inspectionId, UUID versionId) {
@@ -423,20 +378,19 @@ public class ReportService {
           "CLARIFICATION_REASON_REQUIRED",
           "Please provide the clarification or revision details");
     }
-    long priorClarifications =
-        versions.findByInspectionIdOrderByVersionNoDesc(inspectionId).stream()
-            .filter(
-                v ->
-                    v.getReturnReason() != null
-                        && v.getReturnReason().contains("[Yêu cầu làm rõ từ Khách hàng]"))
-            .count();
-    if (priorClarifications >= 2) {
+    if (paymentGate.map(gate -> gate.isAcceptedOrPaid(inspectionId)).orElse(false)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REPORT_ALREADY_ACCEPTED",
+          "Cannot request clarification after the report has been accepted or paid.");
+    }
+    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    if (inspection.getClarificationCount() >= 2) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "MAX_CLARIFICATIONS_EXCEEDED",
           "Báo cáo đã qua 02 lần yêu cầu làm rõ theo quy định hợp đồng. Vui lòng liên hệ trực tiếp Quản lý nền tảng để đối soát và hòa giải.");
     }
-    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
     try {
       version.returnForCustomerClarification(actorId, reason);
@@ -444,11 +398,12 @@ public class ReportService {
       throw new BusinessException(
           HttpStatus.CONFLICT, "REPORT_CLARIFICATION_INVALID", ex.getMessage());
     }
+    inspection.incrementClarificationCount();
     if (inspection.getStatus() == InspectionStatus.UNDER_REVIEW
         || inspection.getStatus() == InspectionStatus.COMPLETED) {
       inspection.returnToDraft();
-      inspections.saveAndFlush(inspection);
     }
+    inspections.saveAndFlush(inspection);
     versions.saveAndFlush(version);
     return new ReportPublishedResponse(
         version.getId(),
@@ -686,7 +641,6 @@ public class ReportService {
     ReportRenderPort.ReportContext renderReportContext =
         buildRenderReportContext(
             inspection, reportIdentity, assignedDrone, recordedSessions, locale);
-    ReportSections sections = ReportSections.read(version.getContentSnapshot(), objectMapper);
     String purposeScopeCriteria = composePurposeScopeCriteria(inspection, reportIdentity, locale);
 
     List<ReportRenderPort.FindingView> findingViews = new ArrayList<>();
@@ -758,15 +712,7 @@ public class ReportService {
         version.getReviewedAt() == null ? null : version.getReviewedAt().toString(),
         version.getPublishedAt() == null ? null : version.getPublishedAt().toString(),
         new ReportRenderPort.Sections(
-            version.getSummary() != null && !version.getSummary().isBlank()
-                ? version.getSummary()
-                : sections.executiveSummary(),
-            purposeScopeCriteria,
-            sections.inspectorCoverageAssessment(),
-            sections.methodEquipmentConditions(),
-            sections.conclusionsRecommendations(),
-            sections.overallCondition() == null ? null : sections.overallCondition().name(),
-            sections.omissionDisclosure()),
+            version.getSummary(), purposeScopeCriteria, null, null, null, null, null),
         findingViews,
         evidenceViews,
         locale);
@@ -872,11 +818,6 @@ public class ReportService {
     Inspection inspection;
     if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
       inspection = inspections.findById(inspectionId).orElseThrow(this::reportNotFound);
-    } else if (actor.hasRole(Roles.CUSTOMER) && actor.ownerCustomerId() != null) {
-      inspection =
-          inspections
-              .findByIdAndOwnerCustomerId(inspectionId, actor.ownerCustomerId())
-              .orElseThrow(this::reportNotFound);
     } else {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "REPORT_SCOPE_DENIED", "Only a qualified Manager may review");
@@ -1047,78 +988,6 @@ public class ReportService {
             omissionDisclosure);
       }
     };
-  }
-
-  /**
-   * Stores the proposed section values alongside the version's provenance.
-   *
-   * <p>Findings are deliberately not copied in: the Confirmed findings section is rendered from the
-   * reviewed finding records, so a copy here could disagree with them.
-   */
-  private static String buildContentSnapshot(
-      Inspection inspection,
-      List<Evidence> confirmedEvidence,
-      List<Finding> confirmedFindings,
-      ReportDraftPort.SectionDraft proposal,
-      ReportDraftPort port) {
-    StringBuilder snapshot = new StringBuilder();
-    snapshot.append("{\"model\":").append(quote(port.modelName()));
-    snapshot.append(",\"assetId\":").append(quote(inspection.getAssetId().toString()));
-    snapshot.append(",\"inspectionId\":").append(quote(inspection.getId().toString()));
-    snapshot.append(",\"evidenceCount\":").append(confirmedEvidence.size());
-    snapshot.append(",\"findingsCount\":").append(confirmedFindings.size());
-    appendSection(snapshot, "executiveSummary", proposal.executiveSummary());
-    appendSection(snapshot, "purposeScopeCriteria", proposal.purposeScopeCriteria());
-    appendSection(snapshot, "methodEquipmentConditions", proposal.methodEquipmentConditions());
-    appendSection(snapshot, "conclusionsRecommendations", proposal.conclusionsRecommendations());
-    appendSection(snapshot, "overallCondition", proposal.overallCondition());
-    appendSection(snapshot, "omissionDisclosure", proposal.omissionDisclosure());
-    snapshot.append("}");
-    return snapshot.toString();
-  }
-
-  /** Writes a section only when the model supplied one, so an absent section stays absent. */
-  private static void appendSection(StringBuilder snapshot, String key, String value) {
-    if (value == null || value.isBlank()) {
-      return;
-    }
-    snapshot.append(",\"").append(key).append("\":").append(quote(value));
-  }
-
-  /**
-   * The manual variant records generation provenance; it is not entered as an inspection
-   * limitation.
-   */
-  private String buildManualContentSnapshot(
-      Inspection inspection, List<Evidence> confirmedEvidence, List<Finding> confirmedFindings) {
-    ObjectNode snapshot = objectMapper.createObjectNode();
-    snapshot.put("model", MANUAL_MODEL_NAME);
-    snapshot.put("assetId", inspection.getAssetId().toString());
-    snapshot.put("inspectionId", inspection.getId().toString());
-    snapshot.put("evidenceCount", confirmedEvidence.size());
-    snapshot.put("findingsCount", confirmedFindings.size());
-    snapshot.put("analysisMethod", "MANUAL");
-    try {
-      return objectMapper.writeValueAsString(snapshot);
-    } catch (JacksonException exception) {
-      throw new IllegalStateException("Could not create a manual report snapshot", exception);
-    }
-  }
-
-  private String buildAutoContentSnapshot(
-      Inspection inspection, List<Evidence> confirmedEvidence, List<Finding> confirmedFindings) {
-    ObjectNode snapshot = objectMapper.createObjectNode();
-    snapshot.put("model", "auto-generated");
-    snapshot.put("assetId", inspection.getAssetId().toString());
-    snapshot.put("inspectionId", inspection.getId().toString());
-    snapshot.put("evidenceCount", confirmedEvidence.size());
-    snapshot.put("findingsCount", confirmedFindings.size());
-    snapshot.put("analysisMethod", "AUTO_INSPECTION_DATA");
-    try {
-      return objectMapper.writeValueAsString(snapshot);
-    } catch (JacksonException exception) {
-      throw new IllegalStateException("Could not create an auto report snapshot", exception);
-    }
   }
 
   /** Generates or returns an executive AI summary for Manager review and Customer viewing. */
@@ -1457,13 +1326,6 @@ public class ReportService {
     return buildReportContextResponse(inspection, identity, drone, sessions);
   }
 
-  private static String quote(String value) {
-    if (value == null) {
-      return "null";
-    }
-    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"";
-  }
-
   private InspectionReportResponse toResponse(InspectionReport version) {
     UUID authorUserId =
         inspections
@@ -1495,36 +1357,8 @@ public class ReportService {
         version.getPublishedAt(),
         version.getCreatedAt(),
         summaryText,
-        null,
-        null,
-        ReportSectionsResponse.from(ReportSections.EMPTY),
+        version.isClarificationRequested(),
         reportContextForVersion(version));
-  }
-
-  /**
-   * Reads the stored document body so the response carries what the author wrote.
-   *
-   * <p>A snapshot that cannot be parsed yields no body rather than failing the read. The version's
-   * gates, hashes and provenance are still authoritative, and refusing to list them would turn a
-   * malformed historical row into an outage.
-   */
-  private JsonNode readContentSnapshot(String contentSnapshot) {
-    if (contentSnapshot == null || contentSnapshot.isBlank()) {
-      return null;
-    }
-    try {
-      return objectMapper.readTree(contentSnapshot);
-    } catch (JacksonException exception) {
-      return null;
-    }
-  }
-
-  private static String textOrNull(JsonNode content, String field) {
-    if (content == null) {
-      return null;
-    }
-    JsonNode value = content.get(field);
-    return value == null || value.isNull() ? null : value.asString();
   }
 
   private static String droneDisplayReference(Identity identity, UUID droneId) {

@@ -9,7 +9,6 @@ import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.InspectorApplication;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorApplicationRepository;
@@ -191,8 +190,7 @@ public class InspectorApplicationService {
             application.getPhoneNumber(),
             null,
             application.getPasswordHash(),
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.setOtpVerified(true);
     inspector.addRole(UserRole.INSPECTOR);
     inspector = users.saveAndFlush(inspector);
@@ -230,7 +228,6 @@ public class InspectorApplicationService {
         inspector.getPhoneNumber(),
         inspector.getAvatarUrl(),
         inspector.roleValues(),
-        inspector.getActorZone().name(),
         inspector.isVisionFallbackEnabled(),
         application.getPilotLicenseNumber(),
         application.getPilotLicenseClass(),

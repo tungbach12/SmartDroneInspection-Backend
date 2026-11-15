@@ -19,11 +19,14 @@ ALTER TABLE users DROP COLUMN IF EXISTS organization_id;
 
 -- Normalize actor_zone to the role-derived values. PROSPECT_CUSTOMER is a
 -- pre-approval holding state that is now represented by a DISABLED CUSTOMER user.
+-- Drop the old ck_users_actor_zone constraint BEFORE rewriting existing rows so
+-- populated databases do not fail the pre-V43 check constraint during UPDATE.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_actor_zone;
+
 UPDATE users SET actor_zone = 'CUSTOMER' WHERE actor_zone = 'CUSTOMER_ORGANIZATION';
 UPDATE users SET actor_zone = 'INSPECTOR' WHERE actor_zone = 'INSPECTOR_PARTNER';
 UPDATE users SET actor_zone = 'CUSTOMER' WHERE actor_zone = 'PROSPECT_CUSTOMER';
 
-ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_actor_zone;
 ALTER TABLE users ADD CONSTRAINT ck_users_actor_zone
     CHECK (actor_zone IN ('PLATFORM', 'CUSTOMER', 'INSPECTOR'));
 

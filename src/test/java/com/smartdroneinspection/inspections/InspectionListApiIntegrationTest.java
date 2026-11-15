@@ -12,7 +12,6 @@ import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -242,8 +241,7 @@ class InspectionListApiIntegrationTest {
             "list-inspector-" + UUID.randomUUID() + "@example.test",
             "List inspector",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     return users.saveAndFlush(inspector).getId();
   }
@@ -282,8 +280,7 @@ class InspectionListApiIntegrationTest {
             "list-admin-" + UUID.randomUUID() + "@example.test",
             "List platform admin",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.PLATFORM);
+            UserStatus.ACTIVE);
     admin.addRole(UserRole.ADMIN);
     return users.saveAndFlush(admin).getId();
   }

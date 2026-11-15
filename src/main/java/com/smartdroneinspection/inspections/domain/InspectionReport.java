@@ -49,6 +49,9 @@ public class InspectionReport {
   @Column(name = "submitted_at")
   private Instant submittedAt;
 
+  @Column(name = "clarification_requested", nullable = false)
+  private boolean clarificationRequested;
+
   protected InspectionReport() {}
 
   public InspectionReport(UUID inspectionId, int versionNo) {
@@ -157,8 +160,13 @@ public class InspectionReport {
     reviewerUserId = customerId;
     reviewedAt = Instant.now();
     publishedAt = null;
+    clarificationRequested = true;
     returnReason = "[Yêu cầu làm rõ từ Khách hàng] " + reason.trim();
     status = ReportStatus.RETURNED;
+  }
+
+  public boolean isClarificationRequested() {
+    return clarificationRequested;
   }
 
   public boolean isImmutable() {
@@ -211,10 +219,6 @@ public class InspectionReport {
 
   public void setSummary(String summary) {
     this.summary = summary;
-  }
-
-  public String getContentSnapshot() {
-    return null;
   }
 
   public Instant getSubmittedAt() {

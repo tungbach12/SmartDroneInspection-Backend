@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -56,7 +55,6 @@ class AdminUserApiIntegrationTest {
         {
           "email": "engineer-%s@example.test",
           "fullName": "Customer Manager",
-          "actorZone": "CUSTOMER",
           "roles": ["CUSTOMER"]
         }
         """
@@ -100,8 +98,7 @@ class AdminUserApiIntegrationTest {
             "admin-" + UUID.randomUUID() + "@example.test",
             "Platform Admin",
             "{argon2}encoded-password",
-            UserStatus.ACTIVE,
-            ActorZone.PLATFORM);
+            UserStatus.ACTIVE);
     admin.addRole(UserRole.ADMIN);
     return users.saveAndFlush(admin);
   }

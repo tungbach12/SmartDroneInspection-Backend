@@ -65,7 +65,6 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Nguyen Van Pilot",
             "pilot@example.com",
             "DC-2026-0001234",
@@ -100,7 +99,6 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Le Thi Bay",
             "bay@example.com",
             "DC-2026-0005678",
@@ -130,7 +128,6 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Tran Expired",
             "expired@example.com",
             "DC-2025-0009999",
@@ -178,7 +175,6 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Valid Pilot",
             "valid@example.com",
             "DC-2026-0001111",
@@ -202,7 +198,6 @@ class PilotLicenseExpiryCheckServiceTest {
         new ActiveUser(
             inspectorId,
             Set.of("INSPECTOR"),
-            "INSPECTOR",
             "Event Pilot",
             "event@example.com",
             "DC-2026-0002222",

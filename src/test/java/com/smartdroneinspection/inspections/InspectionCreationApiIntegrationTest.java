@@ -16,7 +16,6 @@ import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -50,6 +49,7 @@ class InspectionCreationApiIntegrationTest {
   @Autowired UserRepository users;
   @Autowired com.smartdroneinspection.users.repository.InspectorProfileRepository inspectorProfiles;
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired jakarta.persistence.EntityManager entityManager;
 
   private MockMvc mockMvc;
   private UUID adminId;
@@ -69,11 +69,7 @@ class InspectionCreationApiIntegrationTest {
 
     User admin =
         new User(
-            "admin-" + UUID.randomUUID() + "@example.test",
-            "Org Admin",
-            null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            "admin-" + UUID.randomUUID() + "@example.test", "Org Admin", null, UserStatus.ACTIVE);
     admin.addRole(UserRole.CUSTOMER);
     adminId = users.saveAndFlush(admin).getId();
 
@@ -82,13 +78,30 @@ class InspectionCreationApiIntegrationTest {
             "inspector-" + UUID.randomUUID() + "@example.test",
             "Inspector One",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.INSPECTOR);
+            UserStatus.ACTIVE);
     inspector.addRole(UserRole.INSPECTOR);
     inspectorId = users.saveAndFlush(inspector).getId();
-    jdbcTemplate.update("INSERT INTO inspector_profiles (user_id) VALUES (?)", inspectorId);
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        inspectorId,
+        "LIC-VALID",
+        "CLASS_B",
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        "licenses/pilot.pdf");
 
-    Drone drone = drones.saveAndFlush(new Drone(adminId, "DJI-M300-" + UUID.randomUUID()));
+    Drone drone =
+        drones.saveAndFlush(
+            new Drone(
+                adminId,
+                "DJI-M300-" + UUID.randomUUID(),
+                "DJI Matrice 300 (MTOW 9.0 kg)",
+                "DJI",
+                "{\"mtowKg\":9.0}",
+                com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE,
+                null,
+                "REG-VALID",
+                "drones/reg.pdf",
+                Instant.now().plus(365, ChronoUnit.DAYS)));
     drone.markCustomerOwned(adminId);
     droneId = drones.saveAndFlush(drone).getId();
 
@@ -155,8 +168,7 @@ class InspectionCreationApiIntegrationTest {
             "foreign-customer-" + UUID.randomUUID() + "@example.test",
             "Foreign Customer",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     foreignCustomer.addRole(UserRole.CUSTOMER);
     UUID foreignCustomerId = users.saveAndFlush(foreignCustomer).getId();
 
@@ -280,11 +292,16 @@ class InspectionCreationApiIntegrationTest {
             "customer-inspector-" + UUID.randomUUID() + "@example.test",
             "Customer Inspector",
             null,
-            UserStatus.ACTIVE,
-            ActorZone.CUSTOMER);
+            UserStatus.ACTIVE);
     customerInspector.addRole(UserRole.INSPECTOR);
     UUID customerInspectorId = users.saveAndFlush(customerInspector).getId();
-    jdbcTemplate.update("INSERT INTO inspector_profiles (user_id) VALUES (?)", customerInspectorId);
+    jdbcTemplate.update(
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        customerInspectorId,
+        "LIC-CUSTOMER-VALID",
+        "CLASS_B",
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        "licenses/customer-pilot.pdf");
 
     String body =
         "{\"assetId\":\""
@@ -322,6 +339,33 @@ class InspectionCreationApiIntegrationTest {
     MockMultipartFile permitFile =
         new MockMultipartFile("file", "permit.pdf", "application/pdf", "%PDF-sample".getBytes());
 
+    // Flight permit upload is gated until the assigned inspector accepts the mission
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ASSIGNMENT_NOT_ACCEPTED"));
+
+    // Inspector accepts assignment -> assignmentStatus becomes ACCEPTED
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/" + inspectionId + "/accept")
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.assignmentStatus").value("ACCEPTED"))
+        .andExpect(jsonPath("$.data.assignmentAcceptedAt").isNotEmpty());
+
+    // Simulate license expiration between dispatch and flight-permit upload.
+    jdbcTemplate.update(
+        "UPDATE inspector_profiles SET pilot_license_expires_at = ? WHERE user_id = ?",
+        java.sql.Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+        customerInspectorId);
+    entityManager.flush();
+    entityManager.clear();
+
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart(
@@ -335,7 +379,48 @@ class InspectionCreationApiIntegrationTest {
     com.smartdroneinspection.users.domain.InspectorProfile profile =
         inspectorProfiles.findById(customerInspectorId).orElseThrow();
     profile.updatePilotLicense(
+        "VN-UAV-12345", "CLASS_B", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
+    inspectorProfiles.saveAndFlush(profile);
+
+    // Expired drone registration blocks flight permit upload.
+    jdbcTemplate.update(
+        "UPDATE drones SET registration_expires_at = ? WHERE id = ?",
+        java.sql.Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+        droneId);
+    entityManager.flush();
+    entityManager.clear();
+
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("DRONE_REGISTRATION_EXPIRED"));
+
+    // Restore valid drone registration, but downgrade license to CLASS_A on heavy M300 drone.
+    jdbcTemplate.update(
+        "UPDATE drones SET registration_expires_at = ? WHERE id = ?",
+        java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
+        droneId);
+    profile.updatePilotLicense(
         "VN-UAV-12345", "CLASS_A", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
+    inspectorProfiles.saveAndFlush(profile);
+    entityManager.flush();
+    entityManager.clear();
+
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart(
+                    "/api/v1/inspections/" + inspectionId + "/flight-permit")
+                .file(permitFile)
+                .with(jwtUser(customerInspectorId, "ROLE_INSPECTOR")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("PILOT_LICENSE_CLASS_INSUFFICIENT"));
+
+    profile.updatePilotLicense(
+        "VN-UAV-12345", "CLASS_B", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
     inspectorProfiles.saveAndFlush(profile);
 
     // Inspector uploads flight permit -> status remains SCHEDULED with permit attached

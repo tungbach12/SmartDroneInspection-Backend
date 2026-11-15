@@ -83,6 +83,12 @@ public class FieldSession {
   @Column(name = "flight_video_evidence_id")
   private UUID flightVideoEvidenceId;
 
+  @Column(name = "hung_notified_at")
+  private Instant hungNotifiedAt;
+
+  @Column(name = "aborted_by_user_id")
+  private UUID abortedByUserId;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -120,11 +126,29 @@ public class FieldSession {
   }
 
   public void abort(String abortReason) {
+    abort(abortReason, null);
+  }
+
+  public void abort(String abortReason, UUID actorUserId) {
     requireOpenSession();
     this.abortReason = requireReason(abortReason);
+    this.abortedByUserId = actorUserId;
     this.status = ABORTED;
     this.endedAt = Instant.now();
     this.updatedAt = endedAt;
+  }
+
+  public void markHungNotified(Instant at) {
+    this.hungNotifiedAt = Objects.requireNonNull(at, "Timestamp is required");
+    this.updatedAt = Instant.now();
+  }
+
+  public Instant getHungNotifiedAt() {
+    return hungNotifiedAt;
+  }
+
+  public UUID getAbortedByUserId() {
+    return abortedByUserId;
   }
 
   public void complete(String outcomeNotes) {

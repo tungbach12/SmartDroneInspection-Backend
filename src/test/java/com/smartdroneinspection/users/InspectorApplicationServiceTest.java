@@ -12,7 +12,6 @@ import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.api.dto.request.InspectorApplicationSubmissionRequest;
 import com.smartdroneinspection.users.domain.InspectorApplication;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.events.InspectorApplicationSubmittedEvent;
 import com.smartdroneinspection.users.repository.InspectorApplicationRepository;
@@ -138,7 +137,7 @@ class InspectorApplicationServiceTest {
   @Test
   void duplicateActiveUserEmailIsRejectedBeforeApplicationCreation() {
     String email = "pilot@example.test";
-    User existing = new User(email, "Pilot", "hash", UserStatus.ACTIVE, ActorZone.INSPECTOR);
+    User existing = new User(email, "Pilot", "hash", UserStatus.ACTIVE);
     when(users.findByNormalizedEmail(email)).thenReturn(Optional.of(existing));
 
     assertThatThrownBy(

@@ -39,7 +39,6 @@ public class AccessTokenService {
             .claim("sid", session.getId().toString())
             .claim("auth_version", user.getAuthVersion())
             .claim("roles", user.roleValues())
-            .claim("actor_zone", user.getActorZone().name())
             .claim("auth_time", issuedAt.getEpochSecond());
     var header = JwsHeader.with(MacAlgorithm.HS256).type("at+jwt").build();
     String token =

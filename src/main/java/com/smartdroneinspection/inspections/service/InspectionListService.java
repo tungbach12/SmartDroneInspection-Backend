@@ -216,7 +216,13 @@ public class InspectionListService {
         payment == null ? null : payment.commissionAmount(),
         payment == null ? null : payment.inspectorNetPayout(),
         payment == null ? null : payment.payoutStatus(),
-        payment == null ? null : payment.paymentMethod());
+        payment == null ? null : payment.paymentMethod(),
+        inspection.isReassignmentRequired(),
+        inspection.getOverdueNotifiedAt(),
+        inspection.getAssignmentStatus() != null
+            ? inspection.getAssignmentStatus().name()
+            : "ACCEPTED",
+        inspection.getAssignmentAcceptedAt());
   }
 
   private Scope requireScope(UUID actorId) {

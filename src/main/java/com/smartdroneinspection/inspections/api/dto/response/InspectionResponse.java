@@ -28,10 +28,78 @@ public record InspectionResponse(
     Instant createdAt,
     Instant updatedAt,
     String inspectionType,
-    UUID sourceInspectionId) {
+    UUID sourceInspectionId,
+    boolean reassignmentRequired,
+    String declineReason,
+    Instant declinedAt,
+    UUID declinedByInspectorId,
+    String cancellationReason,
+    Instant overdueNotifiedAt,
+    int clarificationCount,
+    String assignmentStatus,
+    Instant assignmentAcceptedAt) {
 
   public InspectionResponse {
     inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
+  }
+
+  public InspectionResponse(
+      UUID id,
+      UUID ownerCustomerId,
+      UUID assetId,
+      String assetName,
+      String locationText,
+      BigDecimal assetLatitude,
+      BigDecimal assetLongitude,
+      List<String> inspectionItems,
+      UUID inspectorId,
+      String inspectorName,
+      UUID droneId,
+      String droneSerialNumber,
+      String droneModel,
+      String droneServiceability,
+      String flightPermitFileKey,
+      String flightPermitFileName,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      String status,
+      Instant createdAt,
+      Instant updatedAt,
+      String inspectionType,
+      UUID sourceInspectionId) {
+    this(
+        id,
+        ownerCustomerId,
+        assetId,
+        assetName,
+        locationText,
+        assetLatitude,
+        assetLongitude,
+        inspectionItems,
+        inspectorId,
+        inspectorName,
+        droneId,
+        droneSerialNumber,
+        droneModel,
+        droneServiceability,
+        flightPermitFileKey,
+        flightPermitFileName,
+        plannedStartAt,
+        plannedEndAt,
+        status,
+        createdAt,
+        updatedAt,
+        inspectionType,
+        sourceInspectionId,
+        false,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0,
+        "ACCEPTED",
+        null);
   }
 
   public InspectionResponse(
@@ -105,6 +173,17 @@ public record InspectionResponse(
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        null);
+        null,
+        inspection.isReassignmentRequired(),
+        inspection.getDeclineReason(),
+        inspection.getDeclinedAt(),
+        inspection.getDeclinedByInspectorId(),
+        inspection.getCancellationReason(),
+        inspection.getOverdueNotifiedAt(),
+        inspection.getClarificationCount(),
+        inspection.getAssignmentStatus() != null
+            ? inspection.getAssignmentStatus().name()
+            : "ACCEPTED",
+        inspection.getAssignmentAcceptedAt());
   }
 }

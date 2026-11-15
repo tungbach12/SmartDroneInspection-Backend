@@ -21,12 +21,54 @@ public record PartnerCandidateResponse(
     BigDecimal footprintAreaSquareMeters,
     List<PartnerCandidateEvaluation.Check> hardGates,
     List<PartnerCandidateEvaluation.Check> capabilityChecks,
-    String disclaimer) {
+    String disclaimer,
+    long declineCount,
+    long noShowCount,
+    long abortCount) {
 
   public PartnerCandidateResponse {
     droneFeatureCodes = List.copyOf(droneFeatureCodes);
     hardGates = List.copyOf(hardGates);
     capabilityChecks = List.copyOf(capabilityChecks);
+  }
+
+  public PartnerCandidateResponse(
+      UUID inspectorId,
+      UUID droneId,
+      String inspectorName,
+      String inspectorAvatarUrl,
+      String droneSerialNumber,
+      String droneModel,
+      boolean droneHasImage,
+      List<String> droneFeatureCodes,
+      PartnerCandidateEvaluation.Status eligibility,
+      PartnerCandidateEvaluation.Status capabilityFit,
+      BigDecimal droneMaxAltitudeMeters,
+      BigDecimal structureHeightMeters,
+      BigDecimal footprintAreaSquareMeters,
+      List<PartnerCandidateEvaluation.Check> hardGates,
+      List<PartnerCandidateEvaluation.Check> capabilityChecks,
+      String disclaimer) {
+    this(
+        inspectorId,
+        droneId,
+        inspectorName,
+        inspectorAvatarUrl,
+        droneSerialNumber,
+        droneModel,
+        droneHasImage,
+        droneFeatureCodes,
+        eligibility,
+        capabilityFit,
+        droneMaxAltitudeMeters,
+        structureHeightMeters,
+        footprintAreaSquareMeters,
+        hardGates,
+        capabilityChecks,
+        disclaimer,
+        0L,
+        0L,
+        0L);
   }
 
   public static PartnerCandidateResponse from(PartnerCandidateEvaluation.Result result) {
@@ -46,6 +88,9 @@ public record PartnerCandidateResponse(
         result.footprintAreaSquareMeters(),
         result.hardGates(),
         result.capabilityChecks(),
-        result.disclaimer());
+        result.disclaimer(),
+        result.declineCount(),
+        result.noShowCount(),
+        result.abortCount());
   }
 }

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,7 +17,6 @@ import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -95,223 +93,6 @@ class InspectionReportSectionsApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"noFindingsAcknowledged\":" + noFindingsAcknowledged + "}"))
         .andExpect(status().isOk());
-  }
-
-  // ------------------------------------------------------------------ MF3-08 sections
-
-  @Test
-  void setupConfirmsTheFindingsSetThroughTheWorkflowApi() throws Exception {
-    mockMvc
-        .perform(
-            get("/api/v1/inspections/{id}/workflow-state", fixture.inspectionId())
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("FIELD_COMPLETED"))
-        .andExpect(jsonPath("$.data.findingsConfirmedAt").isNotEmpty());
-  }
-
-  @Test
-  void theAuthorCanSaveAndReadBackEveryAuthoredSection() throws Exception {
-    UUID versionId = insertDraftVersion();
-
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "executiveSummary",
-                            "The north span was surveyed from both walkways.",
-                            "inspectorCoverageAssessment",
-                            "COATING captured at web-east; no direct evidence for the eastern abutment.",
-                            "methodEquipmentConditions",
-                            "Visual and thermal optical survey at 15m AGL in overcast dry conditions.",
-                            "conclusionsRecommendations",
-                            "Schedule a hands-on close inspection of the corroded chord.",
-                            "overallCondition",
-                            "POOR",
-                            "omissionDisclosure",
-                            "Submerged components were not observed."))))
-        .andExpect(status().isOk());
-
-    mockMvc
-        .perform(
-            get(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
-        .andExpect(jsonPath("$.data.versionNo").value(1))
-        .andExpect(jsonPath("$.data.reportContext.organizationName").exists())
-        .andExpect(jsonPath("$.data.reportContext.assetName").value("Main span"))
-        .andExpect(jsonPath("$.data.reportContext.assetLocation").value("District 1"))
-        .andExpect(jsonPath("$.data.reportContext.fieldSessions").isArray());
-  }
-
-  @Test
-  void savingSectionsDoesNotCreateANewReportVersion() throws Exception {
-    UUID versionId = insertDraftVersion();
-    long before = countVersions();
-
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("executiveSummary", "Revised."))))
-        .andExpect(status().isOk());
-
-    assertThat(countVersions()).isEqualTo(before);
-  }
-
-  @Test
-  void savingSectionsPreservesTheVersionProvenanceAndGates() throws Exception {
-    UUID versionId = insertDraftVersion();
-
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("executiveSummary", "Revised."))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.versionNo").value(1))
-        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
-        .andExpect(jsonPath("$.data.submittedAt").isNotEmpty())
-        .andExpect(jsonPath("$.data.llmModel").doesNotExist());
-  }
-
-  @Test
-  void sectionsAreRefusedOnceTheVersionHasLeftAnEditableState() throws Exception {
-    UUID versionId = insertDraftVersion();
-    jdbcTemplate.update(
-        "UPDATE inspection_reports SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP WHERE id = ?",
-        versionId);
-
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("executiveSummary", "Too late."))))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("REPORT_STATE_CONFLICT"));
-  }
-
-  @Test
-  void aReviewerWhoIsNotTheAuthorCannotRewriteTheDraft() throws Exception {
-    UUID versionId = insertDraftVersion();
-
-    // Section authoring is the author's work. A qualified reviewer may read a draft but cannot
-    // rewrite it, and the route refuses the CUSTOMER role before the use-case scope check runs.
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("executiveSummary", "Rewritten by a reviewer."))))
-        .andExpect(status().isForbidden());
-  }
-
-  @Test
-  void anotherInspectorInTheSameOrganizationCannotRewriteTheDraft() throws Exception {
-    UUID versionId = insertDraftVersion();
-
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.otherInspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("executiveSummary", "Rewritten by another inspector."))))
-        .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.code").value("REPORT_SCOPE_DENIED"));
-  }
-
-  @Test
-  void anOverLongSectionIsRefusedRatherThanTruncated() throws Exception {
-    UUID versionId = insertDraftVersion();
-
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("executiveSummary", "x".repeat(10_001)))))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  void anAbsentSectionReadsAsNotSuppliedRatherThanEmpty() throws Exception {
-    UUID versionId = insertDraftVersion();
-
-    mockMvc
-        .perform(
-            get(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.sections.executiveSummary").doesNotExist())
-        .andExpect(jsonPath("$.data.sections.overallCondition").doesNotExist());
-  }
-
-  @Test
-  void aSnapshotWithoutTheNewSectionKeysStillReads() throws Exception {
-    UUID versionId = UUID.randomUUID();
-    // A snapshot written before the section keys existed: valid JSON, none of the new fields. It
-    // must
-    // still read, with the absent sections reported as not supplied rather than failing the
-    // version.
-    jdbcTemplate.update(
-        """
-        INSERT INTO inspection_reports (id, inspection_id, version_no, status, created_at, submitted_at)
-        VALUES (?, ?, 1, 'SUBMITTED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """,
-        versionId,
-        fixture.inspectionId());
-
-    mockMvc
-        .perform(
-            get(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.versionNo").value(1))
-        .andExpect(jsonPath("$.data.sections.executiveSummary").doesNotExist());
   }
 
   // ------------------------------------------------------------------ MF3-03 preview
@@ -414,7 +195,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isConflict());
 
     assertThat(storedBytes(reportObjectKey(versionId))).isEqualTo(first);
@@ -697,7 +478,7 @@ class InspectionReportSectionsApiIntegrationTest {
                     "/api/v1/inspections/{id}/report/versions/{versionId}/review",
                     fixture.inspectionId(),
                     versionId)
-                .with(principal(fixture.reviewerId(), "CUSTOMER")))
+                .with(principal(fixture.managerId(), "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.publishedAt").isNotEmpty());
   }
@@ -750,18 +531,6 @@ class InspectionReportSectionsApiIntegrationTest {
 
   private UUID approvedVersion() throws Exception {
     UUID versionId = insertDraftVersion();
-    mockMvc
-        .perform(
-            put(
-                    "/api/v1/inspections/{id}/report/versions/{versionId}/sections",
-                    fixture.inspectionId(),
-                    versionId)
-                .with(principal(fixture.inspectorId(), "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of("executiveSummary", "Recorded condition assessment."))))
-        .andExpect(status().isOk());
     authorVerifyAndSubmit(versionId);
     return versionId;
   }

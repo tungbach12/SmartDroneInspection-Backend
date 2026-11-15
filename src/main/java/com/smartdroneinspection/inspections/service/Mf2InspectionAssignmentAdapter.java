@@ -3,7 +3,6 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
-import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -48,6 +47,21 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
       UUID inspectorId, UUID droneId, Instant plannedStartAt, Instant plannedEndAt) {
     return inspections.hasPlatformPartnerScheduleConflict(
         inspectorId, droneId, plannedStartAt, plannedEndAt);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean hasPlatformScheduleConflictExcluding(
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID excludeInspectionId) {
+    if (excludeInspectionId == null) {
+      return hasPlatformScheduleConflict(inspectorId, droneId, plannedStartAt, plannedEndAt);
+    }
+    return inspections.hasPlatformPartnerScheduleConflictExcluding(
+        inspectorId, droneId, plannedStartAt, plannedEndAt, excludeInspectionId);
   }
 
   @Override
@@ -101,11 +115,8 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
         drones
             .findWithLockById(droneId)
             .filter(value -> inspector.id().equals(value.getInspectorOwnerId()))
-            .filter(value -> value.getServiceability() == DroneServiceability.ACTIVE)
-            .filter(
-                value ->
-                    value.getRegistrationExpiresAt() == null
-                        || value.getRegistrationExpiresAt().isAfter(plannedStartAt))
+            .filter(value -> value.isEligibleForAssignment(plannedStartAt))
+            .filter(Drone::hasKnownMtow)
             .orElseThrow(
                 () ->
                     failure(
@@ -113,7 +124,8 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
                         "INVALID_DRONE",
                         "Partner drone must be approved for the selected Inspector and currently registered"));
 
-    if (!inspector.isLicenseClassQualifiedFor(drone.requiresClassBLicense())) {
+    if (!inspector.isLicenseClassQualifiedForDrone(
+        drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "PILOT_LICENSE_CLASS_INSUFFICIENT",
@@ -137,6 +149,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
             plannedStartAt,
             plannedEndAt);
     inspection.markPartnerAssignment();
+    inspection.markPendingAcceptance();
     inspection.markCustomerOwned(
         asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId);
     Inspection saved = inspections.saveAndFlush(inspection);

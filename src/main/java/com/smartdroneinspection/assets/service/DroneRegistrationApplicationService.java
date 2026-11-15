@@ -622,8 +622,7 @@ public class DroneRegistrationApplicationService {
                         HttpStatus.FORBIDDEN,
                         "REVIEWER_REQUIRED",
                         "Platform Reviewer access is required."));
-    if (!"PLATFORM".equals(admin.actorZone())
-        || (!admin.hasRole("ADMIN") && !admin.hasRole("MANAGER"))) {
+    if (!admin.hasRole("ADMIN") && !admin.hasRole("MANAGER")) {
       throw new AuthException(
           HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
     }

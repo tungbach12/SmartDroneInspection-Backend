@@ -11,7 +11,6 @@ import com.smartdroneinspection.users.api.dto.response.OrganizationRegistrationR
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
@@ -125,7 +124,7 @@ public class OrganizationRegistrationService {
     var existingUserOpt = users.findByNormalizedEmail(email);
     if (existingUserOpt.isPresent()) {
       User existingUser = existingUserOpt.get();
-      if (existingUser.getActorZone() == ActorZone.CUSTOMER
+      if (existingUser.roleValues().contains(UserRole.CUSTOMER.value())
           && existingUser.getStatus() == UserStatus.DISABLED) {
         rejectedRegistration =
             prospectiveRegistrations
@@ -200,8 +199,7 @@ public class OrganizationRegistrationService {
                 normalizedPhone,
                 null,
                 passwords.encode(request.password()),
-                UserStatus.DISABLED,
-                ActorZone.CUSTOMER);
+                UserStatus.DISABLED);
         prospect.setOtpVerified(true);
         prospect.addRole(UserRole.CUSTOMER);
         prospect = users.saveAndFlush(prospect);
@@ -230,11 +228,7 @@ public class OrganizationRegistrationService {
           organizationName,
           organizationCode,
           new UserResponse(
-              prospect.getId(),
-              prospect.getEmail(),
-              prospect.getFullName(),
-              prospect.roleValues(),
-              prospect.getActorZone().name()),
+              prospect.getId(), prospect.getEmail(), prospect.getFullName(), prospect.roleValues()),
           "PENDING_AIRSPACE_REVIEW",
           registration.getId(),
           evaluation.status().name(),
@@ -256,8 +250,7 @@ public class OrganizationRegistrationService {
               normalizedPhone,
               null,
               passwords.encode(request.password()),
-              UserStatus.ACTIVE,
-              ActorZone.CUSTOMER);
+              UserStatus.ACTIVE);
       customer.setOtpVerified(true);
       customer.addRole(UserRole.CUSTOMER);
       customer = users.saveAndFlush(customer);
@@ -292,11 +285,7 @@ public class OrganizationRegistrationService {
         organizationName,
         organizationCode,
         new UserResponse(
-            customer.getId(),
-            customer.getEmail(),
-            customer.getFullName(),
-            customer.roleValues(),
-            customer.getActorZone().name()));
+            customer.getId(), customer.getEmail(), customer.getFullName(), customer.roleValues()));
   }
 
   @Transactional

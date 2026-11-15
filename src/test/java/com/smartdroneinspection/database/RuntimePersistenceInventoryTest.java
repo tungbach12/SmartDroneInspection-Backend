@@ -36,6 +36,7 @@ class RuntimePersistenceInventoryTest {
           "drone_registration_applications",
           "users",
           "inspector_flight_logs",
+          "inspector_reliability_events",
           "field_sessions",
           "evidence",
           "findings",
@@ -93,7 +94,8 @@ class RuntimePersistenceInventoryTest {
           "pilot_license_classes",
           "inspector_applications",
           "otp_challenges",
-          "inspector_flight_logs");
+          "inspector_flight_logs",
+          "inspector_reliability_events");
 
   @Autowired EntityManagerFactory entityManagerFactory;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -125,7 +127,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(36);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(37);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

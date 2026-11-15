@@ -11,6 +11,7 @@ import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
 import com.smartdroneinspection.notifications.domain.Notification;
 import com.smartdroneinspection.users.domain.AuthSession;
 import com.smartdroneinspection.users.domain.InspectorProfile;
@@ -33,6 +34,7 @@ class PersistenceEntityMappingTest {
           AssetDocument.class,
           Drone.class,
           Inspection.class,
+          InspectorReliabilityEvent.class,
           FieldSession.class,
           Evidence.class,
           Finding.class,

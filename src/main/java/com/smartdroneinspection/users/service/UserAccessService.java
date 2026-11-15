@@ -7,7 +7,6 @@ import com.smartdroneinspection.users.api.dto.request.CreateUserRequest;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
-import com.smartdroneinspection.users.domain.enums.ActorZone;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
@@ -89,6 +88,16 @@ public class UserAccessService implements UserAccess {
         .orElse(true);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<ActiveUser> listActiveManagers() {
+    return users.findActiveManagers().stream()
+        .filter(User::active)
+        .map(this::toActiveUser)
+        .filter(u -> u.hasRole(Roles.MANAGER))
+        .toList();
+  }
+
   private ActiveUser toActiveUser(User user) {
     InspectorProfile profile = inspectorProfileRepository.findById(user.getId()).orElse(null);
     boolean onboardingApproved =
@@ -96,7 +105,6 @@ public class UserAccessService implements UserAccess {
     return new ActiveUser(
         user.getId(),
         Set.copyOf(user.roleValues()),
-        user.getActorZone().name(),
         user.getFullName(),
         user.getEmail(),
         onboardingApproved && profile != null ? profile.getPilotLicenseNumber() : null,
@@ -135,11 +143,11 @@ public class UserAccessService implements UserAccess {
     if (!isWorkforceRoles(roles)) {
       throw workforceAccessDenied();
     }
-    rolePolicy.validate(ActorZone.INSPECTOR, toEnumRoles(roles));
+    rolePolicy.validate(toEnumRoles(roles));
     var provisioned =
         adminUsers.create(
             actorId,
-            new CreateUserRequest(email, fullName, ActorZone.INSPECTOR, toEnumRoles(roles)),
+            new CreateUserRequest(email, fullName, toEnumRoles(roles)),
             ipAddress,
             userAgent,
             correlationId);
@@ -206,7 +214,6 @@ public class UserAccessService implements UserAccess {
     User actor =
         users.findDetailedById(actorId).orElseThrow(UserAccessService::workforceAccessDenied);
     if (!actor.active()
-        || actor.getActorZone() != ActorZone.PLATFORM
         || (!actor.roleValues().contains(Roles.ADMIN)
             && !actor.roleValues().contains(Roles.MANAGER))) {
       throw workforceAccessDenied();

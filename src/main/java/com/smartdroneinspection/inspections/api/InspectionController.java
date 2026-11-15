@@ -5,10 +5,10 @@ import com.smartdroneinspection.inspections.api.dto.EvidenceStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.AnalyzeVideoRequest;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
+import com.smartdroneinspection.inspections.api.dto.request.DeclineInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
 import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
-import com.smartdroneinspection.inspections.api.dto.request.ReportSectionsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
@@ -162,7 +162,7 @@ public class InspectionController {
   }
 
   @PutMapping("/schedule")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  @PreAuthorize("hasRole('MANAGER')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       reschedule(
           @AuthenticationPrincipal Jwt jwt,
@@ -176,7 +176,7 @@ public class InspectionController {
   }
 
   @PutMapping("/assignment")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  @PreAuthorize("hasRole('MANAGER')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       reassign(
           @AuthenticationPrincipal Jwt jwt,
@@ -190,7 +190,7 @@ public class InspectionController {
   }
 
   @PostMapping("/cancellation")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  @PreAuthorize("hasRole('MANAGER')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       cancel(
           @AuthenticationPrincipal Jwt jwt,
@@ -201,6 +201,35 @@ public class InspectionController {
     return ApiResponse.success(
         creationService.cancel(
             actorId(jwt), inspectionId, request != null ? request.reason() : null));
+  }
+
+  @PostMapping("/accept")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      accept(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(creationService.acceptAssignment(actorId(jwt), inspectionId));
+  }
+
+  @PostMapping("/decline")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
+      decline(
+          @AuthenticationPrincipal Jwt jwt,
+          @PathVariable UUID inspectionId,
+          @Valid @RequestBody DeclineInspectionRequest request) {
+    return ApiResponse.success(
+        creationService.decline(actorId(jwt), inspectionId, request.reason()));
+  }
+
+  @PostMapping("/reassign-candidates")
+  @PreAuthorize("hasRole('MANAGER')")
+  public ApiResponse<
+          List<
+              com.smartdroneinspection.shared.api.InspectionReassignCandidatePort
+                  .ReassignCandidate>>
+      reassignCandidates(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(
+        creationService.evaluateReassignCandidates(actorId(jwt), inspectionId));
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -482,7 +511,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/review")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CUSTOMER')")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
   public ApiResponse<ReportPublishedResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -564,17 +593,6 @@ public class InspectionController {
     }
     return ApiResponse.success(
         reportAcceptancePort.get().getPaymentStatus(actorId(jwt), inspectionId));
-  }
-
-  @PutMapping("/report/versions/{versionId}/sections")
-  @PreAuthorize("hasRole('INSPECTOR')")
-  public ApiResponse<InspectionReportResponse> saveSections(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID inspectionId,
-      @PathVariable UUID versionId,
-      @Valid @RequestBody ReportSectionsRequest request) {
-    return ApiResponse.success(
-        reportService.saveSections(actorId(jwt), inspectionId, versionId, request));
   }
 
   @GetMapping("/report/versions/{versionId}/ai-summary")
