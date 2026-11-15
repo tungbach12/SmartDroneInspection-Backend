@@ -1,8 +1,7 @@
 name: Deploy
 
+# Manual dispatch while GitHub-hosted Actions runners are billing-locked on the account.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
