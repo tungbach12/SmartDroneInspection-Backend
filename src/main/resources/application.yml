@@ -86,6 +86,10 @@ app:
     credential-expiring-soon-window: ${CREDENTIAL_EXPIRING_SOON_WINDOW:60d}
   report:
     narrative-max-chars: ${REPORT_NARRATIVE_MAX_CHARS:10000}
+  scheduling:
+    enabled: ${APP_SCHEDULING_ENABLED:true}
+  notifications:
+    license-expiry-check-cron: ${LICENSE_EXPIRY_CHECK_CRON:0 0 7 * * *}
   storage:
     minio:
       enabled: ${MINIO_ENABLED:true}

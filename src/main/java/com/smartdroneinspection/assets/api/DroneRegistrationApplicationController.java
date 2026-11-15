@@ -22,7 +22,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -127,6 +129,26 @@ public class DroneRegistrationApplicationController {
   public ApiResponse<List<InspectorDroneResponse>> inspectorDrones(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(applications.inspectorDrones(subject(jwt)));
+  }
+
+  @PatchMapping("/mine/drones/{droneId}/serviceability")
+  @PreAuthorize("hasRole('" + Roles.INSPECTOR + "')")
+  public ApiResponse<InspectorDroneResponse> updateMyDroneServiceability(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID droneId,
+      @Valid @RequestBody
+          com.smartdroneinspection.assets.api.dto.request.UpdateDroneServiceabilityRequest
+              request) {
+    return ApiResponse.success(
+        applications.updateMyDroneServiceability(subject(jwt), droneId, request.serviceability()));
+  }
+
+  @DeleteMapping("/mine/drones/{droneId}")
+  @PreAuthorize("hasRole('" + Roles.INSPECTOR + "')")
+  public ApiResponse<Void> deleteMyDrone(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID droneId) {
+    applications.deleteMyDrone(subject(jwt), droneId);
+    return ApiResponse.success(null);
   }
 
   @GetMapping("/pending")

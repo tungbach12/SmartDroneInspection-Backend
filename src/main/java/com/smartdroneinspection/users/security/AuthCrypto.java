@@ -1,6 +1,7 @@
 package com.smartdroneinspection.users.security;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -30,6 +31,15 @@ public final class AuthCrypto {
       return hex(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
     } catch (Exception ex) {
       throw new IllegalStateException("Unable to hash authentication material", ex);
+    }
+  }
+
+  public static String sha256Hex(byte[] data) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return hex(digest.digest(data));
+    } catch (Exception ex) {
+      throw new IllegalStateException("Unable to compute SHA-256 digest", ex);
     }
   }
 

@@ -3,6 +3,7 @@ package com.smartdroneinspection.users.api;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.users.api.dto.request.CreateInspectorFlightLogRequest;
+import com.smartdroneinspection.users.api.dto.request.RejectInspectorOnboardingRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateInspectorProfileRequest;
 import com.smartdroneinspection.users.api.dto.response.InspectorFlightLogResponse;
 import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
@@ -46,27 +47,34 @@ public class InspectorProfileController {
   }
 
   @GetMapping("/{inspectorId}")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
-  public ApiResponse<InspectorProfileResponse> getProfile(@PathVariable UUID inspectorId) {
+  @PreAuthorize(
+      "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
+  public ApiResponse<InspectorProfileResponse> getProfile(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectorId) {
+    requireSelfOrManager(jwt, inspectorId);
     return ApiResponse.success(inspectorProfileService.getProfile(inspectorId));
   }
 
   @PutMapping("/{inspectorId}")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  @PreAuthorize(
+      "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
   public ApiResponse<InspectorProfileResponse> updateProfile(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectorId,
       @Valid @RequestBody UpdateInspectorProfileRequest request) {
+    requireSelfOrManager(jwt, inspectorId);
     return ApiResponse.success(
         inspectorProfileService.updateProfile(inspectorId, request, subject(jwt)));
   }
 
   @PostMapping(path = "/{inspectorId}/license-scan", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  @PreAuthorize(
+      "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
   public ApiResponse<InspectorProfileResponse> uploadLicenseScan(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectorId,
       @RequestParam("file") MultipartFile file) {
+    requireSelfOrManager(jwt, inspectorId);
     return ApiResponse.success(
         inspectorProfileService.uploadLicenseScan(inspectorId, file, subject(jwt)));
   }
@@ -76,15 +84,7 @@ public class InspectorProfileController {
       "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
   public ResponseEntity<InputStreamResource> viewLicenseScan(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectorId) {
-    // If inspector is accessing, ensure they only view their own scan
-    if (!hasAnyRole(jwt, Roles.ADMIN, Roles.MANAGER)) {
-      if (!subject(jwt).equals(inspectorId)) {
-        throw new com.smartdroneinspection.shared.exception.AuthException(
-            org.springframework.http.HttpStatus.FORBIDDEN,
-            "FORBIDDEN",
-            "Inspector may only access their own license scan");
-      }
-    }
+    requireSelfOrManager(jwt, inspectorId);
     var content = inspectorProfileService.openLicenseScan(inspectorId);
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(content.contentType()))
@@ -93,19 +93,78 @@ public class InspectorProfileController {
         .body(new InputStreamResource(content.stream()));
   }
 
+  @GetMapping(
+      path = "/{inspectorId}/partner-contract-template",
+      produces = MediaType.APPLICATION_PDF_VALUE)
+  @PreAuthorize(
+      "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
+  public ResponseEntity<byte[]> downloadDraftPartnerContractPdf(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectorId) {
+    requireSelfOrManager(jwt, inspectorId);
+    byte[] pdf = inspectorProfileService.generateDraftPartnerContractPdf(inspectorId);
+    String filename =
+        "Du-Thao-Hop-Dong-Doi-Tac-Inspector-" + inspectorId.toString().substring(0, 8) + ".pdf";
+    return ResponseEntity.ok()
+        .contentType(MediaType.APPLICATION_PDF)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(filename).build().toString())
+        .header(HttpHeaders.CACHE_CONTROL, "no-store")
+        .body(pdf);
+  }
+
+  @PostMapping(
+      path = "/{inspectorId}/partner-contract",
+      consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize(
+      "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
+  public ApiResponse<InspectorProfileResponse> uploadPartnerContract(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectorId,
+      @RequestParam("file") MultipartFile file) {
+    requireSelfOrManager(jwt, inspectorId);
+    return ApiResponse.success(
+        inspectorProfileService.uploadPartnerContract(inspectorId, file, subject(jwt)));
+  }
+
+  @GetMapping("/{inspectorId}/partner-contract")
+  @PreAuthorize(
+      "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
+  public ResponseEntity<InputStreamResource> viewPartnerContract(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectorId) {
+    requireSelfOrManager(jwt, inspectorId);
+    var content = inspectorProfileService.openPartnerContract(inspectorId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(content.contentType()))
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().build().toString())
+        .header(HttpHeaders.CACHE_CONTROL, "no-store")
+        .body(new InputStreamResource(content.stream()));
+  }
+
+  @PostMapping("/{inspectorId}/approve")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  public ApiResponse<InspectorProfileResponse> approveOnboarding(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectorId) {
+    return ApiResponse.success(
+        inspectorProfileService.approveOnboarding(inspectorId, subject(jwt)));
+  }
+
+  @PostMapping("/{inspectorId}/reject")
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  public ApiResponse<InspectorProfileResponse> rejectOnboarding(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectorId,
+      @Valid @RequestBody RejectInspectorOnboardingRequest request) {
+    return ApiResponse.success(
+        inspectorProfileService.rejectOnboarding(inspectorId, request.reason(), subject(jwt)));
+  }
+
   @GetMapping("/{inspectorId}/flight-logs")
   @PreAuthorize(
       "hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "', '" + Roles.INSPECTOR + "')")
   public ApiResponse<List<InspectorFlightLogResponse>> listFlightLogs(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectorId) {
-    if (!hasAnyRole(jwt, Roles.ADMIN, Roles.MANAGER)) {
-      if (!subject(jwt).equals(inspectorId)) {
-        throw new com.smartdroneinspection.shared.exception.AuthException(
-            org.springframework.http.HttpStatus.FORBIDDEN,
-            "FORBIDDEN",
-            "Inspector may only access their own flight logs");
-      }
-    }
+    requireSelfOrManager(jwt, inspectorId);
     return ApiResponse.success(inspectorProfileService.listFlightLogs(inspectorId));
   }
 
@@ -138,6 +197,17 @@ public class InspectorProfileController {
   public ApiResponse<List<InspectorFlightLogResponse>> getMyFlightLogs(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(inspectorProfileService.listFlightLogs(subject(jwt)));
+  }
+
+  private void requireSelfOrManager(Jwt jwt, UUID inspectorId) {
+    if (!hasAnyRole(jwt, Roles.ADMIN, Roles.MANAGER)) {
+      if (!subject(jwt).equals(inspectorId)) {
+        throw new com.smartdroneinspection.shared.exception.AuthException(
+            org.springframework.http.HttpStatus.FORBIDDEN,
+            "FORBIDDEN",
+            "Inspector may only access or update their own profile");
+      }
+    }
   }
 
   private UUID subject(Jwt jwt) {

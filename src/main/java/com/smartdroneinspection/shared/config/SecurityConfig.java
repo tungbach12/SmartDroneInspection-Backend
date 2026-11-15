@@ -66,6 +66,8 @@ public class SecurityConfig {
                         HttpMethod.POST,
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
+                        "/api/v1/auth/registration/inspector-application",
+                        "/api/v1/inspector-applications/license-scan",
                         "/api/v1/auth/registration/otp/send",
                         "/api/v1/auth/password-reset/otp/send",
                         "/api/v1/auth/password-reset/confirm",
@@ -109,6 +111,13 @@ public class SecurityConfig {
                         "/api/v1/webhooks/vnpay/**",
                         "/actuator/health/**",
                         "/error")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/pilot-license-classes")
+                    .permitAll()
+                    .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/inspector-applications",
+                        "/api/v1/inspector-applications/license-scan")
                     .permitAll()
                     .requestMatchers(
                         "/swagger-ui/**",

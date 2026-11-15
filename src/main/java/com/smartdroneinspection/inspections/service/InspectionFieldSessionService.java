@@ -158,6 +158,18 @@ public class InspectionFieldSessionService {
           "Cannot start field work without a current pilot license number, expiry, and uploaded scan.");
     }
     requireNoOpenSession(inspectionId);
+    userAccess
+        .findActiveUser(inspectorId)
+        .filter(
+            actor ->
+                actor.pilotLicenseExpiresAt() != null
+                    && !actor.pilotLicenseExpiresAt().isAfter(Instant.now()))
+        .ifPresent(
+            actor -> {
+              throw sessionFailure(
+                  "PILOT_LICENSE_EXPIRED",
+                  "Your UAV pilot license has expired. Renew and update your license before starting a flight session.");
+            });
     if (!inspection.hasFlightPermit()) {
       throw sessionFailure(
           "FLIGHT_PERMIT_REQUIRED",
