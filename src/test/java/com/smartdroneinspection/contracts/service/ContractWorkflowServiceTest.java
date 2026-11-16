@@ -28,10 +28,12 @@ import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.ServiceRequestStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
+import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
+import com.smartdroneinspection.contracts.repository.ServiceRequestMessageAttachmentRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
@@ -42,6 +44,7 @@ import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import com.smartdroneinspection.users.UserAccess;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -65,6 +68,7 @@ class ContractWorkflowServiceTest {
 
   private ServiceRequestRepository requests;
   private ServiceRequestMessageRepository messages;
+  private ServiceRequestMessageAttachmentRepository messageAttachments;
   private ServiceRequestQuoteRepository quotes;
   private ServiceRequestOccurrenceRepository occurrences;
   private AssetRepository assets;
@@ -90,6 +94,7 @@ class ContractWorkflowServiceTest {
   void setUp() {
     requests = mock(ServiceRequestRepository.class);
     messages = mock(ServiceRequestMessageRepository.class);
+    messageAttachments = mock(ServiceRequestMessageAttachmentRepository.class);
     quotes = mock(ServiceRequestQuoteRepository.class);
     occurrences = mock(ServiceRequestOccurrenceRepository.class);
     assets = mock(AssetRepository.class);
@@ -119,6 +124,7 @@ class ContractWorkflowServiceTest {
             Optional.of(reportAccess),
             payOSGateway,
             vnPayGateway);
+    ReflectionTestUtils.setField(service, "messageAttachments", Optional.of(messageAttachments));
 
     when(users.findActiveUser(customerId))
         .thenReturn(
@@ -343,6 +349,7 @@ class ContractWorkflowServiceTest {
             4,
             null);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
     when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(false);
@@ -383,6 +390,7 @@ class ContractWorkflowServiceTest {
             4,
             null);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
     when(partners.isEligibleInspectorForAllDates(eq(inspectorId), any())).thenReturn(true);
@@ -495,6 +503,7 @@ class ContractWorkflowServiceTest {
             2,
             null);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
 
@@ -538,24 +547,135 @@ class ContractWorkflowServiceTest {
   void customerAndManagerCanViewOnlyTheirRequestScopes() {
     UUID requestId = UUID.randomUUID();
     ServiceRequest customerRequest =
-        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+        assignedRequestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     when(requests.findByIdAndOwnerCustomerId(requestId, orgId))
         .thenReturn(Optional.of(customerRequest));
+    when(requests.findById(requestId)).thenReturn(Optional.of(customerRequest));
+    when(quotes.findByRequestId(any())).thenReturn(Optional.empty());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(any())).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(any())).thenReturn(List.of());
+    when(users.findActiveServiceManager(managerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ServiceManagerContact(
+                    managerId,
+                    "Service Manager",
+                    "manager@example.test",
+                    "+84 901 234 567",
+                    "https://cdn.test/manager.png")));
+    ServiceRequestQuote customerQuote =
+        quoteEntity(requestId, Instant.now(), Instant.now().plusSeconds(3600));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(customerQuote));
+    when(users.findActiveServiceManager(managerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ServiceManagerContact(
+                    managerId,
+                    "Service Manager",
+                    "manager@example.test",
+                    "+84 901 234 567",
+                    "https://cdn.test/manager.png")));
+    var customerResponse = service.get(customerId, requestId);
+    assertThat(customerResponse.ownerCustomerId()).isEqualTo(orgId);
+    assertThat(customerResponse.serviceManager()).isNotNull();
+    assertThat(customerResponse.serviceManager().email()).isEqualTo("manager@example.test");
+    assertThat(customerResponse.serviceManager().phoneNumber()).isEqualTo("+84 901 234 567");
+
+    ServiceRequest unassignedRequest =
+        unassignedRequestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findById(requestId)).thenReturn(Optional.of(unassignedRequest));
+    var managerResponse = service.get(managerId, requestId);
+    assertThat(managerResponse.id()).isEqualTo(unassignedRequest.getId());
+    assertThat(managerResponse.serviceManager()).isNull();
+    assertThat(managerResponse.canClaim()).isTrue();
+
+    when(requests.findByOwnerCustomerIdOrderByCreatedAtDesc(orgId))
+        .thenReturn(List.of(customerRequest));
+    when(requests.findManagerQueue(managerId)).thenReturn(List.of(customerRequest));
+    assertThat(service.list(customerId)).hasSize(1);
+    assertThat(service.list(customerId).getFirst().serviceManager()).isNotNull();
+    assertThat(service.list(managerId)).hasSize(1);
+    assertThat(service.list(managerId).getFirst().serviceManager()).isNull();
+    assertThat(service.list(managerId).getFirst().canClaim()).isFalse();
+  }
+
+  @Test
+  void managerCanClaimMultipleRequestsAndClaimIsConflictSafe() {
+    UUID requestOneId = UUID.randomUUID();
+    UUID requestTwoId = UUID.randomUUID();
+    ServiceRequest requestOne =
+        unassignedRequestWithId(requestOneId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    ServiceRequest requestTwo =
+        unassignedRequestWithId(requestTwoId, LocalDate.of(2027, 2, 2), LocalDate.of(2027, 2, 2));
+    when(requests.findWithLockById(requestOneId)).thenReturn(Optional.of(requestOne));
+    when(requests.findWithLockById(requestTwoId)).thenReturn(Optional.of(requestTwo));
+    when(requests.saveAndFlush(any(ServiceRequest.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
     when(quotes.findByRequestId(any())).thenReturn(Optional.empty());
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(any())).thenReturn(List.of());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(any())).thenReturn(List.of());
 
-    assertThat(service.get(customerId, requestId).ownerCustomerId()).isEqualTo(orgId);
+    var claimedOne = service.claimRequest(managerId, requestOneId);
+    var claimedTwo = service.claimRequest(managerId, requestTwoId);
 
-    ServiceRequest managerRequest = request(LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
-    when(requests.findById(requestId)).thenReturn(Optional.of(managerRequest));
-    assertThat(service.get(managerId, requestId).id()).isEqualTo(managerRequest.getId());
+    assertThat(claimedOne.assignedManagerId()).isEqualTo(managerId);
+    assertThat(claimedTwo.assignedManagerId()).isEqualTo(managerId);
+    assertThat(requestOne.getAssignedManagerId()).isEqualTo(managerId);
+    assertThat(requestTwo.getAssignedManagerId()).isEqualTo(managerId);
+    assertThatThrownBy(() -> service.claimRequest(managerId, requestOneId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("already assigned");
+  }
 
-    when(requests.findByOwnerCustomerIdOrderByCreatedAtDesc(orgId))
-        .thenReturn(List.of(customerRequest));
-    when(requests.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(managerRequest));
-    assertThat(service.list(customerId)).hasSize(1);
-    assertThat(service.list(managerId)).hasSize(1);
+  @Test
+  void adminCanAssignAnUnclaimedRequestAndIsRecordedAsAssignmentActor() {
+    UUID adminId = UUID.randomUUID();
+    UUID newManagerId = UUID.randomUUID();
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        unassignedRequestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    when(users.findActiveUser(adminId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(adminId, Set.of(Roles.ADMIN), null, "Platform Admin")));
+    when(users.findActiveServiceManager(newManagerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ServiceManagerContact(
+                    newManagerId, "Manager Two", "manager2@example.test", null, null)));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(requests.saveAndFlush(any(ServiceRequest.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    var response = service.reassignRequest(adminId, requestId, newManagerId);
+
+    assertThat(response.assignedManagerId()).isEqualTo(newManagerId);
+    assertThat(request.getManagerAssignedByUserId()).isEqualTo(adminId);
+  }
+
+  @Test
+  void managerCannotQuoteOrReadMessagesForAnotherManagersRequest() {
+    UUID otherManagerId = UUID.randomUUID();
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    request.reassignManager(otherManagerId, managerId, Instant.now());
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+
+    assertThatThrownBy(
+            () ->
+                service.saveQuote(
+                    managerId,
+                    requestId,
+                    quote(
+                        Instant.parse("2027-02-01T09:00:00Z"),
+                        Instant.parse("2027-02-01T10:00:00Z"))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("cannot access");
+    assertThatThrownBy(() -> service.get(managerId, requestId))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("not found");
   }
 
   @Test
@@ -564,6 +684,9 @@ class ContractWorkflowServiceTest {
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
     when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
@@ -577,6 +700,141 @@ class ContractWorkflowServiceTest {
     verify(messages).saveAndFlush(captor.capture());
     assertThat(captor.getValue().getBody()).isEqualTo("Please inspect the supports.");
     assertThat(response.messages()).isEmpty();
+  }
+
+  @Test
+  void customerCanPostImageAttachmentAndReturnsPersistedAttachmentMetadata() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(messages.saveAndFlush(any(ServiceRequestMessage.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId))
+        .thenAnswer(invocation -> List.of());
+    MockMultipartFile image =
+        new MockMultipartFile(
+            "files",
+            "bridge.png",
+            "image/png",
+            new byte[] {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10});
+
+    service.postMessage(customerId, requestId, "See attached", List.of(image));
+
+    ArgumentCaptor<ServiceRequestMessage> captor =
+        ArgumentCaptor.forClass(ServiceRequestMessage.class);
+    verify(messages).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().getBody()).isEqualTo("See attached");
+    assertThat(captor.getValue().getAttachments()).hasSize(1);
+    assertThat(captor.getValue().getAttachments().getFirst().getContentType())
+        .isEqualTo("image/png");
+    assertThat(captor.getValue().getAttachments().getFirst().getChecksumSha256()).hasSize(64);
+    verify(objectStore)
+        .put(
+            org.mockito.ArgumentMatchers.startsWith(
+                "contracts/requests/" + requestId + "/messages/"),
+            eq("image/png"),
+            eq(8L),
+            any(java.io.InputStream.class));
+  }
+
+  @Test
+  void rejectsEmptyMessageWithoutAttachmentsAndInvalidAttachmentSignature() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+
+    assertThatThrownBy(() -> service.postMessage(customerId, requestId, "  "))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("text or an attachment");
+    MockMultipartFile invalid =
+        new MockMultipartFile("files", "image.png", "image/png", "not png".getBytes());
+    assertThatThrownBy(() -> service.postMessage(customerId, requestId, "", List.of(invalid)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("Allowed attachments");
+    verify(messages, never()).saveAndFlush(any(ServiceRequestMessage.class));
+    verify(objectStore, never()).put(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
+  }
+
+  @Test
+  void rejectsMessageAttachmentCountAboveFive() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    MockMultipartFile image =
+        new MockMultipartFile(
+            "files",
+            "bridge.png",
+            "image/png",
+            new byte[] {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10});
+
+    assertThatThrownBy(
+            () ->
+                service.postMessage(
+                    customerId, requestId, "", List.of(image, image, image, image, image, image)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("at most 5");
+    verify(messages, never()).saveAndFlush(any(ServiceRequestMessage.class));
+  }
+
+  @Test
+  void managerCannotDownloadAttachmentFromAnotherManagersRequest() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    request.reassignManager(UUID.randomUUID(), managerId, Instant.now());
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+
+    assertThatThrownBy(
+            () ->
+                service.openMessageAttachment(
+                    managerId, requestId, UUID.randomUUID(), UUID.randomUUID()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("not found");
+    verify(objectStore, never()).open(any(String.class));
+  }
+
+  @Test
+  void customerCanDownloadOwnImageAttachmentWithoutLockingQuery() throws IOException {
+    UUID requestId = UUID.randomUUID();
+    UUID messageId = UUID.randomUUID();
+    UUID attachmentId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestMessage message =
+        new ServiceRequestMessage(requestId, customerId, "See attached", true);
+    ServiceRequestMessageAttachment attachment =
+        message.addAttachment(
+            "sample.png", "image/png", 8L, "a".repeat(64), "contracts/sample.png");
+    ReflectionTestUtils.setField(attachment, "id", attachmentId);
+    ReflectionTestUtils.setField(message, "id", messageId);
+
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(messages.findById(messageId)).thenReturn(Optional.of(message));
+    when(messageAttachments.findByIdAndMessage_IdAndMessage_RequestId(
+            attachmentId, messageId, requestId))
+        .thenReturn(Optional.of(attachment));
+    when(objectStore.open("contracts/sample.png"))
+        .thenReturn(new ByteArrayInputStream("image".getBytes()));
+
+    ContractWorkflowService.MessageAttachmentFile file =
+        service.openMessageAttachment(customerId, requestId, messageId, attachmentId);
+
+    assertThat(file.fileName()).isEqualTo("sample.png");
+    assertThat(file.contentType()).isEqualTo("image/png");
+    assertThat(file.sizeBytes()).isEqualTo(8L);
+    verify(objectStore).open("contracts/sample.png");
+    verify(requests, never()).findWithLockByIdAndOwnerCustomerId(requestId, orgId);
   }
 
   @Test
@@ -601,6 +859,7 @@ class ContractWorkflowServiceTest {
             null,
             recurrenceEnd);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     request.markQuoted();
     ServiceRequestQuote quote =
         quoteEntity(
@@ -642,6 +901,7 @@ class ContractWorkflowServiceTest {
             null,
             recurrenceEnd);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     request.markQuoted();
     ServiceRequestQuote quote =
         quoteEntity(
@@ -781,6 +1041,7 @@ class ContractWorkflowServiceTest {
             4,
             null);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     request.markQuoted();
     ServiceRequestQuote quote =
         quoteEntity(
@@ -857,6 +1118,7 @@ class ContractWorkflowServiceTest {
             null,
             LocalDate.of(2027, 2, 15));
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     request.markQuoted();
     ServiceRequestQuote quote =
         quoteEntity(
@@ -2002,10 +2264,16 @@ class ContractWorkflowServiceTest {
   }
 
   private ServiceRequest request(LocalDate from, LocalDate until) {
-    return requestWithId(UUID.randomUUID(), from, until);
+    return assignedRequestWithId(UUID.randomUUID(), from, until);
   }
 
   private ServiceRequest requestWithId(UUID requestId, LocalDate from, LocalDate until) {
+    ServiceRequest request = unassignedRequestWithId(requestId, from, until);
+    request.claimByManager(managerId, Instant.now());
+    return request;
+  }
+
+  private ServiceRequest unassignedRequestWithId(UUID requestId, LocalDate from, LocalDate until) {
     if (until.isAfter(from)) {
       until = from;
     }
@@ -2029,6 +2297,10 @@ class ContractWorkflowServiceTest {
     return request;
   }
 
+  private ServiceRequest assignedRequestWithId(UUID requestId, LocalDate from, LocalDate until) {
+    return requestWithId(requestId, from, until);
+  }
+
   private ServiceRequest recurringRequest(UUID requestId, Integer count, LocalDate endDate) {
     ServiceRequest request =
         new ServiceRequest(
@@ -2047,6 +2319,7 @@ class ContractWorkflowServiceTest {
             count,
             endDate);
     setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
     return request;
   }
 

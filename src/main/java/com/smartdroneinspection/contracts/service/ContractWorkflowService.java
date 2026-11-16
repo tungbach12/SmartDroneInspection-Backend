@@ -19,6 +19,7 @@ import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayout
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
+import com.smartdroneinspection.contracts.api.dto.response.ServiceManagerContactResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestOccurrenceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestQuoteResponse;
@@ -28,6 +29,7 @@ import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
 import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
+import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
@@ -35,6 +37,7 @@ import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRefundRepository;
+import com.smartdroneinspection.contracts.repository.ServiceRequestMessageAttachmentRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteRepository;
@@ -51,11 +54,14 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -74,6 +80,9 @@ public class ContractWorkflowService
     implements InspectionPaymentGate, InspectionReportAcceptancePort {
 
   static final long MAX_CONTRACT_SIZE_BYTES = 10L * 1024 * 1024;
+  static final long MAX_MESSAGE_ATTACHMENT_TOTAL_BYTES = 20L * 1024 * 1024;
+  static final int MAX_MESSAGE_ATTACHMENT_COUNT = 5;
+  private static final long MAX_MESSAGE_ATTACHMENT_FILE_BYTES = 10L * 1024 * 1024;
   private static final String STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE";
   private static final String REQUEST_NOT_FOUND = "REQUEST_NOT_FOUND";
   private static final String REQUEST_NOT_FOUND_DETAIL = "Service request not found";
@@ -83,9 +92,14 @@ public class ContractWorkflowService
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "image/jpeg",
           "image/png");
+  private static final String DOCX_CONTENT_TYPE =
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  private static final Set<String> ALLOWED_MESSAGE_ATTACHMENT_TYPES =
+      Set.of("image/png", "image/jpeg", "image/webp", "application/pdf", DOCX_CONTENT_TYPE);
 
   private final ServiceRequestRepository requests;
   private final ServiceRequestMessageRepository messages;
+  private Optional<ServiceRequestMessageAttachmentRepository> messageAttachments = Optional.empty();
   private final ServiceRequestQuoteRepository quotes;
   private final ServiceRequestOccurrenceRepository occurrences;
   private final AssetRepository assets;
@@ -134,6 +148,12 @@ public class ContractWorkflowService
     this.payOSGateway = payOSGateway;
     this.vnPayGateway = vnPayGateway;
     this.jdbcTemplate = jdbcTemplate;
+  }
+
+  @Autowired
+  void setMessageAttachments(
+      Optional<ServiceRequestMessageAttachmentRepository> messageAttachments) {
+    this.messageAttachments = messageAttachments != null ? messageAttachments : Optional.empty();
   }
 
   @Autowired
@@ -385,11 +405,27 @@ public class ContractWorkflowService
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
       return requests.findByOwnerCustomerIdOrderByCreatedAtDesc(actor.ownerCustomerId()).stream()
-          .map(this::toResponse)
+          .map(request -> toResponse(request, true, null, true))
+          .toList();
+    }
+    if (actor.hasRole(Roles.ADMIN)) {
+      return requests.findAllByOrderByCreatedAtDesc().stream()
+          .map(this::toAdminAssignmentResponse)
           .toList();
     }
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
-      return requests.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
+      return requests.findManagerQueue(actor.id()).stream()
+          .map(
+              request ->
+                  withAssignmentOptions(
+                      actor,
+                      toResponse(
+                          request,
+                          false,
+                          actor,
+                          request.getAssignedManagerId() != null
+                              && request.getAssignedManagerId().equals(actor.id()))))
+          .toList();
     }
     throw forbidden();
   }
@@ -397,27 +433,358 @@ public class ContractWorkflowService
   @Transactional(readOnly = true)
   public ServiceRequestResponse get(UUID actorId, UUID requestId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
-    return toResponse(requireRequestForActor(actor, requestId));
+    boolean includeManagerContact =
+        actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER;
+    ServiceRequest request = requireRequestForActor(actor, requestId);
+    boolean isManager = actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER;
+    boolean includeManagerProfile = includeManagerContact && request.getAssignedManagerId() != null;
+    if (actor.hasRole(Roles.ADMIN)) {
+      return toAdminAssignmentResponse(request);
+    }
+    boolean managerOwnsRequest = isManager && request.getAssignedManagerId() != null;
+    ServiceRequestResponse response =
+        toResponse(
+            request,
+            includeManagerProfile,
+            isManager ? actor : null,
+            !isManager || managerOwnsRequest);
+    return isManager ? withAssignmentOptions(actor, response) : response;
+  }
+
+  @Transactional
+  public ServiceRequestResponse claimRequest(UUID actorId, UUID requestId) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request =
+        requests
+            .findWithLockById(requestId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+    if (request.getStatus() != ServiceRequest.ServiceRequestStatus.OPEN
+        && request.getStatus() != ServiceRequest.ServiceRequestStatus.QUOTED) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REQUEST_NOT_CLAIMABLE",
+          "Only open or quoted service requests can be claimed");
+    }
+    if (request.getAssignedManagerId() != null) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REQUEST_ALREADY_ASSIGNED",
+          "This service request is already assigned to a Manager");
+    }
+    Instant assignedAt = Instant.now();
+    try {
+      request.claimByManager(manager.id(), assignedAt);
+    } catch (IllegalStateException exception) {
+      throw failure(HttpStatus.CONFLICT, "REQUEST_ASSIGNMENT_INVALID", exception.getMessage());
+    }
+    requests.saveAndFlush(request);
+    recordManagerAssignmentAudit(manager.id(), request, null, manager.id(), "CLAIMED");
+    return withAssignmentOptions(manager, toResponse(request, false, manager, true));
+  }
+
+  @Transactional
+  public ServiceRequestResponse reassignRequest(UUID actorId, UUID requestId, UUID newManagerId) {
+    UserAccess.ActiveUser admin = requireAdmin(actorId);
+    ServiceRequest request = requireAdminRequestLocked(admin, requestId);
+    UserAccess.ServiceManagerContact newManager =
+        users
+            .findActiveServiceManager(newManagerId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.BAD_REQUEST,
+                        "MANAGER_NOT_ACTIVE",
+                        "The selected assignee is not an active Manager"));
+    UUID previousManagerId = request.getAssignedManagerId();
+    request.reassignManager(newManager.id(), admin.id(), Instant.now());
+    requests.saveAndFlush(request);
+    recordManagerAssignmentAudit(
+        admin.id(),
+        request,
+        previousManagerId,
+        newManager.id(),
+        previousManagerId == null ? "ASSIGNED" : "REASSIGNED");
+    return toAdminAssignmentResponse(request);
+  }
+
+  @Transactional
+  public ServiceRequestResponse unassignRequest(UUID actorId, UUID requestId) {
+    UserAccess.ActiveUser admin = requireAdmin(actorId);
+    ServiceRequest request = requireAdminRequestLocked(admin, requestId);
+    UUID previousManagerId = request.getAssignedManagerId();
+    if (previousManagerId == null) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REQUEST_NOT_ASSIGNED",
+          "This service request has no assigned Manager");
+    }
+    request.unassignManager(admin.id(), Instant.now());
+    requests.saveAndFlush(request);
+    recordManagerAssignmentAudit(admin.id(), request, previousManagerId, null, "UNASSIGNED");
+    return toAdminAssignmentResponse(request);
   }
 
   @Transactional
   public ServiceRequestResponse postMessage(UUID actorId, UUID requestId, String body) {
+    return postMessage(actorId, requestId, body, List.of());
+  }
+
+  @Transactional
+  public ServiceRequestResponse postMessage(
+      UUID actorId, UUID requestId, String body, List<MultipartFile> files) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
-    ServiceRequest request = requireRequestForActor(actor, requestId);
+    ServiceRequest request = requireRequestForMessageMutation(actor, requestId);
+    requireCanUseRequestMessages(actor, request);
+    List<MessageAttachmentUpload> uploads = validateMessageAttachments(files);
+    if (!StringUtils.hasText(body) && uploads.isEmpty()) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "MESSAGE_INVALID", "Message text or an attachment is required");
+    }
     ServiceRequestMessage message;
     try {
-      message = new ServiceRequestMessage(request.getId(), actor.id(), body);
+      message = new ServiceRequestMessage(request.getId(), actor.id(), body, !uploads.isEmpty());
     } catch (IllegalArgumentException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "MESSAGE_INVALID", exception.getMessage());
     }
-    messages.saveAndFlush(message);
+
+    EvidenceObjectStore store = uploads.isEmpty() ? null : requireStore();
+    List<String> storedKeys = new java.util.ArrayList<>();
+    try {
+      for (MessageAttachmentUpload upload : uploads) {
+        String objectKey =
+            "contracts/requests/"
+                + requestId
+                + "/messages/"
+                + UUID.randomUUID()
+                + "/"
+                + upload.fileName();
+        store.put(
+            objectKey,
+            upload.contentType(),
+            upload.content().length,
+            new ByteArrayInputStream(upload.content()));
+        storedKeys.add(objectKey);
+        message.addAttachment(
+            upload.fileName(),
+            upload.contentType(),
+            upload.content().length,
+            sha256(upload.content()),
+            objectKey);
+      }
+      messages.saveAndFlush(message);
+      if (!message.getAttachments().isEmpty()) {
+        messageAttachments
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.BAD_GATEWAY,
+                        STORAGE_UNAVAILABLE,
+                        "Message attachment persistence is not configured"))
+            .saveAllAndFlush(message.getAttachments());
+      }
+    } catch (IOException exception) {
+      deleteStoredObjects(store, storedKeys);
+      throw failure(HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Failed to store message attachment");
+    } catch (RuntimeException exception) {
+      deleteStoredObjects(store, storedKeys);
+      throw exception;
+    }
     return toResponse(request);
   }
+
+  @Transactional(readOnly = true)
+  public MessageAttachmentFile openMessageAttachment(
+      UUID actorId, UUID requestId, UUID messageId, UUID attachmentId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    ServiceRequest request = requireRequestForMessageRead(actor, requestId);
+    requireCanUseRequestMessages(actor, request);
+    ServiceRequestMessage message =
+        messages
+            .findById(messageId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "Message not found"));
+    ServiceRequestMessageAttachment attachment =
+        messageAttachments
+            .flatMap(
+                repository ->
+                    repository.findByIdAndMessage_IdAndMessage_RequestId(
+                        attachmentId, messageId, requestId))
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "MESSAGE_ATTACHMENT_NOT_FOUND",
+                        "Message attachment not found"));
+    try {
+      return new MessageAttachmentFile(
+          attachment.getFileName(),
+          attachment.getContentType(),
+          attachment.getSizeBytes(),
+          objectStore
+              .orElseThrow(
+                  () ->
+                      failure(
+                          HttpStatus.BAD_GATEWAY,
+                          STORAGE_UNAVAILABLE,
+                          "Message attachment storage is not configured"))
+              .open(attachment.getObjectKey()));
+    } catch (IOException exception) {
+      throw failure(
+          HttpStatus.BAD_GATEWAY, "STORAGE_FAILED", "Message attachment could not be opened");
+    }
+  }
+
+  private ServiceRequest requireRequestForMessageRead(UserAccess.ActiveUser actor, UUID requestId) {
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
+      return requireCustomerRequest(actor, requestId);
+    }
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
+      return requireRequestForManager(actor, requestId);
+    }
+    throw forbidden();
+  }
+
+  private ServiceRequest requireRequestForMessageMutation(
+      UserAccess.ActiveUser actor, UUID requestId) {
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
+      return requireCustomerRequestLocked(actor, requestId);
+    }
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
+      return requireRequestForManagerLocked(actor, requestId);
+    }
+    throw forbidden();
+  }
+
+  private void requireCanUseRequestMessages(UserAccess.ActiveUser actor, ServiceRequest request) {
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
+      requireAssignedManager(request, actor);
+    }
+  }
+
+  private List<MessageAttachmentUpload> validateMessageAttachments(List<MultipartFile> files) {
+    if (files == null || files.isEmpty()) return List.of();
+    if (files.size() > MAX_MESSAGE_ATTACHMENT_COUNT) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "MESSAGE_ATTACHMENT_COUNT",
+          "A message can include at most 5 files");
+    }
+    List<MessageAttachmentUpload> validated = new java.util.ArrayList<>();
+    long totalBytes = 0;
+    for (MultipartFile file : files) {
+      if (file == null || file.isEmpty()) {
+        throw failure(
+            HttpStatus.BAD_REQUEST, "MESSAGE_ATTACHMENT_INVALID", "Attachments must not be empty");
+      }
+      if (file.getSize() > MAX_MESSAGE_ATTACHMENT_FILE_BYTES) {
+        throw failure(
+            HttpStatus.PAYLOAD_TOO_LARGE,
+            "MESSAGE_ATTACHMENT_TOO_LARGE",
+            "Each attachment is limited to 10 MiB");
+      }
+      totalBytes += file.getSize();
+      if (totalBytes > MAX_MESSAGE_ATTACHMENT_TOTAL_BYTES) {
+        throw failure(
+            HttpStatus.PAYLOAD_TOO_LARGE,
+            "MESSAGE_ATTACHMENTS_TOO_LARGE",
+            "Attachments are limited to 20 MiB total");
+      }
+      byte[] content;
+      try {
+        content = file.getBytes();
+      } catch (IOException exception) {
+        throw failure(
+            HttpStatus.BAD_REQUEST, "MESSAGE_ATTACHMENT_INVALID", "Attachment could not be read");
+      }
+      String contentType = resolveMessageAttachmentType(content, file.getContentType());
+      validated.add(
+          new MessageAttachmentUpload(
+              sanitizeMessageAttachmentFileName(file.getOriginalFilename()), contentType, content));
+    }
+    return List.copyOf(validated);
+  }
+
+  private static String resolveMessageAttachmentType(byte[] bytes, String declaredType) {
+    String declared = declaredType == null ? "" : declaredType.toLowerCase(java.util.Locale.ROOT);
+    if (startsWith(bytes, new byte[] {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10})
+        && declared.equals("image/png")) return "image/png";
+    if (bytes.length >= 3
+        && bytes[0] == (byte) 0xff
+        && bytes[1] == (byte) 0xd8
+        && bytes[2] == (byte) 0xff
+        && declared.equals("image/jpeg")) return "image/jpeg";
+    if (bytes.length >= 12
+        && asciiAt(bytes, 0, "RIFF")
+        && asciiAt(bytes, 8, "WEBP")
+        && declared.equals("image/webp")) return "image/webp";
+    if (startsWith(bytes, "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+        && declared.equals("application/pdf")) return "application/pdf";
+    if (bytes.length >= 4
+        && bytes[0] == 'P'
+        && bytes[1] == 'K'
+        && (bytes[2] == 3 && bytes[3] == 4 || bytes[2] == 5 && bytes[3] == 6)
+        && DOCX_CONTENT_TYPE.equals(declared)) return DOCX_CONTENT_TYPE;
+    throw failure(
+        HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        "MESSAGE_ATTACHMENT_TYPE",
+        "Allowed attachments are PNG, JPG, WEBP, PDF, and DOCX files with matching content");
+  }
+
+  private static boolean startsWith(byte[] value, byte[] signature) {
+    if (value.length < signature.length) return false;
+    for (int index = 0; index < signature.length; index++) {
+      if (value[index] != signature[index]) return false;
+    }
+    return true;
+  }
+
+  private static boolean asciiAt(byte[] value, int offset, String expected) {
+    if (value.length < offset + expected.length()) return false;
+    for (int index = 0; index < expected.length(); index++) {
+      if (value[offset + index] != (byte) expected.charAt(index)) return false;
+    }
+    return true;
+  }
+
+  private static String sha256(byte[] content) {
+    try {
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is unavailable", exception);
+    }
+  }
+
+  private static void deleteStoredObjects(EvidenceObjectStore store, List<String> keys) {
+    if (store == null) return;
+    for (String key : keys) {
+      try {
+        store.delete(key);
+      } catch (IOException ignored) {
+        // The metadata transaction rolls back; a cleanup failure is an orphan for storage audit.
+      }
+    }
+  }
+
+  private record MessageAttachmentUpload(String fileName, String contentType, byte[] content) {}
+
+  public record MessageAttachmentFile(
+      String fileName, String contentType, long sizeBytes, InputStream stream) {}
 
   @Transactional
   public ServiceRequestResponse markMessagesRead(UUID actorId, UUID requestId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
+      requireAssignedManager(request, actor);
+    }
     List<ServiceRequestMessage> unread =
         messages.findByRequestIdAndAuthorUserIdNotAndReadAtIsNull(request.getId(), actor.id());
     if (!unread.isEmpty()) {
@@ -426,6 +793,15 @@ public class ContractWorkflowService
       messages.saveAllAndFlush(unread);
     }
     return toResponse(request);
+  }
+
+  @Transactional(readOnly = true)
+  public List<UserAccess.ServiceManagerContact> listActiveServiceManagers(UUID actorId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    if (!actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    return users.listActiveServiceManagers();
   }
 
   @Transactional(readOnly = true)
@@ -439,6 +815,7 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, EvaluatePartnerCandidatesRequest input) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManager(manager, requestId);
+    requireAssignedManager(request, manager);
     requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.plannedStartAt());
@@ -473,6 +850,7 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, IssueServiceQuoteRequest input) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    requireAssignedManager(request, manager);
     ServiceRequestQuote existing = quotes.findWithLockByRequestId(requestId).orElse(null);
     if (request.getStatus() != ServiceRequest.ServiceRequestStatus.OPEN
         && request.getStatus() != ServiceRequest.ServiceRequestStatus.QUOTED) {
@@ -651,6 +1029,12 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, UUID occurrenceId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
+    if (actor.hasRole(Roles.MANAGER)) {
+      requireAssignedManager(request, actor);
+    }
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
     occurrences
         .findById(occurrenceId)
         .filter(value -> requestId.equals(value.getRequestId()))
@@ -720,6 +1104,12 @@ public class ContractWorkflowService
   public SignedContractFile openSignedContract(UUID actorId, UUID requestId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
+    if (actor.hasRole(Roles.MANAGER)) {
+      requireAssignedManager(request, actor);
+    }
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
     String objectKey = request.getContractObjectKey();
     if (objectKey == null || objectKey.isBlank()) {
       throw failure(
@@ -1236,6 +1626,9 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, UUID occurrenceId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
+    if (actor.hasRole(Roles.MANAGER)) {
+      requireAssignedManager(request, actor);
+    }
     ServiceRequestOccurrence occurrence =
         occurrences
             .findById(occurrenceId)
@@ -1244,7 +1637,7 @@ public class ContractWorkflowService
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
-    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+    if (actor.hasRole(Roles.MANAGER)) {
       return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
     }
     if (actor.hasRole(Roles.CUSTOMER)
@@ -1264,12 +1657,15 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, UUID occurrenceId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
-    if (!actor.hasRole(Roles.ADMIN) && !actor.hasRole(Roles.MANAGER)) {
-      if (!actor.hasRole(Roles.CUSTOMER)
-          || actor.ownerCustomerId() == null
-          || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
-        throw forbidden();
-      }
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    if (actor.hasRole(Roles.MANAGER)) {
+      requireAssignedManager(request, actor);
+    } else if (!actor.hasRole(Roles.CUSTOMER)
+        || actor.ownerCustomerId() == null
+        || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
+      throw forbidden();
     }
     ServiceRequestOccurrence occurrence =
         occurrences
@@ -1419,12 +1815,15 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, UUID occurrenceId, String clientIp) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
-    if (!actor.hasRole(Roles.ADMIN) && !actor.hasRole(Roles.MANAGER)) {
-      if (!actor.hasRole(Roles.CUSTOMER)
-          || actor.ownerCustomerId() == null
-          || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
-        throw forbidden();
-      }
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    if (actor.hasRole(Roles.MANAGER)) {
+      requireAssignedManager(request, actor);
+    } else if (!actor.hasRole(Roles.CUSTOMER)
+        || actor.ownerCustomerId() == null
+        || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
+      throw forbidden();
     }
     ServiceRequestOccurrence occurrence =
         occurrences
@@ -2196,16 +2595,54 @@ public class ContractWorkflowService
         quote.getPricePerOccurrenceVnd().toPlainString());
   }
 
+  private ServiceRequestResponse toAdminAssignmentResponse(ServiceRequest request) {
+    return ServiceRequestResponse.forAssignmentRegistry(request);
+  }
+
   private ServiceRequestResponse toResponse(ServiceRequest request) {
+    return toResponse(request, false, null, false);
+  }
+
+  private ServiceRequestResponse toResponse(
+      ServiceRequest request,
+      boolean includeManagerContact,
+      UserAccess.ActiveUser managerActor,
+      boolean includeManagerMessages) {
+    boolean managerHasNotClaimed = managerActor != null && request.getAssignedManagerId() == null;
+    ServiceRequestQuoteResponse quote =
+        managerHasNotClaimed
+            ? null
+            : quotes
+                .findByRequestId(request.getId())
+                .map(ServiceRequestQuoteResponse::from)
+                .orElse(null);
+    ServiceManagerContactResponse managerContact = null;
+    if (includeManagerContact && request.getAssignedManagerId() != null) {
+      managerContact =
+          users
+              .findActiveServiceManager(request.getAssignedManagerId())
+              .map(ServiceManagerContactResponse::from)
+              .orElse(null);
+    }
+    boolean canClaim =
+        managerActor != null
+            && !managerActor.hasRole(Roles.ADMIN)
+            && request.getAssignedManagerId() == null;
     return ServiceRequestResponse.from(
         request,
-        quotes.findByRequestId(request.getId()).map(ServiceRequestQuoteResponse::from).orElse(null),
-        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
-            .map(occ -> ServiceRequestOccurrenceResponse.from(occ, request))
-            .toList(),
-        messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
-            .map(this::toMessageResponse)
-            .toList());
+        quote,
+        managerContact,
+        managerHasNotClaimed
+            ? List.of()
+            : occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
+                .map(occ -> ServiceRequestOccurrenceResponse.from(occ, request))
+                .toList(),
+        managerActor != null && (managerHasNotClaimed || !includeManagerMessages)
+            ? List.of()
+            : messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
+                .map(this::toMessageResponse)
+                .toList(),
+        canClaim);
   }
 
   private ServiceRequestMessageResponse toMessageResponse(ServiceRequestMessage message) {
@@ -2220,7 +2657,13 @@ public class ContractWorkflowService
       return requireCustomerRequest(actor, requestId);
     }
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
-      return requireRequestForManager(actor, requestId);
+      ServiceRequest request = requireRequestForManager(actor, requestId);
+      if (!actor.hasRole(Roles.ADMIN)
+          && request.getAssignedManagerId() != null
+          && !request.getAssignedManagerId().equals(actor.id())) {
+        throw failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL);
+      }
+      return request;
     }
     if (actor.hasRole(Roles.INSPECTOR)) {
       return requests
@@ -2246,25 +2689,130 @@ public class ContractWorkflowService
             () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
   }
 
-  private ServiceRequest requireRequestForManager(UserAccess.ActiveUser manager, UUID requestId) {
-    return requests
-        .findById(requestId)
-        .orElseThrow(
-            () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
-  }
-
-  private ServiceRequest requireRequestForManagerLocked(
-      UserAccess.ActiveUser manager, UUID requestId) {
+  private ServiceRequest requireAdminRequestLocked(UserAccess.ActiveUser admin, UUID requestId) {
+    if (!admin.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
     return requests
         .findWithLockById(requestId)
         .orElseThrow(
             () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
   }
 
+  private ServiceRequest requireRequestForManager(UserAccess.ActiveUser manager, UUID requestId) {
+    ServiceRequest request =
+        requests
+            .findById(requestId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+    if (request.getAssignedManagerId() != null
+        && !request.getAssignedManagerId().equals(manager.id())) {
+      throw failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL);
+    }
+    return request;
+  }
+
+  private ServiceRequest requireRequestForManagerLocked(
+      UserAccess.ActiveUser manager, UUID requestId) {
+    ServiceRequest request =
+        requests
+            .findWithLockById(requestId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+    requireAssignedManager(request, manager);
+    return request;
+  }
+
+  private void requireAssignedManager(ServiceRequest request, UserAccess.ActiveUser manager) {
+    if (request.getAssignedManagerId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "REQUEST_NOT_CLAIMED", "Claim this request before managing it");
+    }
+    if (!request.getAssignedManagerId().equals(manager.id())) {
+      throw forbidden();
+    }
+  }
+
+  private UserAccess.ActiveUser requireAdmin(UUID actorId) {
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    if (!actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    return actor;
+  }
+
+  private ServiceRequestResponse withAssignmentOptions(
+      UserAccess.ActiveUser actor, ServiceRequestResponse response) {
+    return new ServiceRequestResponse(
+        response.id(),
+        response.ownerCustomerId(),
+        response.assetId(),
+        response.description(),
+        response.requestedFrom(),
+        response.requestedUntil(),
+        response.timezone(),
+        response.windowStart(),
+        response.windowEnd(),
+        response.requestType(),
+        response.recurrenceUnit(),
+        response.recurrenceInterval(),
+        response.occurrenceCount(),
+        response.recurrenceEndDate(),
+        response.status(),
+        response.acceptedQuoteId(),
+        response.acceptedAt(),
+        response.acceptedByUserId(),
+        response.acceptedTermsSnapshot(),
+        response.contractFileName(),
+        response.contractContentType(),
+        response.contractSizeBytes(),
+        response.contractUploadedAt(),
+        response.createdAt(),
+        response.currentQuote(),
+        response.assignedManagerId(),
+        response.managerAssignedAt(),
+        response.managerAssignedByUserId(),
+        response.serviceManager(),
+        response.occurrences(),
+        response.messages(),
+        response.sourceInspectionId(),
+        response.canClaim());
+  }
+
+  private void recordManagerAssignmentAudit(
+      UUID actorId,
+      ServiceRequest request,
+      UUID previousManagerId,
+      UUID nextManagerId,
+      String action) {
+    if (jdbcTemplate == null) {
+      return;
+    }
+    jdbcTemplate.update(
+        """
+        INSERT INTO audit_events
+          (actor_user_id, action, aggregate_type, aggregate_id,
+           before_status, after_status, aggregate_version, safe_metadata, created_at)
+        VALUES (?, ?, 'SERVICE_REQUEST', ?, ?, ?, ?,
+          jsonb_build_object('previousManagerId', ?::text, 'assignedManagerId', ?::text,
+            'managerAssignedAt', ?::text), CURRENT_TIMESTAMP)
+        """,
+        actorId,
+        "MF2_MANAGER_" + action,
+        request.getId(),
+        request.getStatus().name(),
+        request.getStatus().name(),
+        request.getRowVersion(),
+        previousManagerId == null ? null : previousManagerId.toString(),
+        nextManagerId == null ? null : nextManagerId.toString(),
+        request.getManagerAssignedAt() == null ? null : request.getManagerAssignedAt().toString());
+  }
+
   private UserAccess.ActiveUser requireActor(UUID actorId, Mf2ActorPolicy.ActorKind expected) {
     UserAccess.ActiveUser actor = users.findActiveUser(actorId).orElseThrow(this::forbidden);
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.NONE
-        && !actor.hasRole(Roles.INSPECTOR)) {
+        && !actor.hasRole(Roles.INSPECTOR)
+        && !actor.hasRole(Roles.ADMIN)) {
       throw forbidden();
     }
     if (expected != null && actorPolicy.actorKind(actor.roles()) != expected) {
@@ -2285,6 +2833,12 @@ public class ContractWorkflowService
     if (name == null || name.isBlank()) return "signed-contract";
     String sanitized = name.replaceAll("[\\\\/\\r\\n]", "_");
     return sanitized.length() > 500 ? sanitized.substring(0, 500) : sanitized;
+  }
+
+  private static String sanitizeMessageAttachmentFileName(String name) {
+    String sanitized =
+        name == null || name.isBlank() ? "attachment" : name.replaceAll("[\\\\/\\r\\n]", "_");
+    return sanitized.length() > 255 ? sanitized.substring(0, 255) : sanitized;
   }
 
   private static boolean hasExpectedSignature(byte[] bytes, String contentType) {

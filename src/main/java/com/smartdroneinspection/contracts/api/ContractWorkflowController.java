@@ -2,6 +2,7 @@ package com.smartdroneinspection.contracts.api;
 
 import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
+import com.smartdroneinspection.contracts.api.dto.request.AssignServiceRequestManager;
 import com.smartdroneinspection.contracts.api.dto.request.CancelOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
@@ -9,7 +10,6 @@ import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.EvaluatePartnerCandidatesRequest;
 import com.smartdroneinspection.contracts.api.dto.request.InitiateOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteRequest;
-import com.smartdroneinspection.contracts.api.dto.request.PostServiceRequestMessage;
 import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocationRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
@@ -20,6 +20,7 @@ import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestRespons
 import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.service.ContractWorkflowService;
 import com.smartdroneinspection.shared.api.ApiResponse;
+import com.smartdroneinspection.users.UserAccess;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
@@ -34,6 +35,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +43,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -53,6 +56,12 @@ public class ContractWorkflowController {
 
   public ContractWorkflowController(ContractWorkflowService workflow) {
     this.workflow = workflow;
+  }
+
+  @GetMapping("/managers")
+  public ApiResponse<List<UserAccess.ServiceManagerContact>> listActiveServiceManagers(
+      @AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(workflow.listActiveServiceManagers(actorId(jwt)));
   }
 
   @GetMapping("/partner-capabilities")
@@ -75,18 +84,62 @@ public class ContractWorkflowController {
     return ApiResponse.success(workflow.create(actorId(jwt), request));
   }
 
+  @PostMapping("/{requestId}/claim")
+  public ApiResponse<ServiceRequestResponse> claimRequest(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
+    return ApiResponse.success(workflow.claimRequest(actorId(jwt), requestId));
+  }
+
+  @PutMapping("/{requestId}/manager-assignment")
+  public ApiResponse<ServiceRequestResponse> reassignRequest(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody AssignServiceRequestManager request) {
+    return ApiResponse.success(
+        workflow.reassignRequest(actorId(jwt), requestId, request.managerId()));
+  }
+
+  @DeleteMapping("/{requestId}/manager-assignment")
+  public ApiResponse<ServiceRequestResponse> unassignRequest(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
+    return ApiResponse.success(workflow.unassignRequest(actorId(jwt), requestId));
+  }
+
   @GetMapping("/{requestId}")
   public ApiResponse<ServiceRequestResponse> get(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
     return ApiResponse.success(workflow.get(actorId(jwt), requestId));
   }
 
-  @PostMapping("/{requestId}/messages")
+  @PostMapping(path = "/{requestId}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ApiResponse<ServiceRequestResponse> postMessage(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID requestId,
-      @Valid @RequestBody PostServiceRequestMessage request) {
-    return ApiResponse.success(workflow.postMessage(actorId(jwt), requestId, request.body()));
+      @RequestParam(required = false) String body,
+      @RequestPart(name = "files", required = false) List<MultipartFile> files) {
+    return ApiResponse.success(workflow.postMessage(actorId(jwt), requestId, body, files));
+  }
+
+  @GetMapping("/{requestId}/messages/{messageId}/attachments/{attachmentId}")
+  public ResponseEntity<InputStreamResource> downloadMessageAttachment(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID messageId,
+      @PathVariable UUID attachmentId) {
+    ContractWorkflowService.MessageAttachmentFile file =
+        workflow.openMessageAttachment(actorId(jwt), requestId, messageId, attachmentId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(file.contentType()))
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            (file.contentType().startsWith("image/")
+                    ? ContentDisposition.inline()
+                    : ContentDisposition.attachment())
+                .filename(file.fileName(), StandardCharsets.UTF_8)
+                .build()
+                .toString())
+        .contentLength(file.sizeBytes())
+        .body(new InputStreamResource(file.stream()));
   }
 
   @PostMapping("/{requestId}/messages/read")

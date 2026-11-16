@@ -52,6 +52,7 @@ class FullDatabaseSchemaMigrationTest {
             "notifications",
             "service_requests",
             "service_request_messages",
+            "service_request_message_attachments",
             "service_request_quotes",
             "service_request_occurrences",
             "service_invoices",
@@ -71,7 +72,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(41);
+    assertThat(expected).hasSize(42);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -149,7 +150,7 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).containsExactly("1");
+    assertThat(versions).containsExactly("1", "58", "59");
 
     assertColumns(
         "inspections",
@@ -326,6 +327,30 @@ class FullDatabaseSchemaMigrationTest {
             "total_price", "payment_status", "payos_order_code", "payment_method", "payout_status");
 
     assertColumns(
+        "service_request_messages",
+        "id",
+        "request_id",
+        "author_user_id",
+        "body",
+        "read_at",
+        "created_at");
+    assertColumns(
+        "service_request_message_attachments",
+        "id",
+        "message_id",
+        "file_name",
+        "content_type",
+        "size_bytes",
+        "checksum_sha256",
+        "object_key",
+        "created_at");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'ix_service_request_message_attachments_message'",
+                Integer.class))
+        .isEqualTo(1);
+
+    assertColumns(
         "service_invoices", "occurrence_id", "total_price", "vat_rate", "report_accepted_at");
     assertColumns(
         "service_payments",
@@ -402,8 +427,19 @@ class FullDatabaseSchemaMigrationTest {
             String.class);
     assertThat(requestColumns)
         .contains(
-            "accepted_quote_id", "accepted_at", "accepted_by_user_id", "accepted_terms_snapshot")
+            "accepted_quote_id",
+            "accepted_at",
+            "accepted_by_user_id",
+            "accepted_terms_snapshot",
+            "assigned_manager_id",
+            "manager_assigned_at",
+            "manager_assigned_by_user_id")
         .doesNotContain("accepted_quote_version");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'ix_service_requests_assigned_manager'",
+                Integer.class))
+        .isEqualTo(1);
 
     List<String> otpColumns =
         jdbcTemplate.queryForList(

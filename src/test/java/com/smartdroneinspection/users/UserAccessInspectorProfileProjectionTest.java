@@ -64,6 +64,39 @@ class UserAccessInspectorProfileProjectionTest {
   }
 
   @Test
+  void activeManagerContactProjectionReturnsOnlyContactFieldsForActiveManagers() {
+    UUID managerId = UUID.randomUUID();
+    User manager =
+        new User(
+            "manager@example.test",
+            "Service Manager",
+            "+84 901 234 567",
+            "https://cdn.test/manager.png",
+            "password-hash",
+            UserStatus.ACTIVE);
+    manager.addRole(UserRole.MANAGER);
+    ReflectionTestUtils.setField(manager, "id", managerId);
+    when(users.findDetailedById(managerId)).thenReturn(Optional.of(manager));
+
+    var contact =
+        new UserAccessService(
+                users,
+                adminUsers,
+                rolePolicy,
+                securityAudit,
+                inspectorProfiles,
+                inspectorProfileRepository)
+            .findActiveServiceManager(managerId)
+            .orElseThrow();
+
+    assertThat(contact.id()).isEqualTo(managerId);
+    assertThat(contact.fullName()).isEqualTo("Service Manager");
+    assertThat(contact.email()).isEqualTo("manager@example.test");
+    assertThat(contact.phoneNumber()).isEqualTo("+84 901 234 567");
+    assertThat(contact.avatarUrl()).isEqualTo("https://cdn.test/manager.png");
+  }
+
+  @Test
   void pilotLicenseMustHaveExpiryAndUploadedScan() {
     Instant future = Instant.now().plusSeconds(3600);
     var noExpiry =

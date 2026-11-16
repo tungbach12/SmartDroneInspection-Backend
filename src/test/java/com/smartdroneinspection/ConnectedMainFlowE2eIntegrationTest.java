@@ -221,6 +221,12 @@ class ConnectedMainFlowE2eIntegrationTest {
 
     mockMvc
         .perform(
+            post("/api/v1/contracts/requests/{requestId}/claim", requestId)
+                .with(principal(platformAdminId, "MANAGER")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
             post("/api/v1/contracts/requests/{requestId}/quotes", requestId)
                 .with(principal(platformAdminId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)

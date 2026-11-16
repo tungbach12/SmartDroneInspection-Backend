@@ -16,6 +16,11 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
 
   List<ServiceRequest> findAllByOrderByCreatedAtDesc();
 
+  @Query(
+      "select request from ServiceRequest request where request.assignedManagerId is null "
+          + "or request.assignedManagerId = :managerId order by request.createdAt desc")
+  List<ServiceRequest> findManagerQueue(@Param("managerId") UUID managerId);
+
   Optional<ServiceRequest> findByIdAndOwnerCustomerId(UUID id, UUID ownerCustomerId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
