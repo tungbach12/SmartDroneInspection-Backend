@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.users.api.dto.request.UpdateAiFallbackPreferenceRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest;
+import com.smartdroneinspection.users.api.dto.request.UpdateProfileRequest;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.service.AuthService;
 import java.time.Instant;
@@ -104,5 +106,34 @@ class UserProfileControllerTest {
     assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(result.getBody()).isNotNull();
     assertThat(result.getBody().data().visionFallbackEnabled()).isTrue();
+  }
+
+  @Test
+  void updateProfileInvokesAuthServiceAndReturnsUpdatedUser() {
+    UUID userId = UUID.randomUUID();
+    Jwt jwt = mock(Jwt.class);
+    when(jwt.getSubject()).thenReturn(userId.toString());
+
+    UpdateProfileRequest request = new UpdateProfileRequest("Updated Name", "+84 909 111 222");
+    UserResponse response =
+        new UserResponse(
+            userId,
+            "customer@example.test",
+            "Updated Name",
+            "+84 909 111 222",
+            null,
+            List.of("CUSTOMER"),
+            true);
+
+    when(authService.updateProfile(eq(userId), any(UpdateProfileRequest.class)))
+        .thenReturn(response);
+
+    var result = controller.updateProfile(jwt, request);
+
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(result.getBody()).isNotNull();
+    assertThat(result.getBody().data().fullName()).isEqualTo("Updated Name");
+    assertThat(result.getBody().data().phoneNumber()).isEqualTo("+84 909 111 222");
+    verify(authService).updateProfile(userId, request);
   }
 }
