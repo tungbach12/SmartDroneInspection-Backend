@@ -1161,6 +1161,92 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
+  void inspectorCanCreateManualFindingWithBoundingBoxAndUpdateBoxWithoutConfidence()
+      throws Exception {
+    UUID evidenceId = uploadEvidence();
+    acceptEvidence();
+
+    String createBody =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/findings", fixture.inspectionId())
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            Map.of(
+                                "evidenceId", evidenceId,
+                                "defectLabel", "Manual corner crack",
+                                "severity", "MEDIUM",
+                                "technicalNotes", "Marked manually by Inspector",
+                                "boundingBox",
+                                    "{\"xMin\":0.15,\"yMin\":0.2,\"xMax\":0.55,\"yMax\":0.6}"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.confidence").doesNotExist())
+            .andExpect(jsonPath("$.data.boundingBox").isString())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    UUID findingId =
+        UUID.fromString(objectMapper.readTree(createBody).path("data").path("id").stringValue());
+
+    // Updating boundingBox persists normalized coordinates while leaving confidence null.
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId", evidenceId,
+                            "defectLabel", "Manual corner crack",
+                            "severity", "HIGH",
+                            "technicalNotes", "Adjusted box region",
+                            "boundingBox",
+                                "{\"xMin\":0.25,\"yMin\":0.25,\"xMax\":0.75,\"yMax\":0.75}"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.confidence").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.boundingBox")
+                .value("{\"xMin\": 0.2500, \"yMin\": 0.2500, \"xMax\": 0.7500, \"yMax\": 0.7500}"));
+
+    // Invalid out-of-range boundingBox is rejected with 400.
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId", evidenceId,
+                            "defectLabel", "Manual corner crack",
+                            "severity", "HIGH",
+                            "technicalNotes", "Invalid box",
+                            "boundingBox",
+                                "{\"xMin\":0.8,\"yMin\":0.2,\"xMax\":0.3,\"yMax\":0.7}"))))
+        .andExpect(status().isBadRequest());
+
+    // Blank boundingBox clears the stored box.
+    mockMvc
+        .perform(
+            put("/api/v1/inspections/{id}/findings/{findingId}", fixture.inspectionId(), findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "evidenceId", evidenceId,
+                            "defectLabel", "Manual corner crack",
+                            "severity", "HIGH",
+                            "technicalNotes", "Cleared box",
+                            "boundingBox", ""))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.boundingBox").doesNotExist());
+  }
+
+  @Test
   void retiringEvidenceKeepsTheOriginalCaptureForAuditButRefusesAnalysis() throws Exception {
     UUID evidenceId = uploadEvidence();
     acceptEvidence();

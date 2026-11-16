@@ -676,6 +676,36 @@ public class Inspection {
     this.flightPermitReviewNotes = null;
   }
 
+  /**
+   * Brings a future schedule or permit start forward to now for an explicit immediate start while
+   * preserving approval status and expiration invariants.
+   */
+  public void bringForwardForImmediateStart(Instant now) {
+    Instant effectiveNow = Objects.requireNonNull(now, "Timestamp is required");
+    if (status != InspectionStatus.SCHEDULED && status != InspectionStatus.FIELD_COMPLETED) {
+      throw new IllegalStateException(
+          "Only a scheduled or field-completed inspection may start immediately");
+    }
+    if (!isFlightPermitApproved()) {
+      throw new IllegalStateException("Cannot bring forward an unapproved flight permit");
+    }
+    if (this.flightPermitValidTo != null && !this.flightPermitValidTo.isAfter(effectiveNow)) {
+      throw new IllegalStateException("Cannot start immediately with an expired flight permit");
+    }
+    if (this.plannedEndAt != null && !this.plannedEndAt.isAfter(effectiveNow)) {
+      throw new IllegalStateException(
+          "Cannot start immediately after the scheduled window has expired");
+    }
+    Instant shiftedStart = effectiveNow.minusSeconds(60);
+    if (this.flightPermitValidFrom != null && effectiveNow.isBefore(this.flightPermitValidFrom)) {
+      this.flightPermitValidFrom = shiftedStart;
+    }
+    if (this.plannedStartAt != null && effectiveNow.isBefore(this.plannedStartAt)) {
+      this.plannedStartAt = shiftedStart;
+    }
+    this.updatedAt = effectiveNow;
+  }
+
   public void moveTo(InspectionStatus nextStatus) {
     Objects.requireNonNull(nextStatus, "Inspection status is required");
     if (nextStatus == this.status) {

@@ -127,6 +127,20 @@ public class EvidenceService {
       Instant captureTime,
       BigDecimal latitude,
       BigDecimal longitude) {
+    return upload(
+        actorId, inspectionId, fieldSessionId, file, captureTime, latitude, longitude, null, null);
+  }
+
+  public EvidenceResponse upload(
+      UUID actorId,
+      UUID inspectionId,
+      UUID fieldSessionId,
+      MultipartFile file,
+      Instant captureTime,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      UUID sourceVideoEvidenceId,
+      Double sourceTimestampSeconds) {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "The uploaded file is empty");
@@ -160,7 +174,9 @@ public class EvidenceService {
         captureTime,
         latitude,
         longitude,
-        null);
+        null,
+        sourceVideoEvidenceId,
+        sourceTimestampSeconds);
   }
 
   @Transactional
@@ -175,9 +191,78 @@ public class EvidenceService {
       BigDecimal latitude,
       BigDecimal longitude,
       String locationDescription) {
+    return storeCapturedMedia(
+        actorId,
+        inspectionId,
+        fieldSessionId,
+        rawFileName,
+        rawContentType,
+        content,
+        captureTime,
+        latitude,
+        longitude,
+        locationDescription,
+        null,
+        null);
+  }
+
+  @Transactional
+  public EvidenceResponse storeCapturedMedia(
+      UUID actorId,
+      UUID inspectionId,
+      UUID fieldSessionId,
+      String rawFileName,
+      String rawContentType,
+      byte[] content,
+      Instant captureTime,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String locationDescription,
+      UUID sourceVideoEvidenceId,
+      Double sourceTimestampSeconds) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
+    if (sourceTimestampSeconds != null
+        && (Double.isNaN(sourceTimestampSeconds)
+            || Double.isInfinite(sourceTimestampSeconds)
+            || sourceTimestampSeconds < 0.0)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_INVALID",
+          "Source video timestamp must be zero or positive");
+    }
+    if (sourceTimestampSeconds != null && sourceVideoEvidenceId == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_INVALID",
+          "sourceVideoEvidenceId is required when sourceTimestampSeconds is supplied");
+    }
+    Evidence sourceVideo = null;
+    if (sourceVideoEvidenceId != null) {
+      sourceVideo =
+          evidence
+              .findByIdAndInspectionId(sourceVideoEvidenceId, inspectionId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_REQUEST,
+                          "EVIDENCE_INVALID",
+                          "Source video evidence not found in this inspection"));
+      if (sourceVideo.isDeleted() || !sourceVideo.isVideo()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "EVIDENCE_INVALID",
+            "Source evidence must be an active video item");
+      }
+      if (fieldSessionId == null && sourceVideo.getFieldSessionId() != null) {
+        fieldSessionId = sourceVideo.getFieldSessionId();
+      }
+      if (latitude == null && longitude == null && sourceVideo.getLatitude() != null) {
+        latitude = sourceVideo.getLatitude();
+        longitude = sourceVideo.getLongitude();
+      }
+    }
     if (fieldSessionId != null) {
       requireSessionInScope(inspection, fieldSessionId);
     }
@@ -313,6 +398,9 @@ public class EvidenceService {
             longitude,
             normalizedLocation,
             Instant.now());
+    if (sourceVideoEvidenceId != null) {
+      record.linkVideoSource(sourceVideoEvidenceId, sourceTimestampSeconds);
+    }
     if (normalizedImage != null) {
       record.applyImageOptimization(
           objectKey,
@@ -900,7 +988,21 @@ public class EvidenceService {
         record.getMediaWidth(),
         record.getMediaHeight(),
         record.getDurationSeconds(),
-        record.getProcessedAt());
+        record.getProcessedAt(),
+        record.getSourceVideoEvidenceId(),
+        record.getSourceTimestampSeconds());
+  }
+
+  void copyStoredObjectToFile(Evidence record, java.nio.file.Path destination) throws IOException {
+    EvidenceObjectStore store = requireObjectStore();
+    String key =
+        record.getObjectKey() != null && !record.getObjectKey().isBlank()
+            ? record.getObjectKey()
+            : record.getRawObjectKey();
+    try (InputStream input = store.open(key)) {
+      java.nio.file.Files.copy(
+          input, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}

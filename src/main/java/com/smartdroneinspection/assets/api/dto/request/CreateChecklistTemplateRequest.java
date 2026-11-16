@@ -8,4 +8,5 @@ public record CreateChecklistTemplateRequest(
     @NotBlank @Size(max = 32) String templateType,
     UUID categoryId,
     @NotBlank @Size(max = 300) String label,
-    Integer sortOrder) {}
+    Integer sortOrder,
+    Boolean required) {}

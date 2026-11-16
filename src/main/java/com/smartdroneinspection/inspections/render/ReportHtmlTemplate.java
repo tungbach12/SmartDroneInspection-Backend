@@ -148,9 +148,10 @@ public final class ReportHtmlTemplate {
           .append("</p>");
       return;
     }
+    java.util.Set<String> findingEvidenceIds = collectFindingEvidenceKeys(context);
     body.append("<table class=\"grid\">")
         .append("<thead><tr><th>")
-        .append(text(context, "Evidence ID"))
+        .append(text(context, "Category"))
         .append("</th><th>")
         .append(text(context, "File"))
         .append("</th><th>")
@@ -159,10 +160,26 @@ public final class ReportHtmlTemplate {
         .append(text(context, "Location"))
         .append("</th></tr></thead><tbody>");
     for (ReportRenderPort.EvidenceView item : context.evidence()) {
+      String categoryLabel;
+      if (isVideoMedia(item.contentType())) {
+        categoryLabel = text(context, "Flight Video");
+      } else if (findingEvidenceIds.contains(item.id())
+          || findingEvidenceIds.contains(item.fileName())) {
+        categoryLabel = text(context, "Defect Evidence");
+      } else {
+        categoryLabel = text(context, "Clear / Reference Capture");
+      }
+      StringBuilder fileCell = new StringBuilder(escape(item.fileName()));
+      if (item.sourceVideoFileName() != null) {
+        fileCell
+            .append("<div style=\"color:#475569;font-size:8pt;\">")
+            .append(escape(formatVideoTrace(context, item)))
+            .append("</div>");
+      }
       body.append("<tr><td>")
-          .append(escape(item.id()))
+          .append(escape(categoryLabel))
           .append("</td><td>")
-          .append(escape(item.fileName()))
+          .append(fileCell)
           .append("</td><td>")
           .append(escape(orNotSupplied(item.captureTime(), context)))
           .append("</td><td>")
@@ -222,7 +239,11 @@ public final class ReportHtmlTemplate {
             .append(escape(attachedEvidence.fileName()))
             .append(" (")
             .append(escape(attachedEvidence.id()))
-            .append(")</td></tr>");
+            .append(")");
+        if (attachedEvidence.sourceVideoFileName() != null) {
+          body.append(" — ").append(escape(formatVideoTrace(context, attachedEvidence)));
+        }
+        body.append("</td></tr>");
       } else if (finding.evidenceId() != null) {
         body.append("<tr><th>")
             .append(text(context, "Evidence"))
@@ -255,8 +276,11 @@ public final class ReportHtmlTemplate {
             .append("</b> ")
             .append(escape(attachedEvidence.fileName()))
             .append(" · ")
-            .append(escape(attachedEvidence.id()))
-            .append("</div></div>");
+            .append(escape(attachedEvidence.id()));
+        if (attachedEvidence.sourceVideoFileName() != null) {
+          body.append(" · ").append(escape(formatVideoTrace(context, attachedEvidence)));
+        }
+        body.append("</div></div>");
       }
       body.append("</div>");
     }
@@ -277,44 +301,102 @@ public final class ReportHtmlTemplate {
                 "This application report records the inspection evidence and findings shown above. It is not a statement of whole-asset safety, a certified non-destructive or load-capacity test, or a repair-completion certificate."))
         .append("</p>");
 
-    java.util.Set<String> findingEvidenceIds = new java.util.HashSet<>();
-    for (ReportRenderPort.FindingView finding : context.findings()) {
-      if (finding.evidenceId() != null) {
-        findingEvidenceIds.add(finding.evidenceId());
+    java.util.Set<String> findingEvidenceIds = collectFindingEvidenceKeys(context);
+
+    java.util.List<ReportRenderPort.EvidenceView> videoCaptures =
+        context.evidence().stream().filter(item -> isVideoMedia(item.contentType())).toList();
+
+    if (!videoCaptures.isEmpty()) {
+      body.append("<h3>").append(text(context, "Flight video captures")).append("</h3>");
+      body.append("<table class=\"grid\"><thead><tr><th>")
+          .append(text(context, "File"))
+          .append("</th><th>")
+          .append(text(context, "Capture time"))
+          .append("</th><th>")
+          .append(text(context, "Location"))
+          .append("</th></tr></thead><tbody>");
+      for (ReportRenderPort.EvidenceView video : videoCaptures) {
+        body.append("<tr><td>")
+            .append(escape(video.fileName()))
+            .append("</td><td>")
+            .append(escape(orNotSupplied(video.captureTime(), context)))
+            .append("</td><td>")
+            .append(escape(orNotSupplied(video.componentLocation(), context)))
+            .append("</td></tr>");
       }
-      if (finding.evidenceFileName() != null) {
-        findingEvidenceIds.add(finding.evidenceFileName());
-      }
+      body.append("</tbody></table>");
     }
 
-    java.util.List<ReportRenderPort.EvidenceView> additionalEvidence =
+    java.util.List<ReportRenderPort.EvidenceView> clearReferenceCaptures =
         context.evidence().stream()
+            .filter(item -> !isVideoMedia(item.contentType()))
             .filter(
                 item ->
                     !findingEvidenceIds.contains(item.id())
                         && !findingEvidenceIds.contains(item.fileName()))
-            .filter(item -> isRenderableImage(item.contentType()))
-            .filter(item -> item.content() != null && item.content().length > 0)
             .toList();
 
-    if (!additionalEvidence.isEmpty()) {
-      body.append("<h3>").append(text(context, "Additional survey photographs")).append("</h3>");
-      for (ReportRenderPort.EvidenceView item : additionalEvidence) {
-        body.append("<div class=\"plate\">")
-            .append("<div class=\"plate-img\"><img src=\"data:")
-            .append(escape(item.contentType()))
-            .append(";base64,")
-            .append(java.util.Base64.getEncoder().encodeToString(item.content()))
-            .append("\" alt=\"")
+    if (!clearReferenceCaptures.isEmpty()) {
+      body.append("<h3>")
+          .append(text(context, "Clear / reference captures summary"))
+          .append("</h3>");
+      body.append("<p class=\"scope\">")
+          .append(clearReferenceCaptures.size())
+          .append(" ")
+          .append(
+              text(
+                  context,
+                  "clean captures recorded with zero defects (full plates omitted from PDF for clarity)."))
+          .append("</p>");
+      body.append("<table class=\"grid\"><thead><tr><th>")
+          .append(text(context, "File"))
+          .append("</th><th>")
+          .append(text(context, "Capture time"))
+          .append("</th><th>")
+          .append(text(context, "Location"))
+          .append("</th></tr></thead><tbody>");
+      for (ReportRenderPort.EvidenceView item : clearReferenceCaptures) {
+        body.append("<tr><td>")
             .append(escape(item.fileName()))
-            .append("\"/></div>")
-            .append("<div class=\"plate-cap\">")
-            .append(escape(item.fileName()))
-            .append(" · ")
-            .append(escape(item.id()))
-            .append("</div></div>");
+            .append("</td><td>")
+            .append(escape(orNotSupplied(item.captureTime(), context)))
+            .append("</td><td>")
+            .append(escape(orNotSupplied(item.componentLocation(), context)))
+            .append("</td></tr>");
+      }
+      body.append("</tbody></table>");
+    }
+  }
+
+  private static java.util.Set<String> collectFindingEvidenceKeys(
+      ReportRenderPort.RenderContext context) {
+    java.util.Set<String> keys = new java.util.HashSet<>();
+    for (ReportRenderPort.FindingView finding : context.findings()) {
+      if (finding.evidenceId() != null) {
+        keys.add(finding.evidenceId());
+      }
+      if (finding.evidenceFileName() != null) {
+        keys.add(finding.evidenceFileName());
       }
     }
+    return keys;
+  }
+
+  private static boolean isVideoMedia(String contentType) {
+    return contentType != null && contentType.startsWith("video/");
+  }
+
+  private static String formatVideoTrace(
+      ReportRenderPort.RenderContext context, ReportRenderPort.EvidenceView item) {
+    String prefix = text(context, "Source video:");
+    if (item.sourceTimestampSeconds() == null) {
+      return prefix + " " + item.sourceVideoFileName();
+    }
+    int totalSeconds = Math.max(0, (int) Math.floor(item.sourceTimestampSeconds()));
+    int mins = totalSeconds / 60;
+    int secs = totalSeconds % 60;
+    return String.format(
+        java.util.Locale.ROOT, "%s %s @ %02d:%02d", prefix, item.sourceVideoFileName(), mins, secs);
   }
 
   private static void approval(StringBuilder body, ReportRenderPort.RenderContext context) {
@@ -502,6 +584,15 @@ public final class ReportHtmlTemplate {
       case "Evidence associated with confirmed findings is shown in section 6. The evidence register and recorded inspection context appear in sections 4 and 5." ->
           "Bằng chứng liên quan đến các phát hiện đã xác nhận được trình bày tại mục 6. Danh mục bằng chứng và bối cảnh kiểm tra đã ghi nhận nằm ở mục 4 và 5.";
       case "Additional survey photographs" -> "Ảnh khảo sát bổ sung";
+      case "Category" -> "Phân loại";
+      case "Defect Evidence" -> "Bằng chứng khuyết tật";
+      case "Flight Video" -> "Video chuyến bay";
+      case "Clear / Reference Capture" -> "Ảnh đối chiếu (Không có khuyết tật)";
+      case "Flight video captures" -> "Danh sách video chuyến bay";
+      case "Clear / reference captures summary" -> "Tổng hợp ảnh đối chiếu không có khuyết tật";
+      case "clean captures recorded with zero defects (full plates omitted from PDF for clarity)." ->
+          "ảnh sạch không ghi nhận khuyết tật (ẩn ảnh cỡ lớn khỏi PDF để báo cáo gọn rõ).";
+      case "Source video:" -> "Video nguồn:";
       case "Author" -> "Tác giả";
       case "Reviewer" -> "Người đánh giá";
       case "Review decision" -> "Quyết định đánh giá";

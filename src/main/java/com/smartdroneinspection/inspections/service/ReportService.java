@@ -680,6 +680,11 @@ public class ReportService {
     for (Evidence item :
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId)) {
       byte[] content = !item.isVideo() && item.isReady() ? loadEvidenceBytes(item) : new byte[0];
+      String sourceVideoName =
+          item.getSourceVideoEvidenceId() != null
+                  && evidenceById.containsKey(item.getSourceVideoEvidenceId())
+              ? evidenceById.get(item.getSourceVideoEvidenceId()).getFileName()
+              : null;
       evidenceViews.add(
           new ReportRenderPort.EvidenceView(
               item.getId().toString(),
@@ -688,7 +693,9 @@ public class ReportService {
               item.getCaptureTime() == null ? null : item.getCaptureTime().toString(),
               item.getLocationDescription(),
               item.getFieldSessionId() == null ? null : item.getFieldSessionId().toString(),
-              content));
+              content,
+              sourceVideoName,
+              item.getSourceTimestampSeconds()));
     }
 
     return new ReportRenderPort.RenderContext(

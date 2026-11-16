@@ -89,6 +89,12 @@ public class Evidence {
   @Column(name = "location_description", length = 1000)
   private String locationDescription;
 
+  @Column(name = "source_video_evidence_id")
+  private UUID sourceVideoEvidenceId;
+
+  @Column(name = "source_timestamp_seconds")
+  private Double sourceTimestampSeconds;
+
   @Column(name = "is_deleted", nullable = false)
   private boolean isDeleted;
 
@@ -325,6 +331,19 @@ public class Evidence {
 
   public BigDecimal getLongitude() {
     return longitude;
+  }
+
+  public void linkVideoSource(UUID sourceVideoEvidenceId, Double sourceTimestampSeconds) {
+    this.sourceVideoEvidenceId = sourceVideoEvidenceId;
+    this.sourceTimestampSeconds = sourceTimestampSeconds;
+  }
+
+  public UUID getSourceVideoEvidenceId() {
+    return sourceVideoEvidenceId;
+  }
+
+  public Double getSourceTimestampSeconds() {
+    return sourceTimestampSeconds;
   }
 
   public Instant getCreatedAt() {

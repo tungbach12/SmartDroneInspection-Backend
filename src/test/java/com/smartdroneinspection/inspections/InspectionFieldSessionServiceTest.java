@@ -369,6 +369,58 @@ class InspectionFieldSessionServiceTest {
   }
 
   @Test
+  void startNowBringsFuturePermitAndScheduleStartForwardWhileStrictStartRefusesEarlyStart() {
+    Instant futureStart = Instant.now().plus(30, ChronoUnit.DAYS);
+    jdbcTemplate.update(
+        "UPDATE inspections SET planned_start_at = ?, planned_end_at = ?, flight_permit_valid_from = ?, flight_permit_valid_to = ? WHERE id = ?",
+        Timestamp.from(futureStart),
+        Timestamp.from(futureStart.plus(2, ChronoUnit.HOURS)),
+        Timestamp.from(futureStart),
+        Timestamp.from(futureStart.plus(4, ChronoUnit.HOURS)),
+        inspectionId);
+    entityManager.clear();
+
+    assertThatThrownBy(
+            () -> service.start(inspectorId, inspectionId, "Confirmed bridge is accessible"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("FLIGHT_PERMIT_NOT_YET_VALID"));
+
+    FieldSession session =
+        service.start(inspectorId, inspectionId, "Confirmed bridge is accessible", true);
+
+    assertThat(session.getStatus()).isEqualTo("IN_PROGRESS");
+    assertThat(statusOfInspection()).isEqualTo("IN_PROGRESS");
+    entityManager.flush();
+    Instant updatedPermitFrom =
+        jdbcTemplate
+            .queryForObject(
+                "SELECT flight_permit_valid_from FROM inspections WHERE id = ?",
+                Timestamp.class,
+                inspectionId)
+            .toInstant();
+    assertThat(updatedPermitFrom).isBeforeOrEqualTo(Instant.now());
+  }
+
+  @Test
+  void startNowStillRefusesUnapprovedPermit() {
+    jdbcTemplate.update(
+        "UPDATE inspections SET flight_permit_verification_status = 'PENDING_REVIEW' WHERE id = ?",
+        inspectionId);
+    entityManager.clear();
+
+    assertThatThrownBy(
+            () -> service.start(inspectorId, inspectionId, "Confirmed bridge is accessible", true))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            error ->
+                assertThat(((BusinessException) error).code())
+                    .isEqualTo("FLIGHT_PERMIT_PENDING_REVIEW"));
+  }
+
+  @Test
   void closingASessionOfAnotherInspectionIsRefused() {
     UUID sessionId = startSession("Confirmed bridge is accessible").getId();
     UUID unrelatedInspectionId = UUID.randomUUID();

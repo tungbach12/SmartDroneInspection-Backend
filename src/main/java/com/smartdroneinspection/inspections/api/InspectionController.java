@@ -10,6 +10,7 @@ import com.smartdroneinspection.inspections.api.dto.request.DeclineInspectionReq
 import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
 import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.PromoteVideoKeyframesRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
@@ -25,6 +26,7 @@ import com.smartdroneinspection.inspections.api.dto.response.MediaTicketResponse
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VideoAutoDetectResponse;
+import com.smartdroneinspection.inspections.api.dto.response.VideoScanResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.EvidenceUploadSessionService;
@@ -317,10 +319,20 @@ public class InspectionController {
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
           Instant captureTime,
       @RequestParam(required = false) BigDecimal latitude,
-      @RequestParam(required = false) BigDecimal longitude) {
+      @RequestParam(required = false) BigDecimal longitude,
+      @RequestParam(required = false) UUID sourceVideoEvidenceId,
+      @RequestParam(required = false) Double sourceTimestampSeconds) {
     return ApiResponse.success(
         evidenceService.upload(
-            actorId(jwt), inspectionId, fieldSessionId, file, captureTime, latitude, longitude));
+            actorId(jwt),
+            inspectionId,
+            fieldSessionId,
+            file,
+            captureTime,
+            latitude,
+            longitude,
+            sourceVideoEvidenceId,
+            sourceTimestampSeconds));
   }
 
   @GetMapping("/evidence")
@@ -509,6 +521,30 @@ public class InspectionController {
       @RequestBody AnalyzeVideoRequest request) {
     return ApiResponse.success(
         findingService.analyzeVideo(actorId(jwt), inspectionId, evidenceId, request));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/video-scan")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<VideoScanResponse> scanVideoEvidence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestParam(name = "intervalSeconds", defaultValue = "1.0") double intervalSeconds,
+      @RequestParam(name = "maxFrames", defaultValue = "30") int maxFrames) {
+    return ApiResponse.success(
+        findingService.scanVideo(
+            actorId(jwt), inspectionId, evidenceId, intervalSeconds, maxFrames));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/video-keyframes")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<VideoAutoDetectResponse> promoteVideoKeyframes(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestBody PromoteVideoKeyframesRequest request) {
+    return ApiResponse.success(
+        findingService.promoteVideoKeyframes(actorId(jwt), inspectionId, evidenceId, request));
   }
 
   @PostMapping("/findings/{findingId}/confirmation")

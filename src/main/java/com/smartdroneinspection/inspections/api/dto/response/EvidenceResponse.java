@@ -26,4 +26,6 @@ public record EvidenceResponse(
     Integer mediaWidth,
     Integer mediaHeight,
     Double durationSeconds,
-    Instant processedAt) {}
+    Instant processedAt,
+    UUID sourceVideoEvidenceId,
+    Double sourceTimestampSeconds) {}
