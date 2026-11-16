@@ -353,6 +353,19 @@ public class ReportService {
           "REINSPECTION_VERIFICATION_INCOMPLETE",
           "All target defects must be verified with fresh evidence or inspector field notes before authoring, submitting, or publishing the re-inspection report");
     }
+    long expired =
+        verifications.stream()
+            .filter(item -> item.isResolutionExpired(java.time.Instant.now()))
+            .count();
+    if (expired > 0) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "RESOLUTION_EXPIRED",
+          "A RESOLVED verdict has expired and must be re-verified before authoring, submitting, "
+              + "or publishing the re-inspection report ("
+              + expired
+              + " defect(s) expired)");
+    }
   }
 
   private void requireFreshFindingsSnapshot(UUID inspectionId, InspectionReport version) {

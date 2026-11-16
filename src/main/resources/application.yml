@@ -123,6 +123,8 @@ app:
       model: ${COMPATIBLE_VISION_MODEL:${REPORT_DRAFT_MODEL:}}
       api-key: ${COMPATIBLE_VISION_API_KEY:${REPORT_DRAFT_API_KEY:}}
       timeout: ${COMPATIBLE_VISION_TIMEOUT:${REPORT_DRAFT_TIMEOUT:60s}}
+  reinspection:
+    resolved-validity: ${REINSPECTION_RESOLVED_VALIDITY:90d}
   smartdronehub:
     base-url: ${SMARTDRONEHUB_BASE_URL:http://localhost:8090}
     connect-timeout: ${SMARTDRONEHUB_CONNECT_TIMEOUT:5s}

@@ -149,7 +149,7 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).containsExactly("1");
+    assertThat(versions).containsExactly("1", "3");
 
     assertColumns(
         "inspections",
@@ -222,6 +222,8 @@ class FullDatabaseSchemaMigrationTest {
         "new_evidence_id",
         "resolution_status",
         "inspector_notes",
+        "verified_at",
+        "valid_until",
         "created_at",
         "updated_at");
     assertNoColumn("inspections", "reassignment_required");
