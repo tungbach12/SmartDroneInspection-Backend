@@ -10,6 +10,18 @@ public interface UserAccess {
 
   Optional<ActiveUser> findActiveUser(UUID userId);
 
+  default Optional<ServiceManagerContact> findActiveServiceManager(UUID userId) {
+    return Optional.empty();
+  }
+
+  default List<ServiceManagerContact> listActiveServiceManagers() {
+    return List.of();
+  }
+
+  /** Contact projection for Customer-visible service-request coordination. */
+  record ServiceManagerContact(
+      UUID id, String fullName, String email, String phoneNumber, String avatarUrl) {}
+
   Optional<ActiveUser> findUser(UUID userId);
 
   default List<ActiveUser> listActiveInspectorPartners() {
@@ -69,7 +81,32 @@ public interface UserAccess {
       String pilotLicenseClass,
       java.time.Instant pilotLicenseExpiresAt,
       String pilotLicenseFileKey,
-      String avatarUrl) {
+      String avatarUrl,
+      String phoneNumber) {
+
+    /** Keeps the pre-phone projection constructor source-compatible. */
+    public ActiveUser(
+        UUID id,
+        Set<String> roles,
+        String fullName,
+        String email,
+        String pilotLicenseNumber,
+        String pilotLicenseClass,
+        java.time.Instant pilotLicenseExpiresAt,
+        String pilotLicenseFileKey,
+        String avatarUrl) {
+      this(
+          id,
+          roles,
+          fullName,
+          email,
+          pilotLicenseNumber,
+          pilotLicenseClass,
+          pilotLicenseExpiresAt,
+          pilotLicenseFileKey,
+          avatarUrl,
+          null);
+    }
 
     public ActiveUser(
         UUID id,
@@ -89,6 +126,7 @@ public interface UserAccess {
           pilotLicenseClass,
           pilotLicenseExpiresAt,
           pilotLicenseFileKey,
+          null,
           null);
     }
 
@@ -110,19 +148,20 @@ public interface UserAccess {
               ? null
               : pilotLicenseExpiresAt.atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
           pilotLicenseFileKey,
+          null,
           null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, String fullName, String email) {
-      this(id, roles, fullName, email, null, null, null, null, null);
+      this(id, roles, fullName, email, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles, String fullName) {
-      this(id, roles, fullName, null, null, null, null, null, null);
+      this(id, roles, fullName, null, null, null, null, null, null, null);
     }
 
     public ActiveUser(UUID id, Set<String> roles) {
-      this(id, roles, null, null, null, null, null, null, null);
+      this(id, roles, null, null, null, null, null, null, null, null);
     }
 
     public ActiveUser {
@@ -135,6 +174,10 @@ public interface UserAccess {
      */
     public UUID ownerCustomerId() {
       return hasRole("CUSTOMER") ? id : null;
+    }
+
+    public boolean isServiceManager() {
+      return hasRole("MANAGER");
     }
 
     public boolean hasRole(String role) {

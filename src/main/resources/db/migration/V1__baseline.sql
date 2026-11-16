@@ -65,6 +65,43 @@ $$;
 
 
 --
+-- Name: enforce_service_request_message_body_or_attachment(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION enforce_service_request_message_body_or_attachment() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    target_message_id UUID;
+    target_body TEXT;
+BEGIN
+    IF TG_TABLE_NAME = 'service_request_messages' THEN
+        target_message_id := COALESCE(NEW.id, OLD.id);
+    ELSE
+        target_message_id := COALESCE(NEW.message_id, OLD.message_id);
+    END IF;
+    SELECT body INTO target_body
+      FROM service_request_messages
+      WHERE id = target_message_id;
+
+    IF FOUND
+       AND length(btrim(target_body)) = 0
+       AND NOT EXISTS (
+           SELECT 1
+             FROM service_request_message_attachments
+             WHERE message_id = target_message_id
+       ) THEN
+        RAISE EXCEPTION 'A service request message requires text or at least one attachment'
+            USING ERRCODE = '23514', CONSTRAINT = 'ck_service_request_messages_body_or_attachment';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+
+
+
+--
 -- Name: asset_categories; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -938,10 +975,29 @@ CREATE TABLE service_request_messages (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     request_id uuid NOT NULL,
     author_user_id uuid NOT NULL,
-    body character varying(4000) NOT NULL,
+    body character varying(4000) DEFAULT ''::character varying NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     read_at timestamp with time zone,
-    CONSTRAINT ck_service_request_messages_body CHECK ((length(btrim((body)::text)) > 0))
+    CONSTRAINT ck_service_request_messages_body CHECK ((length(btrim((body)::text)) <= 4000))
+);
+
+
+--
+-- Name: service_request_message_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE service_request_message_attachments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    message_id uuid NOT NULL,
+    file_name character varying(255) NOT NULL,
+    content_type character varying(128) NOT NULL,
+    size_bytes bigint NOT NULL,
+    checksum_sha256 character varying(64) NOT NULL,
+    object_key character varying(512) NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT ck_service_request_message_attachments_checksum CHECK ((checksum_sha256::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT ck_service_request_message_attachments_content_type CHECK (((content_type)::text = ANY ((ARRAY['image/png'::character varying, 'image/jpeg'::character varying, 'image/webp'::character varying, 'application/pdf'::character varying, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'::character varying])::text[]))),
+    CONSTRAINT ck_service_request_message_attachments_size CHECK (((size_bytes > 0) AND (size_bytes <= 20971520)))
 );
 
 
@@ -1025,6 +1081,9 @@ CREATE TABLE service_requests (
     accepted_terms_snapshot jsonb,
     owner_customer_id uuid NOT NULL,
     source_inspection_id uuid,
+    assigned_manager_id uuid,
+    manager_assigned_at timestamp with time zone,
+    manager_assigned_by_user_id uuid,
     CONSTRAINT ck_service_requests_acceptance_v33 CHECK (((((status)::text = ANY ((ARRAY['OPEN'::character varying, 'QUOTED'::character varying, 'CANCELLED'::character varying])::text[])) AND (accepted_quote_id IS NULL) AND (accepted_at IS NULL) AND (accepted_terms_snapshot IS NULL)) OR (((status)::text = ANY ((ARRAY['ACCEPTED'::character varying, 'CONTRACT_SIGNED'::character varying, 'ASSIGNED'::character varying])::text[])) AND (accepted_quote_id IS NOT NULL) AND (accepted_at IS NOT NULL) AND (accepted_terms_snapshot IS NOT NULL)))),
     CONSTRAINT ck_service_requests_contract_scan CHECK ((((contract_object_key IS NULL) AND (contract_uploaded_at IS NULL)) OR ((contract_object_key IS NOT NULL) AND (contract_uploaded_at IS NOT NULL)))),
     CONSTRAINT ck_service_requests_date_range CHECK ((requested_until >= requested_from)),
@@ -1389,6 +1448,22 @@ ALTER TABLE ONLY service_refunds
 
 ALTER TABLE ONLY service_request_messages
     ADD CONSTRAINT service_request_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: service_request_message_attachments service_request_message_attachments_object_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY service_request_message_attachments
+    ADD CONSTRAINT service_request_message_attachments_object_key_key UNIQUE (object_key);
+
+
+--
+-- Name: service_request_message_attachments service_request_message_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY service_request_message_attachments
+    ADD CONSTRAINT service_request_message_attachments_pkey PRIMARY KEY (id);
 
 
 --
@@ -1902,6 +1977,13 @@ CREATE INDEX ix_service_request_messages_request_created ON service_request_mess
 
 
 --
+-- Name: ix_service_request_message_attachments_message; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_service_request_message_attachments_message ON service_request_message_attachments USING btree (message_id, created_at, id);
+
+
+--
 -- Name: ix_service_request_messages_unread; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1913,6 +1995,13 @@ CREATE INDEX ix_service_request_messages_unread ON service_request_messages USIN
 --
 
 CREATE INDEX ix_service_request_occurrences_request_status ON service_request_occurrences USING btree (request_id, status, occurrence_index);
+
+
+--
+-- Name: ix_service_requests_assigned_manager; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_service_requests_assigned_manager ON service_requests USING btree (assigned_manager_id, created_at DESC) WHERE (assigned_manager_id IS NOT NULL);
 
 
 --
@@ -2032,6 +2121,20 @@ CREATE UNIQUE INDEX uq_service_refunds_request_reference_ci ON service_refunds U
 --
 
 CREATE TRIGGER trg_service_request_quote_accepted_immutable BEFORE DELETE OR UPDATE ON service_request_quotes FOR EACH ROW EXECUTE FUNCTION prevent_accepted_service_quote_mutation();
+
+
+--
+-- Name: service_request_messages ck_service_request_messages_body_or_attachment; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER ck_service_request_messages_body_or_attachment AFTER INSERT OR UPDATE ON service_request_messages DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION enforce_service_request_message_body_or_attachment();
+
+
+--
+-- Name: service_request_message_attachments ck_service_request_message_attachments_body_or_text; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER ck_service_request_message_attachments_body_or_text AFTER INSERT OR DELETE ON service_request_message_attachments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION enforce_service_request_message_body_or_attachment();
 
 
 --
@@ -2264,6 +2367,14 @@ ALTER TABLE ONLY service_request_messages
 
 ALTER TABLE ONLY service_request_messages
     ADD CONSTRAINT fk_service_request_messages_request FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: service_request_message_attachments fk_service_request_message_attachments_message; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY service_request_message_attachments
+    ADD CONSTRAINT fk_service_request_message_attachments_message FOREIGN KEY (message_id) REFERENCES service_request_messages(id) ON DELETE CASCADE;
 
 
 --
@@ -2672,6 +2783,22 @@ ALTER TABLE ONLY service_request_quotes
 
 ALTER TABLE ONLY service_requests
     ADD CONSTRAINT service_requests_accepted_by_user_id_fkey FOREIGN KEY (accepted_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: service_requests service_requests_assigned_manager_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY service_requests
+    ADD CONSTRAINT service_requests_assigned_manager_id_fkey FOREIGN KEY (assigned_manager_id) REFERENCES users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: service_requests service_requests_manager_assigned_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY service_requests
+    ADD CONSTRAINT service_requests_manager_assigned_by_user_id_fkey FOREIGN KEY (manager_assigned_by_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 
 --

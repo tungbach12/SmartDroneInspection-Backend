@@ -5,7 +5,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -40,6 +43,10 @@ class ContractWorkflowControllerTest {
             .subject(managerId.toString())
             .claim("roles", java.util.List.of("MANAGER"))
             .build();
+    mockMvc = buildMockMvc(jwt);
+  }
+
+  private MockMvc buildMockMvc(Jwt jwt) {
     var resolver =
         new org.springframework.web.method.support.HandlerMethodArgumentResolver() {
           @Override
@@ -60,11 +67,10 @@ class ContractWorkflowControllerTest {
     ResourceBundleMessageSource messages = new ResourceBundleMessageSource();
     messages.setBasename("messages");
     messages.setDefaultEncoding("UTF-8");
-    mockMvc =
-        MockMvcBuilders.standaloneSetup(new ContractWorkflowController(workflow))
-            .setCustomArgumentResolvers(resolver)
-            .setControllerAdvice(new GlobalExceptionHandler(new ProblemText(messages)))
-            .build();
+    return MockMvcBuilders.standaloneSetup(new ContractWorkflowController(workflow))
+        .setCustomArgumentResolvers(resolver)
+        .setControllerAdvice(new GlobalExceptionHandler(new ProblemText(messages)))
+        .build();
   }
 
   @Test
@@ -90,6 +96,61 @@ class ContractWorkflowControllerTest {
                     org.hamcrest.Matchers.containsString("filename=\"signed-contract.pdf\"")));
 
     verify(workflow).openSignedContract(managerId, requestId);
+  }
+
+  @Test
+  void managerCanClaimServiceRequest() throws Exception {
+    mockMvc
+        .perform(post("/api/v1/contracts/requests/{requestId}/claim", requestId))
+        .andExpect(status().isOk());
+
+    verify(workflow).claimRequest(managerId, requestId);
+  }
+
+  @Test
+  void adminCanReassignServiceRequest() throws Exception {
+    UUID newManagerId = UUID.randomUUID();
+    Jwt adminJwt =
+        Jwt.withTokenValue("admin-test-token")
+            .header("alg", "none")
+            .subject(managerId.toString())
+            .claim("roles", java.util.List.of("ADMIN"))
+            .build();
+    mockMvc = buildMockMvc(adminJwt);
+
+    mockMvc
+        .perform(
+            put("/api/v1/contracts/requests/{requestId}/manager-assignment", requestId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"managerId\":\"" + newManagerId + "\"}"))
+        .andExpect(status().isOk());
+
+    verify(workflow).reassignRequest(managerId, requestId, newManagerId);
+  }
+
+  @Test
+  void uploadsMultipartMessageAndFiles() throws Exception {
+    MockMultipartFile file =
+        new MockMultipartFile(
+            "files", "proof.png", "image/png", new byte[] {(byte) 0x89, 'P', 'N', 'G'});
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/contracts/requests/{requestId}/messages", requestId)
+                .file(file)
+                .param("body", "See this image"))
+        .andExpect(status().isOk());
+
+    verify(workflow)
+        .postMessage(
+            org.mockito.ArgumentMatchers.eq(managerId),
+            org.mockito.ArgumentMatchers.eq(requestId),
+            org.mockito.ArgumentMatchers.eq("See this image"),
+            org.mockito.ArgumentMatchers.argThat(
+                files ->
+                    files != null
+                        && files.size() == 1
+                        && "proof.png".equals(files.getFirst().getOriginalFilename())));
   }
 
   @Test

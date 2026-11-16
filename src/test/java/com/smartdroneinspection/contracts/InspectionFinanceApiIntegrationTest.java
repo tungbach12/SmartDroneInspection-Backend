@@ -279,6 +279,12 @@ class InspectionFinanceApiIntegrationTest {
     UUID requestId =
         UUID.fromString(objectMapper.readTree(createResp).at("/data/id").stringValue());
 
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests/{requestId}/claim", requestId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk());
+
     // 2.2 Manager issues a payable VND quote (11,000,000 VND)
     mockMvc
         .perform(

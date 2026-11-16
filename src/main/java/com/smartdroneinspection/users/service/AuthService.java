@@ -514,6 +514,28 @@ public class AuthService {
   }
 
   @Transactional
+  public UserResponse updateProfile(
+      UUID userId, com.smartdroneinspection.users.api.dto.request.UpdateProfileRequest request) {
+    User user =
+        users
+            .findDetailedById(userId)
+            .filter(User::active)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.UNAUTHORIZED,
+                        "ACCOUNT_INACTIVE",
+                        "Authentication is required."));
+    user.setFullName(request.fullName().trim());
+    String normalizedPhone =
+        request.phoneNumber() != null && !request.phoneNumber().isBlank()
+            ? request.phoneNumber().trim()
+            : null;
+    user.setPhoneNumber(normalizedPhone);
+    return toResponse(users.saveAndFlush(user));
+  }
+
+  @Transactional
   public UserResponse updatePilotLicense(
       UUID userId,
       com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest request) {

@@ -11,7 +11,8 @@ public record ServiceRequestMessageResponse(
     String authorRole,
     String body,
     Instant createdAt,
-    Instant readAt) {
+    Instant readAt,
+    java.util.List<ServiceRequestMessageAttachmentResponse> attachments) {
 
   public static ServiceRequestMessageResponse from(ServiceRequestMessage message) {
     return new ServiceRequestMessageResponse(
@@ -21,7 +22,10 @@ public record ServiceRequestMessageResponse(
         null,
         message.getBody(),
         message.getCreatedAt(),
-        message.getReadAt());
+        message.getReadAt(),
+        message.getAttachments().stream()
+            .map(ServiceRequestMessageAttachmentResponse::from)
+            .toList());
   }
 
   public static ServiceRequestMessageResponse from(
@@ -33,6 +37,9 @@ public record ServiceRequestMessageResponse(
         authorRole,
         message.getBody(),
         message.getCreatedAt(),
-        message.getReadAt());
+        message.getReadAt(),
+        message.getAttachments().stream()
+            .map(ServiceRequestMessageAttachmentResponse::from)
+            .toList());
   }
 }

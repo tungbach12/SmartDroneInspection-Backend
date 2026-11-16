@@ -46,8 +46,42 @@ public class UserAccessService implements UserAccess {
 
   @Override
   @Transactional(readOnly = true)
+  public List<ServiceManagerContact> listActiveServiceManagers() {
+    return users.findAllWithRoles().stream()
+        .filter(User::active)
+        .filter(user -> user.roleValues().contains(Roles.MANAGER))
+        .map(
+            user ->
+                new ServiceManagerContact(
+                    user.getId(),
+                    user.getFullName(),
+                    user.getEmail(),
+                    user.getPhoneNumber(),
+                    user.getAvatarUrl()))
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public Optional<ActiveUser> findActiveUser(UUID userId) {
     return users.findDetailedById(userId).filter(User::active).map(this::toActiveUser);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<ServiceManagerContact> findActiveServiceManager(UUID userId) {
+    return users
+        .findDetailedById(userId)
+        .filter(User::active)
+        .filter(user -> user.roleValues().contains(Roles.MANAGER))
+        .map(
+            user ->
+                new ServiceManagerContact(
+                    user.getId(),
+                    user.getFullName(),
+                    user.getEmail(),
+                    user.getPhoneNumber(),
+                    user.getAvatarUrl()));
   }
 
   @Override
@@ -111,7 +145,8 @@ public class UserAccessService implements UserAccess {
         onboardingApproved && profile != null ? profile.getPilotLicenseClass() : null,
         onboardingApproved && profile != null ? profile.getPilotLicenseExpiresAt() : null,
         onboardingApproved && profile != null ? profile.getPilotLicenseFileKey() : null,
-        user.getAvatarUrl());
+        user.getAvatarUrl(),
+        user.getPhoneNumber());
   }
 
   @Override

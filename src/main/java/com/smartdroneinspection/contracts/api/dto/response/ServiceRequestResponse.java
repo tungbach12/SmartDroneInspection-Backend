@@ -36,15 +36,59 @@ public record ServiceRequestResponse(
     Instant contractUploadedAt,
     Instant createdAt,
     ServiceRequestQuoteResponse currentQuote,
+    UUID assignedManagerId,
+    Instant managerAssignedAt,
+    UUID managerAssignedByUserId,
+    ServiceManagerContactResponse serviceManager,
     List<ServiceRequestOccurrenceResponse> occurrences,
     List<ServiceRequestMessageResponse> messages,
-    UUID sourceInspectionId) {
+    UUID sourceInspectionId,
+    boolean canClaim) {
+
+  public static ServiceRequestResponse forAssignmentRegistry(ServiceRequest request) {
+    return new ServiceRequestResponse(
+        request.getId(),
+        null,
+        request.getAssetId(),
+        request.getDescription(),
+        request.getRequestedFrom(),
+        request.getRequestedUntil(),
+        request.getTimezone(),
+        request.getWindowStart(),
+        request.getWindowEnd(),
+        request.getRequestType(),
+        request.getRecurrenceUnit(),
+        request.getRecurrenceInterval(),
+        request.getOccurrenceCount(),
+        request.getRecurrenceEndDate(),
+        request.getStatus(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        request.getCreatedAt(),
+        null,
+        request.getAssignedManagerId(),
+        request.getManagerAssignedAt(),
+        request.getManagerAssignedByUserId(),
+        null,
+        List.of(),
+        List.of(),
+        request.getSourceInspectionId(),
+        false);
+  }
 
   public static ServiceRequestResponse from(
       ServiceRequest request,
       ServiceRequestQuoteResponse currentQuote,
+      ServiceManagerContactResponse serviceManager,
       List<ServiceRequestOccurrenceResponse> occurrences,
-      List<ServiceRequestMessageResponse> messages) {
+      List<ServiceRequestMessageResponse> messages,
+      boolean canClaim) {
     return new ServiceRequestResponse(
         request.getId(),
         request.getOwnerCustomerId(),
@@ -71,8 +115,13 @@ public record ServiceRequestResponse(
         request.getContractUploadedAt(),
         request.getCreatedAt(),
         currentQuote,
+        request.getAssignedManagerId(),
+        request.getManagerAssignedAt(),
+        request.getManagerAssignedByUserId(),
+        serviceManager,
         List.copyOf(occurrences),
         List.copyOf(messages),
-        request.getSourceInspectionId());
+        request.getSourceInspectionId(),
+        canClaim);
   }
 }

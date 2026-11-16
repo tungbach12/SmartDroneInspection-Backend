@@ -33,6 +33,15 @@ public class ServiceRequest {
   @Column(name = "created_by_user_id", nullable = false)
   private UUID createdByUserId;
 
+  @Column(name = "assigned_manager_id")
+  private UUID assignedManagerId;
+
+  @Column(name = "manager_assigned_at")
+  private Instant managerAssignedAt;
+
+  @Column(name = "manager_assigned_by_user_id")
+  private UUID managerAssignedByUserId;
+
   @Column(nullable = false, length = 4000)
   private String description;
 
@@ -252,6 +261,49 @@ public class ServiceRequest {
 
   public UUID getCreatedByUserId() {
     return createdByUserId;
+  }
+
+  public UUID getAssignedManagerId() {
+    return assignedManagerId;
+  }
+
+  public Instant getManagerAssignedAt() {
+    return managerAssignedAt;
+  }
+
+  public UUID getManagerAssignedByUserId() {
+    return managerAssignedByUserId;
+  }
+
+  public void claimByManager(UUID managerId, Instant assignedAt) {
+    if (managerId == null || assignedAt == null || assignedManagerId != null) {
+      throw new IllegalStateException(
+          "Service request is already assigned or assignment is invalid");
+    }
+    assignedManagerId = managerId;
+    managerAssignedByUserId = managerId;
+    managerAssignedAt = assignedAt;
+    updatedAt = assignedAt;
+  }
+
+  public void reassignManager(UUID managerId, UUID actorId, Instant assignedAt) {
+    if (managerId == null || actorId == null || assignedAt == null) {
+      throw new IllegalStateException("Service request cannot be reassigned");
+    }
+    assignedManagerId = managerId;
+    managerAssignedByUserId = actorId;
+    managerAssignedAt = assignedAt;
+    updatedAt = assignedAt;
+  }
+
+  public void unassignManager(UUID actorId, Instant unassignedAt) {
+    if (assignedManagerId == null || actorId == null || unassignedAt == null) {
+      throw new IllegalStateException("Service request is not assigned");
+    }
+    assignedManagerId = null;
+    managerAssignedByUserId = actorId;
+    managerAssignedAt = unassignedAt;
+    updatedAt = unassignedAt;
   }
 
   public String getDescription() {
