@@ -63,4 +63,20 @@ public interface ServiceRequestOccurrenceRepository
       @Param("start") java.time.Instant start,
       @Param("end") java.time.Instant end,
       @Param("excludeInspectionId") UUID excludeInspectionId);
+
+  /**
+   * Occurrences whose online checkout order was opened before {@code openedBefore} and is still
+   * unpaid, so a missing webhook may have left a real payment unrecorded.
+   */
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment "
+          + "where payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAYMENT_DUE "
+          + "and payment.payosOrderCode is not null "
+          + "and payment.paymentMethod = :method "
+          + "and payment.gatewayOrderCreatedAt is not null "
+          + "and payment.gatewayOrderCreatedAt < :openedBefore")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> findStaleGatewayOrders(
+      @Param("method") String method,
+      @Param("openedBefore") java.time.Instant openedBefore,
+      org.springframework.data.domain.Pageable pageable);
 }

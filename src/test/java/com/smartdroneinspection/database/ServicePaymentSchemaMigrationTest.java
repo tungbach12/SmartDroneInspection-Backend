@@ -65,7 +65,9 @@ class ServicePaymentSchemaMigrationTest {
         "payos_order_code",
         "payment_method",
         "refunded_amount",
-        "refund_status");
+        "refund_status",
+        "gateway_order_created_at",
+        "last_reconciled_at");
     assertColumns(
         "inspector_payouts",
         "occurrence_id",
@@ -97,7 +99,11 @@ class ServicePaymentSchemaMigrationTest {
         "completed_at",
         "cancelled_by_user_id",
         "cancelled_at",
-        "cancellation_reason");
+        "cancellation_reason",
+        "reason_code",
+        "service_stage",
+        "contract_clause_reference",
+        "evidence_reference");
     assertColumns(
         "inspector_receivables",
         "id",

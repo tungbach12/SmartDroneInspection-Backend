@@ -73,6 +73,11 @@ app:
       curr-code: ${VNPAY_CURR_CODE:VND}
       locale: ${VNPAY_LOCALE:vn}
       expire-minutes: ${VNPAY_EXPIRE_MINUTES:15}
+  payment-reconciliation:
+    enabled: ${PAYMENT_RECONCILIATION_ENABLED:true}
+    grace-period: ${PAYMENT_RECONCILIATION_GRACE_PERIOD:10m}
+    batch-size: ${PAYMENT_RECONCILIATION_BATCH_SIZE:50}
+    fixed-delay: ${PAYMENT_RECONCILIATION_DELAY:15m}
   evidence:
     max-image-size-bytes: ${EVIDENCE_MAX_IMAGE_SIZE_BYTES:10485760}
     max-video-size-bytes: ${EVIDENCE_MAX_VIDEO_SIZE_BYTES:2147483648}
