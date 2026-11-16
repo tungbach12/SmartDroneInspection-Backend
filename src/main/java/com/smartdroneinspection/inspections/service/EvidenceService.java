@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -324,19 +326,7 @@ public class EvidenceService {
       }
     }
 
-    String fileName = sanitizeFileName(rawFileName);
-    Optional<Evidence> sameName =
-        evidence.findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(inspectionId, fileName);
-    if (sameName.isPresent()) {
-      Evidence existing = sameName.get();
-      if (existing.isDeleted()) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "EVIDENCE_DUPLICATE_RETIRED",
-            "Evidence with this filename already exists as a retired audit copy: " + fileName);
-      }
-      return toResponse(existing);
-    }
+    String fileName = resolveUniqueFileName(inspectionId, rawFileName);
 
     UUID objectUuid = UUID.randomUUID();
     String objectKey = "inspections/" + inspectionId + "/evidence/" + objectUuid;
@@ -919,6 +909,49 @@ public class EvidenceService {
     }
     String cleaned = name.replaceAll("[\\\\/\\r\\n]", "_");
     return cleaned.length() > 500 ? cleaned.substring(0, 500) : cleaned;
+  }
+
+  String resolveUniqueFileName(UUID inspectionId, String rawFileName) {
+    Set<String> existingNames = new HashSet<>();
+    for (Evidence existing : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+      if (existing.getFileName() != null) {
+        existingNames.add(existing.getFileName().toLowerCase(Locale.ROOT));
+      }
+    }
+    return resolveUniqueFileName(existingNames, sanitizeFileName(rawFileName));
+  }
+
+  static String resolveUniqueFileName(
+      Collection<String> existingLowerCaseNames, String sanitizedFileName) {
+    String baseName = sanitizeFileName(sanitizedFileName);
+    Set<String> taken = new HashSet<>();
+    if (existingLowerCaseNames != null) {
+      for (String name : existingLowerCaseNames) {
+        if (name != null) {
+          taken.add(name.toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+    if (!taken.contains(baseName.toLowerCase(Locale.ROOT))) {
+      return baseName;
+    }
+    for (int index = 1; index < Integer.MAX_VALUE; index++) {
+      String candidate = buildSuffixedFileName(baseName, index);
+      if (!taken.contains(candidate.toLowerCase(Locale.ROOT))) {
+        return candidate;
+      }
+    }
+    return baseName;
+  }
+
+  private static String buildSuffixedFileName(String fileName, int suffix) {
+    int dot = fileName.lastIndexOf('.');
+    String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+    String ext = dot > 0 ? fileName.substring(dot) : "";
+    String marker = " (" + suffix + ")";
+    int maxStemLength = Math.max(1, 500 - marker.length() - ext.length());
+    String boundedStem = stem.length() > maxStemLength ? stem.substring(0, maxStemLength) : stem;
+    return boundedStem + marker + ext;
   }
 
   private UserAccess.ActiveUser requireActiveUser(UUID actorId) {

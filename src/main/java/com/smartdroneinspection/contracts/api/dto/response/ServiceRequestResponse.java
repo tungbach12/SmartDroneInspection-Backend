@@ -37,7 +37,8 @@ public record ServiceRequestResponse(
     Instant createdAt,
     ServiceRequestQuoteResponse currentQuote,
     List<ServiceRequestOccurrenceResponse> occurrences,
-    List<ServiceRequestMessageResponse> messages) {
+    List<ServiceRequestMessageResponse> messages,
+    UUID sourceInspectionId) {
 
   public static ServiceRequestResponse from(
       ServiceRequest request,
@@ -71,6 +72,7 @@ public record ServiceRequestResponse(
         request.getCreatedAt(),
         currentQuote,
         List.copyOf(occurrences),
-        List.copyOf(messages));
+        List.copyOf(messages),
+        request.getSourceInspectionId());
   }
 }

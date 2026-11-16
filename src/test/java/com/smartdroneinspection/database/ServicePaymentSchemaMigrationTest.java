@@ -45,11 +45,7 @@ class ServicePaymentSchemaMigrationTest {
   @Test
   void createsDedicatedPaymentTablesAndRemovesFinanceColumnsFromOccurrence() {
     jdbcTemplate.queryForObject(
-        "SELECT version FROM flyway_schema_history WHERE version = '29'", String.class);
-    jdbcTemplate.queryForObject(
-        "SELECT version FROM flyway_schema_history WHERE version = '44'", String.class);
-    jdbcTemplate.queryForObject(
-        "SELECT version FROM flyway_schema_history WHERE version = '46'", String.class);
+        "SELECT version FROM flyway_schema_history WHERE version = '1'", String.class);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('service_invoices', 'service_payments', 'inspector_payouts')",
@@ -77,10 +73,6 @@ class ServicePaymentSchemaMigrationTest {
         "payout_reference",
         "payout_recorded_at",
         "payout_held_for_refund",
-        "refund_reconciliation_reference",
-        "refund_reconciliation_note",
-        "refund_reconciled_by_user_id",
-        "refund_reconciled_at",
         "payout_recorded_by_user_id",
         "final_payout_amount");
     assertColumns(
@@ -95,12 +87,6 @@ class ServicePaymentSchemaMigrationTest {
         "platform_absorbed_amount",
         "refund_reference",
         "reason",
-        "platform_commission_adjustment",
-        "vat_adjustment",
-        "tncn_adjustment",
-        "platform_absorbed_amount",
-        "recorded_by_user_id",
-        "recorded_at",
         "request_reference",
         "inspector_receivable_amount",
         "platform_absorbed_plan_amount",

@@ -14,6 +14,7 @@ import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
@@ -21,6 +22,7 @@ import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort;
 import com.smartdroneinspection.inspections.spi.ReportDraftPort.InspectionSummary;
 import com.smartdroneinspection.inspections.spi.ReportRenderPort;
@@ -81,6 +83,7 @@ public class ReportService {
   private final ApplicationEventPublisher events;
   private final ObjectMapper objectMapper;
   private final Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate;
+  private final Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo;
 
   public ReportService(
       InspectionRepository inspections,
@@ -112,6 +115,42 @@ public class ReportService {
         userAccess,
         events,
         objectMapper,
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  public ReportService(
+      InspectionRepository inspections,
+      ReportContextAccess reportContextAccess,
+      org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      FieldSessionRepository fieldSessions,
+      InspectionReportRepository versions,
+      EvidenceService evidenceService,
+      Optional<ReportDraftPort> draftPort,
+      ReportRenderPort renderPort,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      ApplicationEventPublisher events,
+      ObjectMapper objectMapper,
+      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate) {
+    this(
+        inspections,
+        reportContextAccess,
+        jdbcTemplate,
+        evidence,
+        findings,
+        fieldSessions,
+        versions,
+        evidenceService,
+        draftPort,
+        renderPort,
+        objectStore,
+        userAccess,
+        events,
+        objectMapper,
+        paymentGate,
         Optional.empty());
   }
 
@@ -131,7 +170,8 @@ public class ReportService {
       UserAccess userAccess,
       ApplicationEventPublisher events,
       ObjectMapper objectMapper,
-      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate) {
+      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
+      Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo) {
     this.inspections = inspections;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
@@ -147,6 +187,8 @@ public class ReportService {
     this.userAccess = userAccess;
     this.events = events;
     this.paymentGate = paymentGate;
+    this.defectVerificationsRepo =
+        defectVerificationsRepo != null ? defectVerificationsRepo : Optional.empty();
   }
 
   /**
@@ -293,6 +335,23 @@ public class ReportService {
           HttpStatus.CONFLICT,
           "FINDINGS_NOT_CONFIRMED",
           "Confirm the current findings before authoring a report");
+    }
+    requireReinspectionVerificationsEvaluated(inspection);
+  }
+
+  private void requireReinspectionVerificationsEvaluated(Inspection inspection) {
+    if (inspection.getInspectionType() != InspectionType.RE_INSPECTION
+        || defectVerificationsRepo.isEmpty()) {
+      return;
+    }
+    var verifications =
+        defectVerificationsRepo.get().findByReinspectionIdOrderByCreatedAtAsc(inspection.getId());
+    if (verifications.isEmpty()
+        || !verifications.stream().allMatch(ReinspectionVerificationService::isEvaluated)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_VERIFICATION_INCOMPLETE",
+          "All target defects must be verified with fresh evidence or inspector field notes before authoring, submitting, or publishing the re-inspection report");
     }
   }
 
@@ -454,6 +513,7 @@ public class ReportService {
     InspectionReport version = requireVersion(inspectionId, versionId);
     requireFreshEvidenceSnapshot(inspectionId, version);
     requireFreshFindingsSnapshot(inspectionId, version);
+    requireReinspectionVerificationsEvaluated(inspection);
     try {
       version.publish(publisher.id(), inspection.getInspectorId());
     } catch (IllegalStateException | IllegalArgumentException ex) {
@@ -481,7 +541,7 @@ public class ReportService {
     boolean hasConfirmedFindings =
         findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
             .anyMatch(Finding::isOfficial);
-    if (!hasConfirmedFindings) {
+    if (!hasConfirmedFindings || inspection.getInspectionType() == InspectionType.RE_INSPECTION) {
       inspection.complete();
     }
     inspections.saveAndFlush(inspection);
@@ -676,6 +736,60 @@ public class ReportService {
               finding.isOfficial()));
     }
 
+    ReportDraftPort.SectionDraft reinspectionDraft = null;
+    if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
+        && defectVerificationsRepo.isPresent()) {
+      var verifications =
+          defectVerificationsRepo.get().findByReinspectionIdOrderByCreatedAtAsc(inspectionId);
+      List<ReportDraftPort.DefectVerificationSummary> dvSummaries = new ArrayList<>();
+      for (var v : verifications) {
+        Finding srcFinding = findings.findById(v.getSourceFindingId()).orElse(null);
+        String label = srcFinding != null ? srcFinding.getDefectLabel() : "Target defect";
+        String severity = srcFinding != null ? srcFinding.getSeverity().name() : "MEDIUM";
+        Evidence verEv =
+            v.getNewEvidenceId() != null ? evidenceById.get(v.getNewEvidenceId()) : null;
+        findingViews.add(
+            new ReportRenderPort.FindingView(
+                v.getId().toString(),
+                v.getNewEvidenceId() == null ? null : v.getNewEvidenceId().toString(),
+                verEv == null ? null : verEv.getFileName(),
+                label + " [" + v.getResolutionStatus().name() + "]",
+                severity,
+                v.getInspectorNotes(),
+                srcFinding != null ? srcFinding.getRecommendedAction() : null,
+                v.getResolutionStatus().name(),
+                null,
+                true));
+        dvSummaries.add(
+            new ReportDraftPort.DefectVerificationSummary(
+                label, severity, v.getResolutionStatus().name(), v.getInspectorNotes()));
+      }
+      if ((version.getSummary() == null || version.getSummary().isBlank())
+          && !dvSummaries.isEmpty()) {
+        try {
+          reinspectionDraft =
+              createLocalDraftSynthesizer()
+                  .draftSections(
+                      new ReportDraftPort.DraftContext(
+                          new InspectionSummary(
+                              List.of(),
+                              null,
+                              null,
+                              null,
+                              null,
+                              InspectionType.RE_INSPECTION.name()),
+                          List.of(),
+                          List.of(),
+                          List.of(),
+                          List.of(),
+                          locale,
+                          dvSummaries));
+        } catch (Exception ignored) {
+          // Keep null if fallback synthesis fails
+        }
+      }
+    }
+
     List<ReportRenderPort.EvidenceView> evidenceViews = new ArrayList<>();
     for (Evidence item :
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId)) {
@@ -719,7 +833,15 @@ public class ReportService {
         version.getReviewedAt() == null ? null : version.getReviewedAt().toString(),
         version.getPublishedAt() == null ? null : version.getPublishedAt().toString(),
         new ReportRenderPort.Sections(
-            version.getSummary(), purposeScopeCriteria, null, null, null, null, null),
+            version.getSummary() != null && !version.getSummary().isBlank()
+                ? version.getSummary()
+                : (reinspectionDraft != null ? reinspectionDraft.executiveSummary() : null),
+            purposeScopeCriteria,
+            null,
+            null,
+            reinspectionDraft != null ? reinspectionDraft.conclusionsRecommendations() : null,
+            reinspectionDraft != null ? reinspectionDraft.overallCondition() : null,
+            reinspectionDraft != null ? reinspectionDraft.omissionDisclosure() : null),
         findingViews,
         evidenceViews,
         locale);
@@ -872,6 +994,87 @@ public class ReportService {
         boolean isVietnamese =
             context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage());
         List<ReportDraftPort.FindingSummary> findings = context.findings();
+        List<ReportDraftPort.DefectVerificationSummary> defectVerifications =
+            context.defectVerifications() != null ? context.defectVerifications() : List.of();
+        if (!defectVerifications.isEmpty()) {
+          long resolvedCount =
+              defectVerifications.stream()
+                  .filter(v -> "RESOLVED".equalsIgnoreCase(v.resolutionStatus()))
+                  .count();
+          long unresolvedCount =
+              defectVerifications.stream()
+                  .filter(v -> "UNRESOLVED".equalsIgnoreCase(v.resolutionStatus()))
+                  .count();
+          boolean allResolved = resolvedCount == defectVerifications.size();
+          String overallCondition = allResolved ? "GOOD" : unresolvedCount > 0 ? "POOR" : "FAIR";
+
+          String executiveSummary;
+          if (isVietnamese) {
+            executiveSummary =
+                allResolved
+                    ? "Khảo sát bay tái kiểm định đối soát khắc phục đã hoàn tất. Đã kiểm tra và xác nhận "
+                        + defectVerifications.size()
+                        + " khiếm khuyết mục tiêu đã được khắc phục hoàn toàn (RESOLVED). Hiện trạng"
+                        + " hạng mục đạt yêu cầu nghiệm thu."
+                    : "Khảo sát bay tái kiểm định đối soát đã hoàn tất. Ghi nhận "
+                        + resolvedCount
+                        + " khiếm khuyết đã khắc phục và "
+                        + (defectVerifications.size() - resolvedCount)
+                        + " khiếm khuyết chưa đạt hoặc cần kiểm tra bổ sung. Hiện trạng"
+                        + " được đánh giá ở mức "
+                        + (overallCondition.equals("POOR") ? "Kém" : "Cần theo dõi")
+                        + ".";
+          } else {
+            executiveSummary =
+                allResolved
+                    ? "Post-remediation aerial re-inspection completed. Confirmed "
+                        + defectVerifications.size()
+                        + " target defect(s) successfully resolved (RESOLVED). Inspected scope"
+                        + " meets re-inspection acceptance criteria."
+                    : "Post-remediation aerial re-inspection completed. Recorded "
+                        + resolvedCount
+                        + " resolved defect(s) and "
+                        + (defectVerifications.size() - resolvedCount)
+                        + " defect(s) requiring follow-up. Overall condition is assessed as "
+                        + overallCondition
+                        + ".";
+          }
+
+          String omissionDisclosure =
+              isVietnamese
+                  ? "Phạm vi bay tái kiểm định tập trung vào các vị trí khiếm khuyết mục tiêu từ"
+                      + " đợt kiểm định gốc. Các cấu kiện ngoài phạm vi đối soát không được đánh"
+                      + " giá lại trong phiên bay này."
+                  : "Re-inspection scope was focused on the specific target defect locations from"
+                      + " the source inspection. Unrelated structural elements were not"
+                      + " re-evaluated during this flight.";
+
+          String conclusionsRecommendations;
+          if (isVietnamese) {
+            conclusionsRecommendations =
+                allResolved
+                    ? "Toàn bộ các khiếm khuyết mục tiêu đã được xử lý và xác nhận đạt yêu cầu kỹ"
+                        + " thuật qua ảnh đối soát trước/sau."
+                    : "Các khiếm khuyết chưa đạt yêu cầu (UNRESOLVED / INCONCLUSIVE) cần tiếp tục"
+                        + " được khắc phục và lập đợt tái kiểm định bổ sung.";
+          } else {
+            conclusionsRecommendations =
+                allResolved
+                    ? "All target defects have been verified as resolved against source evidence."
+                        + " Suitable for customer acceptance."
+                    : "Unresolved or inconclusive target defects require further remediation and"
+                        + " follow-up verification prior to final sign-off.";
+          }
+
+          return new SectionDraft(
+              executiveSummary,
+              null,
+              null,
+              conclusionsRecommendations,
+              overallCondition,
+              omissionDisclosure);
+        }
+
         String overallCondition;
         boolean hasCritical =
             findings.stream().anyMatch(f -> "CRITICAL".equalsIgnoreCase(f.severity()));
@@ -1038,6 +1241,27 @@ public class ReportService {
             .filter(finding -> currentEvidenceIds.contains(finding.getEvidenceId()))
             .toList();
 
+    List<ReportDraftPort.DefectVerificationSummary> defectVerificationsList = List.of();
+    if (inspection.getInspectionType() == InspectionType.RE_INSPECTION
+        && defectVerificationsRepo.isPresent()) {
+      defectVerificationsList =
+          defectVerificationsRepo
+              .get()
+              .findByReinspectionIdOrderByCreatedAtAsc(inspectionId)
+              .stream()
+              .map(
+                  v -> {
+                    Finding srcFinding = findings.findById(v.getSourceFindingId()).orElse(null);
+                    String label =
+                        srcFinding != null ? srcFinding.getDefectLabel() : "Target defect";
+                    String severity =
+                        srcFinding != null ? srcFinding.getSeverity().name() : "MEDIUM";
+                    return new ReportDraftPort.DefectVerificationSummary(
+                        label, severity, v.getResolutionStatus().name(), v.getInspectorNotes());
+                  })
+              .toList();
+    }
+
     return new ReportDraftPort.DraftContext(
         new InspectionSummary(
             reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
@@ -1101,7 +1325,8 @@ public class ReportService {
                         session.getAbortReason(),
                         droneDisplayReference(reportIdentity, inspection.getDroneId())))
             .toList(),
-        locale);
+        locale,
+        defectVerificationsList);
   }
 
   private ReportAiSummaryResponse generateAiSummaryFromContext(
@@ -1128,6 +1353,67 @@ public class ReportService {
       ReportDraftPort.DraftContext context) {
     boolean isVietnamese =
         context.locale() != null && "vi".equalsIgnoreCase(context.locale().getLanguage());
+    List<ReportDraftPort.DefectVerificationSummary> defectVerifications =
+        context.defectVerifications() != null ? context.defectVerifications() : List.of();
+    if (!defectVerifications.isEmpty()) {
+      long resolvedCount =
+          defectVerifications.stream()
+              .filter(v -> "RESOLVED".equalsIgnoreCase(v.resolutionStatus()))
+              .count();
+      long unresolvedCount =
+          defectVerifications.stream()
+              .filter(v -> "UNRESOLVED".equalsIgnoreCase(v.resolutionStatus()))
+              .count();
+      boolean allResolved = resolvedCount == defectVerifications.size();
+      String reinspectionRisk = allResolved ? "LOW" : (unresolvedCount > 0 ? "HIGH" : "MEDIUM");
+      List<String> highlights = new ArrayList<>();
+      for (var v : defectVerifications) {
+        String noteSuffix =
+            v.inspectorNotes() != null && !v.inspectorNotes().isBlank()
+                ? " — " + v.inspectorNotes()
+                : "";
+        highlights.add(v.defectLabel() + " [" + v.resolutionStatus() + "]" + noteSuffix);
+      }
+      String summary;
+      String recommendedActions;
+      if (isVietnamese) {
+        summary =
+            allResolved
+                ? "Khảo sát bay tái kiểm định đối soát khắc phục đã hoàn tất. Toàn bộ "
+                    + defectVerifications.size()
+                    + " khiếm khuyết mục tiêu đã được xác nhận khắc phục đạt chuẩn (RESOLVED)."
+                : "Khảo sát bay tái kiểm định đối soát ghi nhận "
+                    + resolvedCount
+                    + "/"
+                    + defectVerifications.size()
+                    + " khiếm khuyết đã khắc phục (RESOLVED) và "
+                    + (defectVerifications.size() - resolvedCount)
+                    + " khiếm khuyết chưa đạt hoặc cần kiểm tra bổ sung.";
+        recommendedActions =
+            allResolved
+                ? "Khuyến nghị Khách hàng xác nhận nghiệm thu báo cáo tái kiểm định."
+                : "Khuyến nghị tiếp tục khắc phục các khiếm khuyết chưa đạt và lập đợt tái kiểm định bổ sung.";
+      } else {
+        summary =
+            allResolved
+                ? "Post-remediation aerial re-inspection completed. All "
+                    + defectVerifications.size()
+                    + " target defect(s) are verified as RESOLVED."
+                : "Post-remediation aerial re-inspection recorded "
+                    + resolvedCount
+                    + "/"
+                    + defectVerifications.size()
+                    + " resolved defect(s) and "
+                    + (defectVerifications.size() - resolvedCount)
+                    + " unresolved/inconclusive item(s).";
+        recommendedActions =
+            allResolved
+                ? "Recommend Customer acceptance of the re-inspection deliverable."
+                : "Recommend further remediation for unresolved target defects followed by verification.";
+      }
+      return new ReportAiSummaryResponse(summary, highlights, recommendedActions, reinspectionRisk);
+    }
+
     List<ReportDraftPort.FindingSummary> findings = context.findings();
     boolean hasCritical =
         findings.stream().anyMatch(f -> "CRITICAL".equalsIgnoreCase(f.severity()));

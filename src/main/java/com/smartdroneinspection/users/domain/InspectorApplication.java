@@ -70,23 +70,14 @@ public class InspectorApplication {
   @Column(name = "notification_state", nullable = false, length = 32)
   private String notificationState = "PENDING";
 
-  @Column(name = "notification_attempts", nullable = false)
-  private int notificationAttempts;
-
   @Column(name = "cleanup_attempts", nullable = false)
   private int cleanupAttempts;
-
-  @Column(name = "last_notification_error", length = 500)
-  private String lastNotificationError;
 
   @Column(name = "correlation_id", length = 128)
   private String correlationId;
 
   @Column(name = "approved_user_id")
   private UUID approvedUserId;
-
-  @Column(name = "setup_email_sent_at")
-  private Instant setupEmailSentAt;
 
   @CreationTimestamp
   @Column(name = "created_at", nullable = false, updatable = false)
@@ -193,16 +184,8 @@ public class InspectorApplication {
     return notificationState;
   }
 
-  public int getNotificationAttempts() {
-    return notificationAttempts;
-  }
-
   public int getCleanupAttempts() {
     return cleanupAttempts;
-  }
-
-  public String getLastNotificationError() {
-    return lastNotificationError;
   }
 
   public String getCorrelationId() {
@@ -224,10 +207,6 @@ public class InspectorApplication {
   public void attachSignedContract(String fileKey, String sha256) {
     this.signedContractFileKey = fileKey;
     this.signedContractSha256 = sha256;
-  }
-
-  public Instant getSetupEmailSentAt() {
-    return setupEmailSentAt;
   }
 
   public Instant getCreatedAt() {
@@ -257,33 +236,14 @@ public class InspectorApplication {
 
   public void recordCleanupAttempt(String failure) {
     this.cleanupAttempts++;
-    this.lastNotificationError =
-        failure == null ? null : failure.substring(0, Math.min(500, failure.length()));
-  }
-
-  public void recordNotificationAttempt(String failure) {
-    this.notificationAttempts++;
-    this.lastNotificationError =
-        failure == null ? null : failure.substring(0, Math.min(500, failure.length()));
   }
 
   public void markNotificationSent() {
     this.notificationState = "SENT";
-    this.lastNotificationError = null;
   }
 
   public void clearLicenseScanFileKey() {
     this.licenseScanFileKey = null;
-  }
-
-  public void markSetupEmailSent() {
-    this.setupEmailSentAt = Instant.now();
-    this.notificationState = "SENT";
-    this.lastNotificationError = null;
-  }
-
-  public boolean isSetupEmailSent() {
-    return setupEmailSentAt != null;
   }
 
   public void clearRejectedPersonalData() {
@@ -299,6 +259,5 @@ public class InspectorApplication {
     this.licenseScanFileKey = null;
     this.passwordHash = "WITHDRAWN";
     this.rejectionReason = null;
-    this.lastNotificationError = null;
   }
 }

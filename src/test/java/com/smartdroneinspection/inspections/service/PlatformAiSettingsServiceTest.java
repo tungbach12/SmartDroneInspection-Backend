@@ -19,7 +19,7 @@ class PlatformAiSettingsServiceTest {
   @DisplayName("auto-confirms detections at or above the configured percentage threshold")
   void shouldAutoConfirmWhenAboveThreshold() {
     AiThresholdConfig config =
-        new AiThresholdConfig(true, new BigDecimal("85.00"), 0L, 0L, Instant.now());
+        new AiThresholdConfig(true, new BigDecimal("85.00"), 0L, Instant.now());
 
     assertThat(service.shouldAutoConfirm(new BigDecimal("0.85"), config)).isTrue();
     assertThat(service.shouldAutoConfirm(new BigDecimal("0.9234"), config)).isTrue();
@@ -32,7 +32,7 @@ class PlatformAiSettingsServiceTest {
   @DisplayName("does not auto-confirm when auto-confirm is disabled by Admin")
   void shouldNotAutoConfirmWhenDisabled() {
     AiThresholdConfig disabledConfig =
-        new AiThresholdConfig(false, new BigDecimal("70.00"), 0L, 0L, Instant.now());
+        new AiThresholdConfig(false, new BigDecimal("70.00"), 0L, Instant.now());
 
     assertThat(service.shouldAutoConfirm(new BigDecimal("0.99"), disabledConfig)).isFalse();
   }

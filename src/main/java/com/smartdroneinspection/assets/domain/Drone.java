@@ -84,12 +84,6 @@ public class Drone {
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
 
-  @Column(name = "has_thermal_camera", nullable = false)
-  private boolean hasThermalCamera;
-
-  @Column(name = "has_rtk", nullable = false)
-  private boolean hasRtk;
-
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "image_file_keys", columnDefinition = "jsonb")
   private List<String> imageFileKeys = new ArrayList<>();
@@ -313,8 +307,12 @@ public class Drone {
     this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
-    this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
-    this.hasRtk = hasRtk || this.features.contains("RTK_POSITIONING");
+    if (hasThermalCamera && !this.features.contains("THERMAL_CAMERA")) {
+      this.features.add("THERMAL_CAMERA");
+    }
+    if (hasRtk && !this.features.contains("RTK_POSITIONING")) {
+      this.features.add("RTK_POSITIONING");
+    }
     this.documentFiles = documentFiles != null ? new HashMap<>(documentFiles) : null;
     this.imageFileKeys = imageFileKeys != null ? new ArrayList<>(imageFileKeys) : new ArrayList<>();
     this.updatedAt = Instant.now();
@@ -353,19 +351,19 @@ public class Drone {
   }
 
   public boolean hasThermalCamera() {
-    return hasThermalCamera;
+    return getFeatures().contains("THERMAL_CAMERA");
   }
 
   public boolean hasRtk() {
-    return hasRtk;
+    return getFeatures().contains("RTK_POSITIONING");
   }
 
   public boolean isHasThermalCamera() {
-    return hasThermalCamera;
+    return hasThermalCamera();
   }
 
   public boolean isHasRtk() {
-    return hasRtk;
+    return hasRtk();
   }
 
   public void renewRegistration(

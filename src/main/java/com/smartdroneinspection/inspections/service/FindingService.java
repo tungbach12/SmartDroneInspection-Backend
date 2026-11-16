@@ -299,7 +299,6 @@ public class FindingService {
     List<Finding> created = new java.util.ArrayList<>();
     PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
         aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
-    int autoConfirmedCount = 0;
     for (AiInferencePort.Detection detection : detections) {
       if (isDuplicateConfirmedDetection(detection, reviewed)) {
         continue;
@@ -320,13 +319,8 @@ public class FindingService {
           .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
           .orElse(false)) {
         createdFinding.confirmByInspector();
-        autoConfirmedCount++;
       }
       created.add(createdFinding);
-    }
-    if (autoConfirmedCount > 0) {
-      final int confirmedTotal = autoConfirmedCount;
-      aiSettingsService.ifPresent(s -> s.recordAutoConfirmed(confirmedTotal));
     }
     List<Finding> stored = findings.saveAllAndFlush(created);
     syncFindingsConfirmationAfterEdit(inspection);
@@ -741,7 +735,6 @@ public class FindingService {
       List<Finding> frameFindings = new java.util.ArrayList<>();
       PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
           aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
-      int frameAutoConfirmed = 0;
       for (AiInferencePort.Detection detection : detections) {
         Finding frameFinding =
             new Finding(
@@ -759,13 +752,8 @@ public class FindingService {
             .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
             .orElse(false)) {
           frameFinding.confirmByInspector();
-          frameAutoConfirmed++;
         }
         frameFindings.add(frameFinding);
-      }
-      if (frameAutoConfirmed > 0) {
-        final int confirmedTotal = frameAutoConfirmed;
-        aiSettingsService.ifPresent(s -> s.recordAutoConfirmed(confirmedTotal));
       }
       List<Finding> storedFrameFindings = findings.saveAllAndFlush(frameFindings);
       totalCreatedFindings[0] += storedFrameFindings.size();

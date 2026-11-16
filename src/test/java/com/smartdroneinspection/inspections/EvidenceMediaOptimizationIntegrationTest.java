@@ -305,6 +305,47 @@ class EvidenceMediaOptimizationIntegrationTest {
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("EVIDENCE_NOT_READY"));
 
+    // Re-uploading the same filename (even after retiring the original video) allocates (1), (2)
+    // and never blocks the upload session.
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/evidence/{eid}/retire",
+                    fixture.inspectionId(),
+                    evidenceId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Retire original before re-upload\"}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence/uploads", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "fileName", "flight-pass.mp4",
+                            "contentType", "video/mp4",
+                            "totalSizeBytes", totalSize))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.fileName").value("flight-pass (1).mp4"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/evidence/uploads", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "fileName", "flight-pass.mp4",
+                            "contentType", "video/mp4",
+                            "totalSizeBytes", totalSize))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.fileName").value("flight-pass (2).mp4"));
+
     // Separate session can be cancelled cleanly.
     MvcResult cancelBegin =
         mockMvc

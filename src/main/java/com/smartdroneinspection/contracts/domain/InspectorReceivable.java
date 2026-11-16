@@ -49,9 +49,6 @@ public class InspectorReceivable {
   @Column(name = "recorded_at", nullable = false, updatable = false)
   private Instant recordedAt = Instant.now();
 
-  @Column(name = "created_at", nullable = false, updatable = false)
-  private Instant createdAt = Instant.now();
-
   @jakarta.persistence.OneToMany(
       mappedBy = "receivable",
       cascade = jakarta.persistence.CascadeType.ALL,

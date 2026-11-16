@@ -18,6 +18,9 @@ public interface Mf2InspectionAssignment {
     return hasPlatformScheduleConflict(inspectorId, droneId, plannedStartAt, plannedEndAt);
   }
 
+  default void validateReinspectionSource(
+      UUID ownerCustomerId, UUID assetId, UUID sourceInspectionId) {}
+
   UUID assign(
       UUID ownerCustomerId,
       UUID assetId,
@@ -26,4 +29,23 @@ public interface Mf2InspectionAssignment {
       Instant plannedStartAt,
       Instant plannedEndAt,
       UUID assignedByUserId);
+
+  default UUID assign(
+      UUID ownerCustomerId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID assignedByUserId,
+      UUID sourceInspectionId) {
+    return assign(
+        ownerCustomerId,
+        assetId,
+        inspectorId,
+        droneId,
+        plannedStartAt,
+        plannedEndAt,
+        assignedByUserId);
+  }
 }
