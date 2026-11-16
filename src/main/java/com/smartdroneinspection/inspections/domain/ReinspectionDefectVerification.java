@@ -46,6 +46,12 @@ public class ReinspectionDefectVerification {
   @Column(name = "inspector_notes", length = 4000)
   private String inspectorNotes;
 
+  @Column(name = "verified_at")
+  private Instant verifiedAt;
+
+  @Column(name = "valid_until")
+  private Instant validUntil;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -64,10 +70,45 @@ public class ReinspectionDefectVerification {
 
   public void updateVerification(
       DefectResolutionStatus status, UUID newEvidenceId, String inspectorNotes) {
+    this.updateVerification(status, newEvidenceId, inspectorNotes, null);
+  }
+
+  /**
+   * Records the Inspector's verdict. A {@code RESOLVED} verdict is time-boxed: it is only valid for
+   * {@code validityDuration} after {@code now}, so a later close cannot lean on a stale resolution.
+   */
+  public void updateVerification(
+      DefectResolutionStatus status,
+      UUID newEvidenceId,
+      String inspectorNotes,
+      java.time.Duration validityDuration) {
     this.resolutionStatus = Objects.requireNonNull(status, "resolutionStatus is required");
     this.newEvidenceId = newEvidenceId;
     this.inspectorNotes = inspectorNotes;
-    this.updatedAt = Instant.now();
+    Instant now = Instant.now();
+    if (status == DefectResolutionStatus.RESOLVED && validityDuration != null) {
+      this.verifiedAt = now;
+      this.validUntil = now.plus(validityDuration);
+    } else {
+      this.verifiedAt = null;
+      this.validUntil = null;
+    }
+    this.updatedAt = now;
+  }
+
+  /** True when a RESOLVED verdict has passed its validity window and can no longer support work. */
+  public boolean isResolutionExpired(Instant now) {
+    return resolutionStatus == DefectResolutionStatus.RESOLVED
+        && validUntil != null
+        && now.isAfter(validUntil);
+  }
+
+  public Instant getVerifiedAt() {
+    return verifiedAt;
+  }
+
+  public Instant getValidUntil() {
+    return validUntil;
   }
 
   public UUID getId() {

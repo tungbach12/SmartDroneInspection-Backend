@@ -24,11 +24,13 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@EnableConfigurationProperties(ReinspectionProperties.class)
 public class ReinspectionVerificationService {
 
   private final ReinspectionDefectVerificationRepository verifications;
@@ -37,6 +39,7 @@ public class ReinspectionVerificationService {
   private final EvidenceRepository evidences;
   private final InspectionReportRepository reports;
   private final UserAccess userAccess;
+  private final ReinspectionProperties reinspectionProperties;
 
   public ReinspectionVerificationService(
       ReinspectionDefectVerificationRepository verifications,
@@ -45,12 +48,28 @@ public class ReinspectionVerificationService {
       EvidenceRepository evidences,
       InspectionReportRepository reports,
       UserAccess userAccess) {
+    this(verifications, inspections, findings, evidences, reports, userAccess, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ReinspectionVerificationService(
+      ReinspectionDefectVerificationRepository verifications,
+      InspectionRepository inspections,
+      FindingRepository findings,
+      EvidenceRepository evidences,
+      InspectionReportRepository reports,
+      UserAccess userAccess,
+      ReinspectionProperties reinspectionProperties) {
     this.verifications = verifications;
     this.inspections = inspections;
     this.findings = findings;
     this.evidences = evidences;
     this.reports = reports;
     this.userAccess = userAccess;
+    this.reinspectionProperties =
+        reinspectionProperties != null
+            ? reinspectionProperties
+            : new ReinspectionProperties(java.time.Duration.ofDays(90));
   }
 
   /** Seeds verification rows from all active confirmed findings of the source inspection. */
@@ -194,7 +213,11 @@ public class ReinspectionVerificationService {
                           "Evidence must belong to this re-inspection"));
     }
 
-    verification.updateVerification(status, request.newEvidenceId(), request.inspectorNotes());
+    verification.updateVerification(
+        status,
+        request.newEvidenceId(),
+        request.inspectorNotes(),
+        reinspectionProperties.resolvedValidity());
     ReinspectionDefectVerification saved = verifications.saveAndFlush(verification);
 
     if (inspection.getStatus() == InspectionStatus.FIELD_COMPLETED) {
@@ -226,6 +249,26 @@ public class ReinspectionVerificationService {
             : null;
 
     return toResponse(saved, sourceFinding, newEvidence, sourceEvidence);
+  }
+
+  /**
+   * Rejects an expired RESOLVED verdict. A RESOLVED verdict is only authoritative for its validity
+   * window; past it the defect must be re-verified before the report is published as completion.
+   */
+  public void requireNoExpiredResolutions(UUID reinspectionId) {
+    long expired =
+        verifications.findByReinspectionIdOrderByCreatedAtAsc(reinspectionId).stream()
+            .filter(item -> item.isResolutionExpired(java.time.Instant.now()))
+            .count();
+    if (expired > 0) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "RESOLUTION_EXPIRED",
+          "A RESOLVED verdict has expired and must be re-verified before publishing this "
+              + "re-inspection report ("
+              + expired
+              + " defect(s) expired)");
+    }
   }
 
   private ReinspectionVerificationResponse toResponse(
@@ -264,6 +307,8 @@ public class ReinspectionVerificationService {
         newEvidence != null ? newEvidence.getObjectKey() : null,
         item.getResolutionStatus().name(),
         item.getInspectorNotes(),
+        item.getVerifiedAt(),
+        item.getValidUntil(),
         item.getCreatedAt(),
         item.getUpdatedAt());
   }
