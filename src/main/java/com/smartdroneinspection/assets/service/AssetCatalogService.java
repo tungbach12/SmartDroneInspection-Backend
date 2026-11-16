@@ -144,8 +144,10 @@ public class AssetCatalogService {
                     .size()
                 + 1;
 
+    boolean defaultRequired = !"POST_FLIGHT".equals(normalizedType);
+    boolean isRequired = request.required() != null ? request.required() : defaultRequired;
     ChecklistTemplate created =
-        new ChecklistTemplate(normalizedType, request.label(), nextOrder, true);
+        new ChecklistTemplate(normalizedType, request.label(), nextOrder, true, isRequired);
     return toTemplateResponse(checklistTemplates.saveAndFlush(created));
   }
 
@@ -166,7 +168,7 @@ public class AssetCatalogService {
     ChecklistTemplate template =
         checklistTemplates.findById(templateId).orElseThrow(() -> notFound(templateId));
     requireTemplatePermission(jwt, template.getTemplateType());
-    template.update(request.label(), request.sortOrder(), request.active());
+    template.update(request.label(), request.sortOrder(), request.active(), request.required());
     return toTemplateResponse(checklistTemplates.saveAndFlush(template));
   }
 
@@ -237,7 +239,8 @@ public class AssetCatalogService {
         null,
         template.getLabel(),
         template.getSortOrder(),
-        template.isActive());
+        template.isActive(),
+        template.isRequired());
   }
 
   private ChecklistTemplateResponse toInspectionItemResponse(InspectionItem item) {
@@ -247,6 +250,7 @@ public class AssetCatalogService {
         item.getCategoryId(),
         item.getLabel(),
         item.getSortOrder(),
-        item.isActive());
+        item.isActive(),
+        true);
   }
 }

@@ -30,7 +30,6 @@ public class PlatformAiSettingsService {
   public record AiThresholdConfig(
       boolean autoConfirmEnabled,
       BigDecimal autoConfirmThreshold,
-      long autoConfirmedCount,
       long rejectedPendingCount,
       Instant updatedAt) {}
 
@@ -40,7 +39,7 @@ public class PlatformAiSettingsService {
         jdbcTemplate.query(
             """
             SELECT auto_confirm_enabled, auto_confirm_threshold,
-                   auto_confirmed_count, rejected_pending_count, updated_at
+                   rejected_pending_count, updated_at
             FROM platform_ai_settings
             WHERE id = 1
             """,
@@ -49,12 +48,11 @@ public class PlatformAiSettingsService {
               return new AiThresholdConfig(
                   rs.getBoolean("auto_confirm_enabled"),
                   rs.getBigDecimal("auto_confirm_threshold"),
-                  rs.getLong("auto_confirmed_count"),
                   rs.getLong("rejected_pending_count"),
                   ts != null ? ts.toInstant() : Instant.now());
             });
     if (rows.isEmpty()) {
-      return new AiThresholdConfig(true, DEFAULT_THRESHOLD, 0L, 0L, Instant.now());
+      return new AiThresholdConfig(true, DEFAULT_THRESHOLD, 0L, Instant.now());
     }
     return rows.getFirst();
   }
@@ -76,21 +74,6 @@ public class PlatformAiSettingsService {
             ? confidence.multiply(BigDecimal.valueOf(100))
             : confidence;
     return confidencePct.compareTo(config.autoConfirmThreshold()) >= 0;
-  }
-
-  @Transactional
-  public void recordAutoConfirmed(int count) {
-    if (count <= 0) {
-      return;
-    }
-    jdbcTemplate.update(
-        """
-        UPDATE platform_ai_settings
-        SET auto_confirmed_count = auto_confirmed_count + ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = 1
-        """,
-        count);
   }
 
   @Transactional
@@ -140,9 +123,6 @@ public class PlatformAiSettingsService {
                 AND (CASE WHEN confidence <= 1 THEN confidence * 100 ELSE confidence END) >= ?
               """,
               normalizedThreshold);
-      if (newlyConfirmed > 0) {
-        recordAutoConfirmed(newlyConfirmed);
-      }
     }
 
     return buildAnalytics(newlyConfirmed);
@@ -204,8 +184,7 @@ public class PlatformAiSettingsService {
     long rejectedPending = config.rejectedPendingCount();
     long totalRejectedAi = removedAi + rejectedPending;
     long totalAiDetections = confirmedAi + pendingAi + totalRejectedAi;
-    long autoConfirmed =
-        Math.max(config.autoConfirmedCount(), agg != null ? agg.thresholdEligibleConfirmed() : 0L);
+    long autoConfirmed = agg != null ? agg.thresholdEligibleConfirmed() : 0L;
 
     long decidedAi = confirmedAi + totalRejectedAi;
     double acceptanceRate =

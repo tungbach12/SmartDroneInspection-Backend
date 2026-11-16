@@ -127,5 +127,27 @@ public interface ReportRenderPort {
       String captureTime,
       String componentLocation,
       String fieldSessionId,
-      byte[] content) {}
+      byte[] content,
+      String sourceVideoFileName,
+      Double sourceTimestampSeconds) {
+    public EvidenceView(
+        String id,
+        String fileName,
+        String contentType,
+        String captureTime,
+        String componentLocation,
+        String fieldSessionId,
+        byte[] content) {
+      this(
+          id,
+          fileName,
+          contentType,
+          captureTime,
+          componentLocation,
+          fieldSessionId,
+          content,
+          null,
+          null);
+    }
+  }
 }

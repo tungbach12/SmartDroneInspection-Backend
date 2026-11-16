@@ -140,7 +140,7 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       "select count(i) > 0 from Inspection i where i.ownerCustomerId = :ownerCustomerId "
           + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
-          + "and i.reassignmentRequired = false "
+          + "and i.assignmentStatus <> com.smartdroneinspection.inspections.domain.enums.AssignmentStatus.DECLINED "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
@@ -155,7 +155,7 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
       "select count(i) > 0 from Inspection i where i.ownerCustomerId = :ownerCustomerId "
           + "and i.id <> :excludeInspectionId "
           + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
-          + "and i.reassignmentRequired = false "
+          + "and i.assignmentStatus <> com.smartdroneinspection.inspections.domain.enums.AssignmentStatus.DECLINED "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
@@ -170,7 +170,7 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   @Query(
       "select count(i) > 0 from Inspection i where "
           + "(i.inspectorId = :inspectorId or i.droneId = :droneId) "
-          + "and i.reassignmentRequired = false "
+          + "and i.assignmentStatus <> com.smartdroneinspection.inspections.domain.enums.AssignmentStatus.DECLINED "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
@@ -184,7 +184,7 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
       "select count(i) > 0 from Inspection i where "
           + "i.id <> :excludeInspectionId "
           + "and (i.inspectorId = :inspectorId or i.droneId = :droneId) "
-          + "and i.reassignmentRequired = false "
+          + "and i.assignmentStatus <> com.smartdroneinspection.inspections.domain.enums.AssignmentStatus.DECLINED "
           + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED, com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED) "
           + "and i.plannedStartAt is not null and i.plannedEndAt is not null "
           + "and i.plannedStartAt < :end and i.plannedEndAt > :start")
@@ -197,7 +197,7 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   @Query(
       "select i from Inspection i where i.status = com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED "
-          + "and i.reassignmentRequired = false "
+          + "and i.assignmentStatus <> com.smartdroneinspection.inspections.domain.enums.AssignmentStatus.DECLINED "
           + "and i.overdueNotifiedAt is null "
           + "and i.plannedEndAt is not null and i.plannedEndAt < :cutoff "
           + "and not exists (select fs.id from FieldSession fs where fs.inspectionId = i.id)")

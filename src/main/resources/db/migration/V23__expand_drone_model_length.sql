@@ -1,2 +1,0 @@
-ALTER TABLE drone_registration_applications ALTER COLUMN model TYPE VARCHAR(1000);
-ALTER TABLE drones ALTER COLUMN model TYPE VARCHAR(1000);

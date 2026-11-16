@@ -42,6 +42,7 @@ class FullDatabaseSchemaMigrationTest {
             "assets",
             "asset_documents",
             "inspections",
+            "reinspection_defect_verifications",
             "field_sessions",
             "evidence",
             "evidence_upload_sessions",
@@ -70,7 +71,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(40);
+    assertThat(expected).hasSize(41);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -93,9 +94,8 @@ class FullDatabaseSchemaMigrationTest {
             "maintenance_work_logs",
             "maintenance_reports",
             "maintenance_acceptance_decisions",
-            "reinspection_defect_verifications",
             "repair_knowledge_chunks");
-    assertThat(actual).contains("inspector_flight_logs");
+    assertThat(actual).contains("inspector_flight_logs", "reinspection_defect_verifications");
   }
 
   private void assertColumns(String table, String... expectedColumns) {
@@ -145,12 +145,11 @@ class FullDatabaseSchemaMigrationTest {
   }
 
   @Test
-  void appliesAllMigrationsThroughV56AndKeepsTargetPaymentColumns() {
+  void appliesConsolidatedV1BaselineAndMaintainsCleanTargetColumns() {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).hasSize(56);
-    assertThat(versions.getLast()).isEqualTo("56");
+    assertThat(versions).containsExactly("1");
 
     assertColumns(
         "inspections",
@@ -205,7 +204,7 @@ class FullDatabaseSchemaMigrationTest {
 
     assertColumns(
         "inspections",
-        "reassignment_required",
+        "source_inspection_id",
         "decline_reason",
         "declined_at",
         "declined_by_inspector_id",
@@ -214,8 +213,38 @@ class FullDatabaseSchemaMigrationTest {
         "clarification_count",
         "assignment_status",
         "assignment_accepted_at");
+    assertColumns("service_requests", "source_inspection_id");
+    assertColumns(
+        "reinspection_defect_verifications",
+        "id",
+        "reinspection_id",
+        "source_finding_id",
+        "new_evidence_id",
+        "resolution_status",
+        "inspector_notes",
+        "created_at",
+        "updated_at");
+    assertNoColumn("inspections", "reassignment_required");
+    assertNoColumn("inspection_reports", "clarification_requested");
+    assertNoColumn("platform_ai_settings", "auto_confirmed_count");
+    assertNoColumn("drones", "has_thermal_camera");
+    assertNoColumn("drones", "has_rtk");
+    assertNoColumn("drone_registration_applications", "ownership_file_key");
+    assertNoColumn("drone_registration_applications", "inspection_file_key");
+    assertNoColumn("drone_registration_applications", "has_thermal_camera");
+    assertNoColumn("drone_registration_applications", "has_rtk");
+    assertNoColumn("inspector_applications", "setup_email_sent_at");
+    assertNoColumn("inspector_applications", "notification_attempts");
+    assertNoColumn("inspector_applications", "last_notification_error");
+    assertNoColumn("inspector_receivables", "created_at");
+    assertNoColumn("audit_events", "reason");
+    assertNoColumn("inspector_payouts", "refund_reconciliation_reference");
+    assertNoColumn("inspector_payouts", "refund_reconciliation_note");
+    assertNoColumn("inspector_payouts", "refund_reconciled_by_user_id");
+    assertNoColumn("inspector_payouts", "refund_reconciled_at");
+    assertNoColumn("service_refunds", "recorded_by_user_id");
+    assertNoColumn("service_refunds", "recorded_at");
     assertColumns("field_sessions", "hung_notified_at", "aborted_by_user_id");
-    assertColumns("inspection_reports", "clarification_requested");
     assertColumns(
         "inspector_reliability_events",
         "id",
@@ -314,8 +343,6 @@ class FullDatabaseSchemaMigrationTest {
         "payout_reference",
         "payout_recorded_at",
         "payout_held_for_refund",
-        "refund_reconciliation_reference",
-        "refund_reconciled_by_user_id",
         "payout_recorded_by_user_id");
     assertColumns(
         "service_refunds",
@@ -328,8 +355,6 @@ class FullDatabaseSchemaMigrationTest {
         "tncn_adjustment",
         "platform_absorbed_amount",
         "refund_reference",
-        "recorded_by_user_id",
-        "recorded_at",
         "request_reference",
         "inspector_receivable_amount",
         "platform_absorbed_plan_amount",

@@ -46,11 +46,11 @@ public class ServiceRefund {
   @Column(name = "request_reference", length = 255)
   private String requestReference;
 
-  @Column(name = "initiated_by_user_id")
+  @Column(name = "initiated_by_user_id", nullable = false)
   private UUID initiatedByUserId;
 
-  @Column(name = "initiated_at")
-  private Instant initiatedAt;
+  @Column(name = "initiated_at", nullable = false, updatable = false)
+  private Instant initiatedAt = Instant.now();
 
   @Column(name = "completed_by_user_id")
   private UUID completedByUserId;
@@ -88,12 +88,6 @@ public class ServiceRefund {
   @Column(name = "reason", nullable = false, length = 2000)
   private String reason;
 
-  @Column(name = "recorded_by_user_id", nullable = false)
-  private UUID recordedByUserId;
-
-  @Column(name = "recorded_at", nullable = false, updatable = false)
-  private Instant recordedAt = Instant.now();
-
   @Column(name = "allocation_reconciled_by_user_id")
   private UUID allocationReconciledByUserId;
 
@@ -127,7 +121,6 @@ public class ServiceRefund {
     this.status = RefundStatus.INITIATED;
     this.initiatedByUserId = actorId;
     this.initiatedAt = Instant.now();
-    this.recordedByUserId = actorId;
   }
 
   public void completeExternalTransfer(
@@ -261,7 +254,7 @@ public class ServiceRefund {
     if (managerId == null) {
       throw new IllegalArgumentException("Refund recorder is required");
     }
-    recordedByUserId = managerId;
+    initiatedByUserId = managerId;
   }
 
   public UUID getId() {
@@ -361,10 +354,10 @@ public class ServiceRefund {
   }
 
   public UUID getRecordedByUserId() {
-    return recordedByUserId;
+    return initiatedByUserId;
   }
 
   public Instant getRecordedAt() {
-    return recordedAt;
+    return initiatedAt;
   }
 }

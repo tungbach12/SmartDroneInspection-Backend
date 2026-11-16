@@ -31,6 +31,7 @@ class RuntimePersistenceInventoryTest {
           "drone_document_configs",
           "drone_feature_configs",
           "inspections",
+          "reinspection_defect_verifications",
           "notifications",
           "prospective_customer_registrations",
           "drone_registration_applications",
@@ -73,6 +74,7 @@ class RuntimePersistenceInventoryTest {
           "assets",
           "asset_documents",
           "inspections",
+          "reinspection_defect_verifications",
           "field_sessions",
           "evidence",
           "evidence_upload_sessions",
@@ -129,7 +131,7 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(38);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(39);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

@@ -117,7 +117,51 @@ class AssetCatalogApiIntegrationTest {
                 .with(client(fixture.clientId())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data[0].templateType").value("PRE_FLIGHT"));
+        .andExpect(jsonPath("$.data[0].templateType").value("PRE_FLIGHT"))
+        .andExpect(jsonPath("$.data[0].required").value(true))
+        .andExpect(jsonPath("$.data[4].required").value(false));
+
+    mockMvc
+        .perform(
+            get("/api/v1/asset-categories/checklist-templates")
+                .param("type", "POST_FLIGHT")
+                .with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].templateType").value("POST_FLIGHT"))
+        .andExpect(jsonPath("$.data[0].required").value(false));
+
+    String preFlightOptionalBody =
+        mockMvc
+            .perform(
+                post("/api/v1/asset-categories/checklist-templates")
+                    .with(admin(fixture.adminId()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        "{\"templateType\":\"PRE_FLIGHT\",\"label\":\"Emergency spot check\",\"sortOrder\":8,\"required\":false}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.data.required").value(false))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String preFlightOptionalId =
+        com.jayway.jsonpath.JsonPath.read(preFlightOptionalBody, "$.data.id");
+
+    mockMvc
+        .perform(
+            put("/api/v1/asset-categories/checklist-templates/{templateId}", preFlightOptionalId)
+                .with(admin(fixture.adminId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"label\":\"Emergency spot check\",\"sortOrder\":8,\"active\":true,\"required\":true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.required").value(true));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/asset-categories/checklist-templates/{templateId}", preFlightOptionalId)
+                .with(admin(fixture.adminId())))
+        .andExpect(status().isNoContent());
 
     String createdBody =
         mockMvc

@@ -56,4 +56,86 @@ class ReportHtmlTemplateLocalizationTest {
         .doesNotContain("Executive summary")
         .doesNotContain("Pre-flight checklist note:");
   }
+
+  @Test
+  void rendersThreeTierEvidenceWithVideoSourceLinkAndSummaryOnlyClearCaptures() {
+    byte[] defectJpg = new byte[] {1, 1, 1}; // Base64 AQEB
+    byte[] clearJpg = new byte[] {9, 9, 9}; // Base64 CQkJ
+
+    var context =
+        new ReportRenderPort.RenderContext(
+            "SDI-RPT-TIER-V1",
+            1,
+            "SUBMITTED",
+            "Inspect commercial tower facade",
+            "Tower 01",
+            "Organization",
+            "Inspector",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            new ReportRenderPort.Sections("Summary", null, null, null, null, null, null),
+            List.of(
+                new ReportRenderPort.FindingView(
+                    "F-1",
+                    "ev-defect",
+                    "orbit_frame_08s.jpg",
+                    "abscission",
+                    "HIGH",
+                    "Spalling detected from orbital frame",
+                    "Patch concrete",
+                    "CONFIRMED",
+                    "2026-10-08T09:00:00Z",
+                    true)),
+            List.of(
+                new ReportRenderPort.EvidenceView(
+                    "ev-defect",
+                    "orbit_frame_08s.jpg",
+                    "image/jpeg",
+                    "2026-10-08T08:15:08Z",
+                    "East facade",
+                    "session-1",
+                    defectJpg,
+                    "tower_orbit.mp4",
+                    8.0),
+                new ReportRenderPort.EvidenceView(
+                    "ev-video",
+                    "tower_orbit.mp4",
+                    "video/mp4",
+                    "2026-10-08T08:15:00Z",
+                    "Full perimeter",
+                    "session-1",
+                    null,
+                    null,
+                    null),
+                new ReportRenderPort.EvidenceView(
+                    "ev-clear",
+                    "clear_north_facade.jpg",
+                    "image/jpeg",
+                    "2026-10-08T08:17:00Z",
+                    "North facade",
+                    "session-1",
+                    clearJpg,
+                    null,
+                    null)),
+            Locale.ENGLISH);
+
+    String html = ReportHtmlTemplate.render(context, false);
+
+    assertThat(html)
+        .contains("Defect Evidence")
+        .contains("Flight Video")
+        .contains("Clear / Reference Capture")
+        .contains("Source video: tower_orbit.mp4 @ 00:08")
+        .contains("Flight video captures")
+        .contains("Clear / reference captures summary")
+        .contains(
+            "1 clean captures recorded with zero defects (full plates omitted from PDF for clarity).")
+        .contains("clear_north_facade.jpg")
+        .contains("data:image/jpeg;base64,AQEB")
+        .doesNotContain("CQkJ");
+  }
 }

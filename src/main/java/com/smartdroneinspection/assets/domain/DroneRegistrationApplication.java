@@ -42,12 +42,6 @@ public class DroneRegistrationApplication {
   @Column(name = "registration_expires_at", nullable = false)
   private Instant registrationExpiresAt;
 
-  @Column(name = "ownership_file_key", nullable = false, length = 1000)
-  private String ownershipFileKey;
-
-  @Column(name = "inspection_file_key", length = 1000)
-  private String inspectionFileKey;
-
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "document_files", columnDefinition = "jsonb")
   private Map<String, String> documentFiles = new HashMap<>();
@@ -68,12 +62,6 @@ public class DroneRegistrationApplication {
 
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
-
-  @Column(name = "has_thermal_camera", nullable = false)
-  private boolean hasThermalCamera;
-
-  @Column(name = "has_rtk", nullable = false)
-  private boolean hasRtk;
 
   @Column(nullable = false, length = 24)
   private String status;
@@ -226,22 +214,26 @@ public class DroneRegistrationApplication {
     this.registrationNumber = registrationNumber.trim();
     this.registrationFileKey = registrationFileKey.trim();
     this.registrationExpiresAt = registrationExpiresAt;
-    this.ownershipFileKey = ownershipFileKey.trim();
-    this.inspectionFileKey = inspectionFileKey != null ? inspectionFileKey.trim() : null;
     this.documentFiles = documentFiles != null ? new HashMap<>(documentFiles) : new HashMap<>();
-    if (this.documentFiles.isEmpty()) {
-      if (this.registrationFileKey != null)
-        this.documentFiles.put("REGISTRATION", this.registrationFileKey);
-      if (this.ownershipFileKey != null) this.documentFiles.put("OWNERSHIP", this.ownershipFileKey);
-      if (this.inspectionFileKey != null)
-        this.documentFiles.put("INSPECTION", this.inspectionFileKey);
+    if (this.registrationFileKey != null && !this.registrationFileKey.isBlank()) {
+      this.documentFiles.putIfAbsent("REGISTRATION", this.registrationFileKey);
+    }
+    if (ownershipFileKey != null && !ownershipFileKey.isBlank()) {
+      this.documentFiles.putIfAbsent("OWNERSHIP", ownershipFileKey.trim());
+    }
+    if (inspectionFileKey != null && !inspectionFileKey.isBlank()) {
+      this.documentFiles.putIfAbsent("INSPECTION", inspectionFileKey.trim());
     }
     this.maxWindResistanceMps = maxWindResistanceMps;
     this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
-    this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
-    this.hasRtk = hasRtk || this.features.contains("RTK_POSITIONING");
+    if (hasThermalCamera && !this.features.contains("THERMAL_CAMERA")) {
+      this.features.add("THERMAL_CAMERA");
+    }
+    if (hasRtk && !this.features.contains("RTK_POSITIONING")) {
+      this.features.add("RTK_POSITIONING");
+    }
     this.imageFileKeys = imageFileKeys != null ? new ArrayList<>(imageFileKeys) : new ArrayList<>();
     this.status = "PENDING";
     this.createdAt = Instant.now();
@@ -355,22 +347,26 @@ public class DroneRegistrationApplication {
     this.registrationNumber = registrationNumber.trim();
     this.registrationFileKey = registrationFileKey.trim();
     this.registrationExpiresAt = registrationExpiresAt;
-    this.ownershipFileKey = ownershipFileKey.trim();
-    this.inspectionFileKey = inspectionFileKey != null ? inspectionFileKey.trim() : null;
     this.documentFiles = documentFiles != null ? new HashMap<>(documentFiles) : new HashMap<>();
-    if (this.documentFiles.isEmpty()) {
-      if (this.registrationFileKey != null)
-        this.documentFiles.put("REGISTRATION", this.registrationFileKey);
-      if (this.ownershipFileKey != null) this.documentFiles.put("OWNERSHIP", this.ownershipFileKey);
-      if (this.inspectionFileKey != null)
-        this.documentFiles.put("INSPECTION", this.inspectionFileKey);
+    if (this.registrationFileKey != null && !this.registrationFileKey.isBlank()) {
+      this.documentFiles.putIfAbsent("REGISTRATION", this.registrationFileKey);
+    }
+    if (ownershipFileKey != null && !ownershipFileKey.isBlank()) {
+      this.documentFiles.putIfAbsent("OWNERSHIP", ownershipFileKey.trim());
+    }
+    if (inspectionFileKey != null && !inspectionFileKey.isBlank()) {
+      this.documentFiles.putIfAbsent("INSPECTION", inspectionFileKey.trim());
     }
     this.maxWindResistanceMps = maxWindResistanceMps;
     this.maxAltitudeMeters = maxAltitudeMeters;
     this.opticalZoomLevel = opticalZoomLevel;
     this.features = features != null ? new ArrayList<>(features) : new ArrayList<>();
-    this.hasThermalCamera = hasThermalCamera || this.features.contains("THERMAL_CAMERA");
-    this.hasRtk = hasRtk || this.features.contains("RTK_POSITIONING");
+    if (hasThermalCamera && !this.features.contains("THERMAL_CAMERA")) {
+      this.features.add("THERMAL_CAMERA");
+    }
+    if (hasRtk && !this.features.contains("RTK_POSITIONING")) {
+      this.features.add("RTK_POSITIONING");
+    }
     this.imageFileKeys = imageFileKeys != null ? new ArrayList<>(imageFileKeys) : new ArrayList<>();
     this.status = "PENDING";
     this.reviewNote = null;
@@ -424,11 +420,11 @@ public class DroneRegistrationApplication {
   }
 
   public String getOwnershipFileKey() {
-    return ownershipFileKey;
+    return documentFiles != null ? documentFiles.get("OWNERSHIP") : null;
   }
 
   public String getInspectionFileKey() {
-    return inspectionFileKey;
+    return documentFiles != null ? documentFiles.get("INSPECTION") : null;
   }
 
   public Map<String, String> getDocumentFiles() {
@@ -456,11 +452,11 @@ public class DroneRegistrationApplication {
   }
 
   public boolean isHasThermalCamera() {
-    return hasThermalCamera;
+    return getFeatures().contains("THERMAL_CAMERA");
   }
 
   public boolean isHasRtk() {
-    return hasRtk;
+    return getFeatures().contains("RTK_POSITIONING");
   }
 
   public String getStatus() {

@@ -110,6 +110,11 @@ public class Finding {
     this.status = FindingStatus.PENDING;
   }
 
+  /** Updates or clears the normalized defect region box without altering AI model confidence. */
+  public void updateBoundingBox(String boundingBox) {
+    this.boundingBox = boundingBox;
+  }
+
   public boolean isPendingAiSuggestion() {
     return status == FindingStatus.PENDING && modelName != null;
   }

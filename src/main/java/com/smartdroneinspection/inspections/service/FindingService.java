@@ -4,12 +4,14 @@ import com.smartdroneinspection.inspections.api.dto.request.AnalyzeVideoRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
 import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.PromoteVideoKeyframesRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VideoAutoDetectResponse;
+import com.smartdroneinspection.inspections.api.dto.response.VideoScanResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -22,14 +24,20 @@ import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.AiInferencePort;
+import com.smartdroneinspection.inspections.spi.VideoTranscodePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
+import javax.imageio.ImageIO;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +65,7 @@ public class FindingService {
   private final Optional<AiInferencePort> inference;
   private final UserAccess userAccess;
   private final Optional<PlatformAiSettingsService> aiSettingsService;
+  private final Optional<VideoTranscodePort> videoTranscoder;
 
   public FindingService(
       EvidenceRepository evidence,
@@ -74,6 +83,28 @@ public class FindingService {
         inspections,
         inference,
         userAccess,
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  public FindingService(
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      EvidenceService evidenceService,
+      InspectionReportRepository reportVersions,
+      InspectionRepository inspections,
+      Optional<AiInferencePort> inference,
+      UserAccess userAccess,
+      Optional<PlatformAiSettingsService> aiSettingsService) {
+    this(
+        evidence,
+        findings,
+        evidenceService,
+        reportVersions,
+        inspections,
+        inference,
+        userAccess,
+        aiSettingsService,
         Optional.empty());
   }
 
@@ -86,7 +117,8 @@ public class FindingService {
       InspectionRepository inspections,
       Optional<AiInferencePort> inference,
       UserAccess userAccess,
-      Optional<PlatformAiSettingsService> aiSettingsService) {
+      Optional<PlatformAiSettingsService> aiSettingsService,
+      Optional<VideoTranscodePort> videoTranscoder) {
     this.evidence = evidence;
     this.findings = findings;
     this.evidenceService = evidenceService;
@@ -95,6 +127,7 @@ public class FindingService {
     this.inference = inference;
     this.userAccess = userAccess;
     this.aiSettingsService = aiSettingsService;
+    this.videoTranscoder = videoTranscoder;
   }
 
   /**
@@ -266,7 +299,6 @@ public class FindingService {
     List<Finding> created = new java.util.ArrayList<>();
     PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
         aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
-    int autoConfirmedCount = 0;
     for (AiInferencePort.Detection detection : detections) {
       if (isDuplicateConfirmedDetection(detection, reviewed)) {
         continue;
@@ -287,17 +319,224 @@ public class FindingService {
           .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
           .orElse(false)) {
         createdFinding.confirmByInspector();
-        autoConfirmedCount++;
       }
       created.add(createdFinding);
-    }
-    if (autoConfirmedCount > 0) {
-      final int confirmedTotal = autoConfirmedCount;
-      aiSettingsService.ifPresent(s -> s.recordAutoConfirmed(confirmedTotal));
     }
     List<Finding> stored = findings.saveAllAndFlush(created);
     syncFindingsConfirmationAfterEdit(inspection);
     return Stream.concat(stored.stream(), reviewed.stream()).map(this::toFindingResponse).toList();
+  }
+
+  /**
+   * Step A of Inspector-assisted video defect extraction: samples candidate frames from the stored
+   * flight video using FFmpeg and runs YOLO11 detection without writing child Evidence or Findings
+   * yet.
+   */
+  @Transactional(readOnly = true)
+  public VideoScanResponse scanVideo(
+      UUID actorId,
+      UUID inspectionId,
+      UUID videoEvidenceId,
+      double intervalSeconds,
+      int maxFrames) {
+    Inspection inspection = requireVideoAnalysisEligible(actorId, inspectionId);
+    Evidence videoRecord = requireVideoEvidence(inspectionId, videoEvidenceId);
+    AiInferencePort port = requireInferencePort();
+    VideoTranscodePort transcoder =
+        videoTranscoder.orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "VIDEO_SCAN_UNAVAILABLE",
+                    "Video frame extraction is not configured"));
+
+    Path workDir = null;
+    try {
+      workDir = Files.createTempDirectory("sdi-vscan-" + videoEvidenceId + "-");
+      Path videoFile = workDir.resolve("source.mp4");
+      evidenceService.copyStoredObjectToFile(videoRecord, videoFile);
+
+      List<VideoTranscodePort.SampledFrame> sampled =
+          transcoder.sampleFrames(videoFile, workDir, intervalSeconds, maxFrames);
+      List<VideoScanResponse.DetectedMarker> markers = new java.util.ArrayList<>();
+      double lastAcceptedTimestamp = -999.0;
+      String lastAcceptedPrimaryLabel = "";
+
+      for (VideoTranscodePort.SampledFrame frame : sampled) {
+        byte[] frameBytes = Files.readAllBytes(frame.imageFile());
+        List<AiInferencePort.Detection> detections;
+        try {
+          detections = port.analyze(frameBytes, "image/jpeg", false);
+        } catch (IOException ex) {
+          continue;
+        }
+        if (detections == null || detections.isEmpty()) {
+          continue;
+        }
+        String primaryLabel = detections.getFirst().predictedLabel();
+        double ts = Math.max(0.0, frame.timestampSeconds());
+        if (Math.abs(ts - lastAcceptedTimestamp) < 1.2
+            && primaryLabel != null
+            && primaryLabel.equalsIgnoreCase(lastAcceptedPrimaryLabel)) {
+          continue;
+        }
+        lastAcceptedTimestamp = ts;
+        lastAcceptedPrimaryLabel = primaryLabel != null ? primaryLabel : "";
+
+        int width = videoRecord.getMediaWidth() != null ? videoRecord.getMediaWidth() : 0;
+        int height = videoRecord.getMediaHeight() != null ? videoRecord.getMediaHeight() : 0;
+        try (var bais = new java.io.ByteArrayInputStream(frameBytes)) {
+          var decoded = ImageIO.read(bais);
+          if (decoded != null) {
+            width = decoded.getWidth();
+            height = decoded.getHeight();
+          }
+        } catch (IOException ignored) {
+        }
+
+        BigDecimal maxConf =
+            detections.stream()
+                .map(AiInferencePort.Detection::confidence)
+                .filter(java.util.Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(BigDecimal.ZERO);
+
+        List<VideoScanResponse.MarkerDetection> markerDetections =
+            detections.stream()
+                .map(
+                    d ->
+                        new VideoScanResponse.MarkerDetection(
+                            d.modelName(),
+                            d.modelVersion(),
+                            d.predictedLabel(),
+                            d.confidence(),
+                            d.boundingBox()))
+                .toList();
+
+        String dataUri =
+            "data:image/jpeg;base64," + java.util.Base64.getEncoder().encodeToString(frameBytes);
+
+        markers.add(
+            new VideoScanResponse.DetectedMarker(
+                ts, width, height, dataUri, primaryLabel, maxConf, markerDetections));
+      }
+
+      double duration =
+          videoRecord.getDurationSeconds() != null ? videoRecord.getDurationSeconds() : 0.0;
+      return new VideoScanResponse(videoRecord.getId(), duration, sampled.size(), markers);
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY,
+          "VIDEO_SCAN_FAILED",
+          "Could not scan video frames for automated defect detection");
+    } finally {
+      cleanupTempDirectory(workDir);
+    }
+  }
+
+  /**
+   * Step B: promotes Inspector-selected timeline timestamps/cropped frames into linked child Image
+   * Evidence items (back-referencing the source video & second) and AI Findings.
+   */
+  @Transactional
+  public VideoAutoDetectResponse promoteVideoKeyframes(
+      UUID actorId, UUID inspectionId, UUID videoEvidenceId, PromoteVideoKeyframesRequest request) {
+    Inspection inspection = requireVideoAnalysisEligible(actorId, inspectionId);
+    Evidence videoRecord = requireVideoEvidence(inspectionId, videoEvidenceId);
+    List<PromoteVideoKeyframesRequest.KeyframeSelection> selections =
+        request != null && request.keyframes() != null ? request.keyframes() : List.of();
+    if (selections.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "VIDEO_FRAMES_REQUIRED",
+          "Select at least one video keyframe to promote into evidence");
+    }
+
+    long[] nextSeq = new long[] {findings.findMaxFindingCodeNumberByInspectionId(inspectionId) + 1};
+    List<VideoAutoDetectResponse.ExtractedDefectFrame> extractedKeyframes =
+        new java.util.ArrayList<>();
+    int[] totalCreatedFindings = new int[] {0};
+
+    Path workDir = null;
+    Path cachedVideoFile = null;
+    try {
+      for (PromoteVideoKeyframesRequest.KeyframeSelection selection : selections) {
+        if (selection == null) {
+          continue;
+        }
+        double ts = Math.max(0.0, selection.timestampSeconds());
+        byte[] frameBytes = decodeBase64FrameOrNull(selection.imageBase64());
+        if (frameBytes == null) {
+          VideoTranscodePort transcoder =
+              videoTranscoder.orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.SERVICE_UNAVAILABLE,
+                          "VIDEO_SCAN_UNAVAILABLE",
+                          "Video frame extraction is not configured"));
+          if (workDir == null) {
+            workDir = Files.createTempDirectory("sdi-vpromote-" + videoEvidenceId + "-");
+            cachedVideoFile = workDir.resolve("source.mp4");
+            evidenceService.copyStoredObjectToFile(videoRecord, cachedVideoFile);
+          }
+          frameBytes = transcoder.extractFrameAtTimestamp(cachedVideoFile, ts, workDir);
+        }
+
+        List<AiInferencePort.Detection> detections;
+        if (selection.detections() != null && !selection.detections().isEmpty()) {
+          detections =
+              selection.detections().stream()
+                  .filter(
+                      d -> d != null && d.predictedLabel() != null && !d.predictedLabel().isBlank())
+                  .map(
+                      d ->
+                          new AiInferencePort.Detection(
+                              "YOLO11",
+                              orDefault(d.modelName(), "yolo11s"),
+                              null,
+                              d.predictedLabel(),
+                              d.confidence(),
+                              d.boundingBox()))
+                  .toList();
+        } else {
+          AiInferencePort port = requireInferencePort();
+          detections = port.analyze(frameBytes, "image/jpeg", false);
+        }
+
+        if (detections == null) {
+          detections = List.of();
+        }
+        extractedKeyframes.add(
+            persistVideoKeyframeAndFindings(
+                actorId,
+                inspection,
+                videoRecord,
+                ts,
+                selection.fileName(),
+                selection.locationDescription(),
+                frameBytes,
+                detections,
+                nextSeq,
+                totalCreatedFindings));
+      }
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY,
+          "VIDEO_KEYFRAME_EXTRACTION_FAILED",
+          "Could not extract selected keyframe from flight video");
+    } finally {
+      cleanupTempDirectory(workDir);
+    }
+
+    if (!extractedKeyframes.isEmpty()) {
+      syncFindingsConfirmationAfterEdit(inspection);
+    }
+    return new VideoAutoDetectResponse(
+        videoEvidenceId,
+        selections.size(),
+        extractedKeyframes.size(),
+        totalCreatedFindings[0],
+        extractedKeyframes);
   }
 
   /**
@@ -308,33 +547,9 @@ public class FindingService {
   @Transactional
   public VideoAutoDetectResponse analyzeVideo(
       UUID actorId, UUID inspectionId, UUID videoEvidenceId, AnalyzeVideoRequest request) {
-    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
-    rejectLockedFindingEdits(inspectionId);
-    if (inspection.getStatus() == InspectionStatus.SCHEDULED
-        || inspection.getStatus() == InspectionStatus.IN_PROGRESS
-        || inspection.getStatus() == InspectionStatus.CANCELLED) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FINDINGS_LOCKED",
-          "Video analysis is only available during defect review or report drafting");
-    }
-
-    Evidence videoRecord = requireEvidence(inspectionId, videoEvidenceId);
-    if (videoRecord.getContentType() == null
-        || !videoRecord.getContentType().toLowerCase(java.util.Locale.ROOT).startsWith("video/")) {
-      throw new BusinessException(
-          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-          "AI_INFERENCE_UNAVAILABLE",
-          "The selected evidence item is not a video file");
-    }
-
-    AiInferencePort port =
-        inference.orElseThrow(
-            () ->
-                new BusinessException(
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "AI_INFERENCE_UNAVAILABLE",
-                    "Automated analysis is not configured"));
+    Inspection inspection = requireVideoAnalysisEligible(actorId, inspectionId);
+    Evidence videoRecord = requireVideoEvidence(inspectionId, videoEvidenceId);
+    AiInferencePort port = requireInferencePort();
 
     List<AnalyzeVideoRequest.CandidateFrame> candidates =
         request != null && request.frames() != null ? request.frames() : List.of();
@@ -345,29 +560,19 @@ public class FindingService {
           "Provide sampled video frames for automated defect scanning");
     }
 
-    boolean fallbackEnabled = userAccess.isVisionFallbackEnabled(actorId);
-    long nextSeq = findings.findMaxFindingCodeNumberByInspectionId(inspectionId) + 1;
+    long[] nextSeq = new long[] {findings.findMaxFindingCodeNumberByInspectionId(inspectionId) + 1};
     List<VideoAutoDetectResponse.ExtractedDefectFrame> extractedKeyframes =
         new java.util.ArrayList<>();
-    int totalCreatedFindings = 0;
+    int[] totalCreatedFindings = new int[] {0};
     double lastAcceptedTimestamp = -999.0;
     String lastAcceptedPrimaryLabel = "";
 
     for (AnalyzeVideoRequest.CandidateFrame candidate : candidates) {
-      if (candidate == null
-          || candidate.imageBase64() == null
-          || candidate.imageBase64().isBlank()) {
+      if (candidate == null) {
         continue;
       }
-      byte[] frameBytes;
-      try {
-        String rawB64 = candidate.imageBase64().trim();
-        int commaIdx = rawB64.indexOf(',');
-        if (commaIdx >= 0) {
-          rawB64 = rawB64.substring(commaIdx + 1);
-        }
-        frameBytes = java.util.Base64.getDecoder().decode(rawB64);
-      } catch (IllegalArgumentException ex) {
+      byte[] frameBytes = decodeBase64FrameOrNull(candidate.imageBase64());
+      if (frameBytes == null) {
         continue;
       }
 
@@ -392,86 +597,18 @@ public class FindingService {
       lastAcceptedTimestamp = ts;
       lastAcceptedPrimaryLabel = primaryLabel != null ? primaryLabel : "";
 
-      int mins = (int) (ts / 60);
-      int secs = (int) Math.round(ts % 60);
-      String timeTag = String.format("%02dm%02ds", mins, secs);
-      String cleanLabel =
-          (primaryLabel == null ? "defect" : primaryLabel)
-              .replaceAll("[^a-zA-Z0-9_-]", "_")
-              .toLowerCase(java.util.Locale.ROOT);
-      String fileName =
-          candidate.fileName() != null && !candidate.fileName().isBlank()
-              ? candidate.fileName()
-              : String.format(
-                  "video_auto_%s_%s_%d.jpg",
-                  timeTag,
-                  cleanLabel,
-                  Math.abs(java.util.Objects.hash(videoEvidenceId, ts)) % 1000);
-      String locationDesc =
-          candidate.locationDescription() != null && !candidate.locationDescription().isBlank()
-              ? candidate.locationDescription()
-              : String.format(
-                  "AI YOLO11 trích xuất tự động từ video %s tại %02d:%02d (%s)",
-                  videoRecord.getFileName(), mins, secs, primaryLabel);
-
-      EvidenceResponse savedFrameEvidence =
-          evidenceService.storeCapturedMedia(
-              actorId,
-              inspectionId,
-              videoRecord.getFieldSessionId(),
-              fileName,
-              "image/jpeg",
-              frameBytes,
-              videoRecord.getCaptureTime() != null
-                  ? videoRecord.getCaptureTime().plusSeconds(Math.round(ts))
-                  : java.time.Instant.now(),
-              videoRecord.getLatitude(),
-              videoRecord.getLongitude(),
-              locationDesc);
-
-      List<Finding> priorForFrame =
-          findings.findByEvidenceIdOrderByCreatedAtAsc(savedFrameEvidence.id());
-      List<FindingResponse> frameFindingResponses;
-      if (!priorForFrame.isEmpty()) {
-        frameFindingResponses = priorForFrame.stream().map(this::toFindingResponse).toList();
-      } else {
-        List<Finding> frameFindings = new java.util.ArrayList<>();
-        PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
-            aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
-        int frameAutoConfirmed = 0;
-        for (AiInferencePort.Detection detection : detections) {
-          Finding frameFinding =
-              new Finding(
-                  inspectionId,
-                  savedFrameEvidence.id(),
-                  "F-" + (nextSeq++),
-                  detection.predictedLabel(),
-                  FindingSeverity.MEDIUM,
-                  detection.predictedLabel(),
-                  locationDesc,
-                  detection.boundingBox(),
-                  detection.modelName(),
-                  detection.confidence());
-          if (aiSettingsService
-              .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
-              .orElse(false)) {
-            frameFinding.confirmByInspector();
-            frameAutoConfirmed++;
-          }
-          frameFindings.add(frameFinding);
-        }
-        if (frameAutoConfirmed > 0) {
-          final int confirmedTotal = frameAutoConfirmed;
-          aiSettingsService.ifPresent(s -> s.recordAutoConfirmed(confirmedTotal));
-        }
-        List<Finding> storedFrameFindings = findings.saveAllAndFlush(frameFindings);
-        totalCreatedFindings += storedFrameFindings.size();
-        frameFindingResponses = storedFrameFindings.stream().map(this::toFindingResponse).toList();
-      }
-
       extractedKeyframes.add(
-          new VideoAutoDetectResponse.ExtractedDefectFrame(
-              ts, savedFrameEvidence, frameFindingResponses));
+          persistVideoKeyframeAndFindings(
+              actorId,
+              inspection,
+              videoRecord,
+              ts,
+              candidate.fileName(),
+              candidate.locationDescription(),
+              frameBytes,
+              detections,
+              nextSeq,
+              totalCreatedFindings));
     }
 
     if (!extractedKeyframes.isEmpty()) {
@@ -482,8 +619,168 @@ public class FindingService {
         videoEvidenceId,
         candidates.size(),
         extractedKeyframes.size(),
-        totalCreatedFindings,
+        totalCreatedFindings[0],
         extractedKeyframes);
+  }
+
+  private Inspection requireVideoAnalysisEligible(UUID actorId, UUID inspectionId) {
+    Inspection inspection = evidenceService.requireAssignedInspection(actorId, inspectionId);
+    rejectLockedFindingEdits(inspectionId);
+    if (inspection.getStatus() == InspectionStatus.SCHEDULED
+        || inspection.getStatus() == InspectionStatus.IN_PROGRESS
+        || inspection.getStatus() == InspectionStatus.CANCELLED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "FINDINGS_LOCKED",
+          "Video analysis is only available during defect review or report drafting");
+    }
+    return inspection;
+  }
+
+  private Evidence requireVideoEvidence(UUID inspectionId, UUID videoEvidenceId) {
+    Evidence videoRecord = requireEvidence(inspectionId, videoEvidenceId);
+    if (!videoRecord.isVideo()) {
+      throw new BusinessException(
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          "AI_INFERENCE_UNAVAILABLE",
+          "The selected evidence item is not a video file");
+    }
+    return videoRecord;
+  }
+
+  private AiInferencePort requireInferencePort() {
+    return inference.orElseThrow(
+        () ->
+            new BusinessException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "AI_INFERENCE_UNAVAILABLE",
+                "Automated analysis is not configured"));
+  }
+
+  private static byte[] decodeBase64FrameOrNull(String base64) {
+    if (base64 == null || base64.isBlank()) {
+      return null;
+    }
+    try {
+      String rawB64 = base64.trim();
+      int commaIdx = rawB64.indexOf(',');
+      if (commaIdx >= 0) {
+        rawB64 = rawB64.substring(commaIdx + 1);
+      }
+      byte[] decoded = java.util.Base64.getDecoder().decode(rawB64);
+      return decoded.length > 0 ? decoded : null;
+    } catch (IllegalArgumentException ex) {
+      return null;
+    }
+  }
+
+  private VideoAutoDetectResponse.ExtractedDefectFrame persistVideoKeyframeAndFindings(
+      UUID actorId,
+      Inspection inspection,
+      Evidence videoRecord,
+      double ts,
+      String requestedFileName,
+      String requestedLocation,
+      byte[] frameBytes,
+      List<AiInferencePort.Detection> detections,
+      long[] nextSeq,
+      int[] totalCreatedFindings) {
+    String primaryLabel =
+        detections.isEmpty()
+            ? "manual_frame"
+            : orDefault(detections.getFirst().predictedLabel(), "defect");
+    int mins = (int) (ts / 60);
+    int secs = (int) Math.round(ts % 60);
+    String timeTag = String.format("%02dm%02ds", mins, secs);
+    String cleanLabel =
+        primaryLabel.replaceAll("[^a-zA-Z0-9_-]", "_").toLowerCase(java.util.Locale.ROOT);
+    String fileName =
+        requestedFileName != null && !requestedFileName.isBlank()
+            ? requestedFileName
+            : String.format(
+                "video_keyframe_%s_%s_%d.jpg",
+                timeTag,
+                cleanLabel,
+                Math.abs(java.util.Objects.hash(videoRecord.getId(), ts)) % 1000);
+    String locationDesc =
+        requestedLocation != null && !requestedLocation.isBlank()
+            ? requestedLocation
+            : String.format(
+                "Extracted from %s @ %02d:%02d (%s)",
+                videoRecord.getFileName(), mins, secs, primaryLabel);
+
+    EvidenceResponse savedFrameEvidence =
+        evidenceService.storeCapturedMedia(
+            actorId,
+            inspection.getId(),
+            videoRecord.getFieldSessionId(),
+            fileName,
+            "image/jpeg",
+            frameBytes,
+            videoRecord.getCaptureTime() != null
+                ? videoRecord.getCaptureTime().plusSeconds(Math.round(ts))
+                : java.time.Instant.now(),
+            videoRecord.getLatitude(),
+            videoRecord.getLongitude(),
+            locationDesc,
+            videoRecord.getId(),
+            ts);
+
+    List<Finding> priorForFrame =
+        findings.findByEvidenceIdOrderByCreatedAtAsc(savedFrameEvidence.id());
+    List<FindingResponse> frameFindingResponses;
+    if (!priorForFrame.isEmpty()) {
+      frameFindingResponses = priorForFrame.stream().map(this::toFindingResponse).toList();
+    } else if (!detections.isEmpty()) {
+      List<Finding> frameFindings = new java.util.ArrayList<>();
+      PlatformAiSettingsService.AiThresholdConfig thresholdConfig =
+          aiSettingsService.map(PlatformAiSettingsService::getThresholdConfig).orElse(null);
+      for (AiInferencePort.Detection detection : detections) {
+        Finding frameFinding =
+            new Finding(
+                inspection.getId(),
+                savedFrameEvidence.id(),
+                "F-" + (nextSeq[0]++),
+                detection.predictedLabel(),
+                FindingSeverity.MEDIUM,
+                detection.predictedLabel(),
+                locationDesc,
+                detection.boundingBox(),
+                detection.modelName(),
+                detection.confidence());
+        if (aiSettingsService
+            .map(s -> s.shouldAutoConfirm(detection.confidence(), thresholdConfig))
+            .orElse(false)) {
+          frameFinding.confirmByInspector();
+        }
+        frameFindings.add(frameFinding);
+      }
+      List<Finding> storedFrameFindings = findings.saveAllAndFlush(frameFindings);
+      totalCreatedFindings[0] += storedFrameFindings.size();
+      frameFindingResponses = storedFrameFindings.stream().map(this::toFindingResponse).toList();
+    } else {
+      frameFindingResponses = List.of();
+    }
+
+    return new VideoAutoDetectResponse.ExtractedDefectFrame(
+        ts, savedFrameEvidence, frameFindingResponses);
+  }
+
+  private static void cleanupTempDirectory(Path workDir) {
+    if (workDir == null) {
+      return;
+    }
+    try (var walk = Files.walk(workDir)) {
+      walk.sorted(Comparator.reverseOrder())
+          .forEach(
+              path -> {
+                try {
+                  Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                }
+              });
+    } catch (IOException ignored) {
+    }
   }
 
   /**
@@ -670,6 +967,9 @@ public class FindingService {
         request.recommendedAction() == null
             ? finding.getRecommendedAction()
             : request.recommendedAction());
+    if (request.boundingBox() != null) {
+      finding.updateBoundingBox(normalizeOptionalBoundingBox(request.boundingBox()));
+    }
     finding.confirmByInspector();
     Finding saved = findings.saveAndFlush(finding);
     syncFindingsConfirmationAfterEdit(inspection);
@@ -684,6 +984,7 @@ public class FindingService {
     rejectLockedFindingEdits(inspectionId);
 
     Evidence record = requireEvidence(inspectionId, request.evidenceId());
+    String boundingBox = normalizeOptionalBoundingBox(request.boundingBox());
 
     Finding finding =
         new Finding(
@@ -694,7 +995,7 @@ public class FindingService {
             request.severity(),
             request.technicalNotes(),
             request.recommendedAction(),
-            null,
+            boundingBox,
             null,
             null);
     Finding saved = findings.saveAndFlush(finding);
@@ -716,6 +1017,9 @@ public class FindingService {
         request.severity(),
         request.technicalNotes(),
         request.recommendedAction());
+    if (request.boundingBox() != null) {
+      finding.updateBoundingBox(normalizeOptionalBoundingBox(request.boundingBox()));
+    }
     Finding saved = findings.saveAndFlush(finding);
     syncFindingsConfirmationAfterEdit(inspection);
     return toFindingResponse(saved);
@@ -809,6 +1113,36 @@ public class FindingService {
       }
     }
     return false;
+  }
+
+  private static String normalizeOptionalBoundingBox(String rawJson) {
+    if (rawJson == null || rawJson.isBlank()) {
+      return null;
+    }
+    double[] coords = parseBox(rawJson);
+    if (coords == null
+        || !Double.isFinite(coords[0])
+        || !Double.isFinite(coords[1])
+        || !Double.isFinite(coords[2])
+        || !Double.isFinite(coords[3])
+        || coords[0] < 0.0
+        || coords[1] < 0.0
+        || coords[2] > 1.0
+        || coords[3] > 1.0
+        || coords[2] <= coords[0]
+        || coords[3] <= coords[1]) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_BOUNDING_BOX",
+          "Bounding box must be normalized coordinates within [0, 1] with xMax > xMin and yMax > yMin");
+    }
+    return String.format(
+        java.util.Locale.ROOT,
+        "{\"xMin\": %.4f, \"yMin\": %.4f, \"xMax\": %.4f, \"yMax\": %.4f}",
+        coords[0],
+        coords[1],
+        coords[2],
+        coords[3]);
   }
 
   /** Parses normalized {xMin,yMin,xMax,yMax} or {x,y,w,h} bounding box JSON; null if invalid. */

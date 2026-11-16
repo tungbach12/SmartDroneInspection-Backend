@@ -104,14 +104,14 @@ public class Inspection {
   private com.smartdroneinspection.inspections.domain.enums.InspectionType inspectionType =
       com.smartdroneinspection.inspections.domain.enums.InspectionType.INITIAL;
 
+  @Column(name = "source_inspection_id")
+  private UUID sourceInspectionId;
+
   @Column(name = "findings_confirmed_at")
   private Instant findingsConfirmedAt;
 
   @Column(name = "partner_assignment", nullable = false)
   private boolean partnerAssignment;
-
-  @Column(name = "reassignment_required", nullable = false)
-  private boolean reassignmentRequired;
 
   @Column(name = "decline_reason", length = 2000)
   private String declineReason;
@@ -174,6 +174,37 @@ public class Inspection {
 
   public Inspection(UUID ownerCustomerId, UUID assetId, Instant plannedStartAt) {
     this(ownerCustomerId, assetId, null, null, plannedStartAt, null);
+  }
+
+  public static Inspection createReinspection(
+      UUID ownerCustomerId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID sourceInspectionId) {
+    Inspection inspection =
+        new Inspection(
+            ownerCustomerId, assetId, inspectorId, droneId, plannedStartAt, plannedEndAt);
+    inspection.inspectionType =
+        com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
+    inspection.sourceInspectionId =
+        Objects.requireNonNull(sourceInspectionId, "Source inspection ID is required");
+    inspection.markCustomerOwned(ownerCustomerId);
+    if (inspectorId != null && droneId != null) {
+      inspection.partnerAssignment = true;
+    }
+    return inspection;
+  }
+
+  public UUID getSourceInspectionId() {
+    return sourceInspectionId;
+  }
+
+  public boolean isReinspection() {
+    return inspectionType
+        == com.smartdroneinspection.inspections.domain.enums.InspectionType.RE_INSPECTION;
   }
 
   /** Marks an inspection assigned by the MF2 partner registry path. */
@@ -516,7 +547,7 @@ public class Inspection {
   }
 
   public boolean isReassignmentRequired() {
-    return reassignmentRequired;
+    return assignmentStatus == AssignmentStatus.DECLINED;
   }
 
   public String getDeclineReason() {
@@ -565,7 +596,7 @@ public class Inspection {
     if (status != InspectionStatus.SCHEDULED) {
       throw new IllegalStateException("Only a scheduled inspection can be accepted");
     }
-    if (reassignmentRequired || assignmentStatus == AssignmentStatus.DECLINED) {
+    if (assignmentStatus == AssignmentStatus.DECLINED) {
       throw new IllegalStateException(
           "This inspection was declined and awaits manager reassignment");
     }
@@ -585,13 +616,12 @@ public class Inspection {
     if (status != InspectionStatus.SCHEDULED) {
       throw new IllegalStateException("Only a scheduled inspection can be declined");
     }
-    if (reassignmentRequired || assignmentStatus == AssignmentStatus.DECLINED) {
+    if (assignmentStatus == AssignmentStatus.DECLINED) {
       throw new IllegalStateException("This inspection has already been declined for reassignment");
     }
     if (reason == null || reason.isBlank()) {
       throw new IllegalArgumentException("Decline reason is required");
     }
-    this.reassignmentRequired = true;
     this.assignmentStatus = AssignmentStatus.DECLINED;
     this.assignmentAcceptedAt = null;
     this.declineReason = reason.trim();
@@ -622,7 +652,6 @@ public class Inspection {
         && this.flightPermitVerificationStatus == FlightPermitVerificationStatus.APPROVED) {
       resetFlightPermitVerificationForReReview();
     }
-    this.reassignmentRequired = false;
     this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
     this.assignmentAcceptedAt = null;
     this.declineReason = null;
@@ -657,8 +686,7 @@ public class Inspection {
                 && plannedEndAt.isAfter(this.flightPermitValidTo)))) {
       resetFlightPermitVerificationForReReview();
     }
-    if (this.reassignmentRequired || this.assignmentStatus == AssignmentStatus.DECLINED) {
-      this.reassignmentRequired = false;
+    if (this.assignmentStatus == AssignmentStatus.DECLINED) {
       this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
       this.assignmentAcceptedAt = null;
       this.declineReason = null;
@@ -674,6 +702,36 @@ public class Inspection {
     this.flightPermitVerifiedAt = null;
     this.flightPermitRejectionReason = null;
     this.flightPermitReviewNotes = null;
+  }
+
+  /**
+   * Brings a future schedule or permit start forward to now for an explicit immediate start while
+   * preserving approval status and expiration invariants.
+   */
+  public void bringForwardForImmediateStart(Instant now) {
+    Instant effectiveNow = Objects.requireNonNull(now, "Timestamp is required");
+    if (status != InspectionStatus.SCHEDULED && status != InspectionStatus.FIELD_COMPLETED) {
+      throw new IllegalStateException(
+          "Only a scheduled or field-completed inspection may start immediately");
+    }
+    if (!isFlightPermitApproved()) {
+      throw new IllegalStateException("Cannot bring forward an unapproved flight permit");
+    }
+    if (this.flightPermitValidTo != null && !this.flightPermitValidTo.isAfter(effectiveNow)) {
+      throw new IllegalStateException("Cannot start immediately with an expired flight permit");
+    }
+    if (this.plannedEndAt != null && !this.plannedEndAt.isAfter(effectiveNow)) {
+      throw new IllegalStateException(
+          "Cannot start immediately after the scheduled window has expired");
+    }
+    Instant shiftedStart = effectiveNow.minusSeconds(60);
+    if (this.flightPermitValidFrom != null && effectiveNow.isBefore(this.flightPermitValidFrom)) {
+      this.flightPermitValidFrom = shiftedStart;
+    }
+    if (this.plannedStartAt != null && effectiveNow.isBefore(this.plannedStartAt)) {
+      this.plannedStartAt = shiftedStart;
+    }
+    this.updatedAt = effectiveNow;
   }
 
   public void moveTo(InspectionStatus nextStatus) {

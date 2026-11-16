@@ -230,7 +230,8 @@ public class InspectionListService {
             ? inspection.getAssignmentStatus().name()
             : "ACCEPTED",
         inspection.getAssignmentAcceptedAt(),
-        inspection.getFlightPermitVerificationStatus().name());
+        inspection.getFlightPermitVerificationStatus().name(),
+        inspection.getSourceInspectionId());
   }
 
   private Scope requireScope(UUID actorId) {

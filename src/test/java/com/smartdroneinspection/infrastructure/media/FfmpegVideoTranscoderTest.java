@@ -84,4 +84,50 @@ class FfmpegVideoTranscoderTest {
     assertThatThrownBy(() -> transcoder.transcodeTo1080pFaststart(corrupt, tempDir.resolve("work")))
         .isInstanceOf(IOException.class);
   }
+
+  @Test
+  void samplesFramesAtRequestedIntervalAndExtractsSingleFrame() throws Exception {
+    Path rawVideo = tempDir.resolve("orbit-sample.mp4");
+    Process generate =
+        new ProcessBuilder(
+                List.of(
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=duration=3:size=640x360:rate=10",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    rawVideo.toAbsolutePath().toString()))
+            .start();
+    assertThat(generate.waitFor()).isZero();
+
+    FfmpegVideoTranscoder transcoder =
+        new FfmpegVideoTranscoder(
+            new MediaProcessingProperties("ffmpeg", "ffprobe", Duration.ofMinutes(2), 1, true),
+            new ObjectMapper());
+
+    List<VideoTranscodePort.SampledFrame> sampled =
+        transcoder.sampleFrames(rawVideo, tempDir.resolve("sample-work"), 1.0, 10);
+    assertThat(sampled).hasSizeGreaterThanOrEqualTo(3);
+    assertThat(sampled.get(0).timestampSeconds()).isEqualTo(0.0);
+    assertThat(sampled.get(1).timestampSeconds()).isEqualTo(1.0);
+    assertThat(Files.size(sampled.get(0).imageFile())).isGreaterThan(0);
+
+    byte[] extracted =
+        transcoder.extractFrameAtTimestamp(rawVideo, 1.5, tempDir.resolve("extract-work"));
+    assertThat(extracted.length).isGreaterThan(100);
+    BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(extracted));
+    assertThat(image).isNotNull();
+    assertThat(image.getWidth()).isEqualTo(640);
+    assertThat(image.getHeight()).isEqualTo(360);
+  }
 }

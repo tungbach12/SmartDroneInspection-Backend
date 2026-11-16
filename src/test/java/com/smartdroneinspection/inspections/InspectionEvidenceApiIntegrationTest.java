@@ -94,31 +94,48 @@ class InspectionEvidenceApiIntegrationTest {
   }
 
   @Test
-  void repeatedUploadOfIdenticalBytesCreatesIndependentEvidenceRows() throws Exception {
+  void repeatedUploadOfIdenticalBytesAndFilenamesCreatesIndependentDisambiguatedRows()
+      throws Exception {
     UUID first = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
-    uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES_2);
-
-    MvcResult duplicate =
-        uploadResponse(fixture.inspectorId(), "INSPECTOR", "renamed.png", PNG_BYTES);
+    MvcResult secondSameName =
+        uploadResponse(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES_2);
     UUID second =
         UUID.fromString(
             objectMapper
-                .readTree(duplicate.getResponse().getContentAsString())
+                .readTree(secondSameName.getResponse().getContentAsString())
+                .path("data")
+                .path("id")
+                .stringValue());
+    String secondName =
+        objectMapper
+            .readTree(secondSameName.getResponse().getContentAsString())
+            .path("data")
+            .path("fileName")
+            .stringValue();
+
+    MvcResult thirdSameBytes =
+        uploadResponse(fixture.inspectorId(), "INSPECTOR", "renamed.png", PNG_BYTES);
+    UUID third =
+        UUID.fromString(
+            objectMapper
+                .readTree(thirdSameBytes.getResponse().getContentAsString())
                 .path("data")
                 .path("id")
                 .stringValue());
 
     assertThat(second).isNotEqualTo(first);
+    assertThat(third).isNotEqualTo(first).isNotEqualTo(second);
+    assertThat(secondName).isEqualTo("span (1).png");
     Long storedRows =
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM evidence WHERE inspection_id = ?",
             Long.class,
             fixture.inspectionId());
-    assertThat(storedRows).isEqualTo(2L);
+    assertThat(storedRows).isEqualTo(3L);
   }
 
   @Test
-  void reuploadingAfterRetiringCaptureSucceedsAsNewEvidence() throws Exception {
+  void reuploadingAfterRetiringCaptureSucceedsWithNumberedSuffixAndNeverBlocks() throws Exception {
     UUID evidenceId = upload(fixture.inspectorId(), "INSPECTOR", "span.png", PNG_BYTES);
     mockMvc
         .perform(
@@ -134,10 +151,18 @@ class InspectionEvidenceApiIntegrationTest {
     mockMvc
         .perform(
             multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
-                .file(new MockMultipartFile("file", "renamed.png", "image/png", PNG_BYTES))
+                .file(new MockMultipartFile("file", "span.png", "image/png", PNG_BYTES))
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.fileName").value("renamed.png"));
+        .andExpect(jsonPath("$.data.fileName").value("span (1).png"));
+
+    mockMvc
+        .perform(
+            multipart("/api/v1/inspections/{id}/evidence", fixture.inspectionId())
+                .file(new MockMultipartFile("file", "span.png", "image/png", PNG_BYTES))
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.fileName").value("span (2).png"));
   }
 
   @Test

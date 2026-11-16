@@ -6,11 +6,14 @@ import com.smartdroneinspection.inspections.api.dto.request.AnalyzeVideoRequest;
 import com.smartdroneinspection.inspections.api.dto.request.BeginEvidenceUploadRequest;
 import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
+import com.smartdroneinspection.inspections.api.dto.request.CreateReinspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.DeclineInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
 import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.PromoteVideoKeyframesRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFindingRequest;
+import com.smartdroneinspection.inspections.api.dto.request.UpdateDefectVerificationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
@@ -20,11 +23,14 @@ import com.smartdroneinspection.inspections.api.dto.response.EvidenceUploadSessi
 import com.smartdroneinspection.inspections.api.dto.response.FindingPageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
+import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
 import com.smartdroneinspection.inspections.api.dto.response.MediaTicketResponse;
+import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.api.dto.response.VideoAutoDetectResponse;
+import com.smartdroneinspection.inspections.api.dto.response.VideoScanResponse;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.EvidenceUploadSessionService;
@@ -32,6 +38,7 @@ import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.MediaTicketService;
+import com.smartdroneinspection.inspections.service.ReinspectionVerificationService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -89,6 +96,7 @@ public class InspectionController {
       reportAcceptancePort;
   private final Optional<EvidenceUploadSessionService> uploadSessionService;
   private final Optional<MediaTicketService> mediaTicketService;
+  private final Optional<ReinspectionVerificationService> reinspectionVerificationService;
 
   public InspectionController(
       EvidenceService evidenceService,
@@ -103,6 +111,7 @@ public class InspectionController {
         workflowService,
         creationService,
         java.util.Optional.empty(),
+        Optional.empty(),
         Optional.empty(),
         Optional.empty());
   }
@@ -123,6 +132,29 @@ public class InspectionController {
         creationService,
         reportAcceptancePort,
         Optional.empty(),
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  public InspectionController(
+      EvidenceService evidenceService,
+      FindingService findingService,
+      ReportService reportService,
+      InspectionWorkflowService workflowService,
+      InspectionCreationService creationService,
+      java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+          reportAcceptancePort,
+      Optional<EvidenceUploadSessionService> uploadSessionService,
+      Optional<MediaTicketService> mediaTicketService) {
+    this(
+        evidenceService,
+        findingService,
+        reportService,
+        workflowService,
+        creationService,
+        reportAcceptancePort,
+        uploadSessionService,
+        mediaTicketService,
         Optional.empty());
   }
 
@@ -136,7 +168,8 @@ public class InspectionController {
       java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
           reportAcceptancePort,
       Optional<EvidenceUploadSessionService> uploadSessionService,
-      Optional<MediaTicketService> mediaTicketService) {
+      Optional<MediaTicketService> mediaTicketService,
+      Optional<ReinspectionVerificationService> reinspectionVerificationService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
@@ -145,6 +178,10 @@ public class InspectionController {
     this.reportAcceptancePort = reportAcceptancePort;
     this.uploadSessionService = uploadSessionService;
     this.mediaTicketService = mediaTicketService;
+    this.reinspectionVerificationService =
+        reinspectionVerificationService != null
+            ? reinspectionVerificationService
+            : Optional.empty();
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -317,10 +354,20 @@ public class InspectionController {
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
           Instant captureTime,
       @RequestParam(required = false) BigDecimal latitude,
-      @RequestParam(required = false) BigDecimal longitude) {
+      @RequestParam(required = false) BigDecimal longitude,
+      @RequestParam(required = false) UUID sourceVideoEvidenceId,
+      @RequestParam(required = false) Double sourceTimestampSeconds) {
     return ApiResponse.success(
         evidenceService.upload(
-            actorId(jwt), inspectionId, fieldSessionId, file, captureTime, latitude, longitude));
+            actorId(jwt),
+            inspectionId,
+            fieldSessionId,
+            file,
+            captureTime,
+            latitude,
+            longitude,
+            sourceVideoEvidenceId,
+            sourceTimestampSeconds));
   }
 
   @GetMapping("/evidence")
@@ -509,6 +556,30 @@ public class InspectionController {
       @RequestBody AnalyzeVideoRequest request) {
     return ApiResponse.success(
         findingService.analyzeVideo(actorId(jwt), inspectionId, evidenceId, request));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/video-scan")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<VideoScanResponse> scanVideoEvidence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestParam(name = "intervalSeconds", defaultValue = "1.0") double intervalSeconds,
+      @RequestParam(name = "maxFrames", defaultValue = "30") int maxFrames) {
+    return ApiResponse.success(
+        findingService.scanVideo(
+            actorId(jwt), inspectionId, evidenceId, intervalSeconds, maxFrames));
+  }
+
+  @PostMapping("/evidence/{evidenceId}/video-keyframes")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<VideoAutoDetectResponse> promoteVideoKeyframes(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID evidenceId,
+      @RequestBody PromoteVideoKeyframesRequest request) {
+    return ApiResponse.success(
+        findingService.promoteVideoKeyframes(actorId(jwt), inspectionId, evidenceId, request));
   }
 
   @PostMapping("/findings/{findingId}/confirmation")
@@ -960,6 +1031,45 @@ public class InspectionController {
   }
 
   private record ByteRange(long start, long end) {}
+
+  @PostMapping("/reinspections")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ResponseEntity<ApiResponse<InspectionResponse>> createQuickReinspection(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestBody(required = false) CreateReinspectionRequest request) {
+    InspectionResponse created =
+        creationService.createQuickReinspection(actorId(jwt), inspectionId, request);
+    return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
+  }
+
+  @GetMapping("/reinspection-verifications")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<List<ReinspectionVerificationResponse>> getReinspectionVerifications(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    return ApiResponse.success(
+        reinspectionVerificationService
+            .map(svc -> svc.getVerifications(actorId(jwt), inspectionId))
+            .orElse(List.of()));
+  }
+
+  @PutMapping("/reinspection-verifications/{verificationId}")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
+  public ApiResponse<ReinspectionVerificationResponse> updateReinspectionVerification(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID verificationId,
+      @Valid @RequestBody UpdateDefectVerificationRequest request) {
+    ReinspectionVerificationService service =
+        reinspectionVerificationService.orElseThrow(
+            () ->
+                new BusinessException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "REINSPECTION_UNAVAILABLE",
+                    "Re-inspection verification service is unavailable"));
+    return ApiResponse.success(
+        service.updateVerification(actorId(jwt), inspectionId, verificationId, request));
+  }
 
   private static UUID actorId(Jwt jwt) {
     return UUID.fromString(jwt.getSubject());

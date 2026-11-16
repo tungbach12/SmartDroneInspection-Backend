@@ -61,7 +61,11 @@ public class InspectionFieldSessionController {
       @Valid @RequestBody StartFieldSessionRequest request) {
     return ApiResponse.success(
         response(
-            fieldSessions.start(subject(jwt), inspectionId, request.preFlightChecklistNote())));
+            fieldSessions.start(
+                subject(jwt),
+                inspectionId,
+                request.preFlightChecklistNote(),
+                Boolean.TRUE.equals(request.startNow()))));
   }
 
   @PostMapping("/{sessionId}/completion")

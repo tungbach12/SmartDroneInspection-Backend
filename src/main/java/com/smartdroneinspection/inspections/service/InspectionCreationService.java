@@ -7,13 +7,16 @@ import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.CreateReinspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.ReviewFlightPermitRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
 import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
 import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
+import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.FlightPermitReviewedEvent;
 import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
@@ -22,6 +25,7 @@ import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEv
 import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
 import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
 import com.smartdroneinspection.shared.api.InspectionContractSyncPort;
@@ -56,6 +60,8 @@ public class InspectionCreationService {
   private final ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider;
   private final ObjectProvider<InspectionContractSyncPort> contractSyncProvider;
   private final ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider;
+  private final ObjectProvider<FindingRepository> findingsProvider;
+  private final ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider;
 
   public InspectionCreationService(
       InspectionRepository inspections,
@@ -74,6 +80,34 @@ public class InspectionCreationService {
         null,
         null,
         null,
+        null,
+        null,
+        null);
+  }
+
+  public InspectionCreationService(
+      InspectionRepository inspections,
+      AssetRepository assets,
+      DroneRepository drones,
+      UserAccess userAccess,
+      Optional<EvidenceObjectStore> objectStore,
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<FieldSessionRepository> sessionsProvider,
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider,
+      ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
+      ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider) {
+    this(
+        inspections,
+        assets,
+        drones,
+        userAccess,
+        objectStore,
+        eventPublisher,
+        sessionsProvider,
+        reliabilityProvider,
+        contractSyncProvider,
+        reassignCandidatesProvider,
+        null,
         null);
   }
 
@@ -88,7 +122,9 @@ public class InspectionCreationService {
       ObjectProvider<FieldSessionRepository> sessionsProvider,
       ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider,
       ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
-      ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider) {
+      ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider,
+      ObjectProvider<FindingRepository> findingsProvider,
+      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider) {
     this.inspections = inspections;
     this.assets = assets;
     this.drones = drones;
@@ -99,6 +135,8 @@ public class InspectionCreationService {
     this.reliabilityProvider = reliabilityProvider;
     this.contractSyncProvider = contractSyncProvider;
     this.reassignCandidatesProvider = reassignCandidatesProvider;
+    this.findingsProvider = findingsProvider;
+    this.reinspectionVerificationsProvider = reinspectionVerificationsProvider;
   }
 
   @Transactional
@@ -216,6 +254,191 @@ public class InspectionCreationService {
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
 
+    return toResponse(saved, asset);
+  }
+
+  @Transactional
+  public InspectionResponse createQuickReinspection(
+      UUID actorId, UUID sourceInspectionId, CreateReinspectionRequest request) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    boolean isPlatformManager = actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER);
+    boolean isCustomer = actor.hasRole(Roles.CUSTOMER) || actor.hasRole(Roles.ORG_MANAGER);
+    if (!isPlatformManager && !isCustomer) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only organization managers or platform managers can create a re-inspection.");
+    }
+
+    Inspection source =
+        isPlatformManager
+            ? inspections
+                .findById(sourceInspectionId)
+                .orElseThrow(
+                    () ->
+                        new BusinessException(
+                            HttpStatus.NOT_FOUND, "NOT_FOUND", "Source inspection not found."))
+            : inspections
+                .findByIdAndOwnerCustomerId(sourceInspectionId, actor.ownerCustomerId())
+                .orElseThrow(
+                    () ->
+                        new BusinessException(
+                            HttpStatus.NOT_FOUND, "NOT_FOUND", "Source inspection not found."));
+
+    if (source.getStatus() != InspectionStatus.COMPLETED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_STATE_CONFLICT",
+          "Publish the source inspection report before creating a re-inspection.");
+    }
+
+    Asset asset =
+        assets
+            .findById(source.getAssetId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Source asset not found."));
+    if (asset.getStatus() == AssetStatus.RETIRED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Cannot schedule a re-inspection for a retired asset.");
+    }
+
+    FindingRepository findingRepo =
+        findingsProvider != null ? findingsProvider.getIfAvailable() : null;
+    if (findingRepo != null) {
+      List<Finding> confirmedFindings =
+          findingRepo.findByInspectionIdOrderByCreatedAtAsc(source.getId()).stream()
+              .filter(f -> f.getStatus() == FindingStatus.CONFIRMED && !f.isDeleted())
+              .toList();
+      if (confirmedFindings.isEmpty()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "NO_CONFIRMED_FINDINGS",
+            "At least one confirmed defect is required to schedule a re-inspection.");
+      }
+    }
+
+    UUID reqInspectorId = request != null ? request.inspectorId() : null;
+    UUID reqDroneId = request != null ? request.droneId() : null;
+    if ((reqInspectorId != null || reqDroneId != null) && !isPlatformManager) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only platform managers can override partner inspector or drone assignment.");
+    }
+    if ((reqInspectorId != null) != (reqDroneId != null)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "ASSIGNMENT_PAIR_INVALID",
+          "Both inspectorId and droneId must be supplied when overriding crew.");
+    }
+
+    Instant plannedStartAt =
+        request != null && request.plannedStartAt() != null
+            ? request.plannedStartAt()
+            : Instant.now().plusSeconds(3600);
+    Instant plannedEndAt =
+        request != null && request.plannedEndAt() != null
+            ? request.plannedEndAt()
+            : plannedStartAt.plusSeconds(7200);
+    if (!plannedEndAt.isAfter(plannedStartAt)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start.");
+    }
+
+    UUID targetInspectorId = reqInspectorId != null ? reqInspectorId : source.getInspectorId();
+    UUID targetDroneId = reqDroneId != null ? reqDroneId : source.getDroneId();
+
+    UserAccess.ActiveUser inspector = null;
+    if (targetInspectorId != null) {
+      inspector =
+          userAccess
+              .findActiveUser(targetInspectorId)
+              .filter(u -> u.hasRole(Roles.INSPECTOR))
+              .filter(u -> u.hasValidPilotLicense(plannedStartAt))
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_REQUEST,
+                          "INVALID_INSPECTOR",
+                          "Assigned inspector must be active with a valid pilot license."));
+    }
+
+    if (targetDroneId != null) {
+      boolean usePartnerPool = reqDroneId != null || source.isPartnerAssignment();
+      Drone drone =
+          (usePartnerPool
+                  ? drones.findWithLockById(targetDroneId)
+                  : drones.findWithLockByIdAndOwnerCustomerId(
+                      targetDroneId, source.getOwnerCustomerId()))
+              .filter(d -> d.getServiceability() == DroneServiceability.ACTIVE)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_REQUEST,
+                          "INVALID_DRONE",
+                          "Assigned drone must be active and registered."));
+      if (!drone.hasCurrentRegistration(plannedStartAt) || !drone.hasKnownMtow()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "DRONE_REGISTRATION_INVALID",
+            "Assigned drone must have current registration and known MTOW at planned start.");
+      }
+      if (inspector != null
+          && !inspector.isLicenseClassQualifiedForDrone(
+              drone.hasKnownMtow(), drone.requiresClassBForSafety())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "PILOT_LICENSE_CLASS_INSUFFICIENT",
+            "Assigned inspector pilot license class does not qualify for drone MTOW.");
+      }
+      boolean conflict =
+          usePartnerPool
+              ? inspections.hasPlatformPartnerScheduleConflict(
+                  targetInspectorId, targetDroneId, plannedStartAt, plannedEndAt)
+              : inspections.hasScheduleConflictByOwner(
+                  source.getOwnerCustomerId(),
+                  targetInspectorId,
+                  targetDroneId,
+                  plannedStartAt,
+                  plannedEndAt);
+      if (conflict) {
+        throw new BusinessException(
+            HttpStatus.CONFLICT,
+            "SCHEDULE_CONFLICT",
+            "Selected inspector or drone has a schedule conflict during this window.");
+      }
+    }
+
+    Inspection reinspection =
+        Inspection.createReinspection(
+            source.getOwnerCustomerId(),
+            asset.getId(),
+            targetInspectorId,
+            targetDroneId,
+            plannedStartAt,
+            plannedEndAt,
+            source.getId());
+    if (reqInspectorId != null && !reqInspectorId.equals(source.getInspectorId())) {
+      reinspection.markPendingAcceptance();
+    }
+
+    Inspection saved = inspections.saveAndFlush(reinspection);
+    if (reinspectionVerificationsProvider != null) {
+      reinspectionVerificationsProvider.ifAvailable(
+          svc -> svc.initializeVerificationsForReinspection(saved.getId(), source.getId()));
+    }
+    if (saved.getInspectorId() != null) {
+      eventPublisher.publishEvent(
+          new InspectionAssignedEvent(
+              saved.getId(),
+              saved.getOwnerCustomerId(),
+              saved.getInspectorId(),
+              saved.getPlannedStartAt()));
+    }
     return toResponse(saved, asset);
   }
 
@@ -1200,7 +1423,7 @@ public class InspectionCreationService {
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        null,
+        inspection.getSourceInspectionId(),
         inspection.isReassignmentRequired(),
         inspection.getDeclineReason(),
         inspection.getDeclinedAt(),

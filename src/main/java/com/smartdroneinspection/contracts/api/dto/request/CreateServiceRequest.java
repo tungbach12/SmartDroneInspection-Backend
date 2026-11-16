@@ -20,4 +20,35 @@ public record CreateServiceRequest(
     String recurrenceUnit,
     Integer recurrenceInterval,
     Integer occurrenceCount,
-    LocalDate recurrenceEndDate) {}
+    LocalDate recurrenceEndDate,
+    UUID sourceInspectionId) {
+
+  public CreateServiceRequest(
+      UUID assetId,
+      String description,
+      LocalDate requestedFrom,
+      LocalDate requestedUntil,
+      String timezone,
+      LocalTime windowStart,
+      LocalTime windowEnd,
+      RequestType requestType,
+      String recurrenceUnit,
+      Integer recurrenceInterval,
+      Integer occurrenceCount,
+      LocalDate recurrenceEndDate) {
+    this(
+        assetId,
+        description,
+        requestedFrom,
+        requestedUntil,
+        timezone,
+        windowStart,
+        windowEnd,
+        requestType,
+        recurrenceUnit,
+        recurrenceInterval,
+        occurrenceCount,
+        recurrenceEndDate,
+        null);
+  }
+}

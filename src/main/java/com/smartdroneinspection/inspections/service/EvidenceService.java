@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -127,6 +129,20 @@ public class EvidenceService {
       Instant captureTime,
       BigDecimal latitude,
       BigDecimal longitude) {
+    return upload(
+        actorId, inspectionId, fieldSessionId, file, captureTime, latitude, longitude, null, null);
+  }
+
+  public EvidenceResponse upload(
+      UUID actorId,
+      UUID inspectionId,
+      UUID fieldSessionId,
+      MultipartFile file,
+      Instant captureTime,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      UUID sourceVideoEvidenceId,
+      Double sourceTimestampSeconds) {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST, "EVIDENCE_INVALID", "The uploaded file is empty");
@@ -160,7 +176,9 @@ public class EvidenceService {
         captureTime,
         latitude,
         longitude,
-        null);
+        null,
+        sourceVideoEvidenceId,
+        sourceTimestampSeconds);
   }
 
   @Transactional
@@ -175,9 +193,78 @@ public class EvidenceService {
       BigDecimal latitude,
       BigDecimal longitude,
       String locationDescription) {
+    return storeCapturedMedia(
+        actorId,
+        inspectionId,
+        fieldSessionId,
+        rawFileName,
+        rawContentType,
+        content,
+        captureTime,
+        latitude,
+        longitude,
+        locationDescription,
+        null,
+        null);
+  }
+
+  @Transactional
+  public EvidenceResponse storeCapturedMedia(
+      UUID actorId,
+      UUID inspectionId,
+      UUID fieldSessionId,
+      String rawFileName,
+      String rawContentType,
+      byte[] content,
+      Instant captureTime,
+      BigDecimal latitude,
+      BigDecimal longitude,
+      String locationDescription,
+      UUID sourceVideoEvidenceId,
+      Double sourceTimestampSeconds) {
 
     Inspection inspection = requireAssignedInspection(actorId, inspectionId);
     requireEvidenceEditable(inspectionId, inspection);
+    if (sourceTimestampSeconds != null
+        && (Double.isNaN(sourceTimestampSeconds)
+            || Double.isInfinite(sourceTimestampSeconds)
+            || sourceTimestampSeconds < 0.0)) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_INVALID",
+          "Source video timestamp must be zero or positive");
+    }
+    if (sourceTimestampSeconds != null && sourceVideoEvidenceId == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_INVALID",
+          "sourceVideoEvidenceId is required when sourceTimestampSeconds is supplied");
+    }
+    Evidence sourceVideo = null;
+    if (sourceVideoEvidenceId != null) {
+      sourceVideo =
+          evidence
+              .findByIdAndInspectionId(sourceVideoEvidenceId, inspectionId)
+              .orElseThrow(
+                  () ->
+                      new BusinessException(
+                          HttpStatus.BAD_REQUEST,
+                          "EVIDENCE_INVALID",
+                          "Source video evidence not found in this inspection"));
+      if (sourceVideo.isDeleted() || !sourceVideo.isVideo()) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "EVIDENCE_INVALID",
+            "Source evidence must be an active video item");
+      }
+      if (fieldSessionId == null && sourceVideo.getFieldSessionId() != null) {
+        fieldSessionId = sourceVideo.getFieldSessionId();
+      }
+      if (latitude == null && longitude == null && sourceVideo.getLatitude() != null) {
+        latitude = sourceVideo.getLatitude();
+        longitude = sourceVideo.getLongitude();
+      }
+    }
     if (fieldSessionId != null) {
       requireSessionInScope(inspection, fieldSessionId);
     }
@@ -239,19 +326,7 @@ public class EvidenceService {
       }
     }
 
-    String fileName = sanitizeFileName(rawFileName);
-    Optional<Evidence> sameName =
-        evidence.findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(inspectionId, fileName);
-    if (sameName.isPresent()) {
-      Evidence existing = sameName.get();
-      if (existing.isDeleted()) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "EVIDENCE_DUPLICATE_RETIRED",
-            "Evidence with this filename already exists as a retired audit copy: " + fileName);
-      }
-      return toResponse(existing);
-    }
+    String fileName = resolveUniqueFileName(inspectionId, rawFileName);
 
     UUID objectUuid = UUID.randomUUID();
     String objectKey = "inspections/" + inspectionId + "/evidence/" + objectUuid;
@@ -313,6 +388,9 @@ public class EvidenceService {
             longitude,
             normalizedLocation,
             Instant.now());
+    if (sourceVideoEvidenceId != null) {
+      record.linkVideoSource(sourceVideoEvidenceId, sourceTimestampSeconds);
+    }
     if (normalizedImage != null) {
       record.applyImageOptimization(
           objectKey,
@@ -833,6 +911,49 @@ public class EvidenceService {
     return cleaned.length() > 500 ? cleaned.substring(0, 500) : cleaned;
   }
 
+  String resolveUniqueFileName(UUID inspectionId, String rawFileName) {
+    Set<String> existingNames = new HashSet<>();
+    for (Evidence existing : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+      if (existing.getFileName() != null) {
+        existingNames.add(existing.getFileName().toLowerCase(Locale.ROOT));
+      }
+    }
+    return resolveUniqueFileName(existingNames, sanitizeFileName(rawFileName));
+  }
+
+  static String resolveUniqueFileName(
+      Collection<String> existingLowerCaseNames, String sanitizedFileName) {
+    String baseName = sanitizeFileName(sanitizedFileName);
+    Set<String> taken = new HashSet<>();
+    if (existingLowerCaseNames != null) {
+      for (String name : existingLowerCaseNames) {
+        if (name != null) {
+          taken.add(name.toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+    if (!taken.contains(baseName.toLowerCase(Locale.ROOT))) {
+      return baseName;
+    }
+    for (int index = 1; index < Integer.MAX_VALUE; index++) {
+      String candidate = buildSuffixedFileName(baseName, index);
+      if (!taken.contains(candidate.toLowerCase(Locale.ROOT))) {
+        return candidate;
+      }
+    }
+    return baseName;
+  }
+
+  private static String buildSuffixedFileName(String fileName, int suffix) {
+    int dot = fileName.lastIndexOf('.');
+    String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+    String ext = dot > 0 ? fileName.substring(dot) : "";
+    String marker = " (" + suffix + ")";
+    int maxStemLength = Math.max(1, 500 - marker.length() - ext.length());
+    String boundedStem = stem.length() > maxStemLength ? stem.substring(0, maxStemLength) : stem;
+    return boundedStem + marker + ext;
+  }
+
   private UserAccess.ActiveUser requireActiveUser(UUID actorId) {
     return userAccess
         .findActiveUser(actorId)
@@ -900,7 +1021,21 @@ public class EvidenceService {
         record.getMediaWidth(),
         record.getMediaHeight(),
         record.getDurationSeconds(),
-        record.getProcessedAt());
+        record.getProcessedAt(),
+        record.getSourceVideoEvidenceId(),
+        record.getSourceTimestampSeconds());
+  }
+
+  void copyStoredObjectToFile(Evidence record, java.nio.file.Path destination) throws IOException {
+    EvidenceObjectStore store = requireObjectStore();
+    String key =
+        record.getObjectKey() != null && !record.getObjectKey().isBlank()
+            ? record.getObjectKey()
+            : record.getRawObjectKey();
+    try (InputStream input = store.open(key)) {
+      java.nio.file.Files.copy(
+          input, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}

@@ -279,6 +279,10 @@ public class ContractWorkflowService
             .findByIdAndOwnerCustomerId(input.assetId(), actor.ownerCustomerId())
             .filter(value -> value.getStatus() != AssetStatus.RETIRED)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
+    if (input.sourceInspectionId() != null) {
+      assignment.validateReinspectionSource(
+          actor.ownerCustomerId(), asset.getId(), input.sourceInspectionId());
+    }
     LocalTime start = input.windowStart() == null ? LocalTime.of(8, 0) : input.windowStart();
     LocalTime end = input.windowEnd() == null ? LocalTime.of(17, 0) : input.windowEnd();
     ZoneId customerZone;
@@ -367,7 +371,8 @@ public class ContractWorkflowService
               input.recurrenceUnit(),
               input.recurrenceInterval(),
               input.occurrenceCount(),
-              input.recurrenceEndDate());
+              input.recurrenceEndDate(),
+              input.sourceInspectionId());
     } catch (IllegalArgumentException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", exception.getMessage());
     }
@@ -834,14 +839,24 @@ public class ContractWorkflowService
             acceptedFeatures);
     requireCandidateEligible(lockedCandidate, HttpStatus.CONFLICT);
     UUID inspectionId =
-        assignment.assign(
-            request.getOwnerCustomerId(),
-            request.getAssetId(),
-            input.inspectorId(),
-            input.droneId(),
-            input.plannedStartAt(),
-            input.plannedEndAt(),
-            manager.id());
+        request.getSourceInspectionId() != null
+            ? assignment.assign(
+                request.getOwnerCustomerId(),
+                request.getAssetId(),
+                input.inspectorId(),
+                input.droneId(),
+                input.plannedStartAt(),
+                input.plannedEndAt(),
+                manager.id(),
+                request.getSourceInspectionId())
+            : assignment.assign(
+                request.getOwnerCustomerId(),
+                request.getAssetId(),
+                input.inspectorId(),
+                input.droneId(),
+                input.plannedStartAt(),
+                input.plannedEndAt(),
+                manager.id());
     occurrence.assign(
         input.inspectorId(),
         input.droneId(),

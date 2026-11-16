@@ -150,6 +150,11 @@ public class EvidenceUploadSession {
     this.updatedAt = now;
   }
 
+  public void updateFileName(String fileName, Instant now) {
+    this.fileName = fileName;
+    this.updatedAt = now;
+  }
+
   public void markCompleting(Instant now) {
     this.status = EvidenceUploadSessionStatus.COMPLETING;
     this.updatedAt = now;

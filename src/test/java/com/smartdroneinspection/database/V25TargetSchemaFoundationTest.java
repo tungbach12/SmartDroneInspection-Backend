@@ -224,8 +224,8 @@ class V25TargetSchemaFoundationTest {
             "maintenance_work_logs",
             "maintenance_reports",
             "maintenance_acceptance_decisions",
-            "reinspection_defect_verifications",
             "repair_knowledge_chunks");
+    assertThat(actualTables).contains("reinspection_defect_verifications");
   }
 
   @Test

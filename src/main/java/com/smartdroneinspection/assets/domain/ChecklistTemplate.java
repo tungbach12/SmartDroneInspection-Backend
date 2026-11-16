@@ -28,6 +28,9 @@ public class ChecklistTemplate {
   @Column(nullable = false)
   private boolean active;
 
+  @Column(nullable = false)
+  private boolean required;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -41,10 +44,16 @@ public class ChecklistTemplate {
   protected ChecklistTemplate() {}
 
   public ChecklistTemplate(String templateType, String label, int sortOrder, boolean active) {
+    this(templateType, label, sortOrder, active, !"POST_FLIGHT".equalsIgnoreCase(templateType));
+  }
+
+  public ChecklistTemplate(
+      String templateType, String label, int sortOrder, boolean active, boolean required) {
     this.templateType = normalizeType(templateType);
     this.label = label.trim();
     this.sortOrder = sortOrder;
     this.active = active;
+    this.required = required;
     this.createdAt = Instant.now();
     this.updatedAt = this.createdAt;
   }
@@ -69,6 +78,10 @@ public class ChecklistTemplate {
     return active;
   }
 
+  public boolean isRequired() {
+    return required;
+  }
+
   public Instant getCreatedAt() {
     return createdAt;
   }
@@ -78,6 +91,11 @@ public class ChecklistTemplate {
   }
 
   public void update(String newLabel, Integer newSortOrder, Boolean newActive) {
+    update(newLabel, newSortOrder, newActive, null);
+  }
+
+  public void update(
+      String newLabel, Integer newSortOrder, Boolean newActive, Boolean newRequired) {
     if (newLabel != null && !newLabel.isBlank()) {
       this.label = newLabel.trim();
     }
@@ -86,6 +104,9 @@ public class ChecklistTemplate {
     }
     if (newActive != null) {
       this.active = newActive;
+    }
+    if (newRequired != null) {
+      this.required = newRequired;
     }
     this.updatedAt = Instant.now();
   }

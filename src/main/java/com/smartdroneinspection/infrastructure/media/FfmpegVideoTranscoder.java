@@ -6,7 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -131,6 +133,96 @@ public class FfmpegVideoTranscoder implements VideoTranscodePort {
         metadata.width(),
         metadata.height(),
         metadata.durationSeconds());
+  }
+
+  @Override
+  public List<SampledFrame> sampleFrames(
+      Path videoFile, Path workDirectory, double intervalSeconds, int maxFrames)
+      throws IOException {
+    if (!Files.isRegularFile(videoFile) || Files.size(videoFile) <= 0) {
+      throw new IOException("Video file is missing or empty");
+    }
+    Files.createDirectories(workDirectory);
+
+    VideoProbe metadata = probeVideo(videoFile);
+    double duration = Math.max(0.0, metadata.durationSeconds());
+    double step = Math.max(0.5, intervalSeconds);
+    int cap = Math.max(1, Math.min(maxFrames, 60));
+
+    List<Double> timestamps = new ArrayList<>();
+    if (duration <= 0.1) {
+      timestamps.add(0.0);
+    } else {
+      double estimatedCount = Math.floor(duration / step) + 1.0;
+      double actualStep = estimatedCount > cap ? duration / cap : step;
+      for (int i = 0; i < cap; i++) {
+        double ts = Math.round(i * actualStep * 100.0) / 100.0;
+        if (ts >= duration - 0.05) {
+          break;
+        }
+        timestamps.add(ts);
+      }
+      if (timestamps.isEmpty()) {
+        timestamps.add(0.0);
+      }
+    }
+
+    List<SampledFrame> sampled = new ArrayList<>();
+    for (int i = 0; i < timestamps.size(); i++) {
+      double ts = timestamps.get(i);
+      Path outFile = workDirectory.resolve(String.format(Locale.ROOT, "scan_%04d.jpg", i));
+      extractSingleFrame(
+          videoFile,
+          ts,
+          outFile,
+          "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
+          "3");
+      if (Files.isRegularFile(outFile) && Files.size(outFile) > 0) {
+        sampled.add(new SampledFrame(ts, outFile));
+      }
+    }
+    return sampled;
+  }
+
+  @Override
+  public byte[] extractFrameAtTimestamp(Path videoFile, double timestampSeconds, Path workDirectory)
+      throws IOException {
+    if (!Files.isRegularFile(videoFile) || Files.size(videoFile) <= 0) {
+      throw new IOException("Video file is missing or empty");
+    }
+    Files.createDirectories(workDirectory);
+    double safeTs = Math.max(0.0, timestampSeconds);
+    Path outFile = workDirectory.resolve("keyframe_" + System.nanoTime() + ".jpg");
+    extractSingleFrame(videoFile, safeTs, outFile, null, "2");
+    if (!Files.isRegularFile(outFile) || Files.size(outFile) <= 0) {
+      throw new IOException("FFmpeg failed to extract frame at timestamp " + safeTs);
+    }
+    return Files.readAllBytes(outFile);
+  }
+
+  private void extractSingleFrame(
+      Path videoFile, double timestampSeconds, Path outFile, String scaleFilter, String quality)
+      throws IOException {
+    List<String> cmd = new ArrayList<>();
+    cmd.add(properties.ffmpegBinary());
+    cmd.add("-hide_banner");
+    cmd.add("-loglevel");
+    cmd.add("error");
+    cmd.add("-y");
+    cmd.add("-ss");
+    cmd.add(String.format(Locale.ROOT, "%.3f", timestampSeconds));
+    cmd.add("-i");
+    cmd.add(videoFile.toAbsolutePath().toString());
+    cmd.add("-frames:v");
+    cmd.add("1");
+    if (scaleFilter != null && !scaleFilter.isBlank()) {
+      cmd.add("-vf");
+      cmd.add(scaleFilter);
+    }
+    cmd.add("-q:v");
+    cmd.add(quality);
+    cmd.add(outFile.toAbsolutePath().toString());
+    runCommand(cmd, Duration.ofSeconds(30));
   }
 
   private VideoProbe probeVideo(Path videoFile) throws IOException {

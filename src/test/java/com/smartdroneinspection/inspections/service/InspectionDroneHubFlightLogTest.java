@@ -207,4 +207,49 @@ class InspectionDroneHubFlightLogTest {
                 outsider, inspectionId, sessionId, "NO_MAVLINK_SUPPORT", 15, null, "Test"));
     assertFalse(session.hasFlightReport());
   }
+
+  @Test
+  void allowsReplacingFlightLogInFieldCompletedBeforeReviewSubmissionAndRejectsAfterReview() {
+    String srt =
+        "1\n00:00:00,000 --> 00:00:01,000\n2026-11-10T10:00:00Z [latitude: 21.0285] [longitude: 105.8542]\n";
+    service.importFlightLog(
+        actorId,
+        inspectionId,
+        sessionId,
+        "wrong.srt",
+        new ByteArrayInputStream(srt.getBytes(StandardCharsets.UTF_8)));
+
+    session.complete("Survey done");
+    when(inspection.getStatus()).thenReturn(InspectionStatus.FIELD_COMPLETED);
+    when(inspection.isFlightPermitApproved()).thenReturn(true);
+
+    String csv =
+        "datetime(utc),latitude,longitude,height_above_takeoff(meters),speed(m/s),compass_heading(degrees),battery_percent\n"
+            + "2026-11-10 10:00:00,10.762622,106.660172,15,5.0,90,95\n"
+            + "2026-11-10 10:00:10,10.762722,106.660272,20,5.5,95,93\n";
+    var replaced =
+        service.importFlightLog(
+            actorId,
+            inspectionId,
+            sessionId,
+            "corrected.csv",
+            new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)));
+
+    assertEquals("IMPORTED_LOG_CSV", replaced.telemetrySource());
+    assertEquals(2, replaced.flightTrace().size());
+    assertEquals(10, replaced.durationSeconds());
+
+    when(inspection.getStatus()).thenReturn(InspectionStatus.UNDER_REVIEW);
+    BusinessException locked =
+        assertThrows(
+            BusinessException.class,
+            () ->
+                service.importFlightLog(
+                    actorId,
+                    inspectionId,
+                    sessionId,
+                    "late.csv",
+                    new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8))));
+    assertEquals("FIELD_SESSION_NOT_IN_PROGRESS", locked.code());
+  }
 }

@@ -6,14 +6,19 @@ import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
+import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
+import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,6 +32,8 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
   private final DroneRepository drones;
   private final UserAccess users;
   private final ApplicationEventPublisher events;
+  private final Optional<FindingRepository> findings;
+  private final Optional<ReinspectionVerificationService> reinspectionVerifications;
 
   public Mf2InspectionAssignmentAdapter(
       InspectionRepository inspections,
@@ -34,11 +41,26 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
       DroneRepository drones,
       UserAccess users,
       ApplicationEventPublisher events) {
+    this(inspections, assets, drones, users, events, Optional.empty(), Optional.empty());
+  }
+
+  @Autowired
+  public Mf2InspectionAssignmentAdapter(
+      InspectionRepository inspections,
+      AssetRepository assets,
+      DroneRepository drones,
+      UserAccess users,
+      ApplicationEventPublisher events,
+      Optional<FindingRepository> findings,
+      Optional<ReinspectionVerificationService> reinspectionVerifications) {
     this.inspections = inspections;
     this.assets = assets;
     this.drones = drones;
     this.users = users;
     this.events = events;
+    this.findings = findings != null ? findings : Optional.empty();
+    this.reinspectionVerifications =
+        reinspectionVerifications != null ? reinspectionVerifications : Optional.empty();
   }
 
   @Override
@@ -65,6 +87,48 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public void validateReinspectionSource(
+      UUID ownerCustomerId, UUID assetId, UUID sourceInspectionId) {
+    if (sourceInspectionId == null) {
+      return;
+    }
+    Inspection source =
+        inspections
+            .findById(sourceInspectionId)
+            .filter(i -> ownerCustomerId != null && ownerCustomerId.equals(i.getOwnerCustomerId()))
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "SOURCE_INSPECTION_NOT_FOUND",
+                        "Source inspection not found for this organization"));
+    if (assetId != null && !assetId.equals(source.getAssetId())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "REINSPECTION_ASSET_MISMATCH",
+          "Re-inspection request asset must match the source inspection asset");
+    }
+    if (source.getStatus() != InspectionStatus.COMPLETED) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "SOURCE_INSPECTION_NOT_COMPLETED",
+          "Complete and publish the source inspection before requesting a re-inspection");
+    }
+    if (findings.isPresent()) {
+      boolean hasConfirmed =
+          findings.get().findByInspectionIdOrderByCreatedAtAsc(sourceInspectionId).stream()
+              .anyMatch(f -> f.getStatus() == FindingStatus.CONFIRMED && !f.isDeleted());
+      if (!hasConfirmed) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "NO_CONFIRMED_FINDINGS",
+            "Source inspection must have at least one confirmed defect to schedule a re-inspection");
+      }
+    }
+  }
+
+  @Override
   @Transactional
   public UUID assign(
       UUID ownerCustomerId,
@@ -74,6 +138,28 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
       Instant plannedStartAt,
       Instant plannedEndAt,
       UUID assignedByUserId) {
+    return assign(
+        ownerCustomerId,
+        assetId,
+        inspectorId,
+        droneId,
+        plannedStartAt,
+        plannedEndAt,
+        assignedByUserId,
+        null);
+  }
+
+  @Override
+  @Transactional
+  public UUID assign(
+      UUID ownerCustomerId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID assignedByUserId,
+      UUID sourceInspectionId) {
     users
         .findActiveUser(assignedByUserId)
         .filter(user -> user.hasRole(Roles.MANAGER))
@@ -140,19 +226,37 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
           "The partner Inspector or drone conflicts with another active inspection");
     }
 
+    if (sourceInspectionId != null) {
+      validateReinspectionSource(ownerCustomerId, asset.getId(), sourceInspectionId);
+    }
+
+    UUID effectiveOwnerCustomerId =
+        asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId;
     Inspection inspection =
-        new Inspection(
-            asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId,
-            asset.getId(),
-            inspector.id(),
-            drone.getId(),
-            plannedStartAt,
-            plannedEndAt);
+        sourceInspectionId != null
+            ? Inspection.createReinspection(
+                effectiveOwnerCustomerId,
+                asset.getId(),
+                inspector.id(),
+                drone.getId(),
+                plannedStartAt,
+                plannedEndAt,
+                sourceInspectionId)
+            : new Inspection(
+                effectiveOwnerCustomerId,
+                asset.getId(),
+                inspector.id(),
+                drone.getId(),
+                plannedStartAt,
+                plannedEndAt);
     inspection.markPartnerAssignment();
     inspection.markPendingAcceptance();
-    inspection.markCustomerOwned(
-        asset.getOwnerCustomerId() != null ? asset.getOwnerCustomerId() : ownerCustomerId);
+    inspection.markCustomerOwned(effectiveOwnerCustomerId);
     Inspection saved = inspections.saveAndFlush(inspection);
+    if (sourceInspectionId != null) {
+      reinspectionVerifications.ifPresent(
+          svc -> svc.initializeVerificationsForReinspection(saved.getId(), sourceInspectionId));
+    }
     events.publishEvent(
         new InspectionAssignedEvent(
             saved.getId(),

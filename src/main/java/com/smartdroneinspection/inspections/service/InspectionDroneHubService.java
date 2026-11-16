@@ -105,7 +105,7 @@ public class InspectionDroneHubService {
           "The flight log filename is invalid.");
     }
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
-    requireActiveFlightSession(scope);
+    requireEditableFlightLogSession(scope);
     String extension = extension(fileName);
     List<SmartDroneHubPort.FlightTracePoint> trace =
         switch (extension) {
@@ -207,7 +207,7 @@ public class InspectionDroneHubService {
       Double maxAltitudeMeters,
       String notes) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
-    requireActiveFlightSession(scope);
+    requireEditableFlightLogSession(scope);
     if (!List.of("NO_MAVLINK_SUPPORT", "PROPRIETARY_APP", "TELEMETRY_FAILURE")
         .contains(reasonCode)) {
       throw failure(
@@ -543,14 +543,30 @@ public class InspectionDroneHubService {
     return normalized;
   }
 
-  private static void requireActiveFlightSession(Scope scope) {
-    FlightPermitPolicy.requireApprovedForFlight(scope.inspection(), null, Instant.now());
-    if (scope.inspection().getStatus() != InspectionStatus.IN_PROGRESS
-        || !scope.session().isInProgress()) {
+  /**
+   * Allows uploading or replacing a fallback flight log while the session is active, or while the
+   * completed inspection is still in FIELD_COMPLETED before report submission for review.
+   */
+  private static void requireEditableFlightLogSession(Scope scope) {
+    boolean isActive =
+        scope.inspection().getStatus() == InspectionStatus.IN_PROGRESS
+            && scope.session().isInProgress();
+    boolean isPreSubmissionCompleted =
+        scope.inspection().getStatus() == InspectionStatus.FIELD_COMPLETED
+            && FieldSession.FIELD_COMPLETED.equals(scope.session().getStatus())
+            && scope.inspection().isFlightPermitApproved();
+    if (!isActive && !isPreSubmissionCompleted) {
+      if (scope.inspection().getStatus() == InspectionStatus.IN_PROGRESS
+          || scope.session().isInProgress()) {
+        FlightPermitPolicy.requireApprovedForFlight(scope.inspection(), null, Instant.now());
+      }
       throw failure(
           HttpStatus.CONFLICT,
           "FIELD_SESSION_NOT_IN_PROGRESS",
-          "The field session must be active before recording flight data.");
+          "Flight logs can only be uploaded while the session is active or before the inspection is submitted for review.");
+    }
+    if (isActive) {
+      FlightPermitPolicy.requireApprovedForFlight(scope.inspection(), null, Instant.now());
     }
   }
 

@@ -117,6 +117,12 @@ public class InspectionFieldSessionService {
 
   @Transactional
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
+    return start(inspectorId, inspectionId, preFlightChecklistNote, false);
+  }
+
+  @Transactional
+  public FieldSession start(
+      UUID inspectorId, UUID inspectionId, String preFlightChecklistNote, boolean startNow) {
     requireInspector(inspectorId);
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
@@ -170,6 +176,16 @@ public class InspectionFieldSessionService {
                   "PILOT_LICENSE_EXPIRED",
                   "Your UAV pilot license has expired. Renew and update your license before starting a flight session.");
             });
+    if (startNow
+        && (inspection.getStatus() == InspectionStatus.SCHEDULED
+            || inspection.getStatus() == InspectionStatus.FIELD_COMPLETED)
+        && inspection.isFlightPermitApproved()
+        && (inspection.getFlightPermitValidTo() == null
+            || inspection.getFlightPermitValidTo().isAfter(checkAt))
+        && (inspection.getPlannedEndAt() == null
+            || inspection.getPlannedEndAt().isAfter(checkAt))) {
+      inspection.bringForwardForImmediateStart(checkAt);
+    }
     Instant flightAt =
         inspection.getPlannedStartAt() != null ? inspection.getPlannedStartAt() : checkAt;
     if (!inspector.hasValidPilotLicense(flightAt)) {

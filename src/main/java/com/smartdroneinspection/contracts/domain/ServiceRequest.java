@@ -67,6 +67,9 @@ public class ServiceRequest {
   @Column(name = "recurrence_end_date")
   private LocalDate recurrenceEndDate;
 
+  @Column(name = "source_inspection_id")
+  private UUID sourceInspectionId;
+
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
   private ServiceRequestStatus status = ServiceRequestStatus.OPEN;
@@ -117,6 +120,40 @@ public class ServiceRequest {
       Integer recurrenceInterval,
       Integer occurrenceCount,
       LocalDate recurrenceEndDate) {
+    this(
+        ownerCustomerId,
+        assetId,
+        createdByUserId,
+        description,
+        requestedFrom,
+        requestedUntil,
+        timezone,
+        windowStart,
+        windowEnd,
+        requestType,
+        recurrenceUnit,
+        recurrenceInterval,
+        occurrenceCount,
+        recurrenceEndDate,
+        null);
+  }
+
+  public ServiceRequest(
+      UUID ownerCustomerId,
+      UUID assetId,
+      UUID createdByUserId,
+      String description,
+      LocalDate requestedFrom,
+      LocalDate requestedUntil,
+      String timezone,
+      LocalTime windowStart,
+      LocalTime windowEnd,
+      RequestType requestType,
+      String recurrenceUnit,
+      Integer recurrenceInterval,
+      Integer occurrenceCount,
+      LocalDate recurrenceEndDate,
+      UUID sourceInspectionId) {
     if (ownerCustomerId == null || assetId == null || createdByUserId == null) {
       throw new IllegalArgumentException("Request owner, asset, and creator are required");
     }
@@ -189,10 +226,15 @@ public class ServiceRequest {
     this.recurrenceInterval = recurrenceInterval;
     this.occurrenceCount = occurrenceCount;
     this.recurrenceEndDate = recurrenceEndDate;
+    this.sourceInspectionId = sourceInspectionId;
   }
 
   public UUID getId() {
     return id;
+  }
+
+  public UUID getSourceInspectionId() {
+    return sourceInspectionId;
   }
 
   public UUID getOwnerCustomerId() {

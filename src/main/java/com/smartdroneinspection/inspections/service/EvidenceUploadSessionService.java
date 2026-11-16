@@ -16,11 +16,13 @@ import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,8 +103,8 @@ public class EvidenceUploadSessionService {
     }
     EvidenceService.validateGpsPair(request.latitude(), request.longitude());
 
-    String fileName = EvidenceService.sanitizeFileName(request.fileName());
-    ensureNoFilenameConflict(inspectionId, fileName);
+    Instant now = Instant.now();
+    String fileName = resolveUniqueFileNameForSession(inspectionId, request.fileName(), true, now);
 
     int chunkSize = properties.getChunkSizeBytes();
     int totalParts = (int) ((totalSize + chunkSize - 1) / chunkSize);
@@ -120,7 +122,6 @@ public class EvidenceUploadSessionService {
           "Evidence storage is unavailable");
     }
 
-    Instant now = Instant.now();
     Instant expiresAt = now.plus(properties.getUploadSessionTtl());
     String normalizedLocation =
         request.locationDescription() == null || request.locationDescription().isBlank()
@@ -260,7 +261,11 @@ public class EvidenceUploadSessionService {
           "Upload session cannot be completed from status " + session.getStatus());
     }
 
-    ensureNoFilenameConflict(inspectionId, session.getFileName());
+    String resolvedFileName =
+        resolveUniqueFileNameForSession(inspectionId, session.getFileName(), false, now);
+    if (!resolvedFileName.equals(session.getFileName())) {
+      session.updateFileName(resolvedFileName, now);
+    }
 
     EvidenceObjectStore store = requireObjectStore();
     Map<Integer, StoredPartRecord> partsMap = readPartsMap(session.getUploadedPartsJson());
@@ -396,21 +401,27 @@ public class EvidenceUploadSessionService {
     }
   }
 
-  private void ensureNoFilenameConflict(UUID inspectionId, String fileName) {
-    Optional<Evidence> existing =
-        evidence.findFirstByInspectionIdAndFileNameOrderByCreatedAtAsc(inspectionId, fileName);
-    if (existing.isPresent()) {
-      if (existing.get().isDeleted()) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "EVIDENCE_DUPLICATE_RETIRED",
-            "Evidence with this filename already exists as a retired audit copy: " + fileName);
+  private String resolveUniqueFileNameForSession(
+      UUID inspectionId, String rawFileName, boolean includeOpenSessions, Instant now) {
+    Set<String> taken = new HashSet<>();
+    for (Evidence existing : evidence.findByInspectionIdOrderByCreatedAtAsc(inspectionId)) {
+      if (existing.getFileName() != null) {
+        taken.add(existing.getFileName().toLowerCase(Locale.ROOT));
       }
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "EVIDENCE_DUPLICATE_FILENAME",
-          "Evidence with this filename already exists: " + fileName);
     }
+    if (includeOpenSessions) {
+      List<EvidenceUploadSession> activeSessions =
+          sessions.findByInspectionIdAndStatusIn(
+              inspectionId,
+              List.of(EvidenceUploadSessionStatus.OPEN, EvidenceUploadSessionStatus.COMPLETING));
+      for (EvidenceUploadSession active : activeSessions) {
+        if (!active.isExpired(now) && active.getFileName() != null) {
+          taken.add(active.getFileName().toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+    return EvidenceService.resolveUniqueFileName(
+        taken, EvidenceService.sanitizeFileName(rawFileName));
   }
 
   private EvidenceUploadSession requireSession(UUID inspectionId, UUID sessionId) {

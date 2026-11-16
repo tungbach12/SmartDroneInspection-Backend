@@ -277,7 +277,7 @@ public record InspectionResponse(
         inspection.getCreatedAt(),
         inspection.getUpdatedAt(),
         inspection.getInspectionType() != null ? inspection.getInspectionType().name() : "INITIAL",
-        null,
+        inspection.getSourceInspectionId(),
         inspection.isReassignmentRequired(),
         inspection.getDeclineReason(),
         inspection.getDeclinedAt(),
