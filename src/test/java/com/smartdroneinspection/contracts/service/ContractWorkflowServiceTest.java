@@ -654,6 +654,27 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void adminCanOpenTheAssignmentRegistryEntryButGetsNoManagerDetails() {
+    UUID adminId = UUID.randomUUID();
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    request.reassignManager(managerId, adminId, Instant.now());
+    when(users.findActiveUser(adminId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(adminId, Set.of(Roles.ADMIN), null, "Platform Admin")));
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+
+    var response = service.get(adminId, requestId);
+
+    assertThat(response.id()).isEqualTo(requestId);
+    assertThat(response.assignedManagerId()).isEqualTo(managerId);
+    assertThat(response.serviceManager()).isNull();
+    assertThat(response.messages()).isEmpty();
+  }
+
+  @Test
   void managerCannotQuoteOrReadMessagesForAnotherManagersRequest() {
     UUID otherManagerId = UUID.randomUUID();
     UUID requestId = UUID.randomUUID();

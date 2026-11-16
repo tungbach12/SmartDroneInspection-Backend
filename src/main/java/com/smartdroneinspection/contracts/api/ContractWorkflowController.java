@@ -2,7 +2,7 @@ package com.smartdroneinspection.contracts.api;
 
 import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
-import com.smartdroneinspection.contracts.api.dto.request.AssignServiceRequestManager;
+import com.smartdroneinspection.contracts.api.dto.request.AssignServiceRequestManagerRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CancelOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
@@ -94,7 +94,7 @@ public class ContractWorkflowController {
   public ApiResponse<ServiceRequestResponse> reassignRequest(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID requestId,
-      @Valid @RequestBody AssignServiceRequestManager request) {
+      @Valid @RequestBody AssignServiceRequestManagerRequest request) {
     return ApiResponse.success(
         workflow.reassignRequest(actorId(jwt), requestId, request.managerId()));
   }

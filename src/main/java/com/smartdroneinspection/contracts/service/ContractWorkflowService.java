@@ -433,14 +433,16 @@ public class ContractWorkflowService
   @Transactional(readOnly = true)
   public ServiceRequestResponse get(UUID actorId, UUID requestId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
+    if (actor.hasRole(Roles.ADMIN)) {
+      // ADMIN holds only the assignment registry: a pure ADMIN has actor kind NONE, so it must be
+      // resolved before requireRequestForActor rejects it, and it never gets Manager details.
+      return toAdminAssignmentResponse(requireAdminRequest(actor, requestId));
+    }
     boolean includeManagerContact =
         actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER;
     ServiceRequest request = requireRequestForActor(actor, requestId);
     boolean isManager = actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER;
     boolean includeManagerProfile = includeManagerContact && request.getAssignedManagerId() != null;
-    if (actor.hasRole(Roles.ADMIN)) {
-      return toAdminAssignmentResponse(request);
-    }
     boolean managerOwnsRequest = isManager && request.getAssignedManagerId() != null;
     ServiceRequestResponse response =
         toResponse(
@@ -2695,6 +2697,16 @@ public class ContractWorkflowService
     }
     return requests
         .findWithLockById(requestId)
+        .orElseThrow(
+            () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+  }
+
+  private ServiceRequest requireAdminRequest(UserAccess.ActiveUser admin, UUID requestId) {
+    if (!admin.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    return requests
+        .findById(requestId)
         .orElseThrow(
             () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
   }
