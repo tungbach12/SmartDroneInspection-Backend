@@ -436,6 +436,12 @@ class PayOSPaymentIntegrationTest {
 
     mockMvc
         .perform(
+            post("/api/v1/contracts/requests/{id}/claim", requestId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
             post("/api/v1/contracts/requests/{id}/quotes", requestId)
                 .with(principal(managerUserId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -508,6 +514,12 @@ class PayOSPaymentIntegrationTest {
             .getResponse()
             .getContentAsString();
     UUID requestId = UUID.fromString(objectMapper.readTree(reqResp).at("/data/id").stringValue());
+
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests/{id}/claim", requestId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk());
 
     // 2. Manager quotes 5,000,000 VND (total with 10% VAT = 5,500,000 VND)
     mockMvc

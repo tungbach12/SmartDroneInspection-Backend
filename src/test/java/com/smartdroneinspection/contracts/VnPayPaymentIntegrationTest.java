@@ -404,6 +404,12 @@ class VnPayPaymentIntegrationTest {
 
     mockMvc
         .perform(
+            post("/api/v1/contracts/requests/{id}/claim", requestId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
             post("/api/v1/contracts/requests/{id}/quotes", requestId)
                 .with(principal(managerUserId, "MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON)
