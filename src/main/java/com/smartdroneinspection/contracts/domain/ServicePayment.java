@@ -60,6 +60,12 @@ public class ServicePayment {
   @Column(name = "payment_method", length = 30)
   private String paymentMethod;
 
+  @Column(name = "gateway_order_created_at")
+  private Instant gatewayOrderCreatedAt;
+
+  @Column(name = "last_reconciled_at")
+  private Instant lastReconciledAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
@@ -111,7 +117,36 @@ public class ServicePayment {
     }
     payosOrderCode = orderCode;
     paymentMethod = method;
+    gatewayOrderCreatedAt = Instant.now();
+    lastReconciledAt = null;
+    updatedAt = gatewayOrderCreatedAt;
+  }
+
+  /**
+   * Records that the reconciliation job queried the gateway for this unpaid order. Kept as a plain
+   * bookkeeping write so the job's own batch counters and log lines stay the audit trail.
+   */
+  void recordGatewayReconciliationCheck(Instant checkedAt) {
+    if (paymentStatus != OccurrencePaymentStatus.PAYMENT_DUE || payosOrderCode == null) {
+      throw new IllegalStateException("Only an unpaid gateway order can be reconciled");
+    }
+    lastReconciledAt = checkedAt;
     updatedAt = Instant.now();
+  }
+
+  boolean isGatewayOrderOpen() {
+    return paymentStatus == OccurrencePaymentStatus.PAYMENT_DUE
+        && payosOrderCode != null
+        && payosOrderCode > 0
+        && gatewayOrderCreatedAt != null;
+  }
+
+  Instant getGatewayOrderCreatedAt() {
+    return gatewayOrderCreatedAt;
+  }
+
+  Instant getLastReconciledAt() {
+    return lastReconciledAt;
   }
 
   void clearUnpaidGatewayOrder(long orderCode, String method) {
@@ -123,6 +158,8 @@ public class ServicePayment {
     }
     payosOrderCode = null;
     paymentMethod = null;
+    gatewayOrderCreatedAt = null;
+    lastReconciledAt = null;
     updatedAt = Instant.now();
   }
 
@@ -130,7 +167,11 @@ public class ServicePayment {
       BigDecimal totalPrice,
       BigDecimal amount,
       String requestReference,
+      ServiceRefund.RefundReasonCode reasonCode,
+      ServiceRefund.RefundServiceStage serviceStage,
       String reason,
+      String contractClauseReference,
+      String evidenceReference,
       BigDecimal inspectorReceivableAmount,
       BigDecimal platformAbsorbedPlanAmount,
       UUID managerId,
@@ -146,9 +187,16 @@ public class ServicePayment {
     }
     if (requestReference == null
         || requestReference.isBlank()
+        || reasonCode == null
+        || serviceStage == null
         || reason == null
-        || reason.isBlank()) {
-      throw new IllegalArgumentException("Refund request reference and reason are required");
+        || reason.isBlank()
+        || contractClauseReference == null
+        || contractClauseReference.isBlank()
+        || evidenceReference == null
+        || evidenceReference.isBlank()) {
+      throw new IllegalArgumentException(
+          "Refund request reference, reason code, service stage, clause and evidence are required");
     }
     if (amount == null || amount.signum() <= 0 || totalPrice == null) {
       throw new IllegalArgumentException("Refund amount must be positive");
@@ -181,7 +229,11 @@ public class ServicePayment {
             this,
             normalizedAmount,
             requestReference,
+            reasonCode,
+            serviceStage,
             reason,
+            contractClauseReference,
+            evidenceReference,
             normalizedReceivable,
             normalizedAbsorbed,
             managerId);

@@ -164,7 +164,11 @@ public class ServiceRequestOccurrence {
   public ServiceRefund initiateRefund(
       BigDecimal amount,
       String requestReference,
+      ServiceRefund.RefundReasonCode reasonCode,
+      ServiceRefund.RefundServiceStage serviceStage,
       String reason,
+      String contractClauseReference,
+      String evidenceReference,
       BigDecimal inspectorReceivableAmount,
       BigDecimal platformAbsorbedAmount,
       UUID managerId) {
@@ -205,7 +209,11 @@ public class ServiceRequestOccurrence {
             getTotalPrice(),
             amount,
             requestReference,
+            reasonCode,
+            serviceStage,
             reason,
+            contractClauseReference,
+            evidenceReference,
             receivable,
             absorbed,
             managerId,
@@ -561,6 +569,23 @@ public class ServiceRequestOccurrence {
 
   public boolean hasActivePaymentOrder(String method) {
     return payment.hasActiveGatewayOrder(method);
+  }
+
+  /** Marks that the reconciliation job queried the gateway for this unpaid order. */
+  public void recordGatewayReconciliationCheck(Instant checkedAt) {
+    payment.recordGatewayReconciliationCheck(checkedAt);
+  }
+
+  public boolean isGatewayOrderOpen() {
+    return payment.isGatewayOrderOpen();
+  }
+
+  public Instant getGatewayOrderCreatedAt() {
+    return payment.getGatewayOrderCreatedAt();
+  }
+
+  public Instant getLastReconciledAt() {
+    return payment.getLastReconciledAt();
   }
 
   private void validatePayment(String reference, BigDecimal amount) {
