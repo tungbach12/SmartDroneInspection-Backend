@@ -1,7 +1,9 @@
 package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionListItemResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionPageResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
@@ -54,11 +56,21 @@ public class InspectionListService {
   private final InspectionReportRepository reports;
   private final UserAccess userAccess;
   private final AssetRepository assets;
+  private final DroneRepository drones;
   private final Optional<InspectionReportAcceptancePort> reportAcceptancePort;
 
   public InspectionListService(
       InspectionRepository inspections, InspectionReportRepository reports, UserAccess userAccess) {
-    this(inspections, reports, userAccess, null, Optional.empty());
+    this(inspections, reports, userAccess, null, Optional.empty(), null);
+  }
+
+  public InspectionListService(
+      InspectionRepository inspections,
+      InspectionReportRepository reports,
+      UserAccess userAccess,
+      AssetRepository assets,
+      Optional<InspectionReportAcceptancePort> reportAcceptancePort) {
+    this(inspections, reports, userAccess, assets, reportAcceptancePort, null);
   }
 
   @Autowired
@@ -67,11 +79,13 @@ public class InspectionListService {
       InspectionReportRepository reports,
       UserAccess userAccess,
       AssetRepository assets,
-      Optional<InspectionReportAcceptancePort> reportAcceptancePort) {
+      Optional<InspectionReportAcceptancePort> reportAcceptancePort,
+      DroneRepository drones) {
     this.inspections = inspections;
     this.reports = reports;
     this.userAccess = userAccess;
     this.assets = assets;
+    this.drones = drones;
     this.reportAcceptancePort =
         reportAcceptancePort != null ? reportAcceptancePort : Optional.empty();
   }
@@ -100,12 +114,23 @@ public class InspectionListService {
       Page<Inspection> result, int page, int pageSize, Scope scope) {
     int safePage = Math.max(page, 1);
     int safePageSize = clampPageSize(pageSize);
-    Map<UUID, InspectionReport> reportByInspection = reportsFor(result.getContent());
-    Map<UUID, Asset> assetById = assetsFor(result.getContent());
+    List<Inspection> content = result.getContent();
+    Map<UUID, InspectionReport> reportByInspection = reportsFor(content);
+    Map<UUID, Asset> assetById = assetsFor(content);
+    Map<UUID, Drone> droneById = dronesFor(content);
     Map<UUID, InspectionReportAcceptancePort.PaymentStatusDetails> paymentByInspection =
-        paymentsFor(result.getContent());
+        paymentsFor(content);
+    Map<UUID, String> userNames = new HashMap<>();
+    String defaultManagerName =
+        content.isEmpty()
+            ? null
+            : userAccess.listActivePlatformManagers().stream()
+                .findFirst()
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null);
+
     return new InspectionPageResponse(
-        result.getContent().stream()
+        content.stream()
             .map(
                 inspection ->
                     toItem(
@@ -113,12 +138,42 @@ public class InspectionListService {
                         reportByInspection.get(inspection.getId()),
                         pendingAction(inspection, reportByInspection.get(inspection.getId())),
                         assetById.get(inspection.getAssetId()),
-                        paymentByInspection.get(inspection.getId())))
+                        inspection.getDroneId() == null
+                            ? null
+                            : droneById.get(inspection.getDroneId()),
+                        paymentByInspection.get(inspection.getId()),
+                        resolveUserName(userNames, inspection.getOwnerCustomerId()),
+                        resolveUserName(userNames, inspection.getInspectorId()),
+                        defaultManagerName))
             .toList(),
         safePage,
         safePageSize,
         result.getTotalElements(),
         result.getTotalPages());
+  }
+
+  private String resolveUserName(Map<UUID, String> cache, UUID userId) {
+    if (userId == null) {
+      return null;
+    }
+    return cache.computeIfAbsent(
+        userId, id -> userAccess.findUser(id).map(UserAccess.ActiveUser::fullName).orElse(null));
+  }
+
+  private Map<UUID, Drone> dronesFor(List<Inspection> pageRows) {
+    if (pageRows.isEmpty() || drones == null) {
+      return Map.of();
+    }
+    List<UUID> droneIds =
+        pageRows.stream().map(Inspection::getDroneId).filter(Objects::nonNull).distinct().toList();
+    if (droneIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, Drone> byId = new HashMap<>();
+    for (Drone drone : drones.findAllById(droneIds)) {
+      byId.put(drone.getId(), drone);
+    }
+    return byId;
   }
 
   private Map<UUID, Asset> assetsFor(List<Inspection> pageRows) {
@@ -192,7 +247,11 @@ public class InspectionListService {
       InspectionReport report,
       String pendingAction,
       Asset asset,
-      InspectionReportAcceptancePort.PaymentStatusDetails payment) {
+      Drone drone,
+      InspectionReportAcceptancePort.PaymentStatusDetails payment,
+      String ownerCustomerName,
+      String inspectorName,
+      String managerName) {
     String objective =
         payment != null && payment.requestDescription() != null
             ? payment.requestDescription()
@@ -231,7 +290,12 @@ public class InspectionListService {
             : "ACCEPTED",
         inspection.getAssignmentAcceptedAt(),
         inspection.getFlightPermitVerificationStatus().name(),
-        inspection.getSourceInspectionId());
+        inspection.getSourceInspectionId(),
+        ownerCustomerName,
+        inspectorName,
+        managerName,
+        drone == null ? null : drone.getModel(),
+        drone == null ? null : drone.getSerialNumber());
   }
 
   private Scope requireScope(UUID actorId) {

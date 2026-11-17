@@ -729,7 +729,14 @@ public class Inspection {
       this.flightPermitValidFrom = shiftedStart;
     }
     if (this.plannedStartAt != null && effectiveNow.isBefore(this.plannedStartAt)) {
+      java.time.Duration originalDuration =
+          this.plannedEndAt != null && this.plannedEndAt.isAfter(this.plannedStartAt)
+              ? java.time.Duration.between(this.plannedStartAt, this.plannedEndAt)
+              : null;
       this.plannedStartAt = shiftedStart;
+      if (originalDuration != null) {
+        this.plannedEndAt = shiftedStart.plus(originalDuration);
+      }
     }
     this.updatedAt = effectiveNow;
   }
