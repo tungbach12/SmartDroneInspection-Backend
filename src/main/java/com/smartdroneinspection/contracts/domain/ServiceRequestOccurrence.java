@@ -132,6 +132,15 @@ public class ServiceRequestOccurrence {
     acceptReport();
   }
 
+  public void startPaymentDueWindow(java.time.Duration dueWindow) {
+    Instant acceptedAt = invoice.getReportAcceptedAt();
+    if (acceptedAt == null) {
+      throw new IllegalStateException("Report must be accepted before starting payment deadline");
+    }
+    payment.startPaymentDueWindow(acceptedAt, dueWindow);
+    updatedAt = Instant.now();
+  }
+
   public void confirmPayment(String reference, BigDecimal amount, UUID managerUserId) {
     validatePayment(reference, amount);
     payment.confirm(
@@ -561,6 +570,36 @@ public class ServiceRequestOccurrence {
 
   public boolean hasActivePaymentOrder(String method) {
     return payment.hasActiveGatewayOrder(method);
+  }
+
+  /** True when the occurrence is unpaid and past its customer payment deadline. */
+  public boolean isPaymentOverdue(Instant now) {
+    return payment.isPaymentOverdue(now);
+  }
+
+  /** True when this occurrence is overdue and has not yet been notified for this overdue window. */
+  public boolean needsOverdueNotification(Instant now) {
+    return payment.needsOverdueNotification(now);
+  }
+
+  /** Marks the overdue reminder as sent so the job does not notify the same occurrence twice. */
+  public void markOverdueNotified(Instant notifiedAt) {
+    payment.markOverdueNotified(notifiedAt);
+    updatedAt = Instant.now();
+  }
+
+  /** Clears the payment deadline (e.g. after the unpaid gateway order is cancelled). */
+  public void clearPaymentDeadline() {
+    payment.clearPaymentDeadline();
+    updatedAt = Instant.now();
+  }
+
+  public Instant getPaymentDueAt() {
+    return payment.getPaymentDueAt();
+  }
+
+  public Instant getPaymentOverdueNotifiedAt() {
+    return payment.getPaymentOverdueNotifiedAt();
   }
 
   private void validatePayment(String reference, BigDecimal amount) {

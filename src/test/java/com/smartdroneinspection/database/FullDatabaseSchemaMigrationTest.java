@@ -150,7 +150,7 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).containsExactly("1", "2", "3");
+    assertThat(versions).containsExactly("1", "2", "3", "4");
 
     assertColumns(
         "inspections",
