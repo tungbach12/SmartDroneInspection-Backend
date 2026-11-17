@@ -1399,6 +1399,18 @@ public class InspectionCreationService {
                 .map(UserAccess.ActiveUser::fullName)
                 .orElse(null)
             : null;
+    String ownerCustomerName =
+        inspection.getOwnerCustomerId() != null
+            ? userAccess
+                .findUser(inspection.getOwnerCustomerId())
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null)
+            : null;
+    // The inspection aggregate has no Manager reference, so the only Manager we can attribute with
+    // certainty is the one recorded on the flight-permit review. Do not guess an arbitrary active
+    // Manager; leave it null and let the client fall back.
+    String managerName =
+        (verifiedByName != null && !verifiedByName.isBlank()) ? verifiedByName : null;
 
     return new InspectionResponse(
         inspection.getId(),
@@ -1451,7 +1463,9 @@ public class InspectionCreationService {
         verifiedByName,
         inspection.getFlightPermitVerifiedAt(),
         inspection.getFlightPermitRejectionReason(),
-        inspection.getFlightPermitReviewNotes());
+        inspection.getFlightPermitReviewNotes(),
+        ownerCustomerName,
+        managerName);
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
