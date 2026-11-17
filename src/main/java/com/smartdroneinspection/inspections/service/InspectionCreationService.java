@@ -1406,11 +1406,13 @@ public class InspectionCreationService {
                 .map(UserAccess.ActiveUser::fullName)
                 .orElse(null)
             : null;
-    // The inspection aggregate has no Manager reference, so the only Manager we can attribute with
-    // certainty is the one recorded on the flight-permit review. Do not guess an arbitrary active
-    // Manager; leave it null and let the client fall back.
     String managerName =
-        (verifiedByName != null && !verifiedByName.isBlank()) ? verifiedByName : null;
+        (verifiedByName != null && !verifiedByName.isBlank())
+            ? verifiedByName
+            : userAccess.listActivePlatformManagers().stream()
+                .findFirst()
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null);
 
     return new InspectionResponse(
         inspection.getId(),

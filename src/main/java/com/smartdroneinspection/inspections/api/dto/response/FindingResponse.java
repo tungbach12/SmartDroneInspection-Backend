@@ -16,7 +16,6 @@ public record FindingResponse(
     FindingSeverity severity,
     String boundingBox,
     String technicalNotes,
-    String recommendedAction,
     FindingStatus status,
     String modelName,
     BigDecimal confidence,

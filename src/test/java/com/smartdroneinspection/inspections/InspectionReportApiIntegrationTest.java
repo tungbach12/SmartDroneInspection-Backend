@@ -147,7 +147,7 @@ class InspectionReportApiIntegrationTest {
   }
 
   @Test
-  void aFindingStoresTechnicalNotesAndRecommendedAction() throws Exception {
+  void aFindingStoresTechnicalNotesOnly() throws Exception {
     UUID evidenceId = uploadEvidence();
 
     mockMvc
@@ -161,13 +161,12 @@ class InspectionReportApiIntegrationTest {
                             "evidenceId", evidenceId.toString(),
                             "defectLabel", "Section loss on the web",
                             "severity", "HIGH",
-                            "technicalNotes", "Measured loss exceeds the acceptance threshold",
-                            "recommendedAction", "Install doubler plate"))))
+                            "technicalNotes", "Measured loss exceeds the acceptance threshold"))))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.technicalNotes")
                 .value("Measured loss exceeds the acceptance threshold"))
-        .andExpect(jsonPath("$.data.recommendedAction").value("Install doubler plate"));
+        .andExpect(jsonPath("$.data.recommendedAction").doesNotExist());
   }
 
   @Test

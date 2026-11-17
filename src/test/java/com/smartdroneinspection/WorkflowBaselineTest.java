@@ -67,9 +67,9 @@ class WorkflowBaselineTest {
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank",
             (resultSet, rowNumber) -> resultSet.getString(1));
 
-    List<String> expectedVersions = List.of("1", "58", "59");
+    List<String> expectedVersions = List.of("1", "2");
 
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("59");
+    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("2");
     assertThat(versions).containsExactlyElementsOf(expectedVersions);
   }
 

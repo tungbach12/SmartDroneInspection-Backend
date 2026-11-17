@@ -115,7 +115,6 @@ public interface ReportRenderPort {
       String defectLabel,
       String severity,
       String technicalNotes,
-      String recommendedAction,
       String decision,
       String decidedAt,
       boolean inspectorConfirmed) {}

@@ -311,7 +311,6 @@ public class FindingService {
               detection.predictedLabel(),
               FindingSeverity.MEDIUM,
               detection.predictedLabel(),
-              null,
               detection.boundingBox(),
               detection.modelName(),
               detection.confidence());
@@ -744,7 +743,6 @@ public class FindingService {
                 detection.predictedLabel(),
                 FindingSeverity.MEDIUM,
                 detection.predictedLabel(),
-                locationDesc,
                 detection.boundingBox(),
                 detection.modelName(),
                 detection.confidence());
@@ -891,8 +889,6 @@ public class FindingService {
                                 && f.getFindingCode().toLowerCase().contains(cleanDefect))
                             || (f.getTechnicalNotes() != null
                                 && f.getTechnicalNotes().toLowerCase().contains(cleanDefect))
-                            || (f.getRecommendedAction() != null
-                                && f.getRecommendedAction().toLowerCase().contains(cleanDefect))
                             || (f.getModelName() != null
                                 && f.getModelName().toLowerCase().contains(cleanDefect));
                     if (!match) return false;
@@ -963,10 +959,7 @@ public class FindingService {
         request.evidenceId() == null ? finding.getEvidenceId() : request.evidenceId(),
         orDefault(request.defectLabel(), finding.getDefectLabel()),
         request.severity() == null ? finding.getSeverity() : request.severity(),
-        orDefault(request.technicalNotes(), finding.getTechnicalNotes()),
-        request.recommendedAction() == null
-            ? finding.getRecommendedAction()
-            : request.recommendedAction());
+        orDefault(request.technicalNotes(), finding.getTechnicalNotes()));
     if (request.boundingBox() != null) {
       finding.updateBoundingBox(normalizeOptionalBoundingBox(request.boundingBox()));
     }
@@ -994,7 +987,6 @@ public class FindingService {
             request.defectLabel(),
             request.severity(),
             request.technicalNotes(),
-            request.recommendedAction(),
             boundingBox,
             null,
             null);
@@ -1012,11 +1004,7 @@ public class FindingService {
     Finding finding = requireFinding(inspectionId, findingId);
     Evidence record = requireEvidence(inspectionId, request.evidenceId());
     finding.revise(
-        record.getId(),
-        request.defectLabel(),
-        request.severity(),
-        request.technicalNotes(),
-        request.recommendedAction());
+        record.getId(), request.defectLabel(), request.severity(), request.technicalNotes());
     if (request.boundingBox() != null) {
       finding.updateBoundingBox(normalizeOptionalBoundingBox(request.boundingBox()));
     }
@@ -1270,7 +1258,6 @@ public class FindingService {
         finding.getSeverity(),
         finding.getBoundingBox(),
         finding.getTechnicalNotes(),
-        finding.getRecommendedAction(),
         finding.getStatus(),
         finding.getModelName(),
         finding.getConfidence(),

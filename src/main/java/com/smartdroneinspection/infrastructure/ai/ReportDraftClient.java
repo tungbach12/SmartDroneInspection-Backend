@@ -329,9 +329,6 @@ public class ReportDraftClient implements ReportDraftPort {
       builder.append("- Defect: ").append(finding.defectLabel());
       builder.append(" | Severity: ").append(finding.severity());
       builder.append(" | Notes: ").append(finding.technicalNotes());
-      if (finding.recommendedAction() != null && !finding.recommendedAction().isBlank()) {
-        builder.append(" | Recommended action: ").append(finding.recommendedAction());
-      }
       builder.append("\n");
     }
     if (context.findings().isEmpty()) builder.append("None confirmed.\n");

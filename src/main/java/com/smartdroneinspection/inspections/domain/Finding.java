@@ -49,9 +49,6 @@ public class Finding {
   @Column(name = "technical_notes", nullable = false, length = 4000)
   private String technicalNotes;
 
-  @Column(name = "recommended_action", length = 4000)
-  private String recommendedAction;
-
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
   private FindingStatus status;
@@ -77,7 +74,6 @@ public class Finding {
       String defectLabel,
       FindingSeverity severity,
       String technicalNotes,
-      String recommendedAction,
       String boundingBox,
       String modelName,
       BigDecimal confidence) {
@@ -87,7 +83,6 @@ public class Finding {
     this.defectLabel = defectLabel;
     this.severity = severity;
     this.technicalNotes = technicalNotes;
-    this.recommendedAction = recommendedAction;
     this.boundingBox = boundingBox;
     this.modelName = modelName;
     this.confidence = confidence;
@@ -97,16 +92,11 @@ public class Finding {
   }
 
   public void revise(
-      UUID evidenceId,
-      String defectLabel,
-      FindingSeverity severity,
-      String technicalNotes,
-      String recommendedAction) {
+      UUID evidenceId, String defectLabel, FindingSeverity severity, String technicalNotes) {
     this.evidenceId = evidenceId;
     this.defectLabel = defectLabel;
     this.severity = severity;
     this.technicalNotes = technicalNotes;
-    this.recommendedAction = recommendedAction;
     this.status = FindingStatus.PENDING;
   }
 
@@ -180,10 +170,6 @@ public class Finding {
 
   public String getTechnicalNotes() {
     return technicalNotes;
-  }
-
-  public String getRecommendedAction() {
-    return recommendedAction;
   }
 
   public String getBoundingBox() {
