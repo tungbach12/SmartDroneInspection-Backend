@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateDefectVerificationRequest;
 import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.ReinspectionDefectVerification;
@@ -11,6 +12,7 @@ import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
@@ -18,6 +20,7 @@ import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerific
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -37,6 +40,7 @@ public class ReinspectionVerificationService {
   private final InspectionRepository inspections;
   private final FindingRepository findings;
   private final EvidenceRepository evidences;
+  private final FieldSessionRepository fieldSessions;
   private final InspectionReportRepository reports;
   private final UserAccess userAccess;
   private final ReinspectionProperties reinspectionProperties;
@@ -48,7 +52,7 @@ public class ReinspectionVerificationService {
       EvidenceRepository evidences,
       InspectionReportRepository reports,
       UserAccess userAccess) {
-    this(verifications, inspections, findings, evidences, reports, userAccess, null);
+    this(verifications, inspections, findings, evidences, null, reports, userAccess, null);
   }
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -57,6 +61,7 @@ public class ReinspectionVerificationService {
       InspectionRepository inspections,
       FindingRepository findings,
       EvidenceRepository evidences,
+      FieldSessionRepository fieldSessions,
       InspectionReportRepository reports,
       UserAccess userAccess,
       ReinspectionProperties reinspectionProperties) {
@@ -64,6 +69,7 @@ public class ReinspectionVerificationService {
     this.inspections = inspections;
     this.findings = findings;
     this.evidences = evidences;
+    this.fieldSessions = fieldSessions;
     this.reports = reports;
     this.userAccess = userAccess;
     this.reinspectionProperties =
@@ -211,6 +217,9 @@ public class ReinspectionVerificationService {
                           HttpStatus.BAD_REQUEST,
                           "INVALID_EVIDENCE",
                           "Evidence must belong to this re-inspection"));
+      if (status == DefectResolutionStatus.RESOLVED) {
+        requireFreshEvidence(inspection, newEvidence, verification.getSourceFindingId());
+      }
     }
 
     verification.updateVerification(
@@ -363,6 +372,99 @@ public class ReinspectionVerificationService {
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
           "Only the assigned inspector or manager can update defect verifications");
+    }
+  }
+
+  /**
+   * Guards against replaying an old or unrelated capture as proof a defect was re-fixed.
+   *
+   * <p>A RESOLVED verdict is only trustworthy if the evidence was captured during this
+   * re-inspection's field session, inside that session's flight window, and is not a byte-for-byte
+   * reuse of the original inspection evidence. Each failed check raises a distinct error so the
+   * Inspector sees exactly why the capture was refused.
+   */
+  private void requireFreshEvidence(
+      Inspection inspection, Evidence newEvidence, UUID sourceFindingId) {
+    UUID fieldSessionId = newEvidence.getFieldSessionId();
+    if (fieldSessionId == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_NOT_FRESH",
+          "Re-inspection evidence must be captured within a field session of this re-inspection");
+    }
+    FieldSession session =
+        fieldSessions
+            .findByIdAndInspectionId(fieldSessionId, inspection.getId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "EVIDENCE_SESSION_MISMATCH",
+                        "Re-inspection evidence must belong to a field session of this re-inspection"));
+
+    if (!FieldSession.FIELD_COMPLETED.equals(session.getStatus())) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_SESSION_NOT_COMPLETED",
+          "Re-inspection evidence must come from a completed field session");
+    }
+
+    Instant captureTime = newEvidence.getCaptureTime();
+    Instant sessionStart = session.getStartedAt();
+    Instant sessionEnd = session.getEndedAt();
+    if (captureTime == null || sessionStart == null || sessionEnd == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_CAPTURE_TIME_REQUIRED",
+          "Re-inspection evidence must record its capture time and the field session must have started");
+    }
+    if (captureTime.isBefore(sessionStart)
+        || (sessionEnd != null && captureTime.isAfter(sessionEnd))) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "EVIDENCE_OUTSIDE_SESSION",
+          "Re-inspection evidence capture time must fall within the field session flight window");
+    }
+
+    String objectKey = newEvidence.getObjectKey();
+    if (objectKey == null || objectKey.isBlank()) {
+      return;
+    }
+    UUID sourceInspectionId = inspection.getSourceInspectionId();
+    if (sourceInspectionId != null) {
+      boolean reusedSourceEvidence =
+          evidences
+              .findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(sourceInspectionId)
+              .stream()
+              .anyMatch(
+                  sourceEvidence ->
+                      sourceEvidence.getId().equals(newEvidence.getId())
+                          || objectKey.equals(sourceEvidence.getObjectKey()));
+      if (reusedSourceEvidence) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "EVIDENCE_REUSED",
+            "Re-inspection evidence must be a fresh capture, not a reuse of evidence from the original inspection");
+      }
+    } else if (sourceFindingId != null) {
+      // Defensive fallback for legacy re-inspections without sourceInspectionId metadata.
+      Finding sourceFinding = findings.findById(sourceFindingId).orElse(null);
+      UUID sourceEvidenceId = sourceFinding != null ? sourceFinding.getEvidenceId() : null;
+      if (sourceEvidenceId != null && sourceEvidenceId.equals(newEvidence.getId())) {
+        throw new BusinessException(
+            HttpStatus.BAD_REQUEST,
+            "EVIDENCE_REUSED",
+            "Re-inspection evidence must be a fresh capture, not the original inspection evidence");
+      }
+      if (sourceEvidenceId != null) {
+        Evidence sourceEvidence = evidences.findById(sourceEvidenceId).orElse(null);
+        if (sourceEvidence != null && objectKey.equals(sourceEvidence.getObjectKey())) {
+          throw new BusinessException(
+              HttpStatus.BAD_REQUEST,
+              "EVIDENCE_REUSED",
+              "Re-inspection evidence must be a fresh capture, not a reuse of the original inspection evidence");
+        }
+      }
     }
   }
 
