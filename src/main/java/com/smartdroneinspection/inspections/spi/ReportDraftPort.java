@@ -118,8 +118,7 @@ public interface ReportDraftPort {
     }
   }
 
-  record FindingSummary(
-      String defectLabel, String severity, String technicalNotes, String recommendedAction) {}
+  record FindingSummary(String defectLabel, String severity, String technicalNotes) {}
 
   record EvidenceSummary(
       String fileName,

@@ -215,8 +215,7 @@ public final class ReportHtmlTemplate {
           .append("</tr></table>")
           .append("<table>");
       row(body, context, "Defect", finding.defectLabel());
-      row(body, context, "Technical notes", finding.technicalNotes());
-      row(body, context, "Recommended action", finding.recommendedAction());
+      row(body, context, "Note", finding.technicalNotes());
       row(
           body,
           context,
@@ -571,8 +570,7 @@ public final class ReportHtmlTemplate {
       case "Observed condition" -> "Tình trạng quan sát được";
       case "Description" -> "Mô tả";
       case "Measurement (method and unit)" -> "Phép đo (phương pháp và đơn vị)";
-      case "Technical notes" -> "Ghi chú kỹ thuật";
-      case "Recommended action" -> "Hành động khuyến nghị";
+      case "Note" -> "Ghi chú";
       case "Decision" -> "Quyết định";
       case "Corrective work required" -> "Yêu cầu công việc khắc phục";
       case "Evidence" -> "Bằng chứng";

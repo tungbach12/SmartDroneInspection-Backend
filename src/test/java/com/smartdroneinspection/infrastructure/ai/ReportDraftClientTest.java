@@ -82,7 +82,7 @@ class ReportDraftClientTest {
             .asString();
     assertThat(prompt)
         .contains(
-            "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):\n- Defect: Surface Crack | Severity: MEDIUM | Notes: Hairline crack observed | Recommended action: Monitor and re-inspect")
+            "Inspector-confirmed Findings (official findings only; confirmation is not independent validation):\n- Defect: Surface Crack | Severity: MEDIUM | Notes: Hairline crack observed")
         .contains("AI Detection Candidates (advisory, not official findings)")
         .contains("Candidate status (not official finding status): PENDING")
         .contains("Bounding-box JSON: {\"x\":1}")
@@ -299,9 +299,7 @@ class ReportDraftClientTest {
             "2026-10-12T09:00:00Z",
             "2026-10-12T17:00:00Z",
             null),
-        List.of(
-            new FindingSummary(
-                "Surface Crack", "MEDIUM", "Hairline crack observed", "Monitor and re-inspect")),
+        List.of(new FindingSummary("Surface Crack", "MEDIUM", "Hairline crack observed")),
         List.of(
             new EvidenceSummary(
                 "girder-01.png",

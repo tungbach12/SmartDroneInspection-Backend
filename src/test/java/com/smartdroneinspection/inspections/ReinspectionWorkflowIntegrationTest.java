@@ -147,8 +147,7 @@ class ReinspectionWorkflowIntegrationTest {
             "F-1",
             "Concrete crack",
             FindingSeverity.HIGH,
-            "Hairline diagonal crack at panel joint",
-            "Seal joint and re-verify",
+            "Hairline diagonal crack at panel joint · Seal joint and re-verify",
             null,
             "manual",
             null);
@@ -162,8 +161,7 @@ class ReinspectionWorkflowIntegrationTest {
             "F-2",
             "Coating spalling",
             FindingSeverity.MEDIUM,
-            "Localized waterproof peeling near roof parapet",
-            "Reapply waterproof membrane",
+            "Localized waterproof peeling near roof parapet · Reapply waterproof membrane",
             null,
             "manual",
             null);
@@ -178,7 +176,6 @@ class ReinspectionWorkflowIntegrationTest {
             "False positive reflection",
             FindingSeverity.LOW,
             "Glare artifact",
-            null,
             null,
             "yolo",
             new BigDecimal("0.42"));

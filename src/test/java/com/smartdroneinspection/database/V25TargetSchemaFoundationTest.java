@@ -131,7 +131,6 @@ class V25TargetSchemaFoundationTest {
                     "severity",
                     "bounding_box",
                     "technical_notes",
-                    "recommended_action",
                     "status",
                     "model_name",
                     "confidence",

@@ -730,7 +730,6 @@ public class ReportService {
               finding.getDefectLabel(),
               finding.getSeverity().name(),
               finding.getTechnicalNotes(),
-              finding.getRecommendedAction(),
               finding.getStatus().name(),
               null,
               finding.isOfficial()));
@@ -756,7 +755,6 @@ public class ReportService {
                 label + " [" + v.getResolutionStatus().name() + "]",
                 severity,
                 v.getInspectorNotes(),
-                srcFinding != null ? srcFinding.getRecommendedAction() : null,
                 v.getResolutionStatus().name(),
                 null,
                 true));
@@ -1156,8 +1154,8 @@ public class ReportService {
                 findings.stream()
                     .map(
                         f ->
-                            f.recommendedAction() != null && !f.recommendedAction().isBlank()
-                                ? f.recommendedAction()
+                            f.technicalNotes() != null && !f.technicalNotes().isBlank()
+                                ? f.technicalNotes()
                                 : f.defectLabel())
                     .collect(Collectors.joining("; "));
             conclusionsRecommendations =
@@ -1177,8 +1175,8 @@ public class ReportService {
                 findings.stream()
                     .map(
                         f ->
-                            f.recommendedAction() != null && !f.recommendedAction().isBlank()
-                                ? f.recommendedAction()
+                            f.technicalNotes() != null && !f.technicalNotes().isBlank()
+                                ? f.technicalNotes()
                                 : f.defectLabel())
                     .collect(Collectors.joining("; "));
             conclusionsRecommendations =
@@ -1280,8 +1278,7 @@ public class ReportService {
                     new ReportDraftPort.FindingSummary(
                         finding.getDefectLabel(),
                         finding.getSeverity().name(),
-                        finding.getTechnicalNotes(),
-                        finding.getRecommendedAction()))
+                        finding.getTechnicalNotes()))
             .toList(),
         confirmedEvidence.stream()
             .map(

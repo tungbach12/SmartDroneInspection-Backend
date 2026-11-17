@@ -22,7 +22,6 @@ class FindingTest {
         "corrosion",
         FindingSeverity.MEDIUM,
         "corrosion visible",
-        null,
         "{\"x\":10,\"y\":20,\"w\":30,\"h\":40}",
         "yolo-v8",
         new BigDecimal("0.91230"));
@@ -35,8 +34,7 @@ class FindingTest {
         "F-2",
         "Spalling",
         FindingSeverity.HIGH,
-        "Surface loss of 5 mm",
-        "Patch and seal",
+        "Surface loss of 5 mm · Patch and seal",
         null,
         null,
         null);
@@ -101,8 +99,7 @@ class FindingTest {
     Finding finding = detected();
     finding.confirmByInspector();
 
-    finding.revise(
-        evidenceId, "corrosion", FindingSeverity.HIGH, "More extensive corrosion", "Repair");
+    finding.revise(evidenceId, "corrosion", FindingSeverity.HIGH, "More extensive corrosion");
 
     assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
     assertThat(finding.isOfficial()).isFalse();

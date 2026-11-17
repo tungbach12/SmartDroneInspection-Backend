@@ -82,8 +82,7 @@ class FindingServiceQueryTest {
             "F-1",
             "Longitudinal Crack",
             FindingSeverity.HIGH,
-            "Visible crack along Pier T1",
-            "Patch with epoxy",
+            "Visible crack along Pier T1 · Patch with epoxy",
             null,
             "yolo11s",
             null);
@@ -98,7 +97,6 @@ class FindingServiceQueryTest {
             "Spall on concrete surface",
             null,
             null,
-            null,
             null);
     f2.confirmByInspector();
 
@@ -110,7 +108,6 @@ class FindingServiceQueryTest {
             "Corrosion Staining",
             FindingSeverity.LOW,
             "Water run-off staining",
-            null,
             null,
             null,
             null);

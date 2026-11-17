@@ -15,15 +15,10 @@ public record ManualFindingRequest(
     @NotBlank @Size(max = 160) String defectLabel,
     @NotNull FindingSeverity severity,
     @NotBlank @Size(max = 4000) String technicalNotes,
-    @Size(max = 4000) String recommendedAction,
     @Size(max = 2000) String boundingBox) {
 
   public ManualFindingRequest(
-      UUID evidenceId,
-      String defectLabel,
-      FindingSeverity severity,
-      String technicalNotes,
-      String recommendedAction) {
-    this(evidenceId, defectLabel, severity, technicalNotes, recommendedAction, null);
+      UUID evidenceId, String defectLabel, FindingSeverity severity, String technicalNotes) {
+    this(evidenceId, defectLabel, severity, technicalNotes, null);
   }
 }
