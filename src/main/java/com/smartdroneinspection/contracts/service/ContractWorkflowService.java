@@ -2204,7 +2204,8 @@ public class ContractWorkflowService
         occurrence.getPayoutStatus() != null ? occurrence.getPayoutStatus().name() : null,
         occurrence.getPayoutReference(),
         requestDescription,
-        occurrence.getPaymentMethod());
+        occurrence.getPaymentMethod(),
+        occurrence.getPaymentDueAt());
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
