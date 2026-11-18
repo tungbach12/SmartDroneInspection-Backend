@@ -15,6 +15,90 @@ public interface ServiceRequestOccurrenceRepository
 
   List<ServiceRequestOccurrence> findByRequestIdOrderByOccurrenceIndexAsc(UUID requestId);
 
+  @Query(
+      value =
+          "select occurrence from ServiceRequestOccurrence occurrence "
+              + "join ServiceRequest request on request.id = occurrence.requestId "
+              + "where request.ownerCustomerId = :ownerId "
+              + "and occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+              + "order by occurrence.payment.paymentConfirmedAt desc, occurrence.id desc",
+      countQuery =
+          "select count(occurrence) from ServiceRequestOccurrence occurrence "
+              + "join ServiceRequest request on request.id = occurrence.requestId "
+              + "where request.ownerCustomerId = :ownerId "
+              + "and occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> pagePaidByCustomer(
+      @Param("ownerId") UUID ownerId, org.springframework.data.domain.Pageable pageable);
+
+  @Query(
+      value =
+          "select occurrence from ServiceRequestOccurrence occurrence "
+              + "where occurrence.inspectorId = :inspectorId "
+              + "and occurrence.payout.payoutStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID "
+              + "order by occurrence.payout.payoutRecordedAt desc, occurrence.id desc",
+      countQuery =
+          "select count(occurrence) from ServiceRequestOccurrence occurrence "
+              + "where occurrence.inspectorId = :inspectorId "
+              + "and occurrence.payout.payoutStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> pagePaidByInspector(
+      @Param("inspectorId") UUID inspectorId, org.springframework.data.domain.Pageable pageable);
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "join ServiceRequest request on request.id = occurrence.requestId "
+          + "where request.ownerCustomerId = :ownerId and occurrence.id = :occurrenceId "
+          + "and occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID")
+  Optional<ServiceRequestOccurrence> findPaidByCustomer(
+      @Param("ownerId") UUID ownerId, @Param("occurrenceId") UUID occurrenceId);
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "where occurrence.inspectorId = :inspectorId and occurrence.id = :occurrenceId "
+          + "and occurrence.payout.payoutStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID")
+  Optional<ServiceRequestOccurrence> findPaidByInspector(
+      @Param("inspectorId") UUID inspectorId, @Param("occurrenceId") UUID occurrenceId);
+
+  @Query(
+      value =
+          "select occurrence from ServiceRequestOccurrence occurrence "
+              + "where occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+              + "order by occurrence.payment.paymentConfirmedAt desc, occurrence.id desc",
+      countQuery =
+          "select count(occurrence) from ServiceRequestOccurrence occurrence "
+              + "where occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> pagePaidForManager(
+      org.springframework.data.domain.Pageable pageable);
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "where occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+          + "order by occurrence.payment.paymentConfirmedAt desc, occurrence.id desc")
+  List<ServiceRequestOccurrence> findAllPaidForManager();
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "where occurrence.id = :occurrenceId "
+          + "and occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID")
+  Optional<ServiceRequestOccurrence> findPaidByIdForManager(
+      @Param("occurrenceId") UUID occurrenceId);
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "join ServiceRequest request on request.id = occurrence.requestId "
+          + "where request.ownerCustomerId = :customerId "
+          + "and occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+          + "order by occurrence.payment.paymentConfirmedAt desc, occurrence.id desc")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> findPaidHistoryForCustomer(
+      @Param("customerId") UUID customerId, org.springframework.data.domain.Pageable pageable);
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "where occurrence.inspectorId = :inspectorId "
+          + "and occurrence.payout.payoutStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID "
+          + "order by occurrence.payout.payoutRecordedAt desc, occurrence.id desc")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> findPaidPayoutHistoryForInspector(
+      @Param("inspectorId") UUID inspectorId, org.springframework.data.domain.Pageable pageable);
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select occurrence from ServiceRequestOccurrence occurrence where occurrence.id = :id")
   Optional<ServiceRequestOccurrence> findWithLockById(@Param("id") UUID id);
@@ -63,4 +147,16 @@ public interface ServiceRequestOccurrenceRepository
       @Param("start") java.time.Instant start,
       @Param("end") java.time.Instant end,
       @Param("excludeInspectionId") UUID excludeInspectionId);
+
+  /**
+   * Unpaid occurrences whose customer payment deadline has passed and that have not yet been
+   * notified as overdue. Drives the daily overdue-warning job.
+   */
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment "
+          + "where payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAYMENT_DUE "
+          + "and payment.paymentDueAt is not null "
+          + "and payment.paymentDueAt < :now "
+          + "and payment.paymentOverdueNotifiedAt is null")
+  List<ServiceRequestOccurrence> findOverduePayments(@Param("now") java.time.Instant now);
 }

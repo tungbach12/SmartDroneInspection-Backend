@@ -60,6 +60,12 @@ public class ServicePayment {
   @Column(name = "payment_method", length = 30)
   private String paymentMethod;
 
+  @Column(name = "payment_due_at")
+  private Instant paymentDueAt;
+
+  @Column(name = "payment_overdue_notified_at")
+  private Instant paymentOverdueNotifiedAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
@@ -81,6 +87,41 @@ public class ServicePayment {
       paymentStatus = OccurrencePaymentStatus.PAYMENT_DUE;
       updatedAt = Instant.now();
     }
+  }
+
+  /**
+   * Records the deadline by which the customer is expected to settle this occurrence. Called when a
+   * gateway checkout order is opened so the overdue warning can fire after the configured window.
+   */
+  void startPaymentDueWindow(Instant acceptedAt, java.time.Duration dueWindow) {
+    if (paymentStatus != OccurrencePaymentStatus.PAYMENT_DUE) {
+      throw new IllegalStateException("Only a due payment can carry a payment deadline");
+    }
+    if (paymentDueAt == null) {
+      paymentDueAt = acceptedAt.plus(dueWindow);
+      updatedAt = Instant.now();
+    }
+  }
+
+  boolean isPaymentOverdue(Instant now) {
+    return paymentStatus == OccurrencePaymentStatus.PAYMENT_DUE
+        && paymentDueAt != null
+        && now.isAfter(paymentDueAt);
+  }
+
+  boolean needsOverdueNotification(Instant now) {
+    return isPaymentOverdue(now) && paymentOverdueNotifiedAt == null;
+  }
+
+  void markOverdueNotified(Instant notifiedAt) {
+    paymentOverdueNotifiedAt = notifiedAt;
+    updatedAt = Instant.now();
+  }
+
+  void clearPaymentDeadline() {
+    paymentDueAt = null;
+    paymentOverdueNotifiedAt = null;
+    updatedAt = Instant.now();
   }
 
   void assignPayOSOrder(long orderCode) {
@@ -270,6 +311,8 @@ public class ServicePayment {
     paymentReference = reference.trim();
     paymentMethod = (method != null && !method.isBlank()) ? method : "PAYOS";
     paymentConfirmedAt = Instant.now();
+    paymentDueAt = null;
+    paymentOverdueNotifiedAt = null;
     updatedAt = paymentConfirmedAt;
   }
 
@@ -287,6 +330,14 @@ public class ServicePayment {
 
   public Instant getPaymentConfirmedAt() {
     return paymentConfirmedAt;
+  }
+
+  public Instant getPaymentDueAt() {
+    return paymentDueAt;
+  }
+
+  public Instant getPaymentOverdueNotifiedAt() {
+    return paymentOverdueNotifiedAt;
   }
 
   public Long getPayosOrderCode() {

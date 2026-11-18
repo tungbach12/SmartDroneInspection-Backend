@@ -38,6 +38,7 @@ import com.smartdroneinspection.inspections.service.FindingService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.MediaTicketService;
+import com.smartdroneinspection.inspections.service.PaymentDocumentService;
 import com.smartdroneinspection.inspections.service.ReinspectionVerificationService;
 import com.smartdroneinspection.inspections.service.ReportService;
 import com.smartdroneinspection.shared.RequestLocale;
@@ -97,6 +98,7 @@ public class InspectionController {
   private final Optional<EvidenceUploadSessionService> uploadSessionService;
   private final Optional<MediaTicketService> mediaTicketService;
   private final Optional<ReinspectionVerificationService> reinspectionVerificationService;
+  private final PaymentDocumentService paymentDocumentService;
 
   public InspectionController(
       EvidenceService evidenceService,
@@ -113,7 +115,8 @@ public class InspectionController {
         java.util.Optional.empty(),
         Optional.empty(),
         Optional.empty(),
-        Optional.empty());
+        Optional.empty(),
+        null);
   }
 
   public InspectionController(
@@ -133,7 +136,8 @@ public class InspectionController {
         reportAcceptancePort,
         Optional.empty(),
         Optional.empty(),
-        Optional.empty());
+        Optional.empty(),
+        null);
   }
 
   public InspectionController(
@@ -155,7 +159,8 @@ public class InspectionController {
         reportAcceptancePort,
         uploadSessionService,
         mediaTicketService,
-        Optional.empty());
+        Optional.empty(),
+        null);
   }
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -169,7 +174,8 @@ public class InspectionController {
           reportAcceptancePort,
       Optional<EvidenceUploadSessionService> uploadSessionService,
       Optional<MediaTicketService> mediaTicketService,
-      Optional<ReinspectionVerificationService> reinspectionVerificationService) {
+      Optional<ReinspectionVerificationService> reinspectionVerificationService,
+      PaymentDocumentService paymentDocumentService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
@@ -182,6 +188,7 @@ public class InspectionController {
         reinspectionVerificationService != null
             ? reinspectionVerificationService
             : Optional.empty();
+    this.paymentDocumentService = paymentDocumentService;
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -835,6 +842,19 @@ public class InspectionController {
     }
     return ApiResponse.success(
         reportAcceptancePort.get().getPaymentStatus(actorId(jwt), inspectionId));
+  }
+
+  @GetMapping("/report/payment-document")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN', 'INSPECTOR')")
+  public ResponseEntity<byte[]> downloadPaymentDocument(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (paymentDocumentService == null) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_DOCUMENT_UNAVAILABLE",
+          "Payment documents are not configured");
+    }
+    return paymentDocumentService.render(actorId(jwt), inspectionId);
   }
 
   @GetMapping("/report/versions/{versionId}/ai-summary")
