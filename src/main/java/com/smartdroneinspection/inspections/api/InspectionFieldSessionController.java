@@ -91,6 +91,16 @@ public class InspectionFieldSessionController {
         missionResponse(droneHub.start(subject(jwt), inspectionId, sessionId, telemetrySource)));
   }
 
+  @PostMapping("/{sessionId}/drone-hub/complete")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ApiResponse<SmartDroneHubFlightReportResponse> completeDroneHubFlight(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID sessionId) {
+    return ApiResponse.success(
+        flightReportResponse(droneHub.completeFlight(subject(jwt), inspectionId, sessionId)));
+  }
+
   @PostMapping("/{sessionId}/drone-hub/import-log")
   @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<SmartDroneHubFlightReportResponse> importFlightLog(

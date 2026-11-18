@@ -190,3 +190,62 @@ def test_live_distance_is_relative_to_session_start():
         expected_distance = hub.haversine(10.8, 106, 10.80001, 106)
         assert abs(data["distanceFlownMeters"] - expected_distance) < 0.1
         assert data["altitudeMeters"] == 20.0
+
+
+def test_ignores_null_island_gps_packets_until_real_fix():
+    request = payload("MAVLINK")
+    hub.telemetry._apply(
+        type("Heartbeat", (), {"base_mode": 128, "get_type": lambda self: "HEARTBEAT"})(),
+        "STABILIZE",
+    )
+
+    def make_pos(lat_e7, lon_e7, alt_mm=0):
+        return type(
+            "Position",
+            (),
+            {
+                "get_type": lambda self: "GLOBAL_POSITION_INT",
+                "lat": lat_e7,
+                "lon": lon_e7,
+                "relative_alt": alt_mm,
+                "vx": 0,
+                "vy": 0,
+                "hdg": 0,
+            },
+        )()
+
+    hub.telemetry._apply(make_pos(0, 0, 23000))
+    with TestClient(hub.app) as client:
+        assert client.post("/api/v1/missions", json=request).status_code == 200
+        hub.telemetry._apply(make_pos(0, 0, 0))
+        hub.telemetry._apply(make_pos(108755588, 1068008852, 0))
+        hub.telemetry._apply(make_pos(108756588, 1068008852, 15000))
+        report = client.get(
+            f"/api/v1/missions/{request['inspectionId']}"
+            f"/field-sessions/{request['fieldSessionId']}/flight-report"
+        ).json()["data"]
+        expected = hub.haversine(10.8755588, 106.8008852, 10.8756588, 106.8008852)
+        assert abs(report["distanceFlownMeters"] - expected) < 0.2
+        assert all(
+            not (abs(pt["latitude"]) < 1e-6 and abs(pt["longitude"]) < 1e-6)
+            for pt in report["flightTrace"]
+        )
+
+
+def test_can_restart_live_mission_after_flight_report_completed():
+    request = payload("MAVLINK")
+    hub.telemetry._apply(
+        type("Heartbeat", (), {"base_mode": 128, "get_type": lambda self: "HEARTBEAT"})(),
+        "AUTO",
+    )
+    with TestClient(hub.app) as client:
+        assert client.post("/api/v1/missions", json=request).status_code == 200
+        first_report = client.get(
+            f"/api/v1/missions/{request['inspectionId']}"
+            f"/field-sessions/{request['fieldSessionId']}/flight-report"
+        )
+        assert first_report.status_code == 200
+        restarted = client.post("/api/v1/missions", json=request)
+        assert restarted.status_code == 200
+        assert restarted.json()["message"] == "Success"
+        assert restarted.json()["data"]["distanceFlownMeters"] == 0.0

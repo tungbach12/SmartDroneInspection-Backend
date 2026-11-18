@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +28,7 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -251,5 +254,49 @@ class InspectionDroneHubFlightLogTest {
                     "late.csv",
                     new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8))));
     assertEquals("FIELD_SESSION_NOT_IN_PROGRESS", locked.code());
+  }
+
+  @Test
+  void completeFlightPersistsLiveReportWhileSessionIsOpenAndMakesFlightReportReadable() {
+    var hubReport =
+        new SmartDroneHubPort.FlightReport(
+            inspectionId,
+            sessionId,
+            "MISSION_PLANNER_MAVLINK",
+            Instant.parse("2026-11-18T08:00:00Z"),
+            Instant.parse("2026-11-18T08:03:00Z"),
+            180,
+            420.5,
+            35.0,
+            96,
+            82,
+            "LANDED",
+            "Live MAVLink flight completed.",
+            List.of(
+                new SmartDroneHubPort.FlightTracePoint(
+                    10.8755,
+                    106.8008,
+                    20.0,
+                    4.0,
+                    90.0,
+                    96,
+                    "AUTO",
+                    1,
+                    Instant.parse("2026-11-18T08:00:10Z"))),
+            null);
+    when(hub.flightReport(eq(inspectionId), eq(sessionId), any())).thenReturn(hubReport);
+
+    var completed = service.completeFlight(actorId, inspectionId, sessionId);
+
+    assertEquals("MISSION_PLANNER_MAVLINK", completed.telemetrySource());
+    assertEquals(180, completed.durationSeconds());
+    assertEquals(1, completed.flightTrace().size());
+    assertTrue(session.isOpen());
+    assertTrue(session.hasPersistedFlightReport());
+
+    var fetchedWhileOpen = service.flightReport(actorId, inspectionId, sessionId);
+    assertEquals("MISSION_PLANNER_MAVLINK", fetchedWhileOpen.telemetrySource());
+    assertEquals(420.5, fetchedWhileOpen.distanceFlownMeters());
+    verify(hub, times(1)).flightReport(eq(inspectionId), eq(sessionId), any());
   }
 }
