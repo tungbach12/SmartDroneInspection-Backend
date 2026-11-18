@@ -72,6 +72,18 @@ class PersistenceEntityOwnershipTest {
             "inspection_finance_settings",
             "com.smartdroneinspection.contracts.domain.InspectionFinanceSettings"),
         Arguments.of(
+            "contracts",
+            "platform_operations_settings",
+            "com.smartdroneinspection.contracts.domain.PlatformOperationsSettings"),
+        Arguments.of(
+            "inspections",
+            "inspection_messages",
+            "com.smartdroneinspection.inspections.domain.InspectionMessage"),
+        Arguments.of(
+            "inspections",
+            "inspection_message_attachments",
+            "com.smartdroneinspection.inspections.domain.InspectionMessageAttachment"),
+        Arguments.of(
             "users",
             "inspector_flight_logs",
             "com.smartdroneinspection.users.domain.InspectorFlightLog"));
