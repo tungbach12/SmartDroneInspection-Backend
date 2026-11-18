@@ -35,10 +35,10 @@ public class ServiceRequestQuote {
   @Column(name = "first_occurrence_end_at", nullable = false)
   private Instant firstOccurrenceEndAt;
 
-  @Column(name = "inspector_id", nullable = false)
+  @Column(name = "inspector_id")
   private UUID inspectorId;
 
-  @Column(name = "drone_id", nullable = false)
+  @Column(name = "drone_id")
   private UUID droneId;
 
   @Column(name = "price_per_occurrence_vnd", nullable = false, precision = 15, scale = 2)
@@ -71,8 +71,6 @@ public class ServiceRequestQuote {
       String scopeSnapshot,
       Instant firstOccurrenceStartAt,
       Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       UUID issuedByUserId) {
     this(
@@ -80,8 +78,6 @@ public class ServiceRequestQuote {
         scopeSnapshot,
         firstOccurrenceStartAt,
         firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
         pricePerOccurrenceVnd,
         List.of(),
         issuedByUserId);
@@ -92,8 +88,6 @@ public class ServiceRequestQuote {
       String scopeSnapshot,
       Instant firstOccurrenceStartAt,
       Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       List<String> requiredDroneFeatureCodes,
       UUID issuedByUserId) {
@@ -102,16 +96,12 @@ public class ServiceRequestQuote {
         scopeSnapshot,
         firstOccurrenceStartAt,
         firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
         pricePerOccurrenceVnd,
         issuedByUserId);
     this.requestId = requestId;
     this.scopeSnapshot = scopeSnapshot.trim();
     this.firstOccurrenceStartAt = firstOccurrenceStartAt;
     this.firstOccurrenceEndAt = firstOccurrenceEndAt;
-    this.inspectorId = inspectorId;
-    this.droneId = droneId;
     this.pricePerOccurrenceVnd = normalizePrice(pricePerOccurrenceVnd);
     this.requiredDroneFeatureCodes = normalizeFeatures(requiredDroneFeatureCodes);
     this.issuedByUserId = issuedByUserId;
@@ -122,16 +112,12 @@ public class ServiceRequestQuote {
       String scopeSnapshot,
       Instant firstOccurrenceStartAt,
       Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       UUID editorUserId) {
     revise(
         scopeSnapshot,
         firstOccurrenceStartAt,
         firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
         pricePerOccurrenceVnd,
         requiredDroneFeatureCodes,
         editorUserId);
@@ -141,8 +127,6 @@ public class ServiceRequestQuote {
       String scopeSnapshot,
       Instant firstOccurrenceStartAt,
       Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       List<String> requiredDroneFeatureCodes,
       UUID editorUserId) {
@@ -151,15 +135,11 @@ public class ServiceRequestQuote {
         scopeSnapshot,
         firstOccurrenceStartAt,
         firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
         pricePerOccurrenceVnd,
         editorUserId);
     this.scopeSnapshot = scopeSnapshot.trim();
     this.firstOccurrenceStartAt = firstOccurrenceStartAt;
     this.firstOccurrenceEndAt = firstOccurrenceEndAt;
-    this.inspectorId = inspectorId;
-    this.droneId = droneId;
     this.pricePerOccurrenceVnd = normalizePrice(pricePerOccurrenceVnd);
     this.requiredDroneFeatureCodes = normalizeFeatures(requiredDroneFeatureCodes);
     this.issuedByUserId = editorUserId;
@@ -172,8 +152,6 @@ public class ServiceRequestQuote {
       String scopeSnapshot,
       Instant firstOccurrenceStartAt,
       Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
       BigDecimal pricePerOccurrenceVnd,
       UUID editorUserId) {
     if (requestId == null
@@ -182,8 +160,6 @@ public class ServiceRequestQuote {
         || firstOccurrenceStartAt == null
         || firstOccurrenceEndAt == null
         || !firstOccurrenceEndAt.isAfter(firstOccurrenceStartAt)
-        || inspectorId == null
-        || droneId == null
         || pricePerOccurrenceVnd == null
         || pricePerOccurrenceVnd.signum() <= 0
         || editorUserId == null) {

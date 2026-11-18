@@ -9,54 +9,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
+/**
+ * Quote preparation input. The partner Inspector and drone are deliberately absent: they are chosen
+ * at dispatch (step 4) and confirmed by the Inspector, not fixed by the commercial terms.
+ */
 public record IssueServiceQuoteRequest(
     @NotBlank @Size(max = 4000) String scopeSnapshot,
     @NotNull Instant firstOccurrenceStartAt,
     @NotNull Instant firstOccurrenceEndAt,
-    @NotNull UUID inspectorId,
-    @NotNull UUID droneId,
     @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceVnd,
     @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceUsd,
     List<@NotBlank @Size(max = 64) String> requiredDroneFeatureCodes) {
-
-  public IssueServiceQuoteRequest(
-      String scopeSnapshot,
-      Instant firstOccurrenceStartAt,
-      Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
-      BigDecimal pricePerOccurrenceUsd) {
-    this(
-        scopeSnapshot,
-        firstOccurrenceStartAt,
-        firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
-        null,
-        pricePerOccurrenceUsd,
-        List.of());
-  }
-
-  public IssueServiceQuoteRequest(
-      String scopeSnapshot,
-      Instant firstOccurrenceStartAt,
-      Instant firstOccurrenceEndAt,
-      UUID inspectorId,
-      UUID droneId,
-      BigDecimal pricePerOccurrenceVnd,
-      BigDecimal pricePerOccurrenceUsd) {
-    this(
-        scopeSnapshot,
-        firstOccurrenceStartAt,
-        firstOccurrenceEndAt,
-        inspectorId,
-        droneId,
-        pricePerOccurrenceVnd,
-        pricePerOccurrenceUsd,
-        List.of());
-  }
 
   public IssueServiceQuoteRequest {
     requiredDroneFeatureCodes =
@@ -67,6 +31,29 @@ public record IssueServiceQuoteRequest(
         && (pricePerOccurrenceUsd == null || pricePerOccurrenceUsd.signum() <= 0)) {
       throw new IllegalArgumentException("A valid positive price per occurrence must be provided");
     }
+  }
+
+  public IssueServiceQuoteRequest(
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      BigDecimal pricePerOccurrenceUsd) {
+    this(scopeSnapshot, firstOccurrenceStartAt, firstOccurrenceEndAt, null, pricePerOccurrenceUsd);
+  }
+
+  public IssueServiceQuoteRequest(
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      BigDecimal pricePerOccurrenceVnd,
+      BigDecimal pricePerOccurrenceUsd) {
+    this(
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        pricePerOccurrenceVnd,
+        pricePerOccurrenceUsd,
+        List.of());
   }
 
   public String resolvedCurrency() {

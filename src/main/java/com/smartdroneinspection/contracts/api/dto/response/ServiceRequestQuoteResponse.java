@@ -11,7 +11,9 @@ public record ServiceRequestQuoteResponse(
     String scopeSnapshot,
     Instant firstOccurrenceStartAt,
     Instant firstOccurrenceEndAt,
+    /** Legacy Inspector recorded on quotes issued before assignment moved to dispatch. */
     UUID inspectorId,
+    /** Legacy drone recorded on quotes issued before assignment moved to dispatch. */
     UUID droneId,
     String currency,
     BigDecimal pricePerOccurrenceVnd,

@@ -47,6 +47,12 @@ public class ServiceRequestOccurrence {
   @Column(name = "inspection_id", unique = true)
   private UUID inspectionId;
 
+  @Column(name = "last_timeout_cancelled_at")
+  private Instant lastTimeoutCancelledAt;
+
+  @Column(name = "last_timeout_inspector_id")
+  private UUID lastTimeoutInspectorId;
+
   @OneToOne(
       mappedBy = "occurrence",
       cascade = CascadeType.ALL,
@@ -664,8 +670,28 @@ public class ServiceRequestOccurrence {
     this.droneId = droneId;
     this.inspectionId = inspectionId;
     this.payout.assignInspector(inspectorId);
+    this.lastTimeoutCancelledAt = null;
+    this.lastTimeoutInspectorId = null;
     this.status = OccurrenceStatus.ASSIGNED;
     this.updatedAt = Instant.now();
+  }
+
+  public boolean revertTimeoutToPendingAssignment(UUID timedOutInspectorId, Instant timedOutAt) {
+    if (status != OccurrenceStatus.ASSIGNED
+        || getPaymentStatus() == OccurrencePaymentStatus.PAID
+        || getReportAcceptedAt() != null) {
+      return false;
+    }
+    this.lastTimeoutCancelledAt = timedOutAt != null ? timedOutAt : Instant.now();
+    this.lastTimeoutInspectorId =
+        timedOutInspectorId != null ? timedOutInspectorId : this.inspectorId;
+    this.inspectorId = null;
+    this.droneId = null;
+    this.inspectionId = null;
+    this.payout.assignInspector(null);
+    this.status = OccurrenceStatus.PENDING_ASSIGNMENT;
+    this.updatedAt = this.lastTimeoutCancelledAt;
+    return true;
   }
 
   public UUID getId() {
@@ -761,6 +787,14 @@ public class ServiceRequestOccurrence {
 
   public Instant getAssignedAt() {
     return status == OccurrenceStatus.ASSIGNED ? updatedAt : null;
+  }
+
+  public Instant getLastTimeoutCancelledAt() {
+    return lastTimeoutCancelledAt;
+  }
+
+  public UUID getLastTimeoutInspectorId() {
+    return lastTimeoutInspectorId;
   }
 
   public String getCurrency() {

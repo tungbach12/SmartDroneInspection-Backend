@@ -15,6 +15,7 @@ import com.smartdroneinspection.shared.exception.BusinessException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -121,6 +122,35 @@ public class InspectionContractSyncAdapter
                     HttpStatus.CONFLICT, "OCCURRENCE_ALREADY_SETTLED", ex.getMessage());
               }
             });
+  }
+
+  @Override
+  @Transactional
+  public Optional<TimeoutRevertResult> syncTimeoutRevertFromInspection(
+      UUID inspectionId, UUID timedOutInspectorId, Instant timedOutAt) {
+    if (inspectionId == null) {
+      return Optional.empty();
+    }
+    Optional<ServiceRequestOccurrence> found = occurrences.findWithLockByInspectionId(inspectionId);
+    if (found.isEmpty()) {
+      return Optional.empty();
+    }
+    ServiceRequestOccurrence occurrence = found.get();
+    boolean reverted = occurrence.revertTimeoutToPendingAssignment(timedOutInspectorId, timedOutAt);
+    if (!reverted) {
+      return Optional.empty();
+    }
+    occurrences.saveAndFlush(occurrence);
+    ServiceRequest request = requests.findWithLockById(occurrence.getRequestId()).orElse(null);
+    if (request != null) {
+      request.reopenForAssignment();
+      requests.saveAndFlush(request);
+    }
+    return Optional.of(
+        new TimeoutRevertResult(
+            occurrence.getRequestId(),
+            request == null ? null : request.getAssignedManagerId(),
+            occurrence.getOccurrenceIndex()));
   }
 
   @Override

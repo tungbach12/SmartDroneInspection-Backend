@@ -44,7 +44,76 @@ public record ServiceRequestOccurrenceResponse(
     Instant reportAcceptedAt,
     OccurrenceFinanceResponse.ServiceInvoiceSummary invoice,
     OccurrenceFinanceResponse.ServicePaymentSummary payment,
-    OccurrenceFinanceResponse.InspectorPayoutSummary payout) {
+    OccurrenceFinanceResponse.InspectorPayoutSummary payout,
+    /** The assigned Inspector's dispatch answer: PENDING_ACCEPTANCE, ACCEPTED, or DECLINED. */
+    String assignmentStatus,
+    boolean reassignmentRequired,
+    String declineReason,
+    Instant acceptanceDeadlineAt,
+    Instant lastTimeoutCancelledAt,
+    UUID lastTimeoutInspectorId,
+    String lastTimeoutInspectorName) {
+
+  public ServiceRequestOccurrenceResponse withAssignmentAcceptance(
+      String assignmentStatus, boolean reassignmentRequired, String declineReason) {
+    return withAssignmentAcceptance(
+        assignmentStatus,
+        reassignmentRequired,
+        declineReason,
+        acceptanceDeadlineAt,
+        lastTimeoutInspectorName);
+  }
+
+  public ServiceRequestOccurrenceResponse withAssignmentAcceptance(
+      String assignmentStatus,
+      boolean reassignmentRequired,
+      String declineReason,
+      Instant acceptanceDeadlineAt,
+      String lastTimeoutInspectorName) {
+    return new ServiceRequestOccurrenceResponse(
+        id,
+        occurrenceIndex,
+        plannedStartAt,
+        plannedEndAt,
+        status,
+        inspectorId,
+        droneId,
+        inspectionId,
+        assignedAt,
+        contractFileName,
+        contractContentType,
+        contractSizeBytes,
+        contractUploadedAt,
+        currency,
+        totalPrice,
+        serviceBaseAmount,
+        vatRate,
+        vatAmount,
+        commissionRate,
+        commissionAmount,
+        inspectorGrossPayout,
+        tncnRate,
+        tncnAmount,
+        inspectorNetPayout,
+        remainingInspectorNetPayout,
+        paymentStatus,
+        paymentConfirmedAt,
+        refundedAmount,
+        refundStatus,
+        payoutStatus,
+        payoutRecordedAt,
+        reportAcceptedAt,
+        invoice,
+        payment,
+        payout,
+        assignmentStatus,
+        reassignmentRequired,
+        declineReason,
+        acceptanceDeadlineAt,
+        lastTimeoutCancelledAt,
+        lastTimeoutInspectorId,
+        lastTimeoutInspectorName);
+  }
 
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
     return from(occurrence, null);
@@ -104,6 +173,13 @@ public record ServiceRequestOccurrenceResponse(
             occurrence.getPayoutRecordedAt(),
             occurrence.getPayout().getPayoutRecordedByUserId(),
             occurrence.isPayoutHeldForRefund(),
-            occurrence.getPayout().getFinalPayoutAmount()));
+            occurrence.getPayout().getFinalPayoutAmount()),
+        null,
+        false,
+        null,
+        null,
+        occurrence.getLastTimeoutCancelledAt(),
+        occurrence.getLastTimeoutInspectorId(),
+        null);
   }
 }
