@@ -14,6 +14,8 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
 
   List<ServiceRequest> findByOwnerCustomerIdOrderByCreatedAtDesc(UUID ownerCustomerId);
 
+  List<ServiceRequest> findByOwnerCustomerIdAndAssetId(UUID ownerCustomerId, UUID assetId);
+
   List<ServiceRequest> findAllByOrderByCreatedAtDesc();
 
   @Query(

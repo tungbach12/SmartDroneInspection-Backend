@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.assets.domain.Asset;
@@ -541,6 +542,194 @@ class ContractWorkflowServiceTest {
             () -> service.acceptQuote(customerId, requestId, new AcceptServiceQuoteRequest(2L)))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("The quote changed");
+  }
+
+  @Test
+  void customerFinanceHistoryUsesOnlyTheirPaidOccurrences() {
+    var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+    var page =
+        new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+            List.of(), pageable, 0);
+    when(users.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    when(occurrences.pagePaidByCustomer(customerId, pageable)).thenReturn(page);
+
+    var result = service.customerFinanceHistory(customerId, 0, 20);
+
+    assertThat(result.content()).isEmpty();
+    verify(occurrences).pagePaidByCustomer(customerId, pageable);
+    verify(occurrences, never()).pagePaidByInspector(any(), any());
+  }
+
+  @Test
+  void inspectorFinanceHistoryUsesOnlyTheirRecordedPayouts() {
+    var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+    var page =
+        new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+            List.of(), pageable, 0);
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId, Set.of(Roles.INSPECTOR), "INSPECTOR", "Inspector")));
+    when(occurrences.pagePaidByInspector(inspectorId, pageable)).thenReturn(page);
+
+    var result = service.inspectorFinanceHistory(inspectorId, 0, 20);
+
+    assertThat(result.content()).isEmpty();
+    verify(occurrences).pagePaidByInspector(inspectorId, pageable);
+    verify(occurrences, never()).pagePaidByCustomer(any(), any());
+  }
+
+  @Test
+  void customerCannotLoadPaidHistoryOutsideTheirScope() {
+    when(users.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    UUID occurrenceId = UUID.randomUUID();
+    when(occurrences.findPaidByCustomer(customerId, occurrenceId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.customerFinanceHistoryDetail(customerId, occurrenceId))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void inspectorCannotLoadPayoutHistoryOutsideTheirScope() {
+    when(users.findActiveUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId, Set.of(Roles.INSPECTOR), "INSPECTOR", "Inspector")));
+    UUID occurrenceId = UUID.randomUUID();
+    when(occurrences.findPaidByInspector(inspectorId, occurrenceId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.inspectorFinanceHistoryDetail(inspectorId, occurrenceId))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void financeHistoryRejectsInvalidPageSize() {
+    when(users.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "CUSTOMER", "Customer")));
+    assertThatThrownBy(() -> service.customerFinanceHistory(customerId, 0, 101))
+        .isInstanceOf(BusinessException.class);
+    verifyNoInteractions(occurrences);
+  }
+
+  @Test
+  void customerCannotCreateDuplicateActiveRequestForSameAsset() {
+    Asset asset = mock(Asset.class);
+    when(asset.getId()).thenReturn(assetId);
+    when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
+    ServiceRequest existingOpen =
+        unassignedRequestWithId(
+            UUID.randomUUID(), LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    when(requests.findByOwnerCustomerIdAndAssetId(orgId, assetId))
+        .thenReturn(List.of(existingOpen));
+
+    CreateServiceRequest input =
+        new CreateServiceRequest(
+            assetId,
+            null,
+            LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(25),
+            null,
+            "Asia/Ho_Chi_Minh",
+            null,
+            null,
+            RequestType.ONE_TIME,
+            null,
+            null,
+            null,
+            null);
+
+    assertThatThrownBy(() -> service.create(customerId, input))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("already has an active service request");
+    verify(requests, never()).saveAndFlush(any(ServiceRequest.class));
+  }
+
+  @Test
+  void managerFinanceHistoryAggregatesInflowCommissionAndRejectsNonManager() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequestOccurrence paidOccurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    paidOccurrence.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+    paidOccurrence.snapshotFinance(
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("10.00"));
+    paidOccurrence.acceptReport(UUID.randomUUID(), customerId);
+    paidOccurrence.confirmOnlinePayment("PAY-200", new BigDecimal("11000000.00"), "PAYOS");
+
+    var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+    var page =
+        new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+            List.of(paidOccurrence), pageable, 1);
+    when(occurrences.findAllPaidForManager()).thenReturn(List.of(paidOccurrence));
+    when(occurrences.pagePaidForManager(pageable)).thenReturn(page);
+    when(requests.findById(requestId))
+        .thenReturn(
+            Optional.of(
+                requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1))));
+
+    var result = service.managerFinanceHistory(managerId, 0, 20);
+
+    assertThat(result.summary().transactionCount()).isEqualTo(1);
+    assertThat(result.summary().netPlatformInflow()).isEqualByComparingTo("11000000.00");
+    assertThat(result.summary().totalCommissionEarned()).isEqualByComparingTo("1500000.00");
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().netCommissionAmount())
+        .isEqualByComparingTo("1500000.00");
+
+    assertThatThrownBy(() -> service.managerFinanceHistory(customerId, 0, 20))
+        .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void managerFinanceHistoryDetailReturnsManagerBreakdown() {
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequestOccurrence paidOccurrence =
+        new ServiceRequestOccurrence(
+            UUID.randomUUID(),
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    ReflectionTestUtils.setField(paidOccurrence, "id", occurrenceId);
+    paidOccurrence.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+    paidOccurrence.snapshotFinance(
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("10.00"));
+    paidOccurrence.acceptReport(UUID.randomUUID(), customerId);
+    paidOccurrence.confirmOnlinePayment("PAY-201", new BigDecimal("11000000.00"), "VNPAY");
+    ReflectionTestUtils.setField(
+        service,
+        "receivables",
+        Optional.of(
+            mock(
+                com.smartdroneinspection.contracts.repository.InspectorReceivableRepository
+                    .class)));
+    when(occurrences.findPaidByIdForManager(occurrenceId)).thenReturn(Optional.of(paidOccurrence));
+
+    var detail = service.managerFinanceHistoryDetail(managerId, occurrenceId);
+
+    assertThat(detail.totalPrice()).isEqualByComparingTo("11000000.00");
+    assertThat(detail.commissionAmount()).isEqualByComparingTo("1500000.00");
   }
 
   @Test

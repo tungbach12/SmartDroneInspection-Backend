@@ -22,12 +22,16 @@ public class Mf2ActorPolicy {
         || roles.contains("PLATFORM_MANAGER")) {
       return ActorKind.MANAGER;
     }
+    if (roles.contains(Roles.INSPECTOR)) {
+      return ActorKind.INSPECTOR;
+    }
     return ActorKind.NONE;
   }
 
   public enum ActorKind {
     NONE,
     CUSTOMER,
-    MANAGER
+    MANAGER,
+    INSPECTOR
   }
 }
