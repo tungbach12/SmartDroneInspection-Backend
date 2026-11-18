@@ -7,6 +7,7 @@ import com.smartdroneinspection.inspections.events.FlightPermitReviewedEvent;
 import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
+import com.smartdroneinspection.inspections.events.InspectionAssignmentTimedOutEvent;
 import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
 import com.smartdroneinspection.inspections.events.InspectionOverdueEvent;
 import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
@@ -86,6 +87,18 @@ public class InspectionNotificationListener {
     log.info("Handling InspectionAssignmentRevokedEvent for inspection {}", event.inspectionId());
     inspectionNotificationService.recordInspectionAssignmentRevoked(
         event.inspectionId(), event.previousInspectorId());
+  }
+
+  @ApplicationModuleListener
+  public void onInspectionAssignmentTimedOut(InspectionAssignmentTimedOutEvent event) {
+    log.info("Handling InspectionAssignmentTimedOutEvent for inspection {}", event.inspectionId());
+    inspectionNotificationService.recordAssignmentAcceptanceTimeout(
+        event.inspectionId(),
+        event.inspectorId(),
+        event.requestId(),
+        event.assignedManagerId(),
+        event.timeoutHours(),
+        event.timedOutAt());
   }
 
   @ApplicationModuleListener

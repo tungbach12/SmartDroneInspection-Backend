@@ -12,6 +12,7 @@ import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
+import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment.AssignmentAcceptance;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -126,6 +127,25 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
             "Source inspection must have at least one confirmed defect to schedule a re-inspection");
       }
     }
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<AssignmentAcceptance> findAssignmentState(UUID inspectionId) {
+    if (inspectionId == null) {
+      return Optional.empty();
+    }
+    return inspections
+        .findById(inspectionId)
+        .map(
+            inspection ->
+                new AssignmentAcceptance(
+                    inspection.getAssignmentStatus() == null
+                        ? null
+                        : inspection.getAssignmentStatus().name(),
+                    inspection.isReassignmentRequired(),
+                    inspection.getDeclineReason(),
+                    inspection.getAssignmentRequestedAt()));
   }
 
   @Override

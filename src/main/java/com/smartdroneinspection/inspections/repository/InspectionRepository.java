@@ -208,4 +208,19 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
           + "and i.partnerAssignment = true and i.inspectorId = :inspectorId")
   boolean isPartnerInspectionAssignedTo(
       @Param("inspectionId") UUID inspectionId, @Param("inspectorId") UUID inspectorId);
+
+  @Query(
+      "select i from Inspection i where i.status = com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED "
+          + "and i.assignmentStatus = com.smartdroneinspection.inspections.domain.enums.AssignmentStatus.PENDING_ACCEPTANCE "
+          + "and i.assignmentRequestedAt is not null and i.assignmentRequestedAt <= :cutoff")
+  List<Inspection> findPendingAcceptanceExpiredBefore(@Param("cutoff") java.time.Instant cutoff);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select i from Inspection i where i.id = :id")
+  Optional<Inspection> findWithLockById(@Param("id") UUID id);
+
+  List<Inspection> findByOwnerCustomerIdAndInspectorIdIsNotNullOrderByCreatedAtDesc(
+      UUID ownerCustomerId);
+
+  List<Inspection> findByInspectorIdOrderByCreatedAtDesc(UUID inspectorId);
 }
