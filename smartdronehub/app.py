@@ -156,14 +156,15 @@ class TelemetryStore:
             elif kind == "GLOBAL_POSITION_INT":
                 latitude = msg.lat / 1e7
                 longitude = msg.lon / 1e7
-                previous = self._snapshot["last_position"]
-                if previous is not None:
-                    self._snapshot["distance_m"] += haversine(
-                        previous[0], previous[1], latitude, longitude
-                    )
-                self._snapshot["last_position"] = (latitude, longitude)
-                self._snapshot["latitude"] = latitude
-                self._snapshot["longitude"] = longitude
+                if is_valid_gps(latitude, longitude):
+                    previous = self._snapshot["last_position"]
+                    if previous is not None:
+                        self._snapshot["distance_m"] += haversine(
+                            previous[0], previous[1], latitude, longitude
+                        )
+                    self._snapshot["last_position"] = (latitude, longitude)
+                    self._snapshot["latitude"] = latitude
+                    self._snapshot["longitude"] = longitude
                 self._snapshot["altitude_meters"] = round(msg.relative_alt / 1000.0, 2)
                 self._snapshot["ground_speed_mps"] = round(math.hypot(msg.vx, msg.vy) / 100.0, 2)
                 self._snapshot["heading_deg"] = None if msg.hdg == 65535 else round(msg.hdg / 100.0, 1)
@@ -191,7 +192,7 @@ class TelemetryStore:
     def _record_active_missions(self, snap: dict[str, Any], now_dt: datetime) -> None:
         lat = snap.get("latitude")
         lon = snap.get("longitude")
-        if lat is None or lon is None:
+        if not is_valid_gps(lat, lon):
             return
         alt = snap.get("altitude_meters")
         spd = snap.get("ground_speed_mps")
@@ -328,6 +329,17 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="SmartDroneHub telemetry bridge", version="0.1.0", lifespan=lifespan)
 
 
+def is_valid_gps(lat: float | None, lon: float | None) -> bool:
+    """Reject missing, out-of-range, or uninitialized (0, 0) Null Island coordinates."""
+    if lat is None or lon is None:
+        return False
+    if not (math.isfinite(lat) and math.isfinite(lon)):
+        return False
+    if abs(lat) > 90.0 or abs(lon) > 180.0:
+        return False
+    return not (abs(lat) < 1e-6 and abs(lon) < 1e-6)
+
+
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius = 6_371_000.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -414,7 +426,7 @@ def read_telemetry(mission: MissionRuntime) -> MissionTelemetry:
             mission.end_battery = snap["battery_percent"]
         if snap["altitude_meters"] is not None:
             mission.max_altitude = max(mission.max_altitude or 0.0, snap["altitude_meters"])
-        if snap["latitude"] is not None and snap["longitude"] is not None:
+        if is_valid_gps(snap["latitude"], snap["longitude"]):
             now_dt = snap["received_at"] or utc_now()
             elapsed_since_last = (
                 (now_dt - mission.flight_trace[-1].recordedAt).total_seconds()

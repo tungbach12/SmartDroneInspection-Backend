@@ -270,27 +270,46 @@ public class InspectionDroneHubService {
   }
 
   @Transactional
+  public SmartDroneHubPort.FlightReport completeFlight(
+      UUID actorId, UUID inspectionId, UUID sessionId) {
+    Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
+    FieldSession session = scope.session();
+    if (!session.isOpen()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "FIELD_SESSION_NOT_IN_PROGRESS",
+          "Live telemetry can only be completed while the Inspector session is active.");
+    }
+    return fetchAndPersistHubFlightReport(inspectionId, sessionId, session, Instant.now());
+  }
+
+  @Transactional
   public SmartDroneHubPort.FlightReport flightReport(
       UUID actorId, UUID inspectionId, UUID sessionId) {
     Scope scope = requireReadableSession(actorId, inspectionId, sessionId);
     FieldSession session = scope.session();
-    if (session.isOpen()) {
+    if (session.isOpen() && !session.hasPersistedFlightReport()) {
       throw failure(
           HttpStatus.CONFLICT,
           "FIELD_SESSION_NOT_COMPLETED",
           "Flight report is available after the active field session is completed or aborted.");
     }
     if (session.hasPersistedFlightReport()
-        && (session.getTelemetrySource().startsWith("IMPORTED_LOG_")
+        && (session.isOpen()
+            || session.getTelemetrySource().startsWith("IMPORTED_LOG_")
             || "MANUAL_DECLARATION".equals(session.getTelemetrySource())
             || (session.getFlightTraceJson() != null
                 && !session.getFlightTraceJson().isBlank()
                 && !"[]".equals(session.getFlightTraceJson())))) {
       return toPersistedFlightReport(session);
     }
+    return fetchAndPersistHubFlightReport(inspectionId, sessionId, session, session.getEndedAt());
+  }
+
+  private SmartDroneHubPort.FlightReport fetchAndPersistHubFlightReport(
+      UUID inspectionId, UUID sessionId, FieldSession session, Instant endedAt) {
     try {
-      SmartDroneHubPort.FlightReport report =
-          hub.flightReport(inspectionId, sessionId, session.getEndedAt());
+      SmartDroneHubPort.FlightReport report = hub.flightReport(inspectionId, sessionId, endedAt);
       java.util.List<SmartDroneHubPort.FlightTracePoint> trace =
           report.flightTrace() != null ? report.flightTrace() : java.util.List.of();
       session.recordFlightReport(
@@ -307,8 +326,8 @@ public class InspectionDroneHubService {
       return toPersistedFlightReport(session);
     } catch (RuntimeException ex) {
       Instant started = session.getStartedAt() != null ? session.getStartedAt() : Instant.now();
-      Instant ended = session.getEndedAt() != null ? session.getEndedAt() : Instant.now();
-      int durationSec = (int) Math.max(0L, Duration.between(started, ended).getSeconds());
+      Instant resolvedEnded = endedAt != null ? endedAt : Instant.now();
+      int durationSec = (int) Math.max(0L, Duration.between(started, resolvedEnded).getSeconds());
       String finalState =
           FieldSession.ABORTED.equals(session.getStatus()) ? "ABORTED" : "NO_FLIGHT";
       String note = "No MAVLink flight telemetry was recorded for this field session.";
@@ -317,7 +336,7 @@ public class InspectionDroneHubService {
           sessionId,
           "NONE",
           started,
-          ended,
+          resolvedEnded,
           durationSec,
           0.0,
           null,

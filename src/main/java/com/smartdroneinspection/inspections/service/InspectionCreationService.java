@@ -1392,27 +1392,27 @@ public class InspectionCreationService {
                     .orElse(null))
             : null;
 
-    String verifiedByName =
+    UserAccess.ActiveUser verifiedByUser =
         inspection.getFlightPermitVerifiedBy() != null
-            ? userAccess
-                .findActiveUser(inspection.getFlightPermitVerifiedBy())
-                .map(UserAccess.ActiveUser::fullName)
-                .orElse(null)
+            ? userAccess.findActiveUser(inspection.getFlightPermitVerifiedBy()).orElse(null)
             : null;
-    String ownerCustomerName =
+    String verifiedByName = verifiedByUser != null ? verifiedByUser.fullName() : null;
+    UserAccess.ActiveUser ownerCustomerUser =
         inspection.getOwnerCustomerId() != null
-            ? userAccess
-                .findUser(inspection.getOwnerCustomerId())
-                .map(UserAccess.ActiveUser::fullName)
-                .orElse(null)
+            ? userAccess.findUser(inspection.getOwnerCustomerId()).orElse(null)
             : null;
-    String managerName =
-        (verifiedByName != null && !verifiedByName.isBlank())
-            ? verifiedByName
-            : userAccess.listActivePlatformManagers().stream()
-                .findFirst()
-                .map(UserAccess.ActiveUser::fullName)
-                .orElse(null);
+    String ownerCustomerName = ownerCustomerUser != null ? ownerCustomerUser.fullName() : null;
+    String ownerCustomerEmail = ownerCustomerUser != null ? ownerCustomerUser.email() : null;
+    String ownerCustomerPhone = ownerCustomerUser != null ? ownerCustomerUser.phoneNumber() : null;
+    UserAccess.ActiveUser managerUser =
+        (verifiedByUser != null
+                && verifiedByUser.fullName() != null
+                && !verifiedByUser.fullName().isBlank())
+            ? verifiedByUser
+            : userAccess.listActivePlatformManagers().stream().findFirst().orElse(null);
+    String managerName = managerUser != null ? managerUser.fullName() : null;
+    String managerEmail = managerUser != null ? managerUser.email() : null;
+    String managerPhone = managerUser != null ? managerUser.phoneNumber() : null;
 
     return new InspectionResponse(
         inspection.getId(),
@@ -1467,7 +1467,11 @@ public class InspectionCreationService {
         inspection.getFlightPermitRejectionReason(),
         inspection.getFlightPermitReviewNotes(),
         ownerCustomerName,
-        managerName);
+        ownerCustomerEmail,
+        ownerCustomerPhone,
+        managerName,
+        managerEmail,
+        managerPhone);
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {

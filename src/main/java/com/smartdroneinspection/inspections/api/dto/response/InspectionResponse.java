@@ -56,7 +56,11 @@ public record InspectionResponse(
     String flightPermitRejectionReason,
     String flightPermitReviewNotes,
     String ownerCustomerName,
-    String managerName) {
+    String ownerCustomerEmail,
+    String ownerCustomerPhone,
+    String managerName,
+    String managerEmail,
+    String managerPhone) {
 
   public InspectionResponse {
     inspectionItems = inspectionItems == null ? List.of() : List.copyOf(inspectionItems);
@@ -142,6 +146,10 @@ public record InspectionResponse(
         flightPermitFileKey != null && !flightPermitFileKey.isBlank()
             ? "PENDING_REVIEW"
             : "NOT_UPLOADED",
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null,
@@ -310,6 +318,10 @@ public record InspectionResponse(
         inspection.getFlightPermitVerifiedAt(),
         inspection.getFlightPermitRejectionReason(),
         inspection.getFlightPermitReviewNotes(),
+        null,
+        null,
+        null,
+        null,
         null,
         null);
   }
