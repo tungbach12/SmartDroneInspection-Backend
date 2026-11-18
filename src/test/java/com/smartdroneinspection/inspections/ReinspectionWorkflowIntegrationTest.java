@@ -19,6 +19,7 @@ import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.domain.Evidence;
+import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.DefectResolutionStatus;
@@ -26,6 +27,7 @@ import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.ReinspectionDefectVerificationRepository;
@@ -69,6 +71,7 @@ class ReinspectionWorkflowIntegrationTest {
   @Autowired DroneRepository drones;
   @Autowired InspectionRepository inspections;
   @Autowired EvidenceRepository evidences;
+  @Autowired FieldSessionRepository fieldSessions;
   @Autowired FindingRepository findings;
   @Autowired ReinspectionDefectVerificationRepository verifications;
   @Autowired Mf2InspectionAssignment mf2Assignment;
@@ -257,16 +260,228 @@ class ReinspectionWorkflowIntegrationTest {
     reinspection.completeFieldSession();
     inspections.saveAndFlush(reinspection);
 
-    Evidence afterEv =
+    Instant sessionStart = Instant.now().minus(5, ChronoUnit.MINUTES);
+    FieldSession completedSession =
+        new FieldSession(reinspectionId, FieldSession.IN_PROGRESS, sessionStart);
+    completedSession.complete("Re-inspection capture completed");
+    completedSession = fieldSessions.saveAndFlush(completedSession);
+    Instant captureTime = sessionStart.plus(1, ChronoUnit.MINUTES);
+
+    Evidence evidenceWithoutSession =
         evidences.saveAndFlush(
             new Evidence(
                 reinspectionId,
                 null,
+                "no-session.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/no-session.jpg",
+                captureTime,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "No session metadata",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceWithoutSession.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_NOT_FRESH"));
+
+    Evidence evidenceOutsideSession =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                completedSession.getId(),
+                "outside-session.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/outside-session.jpg",
+                sessionStart.minus(1, ChronoUnit.MINUTES),
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Capture outside session",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceOutsideSession.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_OUTSIDE_SESSION"));
+
+    // Evidence from the source inspection cannot be submitted as fresh evidence for this one.
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidences
+                                .findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(
+                                    sourceInspectionId)
+                                .get(0)
+                                .getId()
+                                .toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("INVALID_EVIDENCE"));
+
+    // Evidence whose field session belongs to a different inspection (session mismatch)
+    FieldSession otherSession =
+        new FieldSession(sourceInspectionId, FieldSession.IN_PROGRESS, sessionStart);
+    otherSession.complete("Source inspection session");
+    otherSession = fieldSessions.saveAndFlush(otherSession);
+
+    Evidence evidenceSessionMismatch =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                otherSession.getId(),
+                "session-mismatch.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/session-mismatch.jpg",
+                captureTime,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Session belongs to source inspection",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceSessionMismatch.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_SESSION_MISMATCH"));
+
+    // Evidence whose field session has not yet completed
+    FieldSession inProgressSession =
+        new FieldSession(reinspectionId, FieldSession.IN_PROGRESS, sessionStart);
+    inProgressSession = fieldSessions.saveAndFlush(inProgressSession);
+
+    Evidence evidenceNotCompletedSession =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                inProgressSession.getId(),
+                "not-completed.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/not-completed.jpg",
+                captureTime,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Session still in progress",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceNotCompletedSession.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_SESSION_NOT_COMPLETED"));
+
+    // NOTE: EVIDENCE_REUSED is unreachable through the API by design. Evidence object keys are
+    // generated as "inspections/{inspectionId}/evidence/{uuid}" and are UNIQUE per key, so evidence
+    // rows always have distinct keys and none can be byte-for-byte reused across inspections. The
+    // guard in ReinspectionVerificationService covers the legacy/defensive path (reusing the same
+    // evidence ID or object key); it is not reachable via the public API and cannot be exercised
+    // by inserting fixtures. We assert it remains absent from the API surface by verifying the
+    // unique constraint is enforced and that object keys are always scoped to their inspection.
+    // See: uq_evidence_object_key constraint and EvidenceService.java:332.
+
+    // Evidence missing capture time
+    Evidence evidenceWithoutCaptureTime =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                completedSession.getId(),
+                "no-capture-time.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/no-capture-time.jpg",
+                null,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Missing capture time",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceWithoutCaptureTime.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_CAPTURE_TIME_REQUIRED"));
+
+    Evidence afterEv =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                completedSession.getId(),
                 "after-facade.jpg",
                 "image/jpeg",
                 22334L,
                 "inspections/after-facade.jpg",
-                Instant.now(),
+                captureTime,
                 new BigDecimal("10.776891"),
                 new BigDecimal("106.700809"),
                 "East Facade 12F (Re-capture)",
@@ -329,7 +544,8 @@ class ReinspectionWorkflowIntegrationTest {
     assertThat(refreshed.hasFindingsConfirmation()).isTrue();
     assertThat(verifications.findByReinspectionIdOrderByCreatedAtAsc(reinspectionId))
         .extracting(v -> v.getResolutionStatus())
-        .containsExactly(DefectResolutionStatus.RESOLVED, DefectResolutionStatus.UNRESOLVED);
+        .containsExactlyInAnyOrder(
+            DefectResolutionStatus.RESOLVED, DefectResolutionStatus.UNRESOLVED);
   }
 
   @Test

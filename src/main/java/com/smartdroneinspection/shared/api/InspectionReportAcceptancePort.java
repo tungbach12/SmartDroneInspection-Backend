@@ -59,7 +59,8 @@ public interface InspectionReportAcceptancePort {
       String payoutStatus,
       String payoutReference,
       String requestDescription,
-      String paymentMethod) {
+      String paymentMethod,
+      java.time.Instant paymentDueAt) {
 
     public PaymentStatusDetails(
         boolean reportAccepted,
@@ -75,6 +76,7 @@ public interface InspectionReportAcceptancePort {
           orderCode,
           amount,
           checkoutUrl,
+          null,
           null,
           null,
           null,

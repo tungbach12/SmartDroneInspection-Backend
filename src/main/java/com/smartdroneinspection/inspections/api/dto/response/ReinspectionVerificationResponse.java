@@ -21,5 +21,7 @@ public record ReinspectionVerificationResponse(
     String newEvidenceFileKey,
     String resolutionStatus,
     String inspectorNotes,
+    Instant verifiedAt,
+    Instant validUntil,
     Instant createdAt,
     Instant updatedAt) {}

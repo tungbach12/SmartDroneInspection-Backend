@@ -64,6 +64,8 @@ class ServicePaymentSchemaMigrationTest {
         "payment_status",
         "payos_order_code",
         "payment_method",
+        "payment_due_at",
+        "payment_overdue_notified_at",
         "refunded_amount",
         "refund_status");
     assertColumns(

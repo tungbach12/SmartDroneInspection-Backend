@@ -118,6 +118,7 @@ public class ContractWorkflowService
   private final JdbcTemplate jdbcTemplate;
   private Optional<ServiceRefundRepository> refundRepository = Optional.empty();
   private Optional<InspectorReceivableRepository> receivables = Optional.empty();
+  private PaymentDueProperties paymentDueProperties = new PaymentDueProperties();
 
   @Autowired
   public ContractWorkflowService(
@@ -167,6 +168,12 @@ public class ContractWorkflowService
   @Autowired
   void setReceivables(Optional<InspectorReceivableRepository> receivables) {
     this.receivables = receivables != null ? receivables : Optional.empty();
+  }
+
+  @Autowired
+  void setPaymentDueProperties(PaymentDueProperties paymentDueProperties) {
+    this.paymentDueProperties =
+        paymentDueProperties != null ? paymentDueProperties : new PaymentDueProperties();
   }
 
   public ContractWorkflowService(
@@ -1336,6 +1343,7 @@ public class ContractWorkflowService
 
     try {
       occurrence.acceptReport(versionId, customer.id());
+      occurrence.startPaymentDueWindow(paymentDueProperties.dueWindow());
     } catch (IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "REPORT_ACCEPTANCE_INVALID", ex.getMessage());
     }
@@ -2386,7 +2394,8 @@ public class ContractWorkflowService
         occurrence.getPayoutStatus() != null ? occurrence.getPayoutStatus().name() : null,
         occurrence.getPayoutReference(),
         requestDescription,
-        occurrence.getPaymentMethod());
+        occurrence.getPaymentMethod(),
+        occurrence.getPaymentDueAt());
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {

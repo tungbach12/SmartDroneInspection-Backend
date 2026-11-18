@@ -147,4 +147,16 @@ public interface ServiceRequestOccurrenceRepository
       @Param("start") java.time.Instant start,
       @Param("end") java.time.Instant end,
       @Param("excludeInspectionId") UUID excludeInspectionId);
+
+  /**
+   * Unpaid occurrences whose customer payment deadline has passed and that have not yet been
+   * notified as overdue. Drives the daily overdue-warning job.
+   */
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment "
+          + "where payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAYMENT_DUE "
+          + "and payment.paymentDueAt is not null "
+          + "and payment.paymentDueAt < :now "
+          + "and payment.paymentOverdueNotifiedAt is null")
+  List<ServiceRequestOccurrence> findOverduePayments(@Param("now") java.time.Instant now);
 }
