@@ -17,6 +17,8 @@ import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocat
 import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
 import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryItemResponse;
+import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageResponse;
+import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
@@ -45,7 +47,6 @@ import com.smartdroneinspection.contracts.repository.ServiceRequestQuoteReposito
 import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
 import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
-import com.smartdroneinspection.shared.PagedResult;
 import com.smartdroneinspection.shared.api.InspectionPaymentGate;
 import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -304,6 +305,16 @@ public class ContractWorkflowService
     if (input.sourceInspectionId() != null) {
       assignment.validateReinspectionSource(
           actor.ownerCustomerId(), asset.getId(), input.sourceInspectionId());
+    } else {
+      boolean hasActiveRequest =
+          requests.findByOwnerCustomerIdAndAssetId(actor.ownerCustomerId(), asset.getId()).stream()
+              .anyMatch(this::isActiveRequest);
+      if (hasActiveRequest) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "DUPLICATE_ACTIVE_REQUEST",
+            "This asset already has an active service request in progress");
+      }
     }
     LocalTime start = input.windowStart() == null ? LocalTime.of(8, 0) : input.windowStart();
     LocalTime end = input.windowEnd() == null ? LocalTime.of(17, 0) : input.windowEnd();
@@ -1656,20 +1667,18 @@ public class ContractWorkflowService
   }
 
   @Transactional(readOnly = true)
-  public PagedResult<FinanceHistoryItemResponse> customerFinanceHistory(
-      UUID actorId, int page, int size) {
+  public FinanceHistoryPageResponse customerFinanceHistory(UUID actorId, int page, int size) {
     UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
     return financeHistoryPage(actor, page, size, true);
   }
 
   @Transactional(readOnly = true)
-  public PagedResult<FinanceHistoryItemResponse> inspectorFinanceHistory(
-      UUID actorId, int page, int size) {
+  public FinanceHistoryPageResponse inspectorFinanceHistory(UUID actorId, int page, int size) {
     UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.INSPECTOR);
     return financeHistoryPage(actor, page, size, false);
   }
 
-  private PagedResult<FinanceHistoryItemResponse> financeHistoryPage(
+  private FinanceHistoryPageResponse financeHistoryPage(
       UserAccess.ActiveUser actor, int page, int size, boolean customer) {
     if (page < 0 || size < 1 || size > 100) {
       throw failure(
@@ -1725,7 +1734,7 @@ public class ContractWorkflowService
                           counterpartyName);
                 })
             .toList();
-    return PagedResult.of(content, result.getTotalElements(), page, size);
+    return FinanceHistoryPageResponse.of(content, result.getTotalElements(), page, size);
   }
 
   @Transactional(readOnly = true)
@@ -1748,6 +1757,90 @@ public class ContractWorkflowService
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, "PAYOUT_NOT_FOUND", "Payout not found"));
     return OccurrenceFinanceResponse.forInspector(occurrence);
+  }
+
+  /**
+   * Manager view of all platform revenue inflows and earned commissions across paid occurrences.
+   */
+  @Transactional(readOnly = true)
+  public ManagerFinanceHistoryResponse managerFinanceHistory(UUID actorId, int page, int size) {
+    requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    if (page < 0 || size < 1 || size > 100) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "INVALID_PAGE", "Page must be nonnegative and size 1-100");
+    }
+    List<ServiceRequestOccurrence> allPaid = occurrences.findAllPaidForManager();
+    ManagerFinanceHistoryResponse.ManagerFinanceSummary summary =
+        ManagerFinanceHistoryResponse.summarize(allPaid);
+
+    var pageable = org.springframework.data.domain.PageRequest.of(page, size);
+    var pageResult = occurrences.pagePaidForManager(pageable);
+
+    java.util.Map<UUID, ServiceRequest> requestCache = new java.util.HashMap<>();
+    java.util.Map<UUID, String> assetNameCache = new java.util.HashMap<>();
+    java.util.Map<UUID, String> userNameCache = new java.util.HashMap<>();
+
+    List<ManagerFinanceHistoryResponse.ManagerFinanceHistoryItem> content =
+        pageResult.getContent().stream()
+            .map(
+                occurrence -> {
+                  ServiceRequest request =
+                      requestCache.computeIfAbsent(
+                          occurrence.getRequestId(), id -> requests.findById(id).orElse(null));
+                  UUID assetId = request != null ? request.getAssetId() : null;
+                  String assetName =
+                      assetId != null
+                          ? assetNameCache.computeIfAbsent(
+                              assetId, id -> assets.findById(id).map(Asset::getName).orElse(null))
+                          : null;
+                  UUID customerId = request != null ? request.getOwnerCustomerId() : null;
+                  String customerName =
+                      customerId != null
+                          ? userNameCache.computeIfAbsent(
+                              customerId,
+                              id ->
+                                  users
+                                      .findActiveUser(id)
+                                      .map(UserAccess.ActiveUser::fullName)
+                                      .orElse(null))
+                          : null;
+                  UUID inspectorId = occurrence.getInspectorId();
+                  String inspectorName =
+                      inspectorId != null
+                          ? userNameCache.computeIfAbsent(
+                              inspectorId,
+                              id ->
+                                  users
+                                      .findActiveUser(id)
+                                      .map(UserAccess.ActiveUser::fullName)
+                                      .orElse(null))
+                          : null;
+                  return ManagerFinanceHistoryResponse.ManagerFinanceHistoryItem.from(
+                      occurrence,
+                      request != null ? request.getDescription() : null,
+                      assetId,
+                      assetName,
+                      customerId,
+                      customerName,
+                      inspectorId,
+                      inspectorName);
+                })
+            .toList();
+
+    return new ManagerFinanceHistoryResponse(
+        summary, content, pageResult.getTotalElements(), page, size);
+  }
+
+  /** Manager financial breakdown detail for a single paid occurrence. */
+  @Transactional(readOnly = true)
+  public OccurrenceFinanceResponse managerFinanceHistoryDetail(UUID actorId, UUID occurrenceId) {
+    requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findPaidByIdForManager(occurrenceId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment not found"));
+    return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
   }
 
   /** Customer creates a PayOS VietQR payment link for an occurrence awaiting payment. */
@@ -2976,6 +3069,26 @@ public class ContractWorkflowService
         && (bytes[0] & 0xff) == 0xff
         && (bytes[1] & 0xff) == 0xd8
         && (bytes[2] & 0xff) == 0xff;
+  }
+
+  private boolean isActiveRequest(ServiceRequest existing) {
+    ServiceRequest.ServiceRequestStatus status = existing.getStatus();
+    if (status == ServiceRequest.ServiceRequestStatus.CANCELLED) {
+      return false;
+    }
+    if (status != ServiceRequest.ServiceRequestStatus.ASSIGNED) {
+      return true;
+    }
+    List<ServiceRequestOccurrence> requestOccurrences =
+        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(existing.getId());
+    if (requestOccurrences.isEmpty()) {
+      return true;
+    }
+    return requestOccurrences.stream()
+        .anyMatch(
+            occurrence ->
+                occurrence.getStatus() != ServiceRequestOccurrence.OccurrenceStatus.CANCELLED
+                    && occurrence.getReportAcceptedAt() == null);
   }
 
   public record SignedContractFile(

@@ -13,7 +13,8 @@ import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteReque
 import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocationRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
-import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryItemResponse;
+import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageResponse;
+import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
@@ -355,20 +356,18 @@ public class ContractWorkflowController {
   }
 
   @GetMapping("/finance-history/customer")
-  public ApiResponse<com.smartdroneinspection.shared.PagedResult<FinanceHistoryItemResponse>>
-      customerFinanceHistory(
-          @AuthenticationPrincipal Jwt jwt,
-          @RequestParam(defaultValue = "0") int page,
-          @RequestParam(defaultValue = "20") int size) {
+  public ApiResponse<FinanceHistoryPageResponse> customerFinanceHistory(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size) {
     return ApiResponse.success(workflow.customerFinanceHistory(actorId(jwt), page, size));
   }
 
   @GetMapping("/finance-history/inspector")
-  public ApiResponse<com.smartdroneinspection.shared.PagedResult<FinanceHistoryItemResponse>>
-      inspectorFinanceHistory(
-          @AuthenticationPrincipal Jwt jwt,
-          @RequestParam(defaultValue = "0") int page,
-          @RequestParam(defaultValue = "20") int size) {
+  public ApiResponse<FinanceHistoryPageResponse> inspectorFinanceHistory(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size) {
     return ApiResponse.success(workflow.inspectorFinanceHistory(actorId(jwt), page, size));
   }
 
@@ -382,6 +381,20 @@ public class ContractWorkflowController {
   public ApiResponse<OccurrenceFinanceResponse> inspectorFinanceHistoryDetail(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID occurrenceId) {
     return ApiResponse.success(workflow.inspectorFinanceHistoryDetail(actorId(jwt), occurrenceId));
+  }
+
+  @GetMapping("/finance-history/manager")
+  public ApiResponse<ManagerFinanceHistoryResponse> managerFinanceHistory(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    return ApiResponse.success(workflow.managerFinanceHistory(actorId(jwt), page, size));
+  }
+
+  @GetMapping("/finance-history/manager/{occurrenceId}")
+  public ApiResponse<OccurrenceFinanceResponse> managerFinanceHistoryDetail(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID occurrenceId) {
+    return ApiResponse.success(workflow.managerFinanceHistoryDetail(actorId(jwt), occurrenceId));
   }
 
   @GetMapping("/{requestId}/occurrences/{occurrenceId}/finance")
