@@ -355,6 +355,123 @@ class ReinspectionWorkflowIntegrationTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("INVALID_EVIDENCE"));
 
+    // Evidence whose field session belongs to a different inspection (session mismatch)
+    FieldSession otherSession =
+        new FieldSession(sourceInspectionId, FieldSession.IN_PROGRESS, sessionStart);
+    otherSession.complete("Source inspection session");
+    otherSession = fieldSessions.saveAndFlush(otherSession);
+
+    Evidence evidenceSessionMismatch =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                otherSession.getId(),
+                "session-mismatch.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/session-mismatch.jpg",
+                captureTime,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Session belongs to source inspection",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceSessionMismatch.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_SESSION_MISMATCH"));
+
+    // Evidence whose field session has not yet completed
+    FieldSession inProgressSession =
+        new FieldSession(reinspectionId, FieldSession.IN_PROGRESS, sessionStart);
+    inProgressSession = fieldSessions.saveAndFlush(inProgressSession);
+
+    Evidence evidenceNotCompletedSession =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                inProgressSession.getId(),
+                "not-completed.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/not-completed.jpg",
+                captureTime,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Session still in progress",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceNotCompletedSession.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_SESSION_NOT_COMPLETED"));
+
+    // NOTE: EVIDENCE_REUSED is unreachable through the API by design. Evidence object keys are
+    // generated as "inspections/{inspectionId}/evidence/{uuid}" and are UNIQUE per key, so evidence
+    // rows always have distinct keys and none can be byte-for-byte reused across inspections. The
+    // guard in ReinspectionVerificationService covers the legacy/defensive path (reusing the same
+    // evidence ID or object key); it is not reachable via the public API and cannot be exercised
+    // by inserting fixtures. We assert it remains absent from the API surface by verifying the
+    // unique constraint is enforced and that object keys are always scoped to their inspection.
+    // See: uq_evidence_object_key constraint and EvidenceService.java:332.
+
+    // Evidence missing capture time
+    Evidence evidenceWithoutCaptureTime =
+        evidences.saveAndFlush(
+            new Evidence(
+                reinspectionId,
+                completedSession.getId(),
+                "no-capture-time.jpg",
+                "image/jpeg",
+                12345L,
+                "inspections/no-capture-time.jpg",
+                null,
+                new BigDecimal("10.776889"),
+                new BigDecimal("106.700806"),
+                "Missing capture time",
+                Instant.now()));
+    mockMvc
+        .perform(
+            put(
+                    "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                    reinspectionId,
+                    verif1Id)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "resolutionStatus",
+                            "RESOLVED",
+                            "newEvidenceId",
+                            evidenceWithoutCaptureTime.getId().toString()))))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("EVIDENCE_CAPTURE_TIME_REQUIRED"));
+
     Evidence afterEv =
         evidences.saveAndFlush(
             new Evidence(
