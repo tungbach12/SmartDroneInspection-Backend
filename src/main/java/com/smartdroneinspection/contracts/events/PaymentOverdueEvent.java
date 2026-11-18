@@ -10,6 +10,7 @@ import java.util.UUID;
 public record PaymentOverdueEvent(
     UUID occurrenceId,
     UUID requestId,
+    UUID inspectionId,
     UUID ownerCustomerId,
     Instant paymentDueAt,
     Instant detectedAt) {}

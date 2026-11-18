@@ -47,7 +47,12 @@ class PaymentDueExpiryServiceTest {
     verify(events)
         .publishEvent(
             new PaymentOverdueEvent(
-                occurrence.getId(), requestId, ownerId, occurrence.getPaymentDueAt(), now));
+                occurrence.getId(),
+                requestId,
+                occurrence.getInspectionId(),
+                ownerId,
+                occurrence.getPaymentDueAt(),
+                now));
   }
 
   @Test

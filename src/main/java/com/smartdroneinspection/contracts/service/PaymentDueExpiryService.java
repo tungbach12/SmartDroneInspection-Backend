@@ -97,6 +97,7 @@ public class PaymentDueExpiryService {
           new PaymentOverdueEvent(
               occurrence.getId(),
               occurrence.getRequestId(),
+              occurrence.getInspectionId(),
               ownerCustomerId,
               occurrence.getPaymentDueAt(),
               now));

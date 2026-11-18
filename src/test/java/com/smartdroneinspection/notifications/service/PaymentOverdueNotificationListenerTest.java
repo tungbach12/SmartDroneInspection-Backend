@@ -35,6 +35,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 class PaymentOverdueNotificationListenerTest {
 
   private static final UUID OCCURRENCE_ID = UUID.randomUUID();
+  private static final UUID INSPECTION_ID = UUID.randomUUID();
   private static final UUID REQUEST_ID = UUID.randomUUID();
   private static final UUID CUSTOMER_ID = UUID.randomUUID();
   private static final Instant DUE_AT = Instant.parse("2026-11-10T03:00:00Z");
@@ -91,14 +92,31 @@ class PaymentOverdueNotificationListenerTest {
             argThat(
                 n ->
                     n.getRecipientUserId().equals(CUSTOMER_ID)
-                        && n.getTargetPath().equals("/client/inspections/" + OCCURRENCE_ID)));
+                        && n.getTargetPath().equals("/client/inspections/" + INSPECTION_ID)));
     verify(notifications, times(1))
         .saveAndFlush(
             argThat(
                 n ->
                     n.getRecipientUserId().equals(manager)
                         && n.getTargetPath()
-                            .equals("/manager/inspections/" + OCCURRENCE_ID + "/finance")));
+                            .equals("/manager/inspections/" + INSPECTION_ID + "/settlement")));
+  }
+
+  @Test
+  @DisplayName("A missing inspection id falls back to the list route instead of a dead link")
+  void missingInspectionIdFallsBackToTheListRoute() {
+    UUID manager = UUID.randomUUID();
+    when(userAccess.listActiveManagers())
+        .thenReturn(List.of(new UserAccess.ActiveUser(manager, Set.of("MANAGER"))));
+
+    listener.onPaymentOverdue(
+        new PaymentOverdueEvent(
+            OCCURRENCE_ID, REQUEST_ID, null, CUSTOMER_ID, DUE_AT, Instant.now()));
+
+    verify(notifications)
+        .saveAndFlush(argThat(n -> n.getTargetPath().equals("/client/inspections")));
+    verify(notifications)
+        .saveAndFlush(argThat(n -> n.getTargetPath().equals("/manager/inspections")));
   }
 
   @Test
@@ -151,7 +169,8 @@ class PaymentOverdueNotificationListenerTest {
     when(userAccess.listActiveManagers()).thenReturn(List.of());
 
     listener.onPaymentOverdue(
-        new PaymentOverdueEvent(OCCURRENCE_ID, REQUEST_ID, CUSTOMER_ID, null, Instant.now()));
+        new PaymentOverdueEvent(
+            OCCURRENCE_ID, REQUEST_ID, INSPECTION_ID, CUSTOMER_ID, null, Instant.now()));
 
     verify(notifications)
         .saveAndFlush(
@@ -167,7 +186,8 @@ class PaymentOverdueNotificationListenerTest {
         .thenReturn(List.of(new UserAccess.ActiveUser(manager, Set.of("MANAGER"))));
 
     listener.onPaymentOverdue(
-        new PaymentOverdueEvent(OCCURRENCE_ID, REQUEST_ID, null, DUE_AT, Instant.now()));
+        new PaymentOverdueEvent(
+            OCCURRENCE_ID, REQUEST_ID, INSPECTION_ID, null, DUE_AT, Instant.now()));
 
     verify(notifications, times(1)).saveAndFlush(any());
     verify(notifications).saveAndFlush(argThat(n -> n.getRecipientUserId().equals(manager)));
@@ -194,13 +214,14 @@ class PaymentOverdueNotificationListenerTest {
   void nullEventIsIgnored() {
     listener.onPaymentOverdue(null);
     listener.onPaymentOverdue(
-        new PaymentOverdueEvent(null, REQUEST_ID, CUSTOMER_ID, DUE_AT, Instant.now()));
+        new PaymentOverdueEvent(
+            null, REQUEST_ID, INSPECTION_ID, CUSTOMER_ID, DUE_AT, Instant.now()));
 
     verifyNoInteractions(notifications, userAccess);
   }
 
   private static PaymentOverdueEvent event(UUID ownerCustomerId) {
     return new PaymentOverdueEvent(
-        OCCURRENCE_ID, REQUEST_ID, ownerCustomerId, DUE_AT, Instant.now());
+        OCCURRENCE_ID, REQUEST_ID, INSPECTION_ID, ownerCustomerId, DUE_AT, Instant.now());
   }
 }

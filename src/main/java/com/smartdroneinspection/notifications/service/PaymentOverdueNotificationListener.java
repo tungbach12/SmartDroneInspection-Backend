@@ -53,9 +53,12 @@ public class PaymentOverdueNotificationListener {
             ? VN_DATE_FORMAT.format(event.paymentDueAt().atZone(VN_ZONE))
             : null;
     String title = "Payment overdue";
+    String subject =
+        event.inspectionId() != null
+            ? "the inspection report for inspection " + event.inspectionId()
+            : "the inspection report for occurrence " + event.occurrenceId();
     String body =
-        "The inspection report for occurrence "
-            + event.occurrenceId()
+        subject
             + " has not been paid"
             + (dueLabel != null ? " (payment was due " + dueLabel + ")" : "")
             + ". Please settle the outstanding invoice or contact your service manager.";
@@ -65,7 +68,7 @@ public class PaymentOverdueNotificationListener {
           event.ownerCustomerId(),
           title,
           body,
-          "/client/inspections/" + event.occurrenceId(),
+          inspectionRoute("/client/inspections", event.inspectionId(), null),
           "PAYMENT_OVERDUE:" + event.occurrenceId() + ":" + event.ownerCustomerId());
     }
 
@@ -78,9 +81,24 @@ public class PaymentOverdueNotificationListener {
           manager.id(),
           title,
           body,
-          "/manager/inspections/" + event.occurrenceId() + "/finance",
+          inspectionRoute("/manager/inspections", event.inspectionId(), "settlement"),
           "PAYMENT_OVERDUE:" + event.occurrenceId() + ":" + manager.id());
     }
+  }
+
+  /**
+   * Builds an inspection route the frontend navigation guard accepts.
+   *
+   * <p>The guard only resolves `/inspections/:id[/subroute]` for a known inspection id, so a
+   * missing id falls back to the list page rather than producing a link that silently does nothing.
+   */
+  private static String inspectionRoute(String base, UUID inspectionId, String subroute) {
+    if (inspectionId == null) {
+      return base;
+    }
+    return subroute == null
+        ? base + "/" + inspectionId
+        : base + "/" + inspectionId + "/" + subroute;
   }
 
   private void save(UUID recipientId, String title, String body, String targetPath, String key) {
