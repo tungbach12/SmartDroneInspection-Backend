@@ -72,10 +72,12 @@ class FullDatabaseSchemaMigrationTest {
             "inspector_applications",
             "inspector_reliability_events",
             "otp_challenges",
+            "inspection_knowledge_chunks",
+            "historical_finding_cases",
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(45);
+    assertThat(expected).hasSize(47);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -153,7 +155,7 @@ class FullDatabaseSchemaMigrationTest {
     List<String> versions =
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
-    assertThat(versions).containsExactly("1", "2", "3", "4", "60", "61");
+    assertThat(versions).containsExactly("1", "2", "3", "4", "60", "61", "62");
 
     assertColumns(
         "inspections",
