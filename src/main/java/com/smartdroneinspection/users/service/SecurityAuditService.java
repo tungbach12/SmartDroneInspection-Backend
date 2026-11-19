@@ -51,6 +51,31 @@ public class SecurityAuditService {
         Timestamp.from(Instant.now()));
   }
 
+  /** Records a platform-configuration or privileged mutation that is not tied to a user subject. */
+  @Transactional
+  public void recordPlatformAction(
+      UUID actorUserId,
+      String aggregateType,
+      UUID aggregateId,
+      String action,
+      String outcome,
+      String detail) {
+    jdbcTemplate.update(
+        """
+        INSERT INTO audit_events
+          (actor_user_id, action, aggregate_type, aggregate_id, after_status, safe_metadata, created_at)
+        VALUES
+          (?, ?, ?, ?, ?, jsonb_build_object('detail', ?::text), ?)
+        """,
+        actorUserId,
+        action,
+        aggregateType,
+        aggregateId,
+        outcome,
+        truncate(detail, 2000),
+        Timestamp.from(Instant.now()));
+  }
+
   private String normalizeIp(String value) {
     return value == null || value.isBlank() ? null : value;
   }

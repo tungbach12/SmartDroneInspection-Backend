@@ -11,6 +11,9 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
+import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
+import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
@@ -30,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -126,6 +130,97 @@ class ReportServiceReviewerScopeTest {
     assertThat(inspection.getStatus()).isEqualTo(InspectionStatus.COMPLETED);
     verify(versions).saveAndFlush(version);
     verifyNoInteractions(renderPort, objectStore);
+
+    ArgumentCaptor<ReportPublishedEvent> eventCaptor =
+        ArgumentCaptor.forClass(ReportPublishedEvent.class);
+    verify(events).publishEvent(eventCaptor.capture());
+    ReportPublishedEvent event = eventCaptor.getValue();
+    assertThat(event.reportVersionId()).isEqualTo(versionId);
+    assertThat(event.inspectionId()).isEqualTo(inspectionId);
+    assertThat(event.ownerCustomerId()).isEqualTo(orgId);
+    assertThat(event.publishedByUserId()).isEqualTo(managerId);
+  }
+
+  @Test
+  @DisplayName("Submitting a report publishes a REPORT_SUBMITTED event for reviewer notices")
+  void submitVersionPublishesReportSubmittedEvent() {
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    ReflectionTestUtils.setField(inspection, "status", InspectionStatus.FIELD_COMPLETED);
+    ReflectionTestUtils.setField(inspection, "findingsConfirmedAt", java.time.Instant.now());
+
+    InspectionReport version = new InspectionReport(inspectionId, 2, "snap");
+    ReflectionTestUtils.setField(version, "id", versionId);
+    ReflectionTestUtils.setField(version, "status", ReportStatus.SUBMITTED);
+
+    when(evidenceService.requireAssignedInspection(inspectorId, inspectionId))
+        .thenReturn(inspection);
+    when(versions.findById(versionId)).thenReturn(Optional.of(version));
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(evidence.existsByInspectionIdAndIsDeletedFalse(inspectionId)).thenReturn(true);
+    when(versions.saveAndFlush(version)).thenReturn(version);
+
+    reportService.submitVersion(inspectorId, inspectionId, versionId);
+
+    ArgumentCaptor<ReportSubmittedEvent> eventCaptor =
+        ArgumentCaptor.forClass(ReportSubmittedEvent.class);
+    verify(events).publishEvent(eventCaptor.capture());
+    ReportSubmittedEvent event = eventCaptor.getValue();
+    assertThat(event.inspectionId()).isEqualTo(inspectionId);
+    assertThat(event.reportVersionId()).isEqualTo(versionId);
+    assertThat(event.versionNo()).isEqualTo(2);
+    assertThat(event.submittedByUserId()).isEqualTo(inspectorId);
+    assertThat(event.submittedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Returning a report publishes a REPORT_RETURNED event for the author")
+  void reviewerReturnPublishesReportReturnedEvent() {
+    UserAccess.ActiveUser manager =
+        new UserAccess.ActiveUser(
+            managerId,
+            Set.of(Roles.MANAGER),
+            "PLATFORM",
+            "Platform Manager",
+            "manager@platform.test",
+            null,
+            null,
+            null,
+            null);
+
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    ReflectionTestUtils.setField(inspection, "status", InspectionStatus.UNDER_REVIEW);
+
+    InspectionReport version = new InspectionReport(inspectionId, 1, "snap");
+    ReflectionTestUtils.setField(version, "id", versionId);
+    ReflectionTestUtils.setField(version, "status", ReportStatus.SUBMITTED);
+
+    when(userAccess.findActiveUser(managerId)).thenReturn(Optional.of(manager));
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(versions.findById(versionId)).thenReturn(Optional.of(version));
+    when(evidenceService.requireInspectionInScope(managerId, inspectionId)).thenReturn(inspection);
+    when(versions.saveAndFlush(version)).thenReturn(version);
+
+    reportService.reviewVersion(
+        managerId,
+        inspectionId,
+        versionId,
+        "Add a close-up of the crack",
+        java.util.Locale.ENGLISH);
+
+    ArgumentCaptor<ReportReturnedEvent> eventCaptor =
+        ArgumentCaptor.forClass(ReportReturnedEvent.class);
+    verify(events).publishEvent(eventCaptor.capture());
+    ReportReturnedEvent event = eventCaptor.getValue();
+    assertThat(event.inspectionId()).isEqualTo(inspectionId);
+    assertThat(event.reportVersionId()).isEqualTo(versionId);
+    assertThat(event.inspectorId()).isEqualTo(inspectorId);
+    assertThat(event.returnedByUserId()).isEqualTo(managerId);
+    assertThat(event.reason()).isEqualTo("Add a close-up of the crack");
+    assertThat(event.returnedAt()).isNotNull();
   }
 
   @Test
@@ -249,5 +344,47 @@ class ReportServiceReviewerScopeTest {
     assertThatThrownBy(() -> reportService.getVersion(customerId, inspectionId, versionId))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("Only published reports are available to customer");
+  }
+
+  @Test
+  @DisplayName("MANAGER receives FORBIDDEN when requesting report clarification")
+  void managerCannotRequestClarification() {
+    Inspection inspection =
+        new Inspection(customerId, UUID.randomUUID(), inspectorId, null, null, null);
+    UserAccess.ActiveUser manager =
+        new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Platform Manager");
+
+    when(evidenceService.requireInspectionInScope(managerId, inspectionId)).thenReturn(inspection);
+    when(userAccess.findActiveUser(managerId)).thenReturn(Optional.of(manager));
+
+    assertThatThrownBy(
+            () ->
+                reportService.requestCustomerClarification(
+                    managerId, inspectionId, versionId, "Clarify crack width"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).code()).isEqualTo("FORBIDDEN"));
+    verifyNoInteractions(versions);
+  }
+
+  @Test
+  @DisplayName(
+      "a CUSTOMER from another organization receives FORBIDDEN when requesting clarification")
+  void nonOwningCustomerCannotRequestClarification() {
+    UUID outsiderId = UUID.randomUUID();
+    Inspection inspection =
+        new Inspection(customerId, UUID.randomUUID(), inspectorId, null, null, null);
+    UserAccess.ActiveUser outsider =
+        new UserAccess.ActiveUser(outsiderId, Set.of(Roles.CUSTOMER), "Other Customer");
+
+    when(evidenceService.requireInspectionInScope(outsiderId, inspectionId)).thenReturn(inspection);
+    when(userAccess.findActiveUser(outsiderId)).thenReturn(Optional.of(outsider));
+
+    assertThatThrownBy(
+            () ->
+                reportService.requestCustomerClarification(
+                    outsiderId, inspectionId, versionId, "Clarify crack width"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).code()).isEqualTo("FORBIDDEN"));
+    verifyNoInteractions(versions);
   }
 }

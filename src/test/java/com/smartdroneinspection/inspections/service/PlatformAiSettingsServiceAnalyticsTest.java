@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.inspections.api.dto.request.UpdatePlatformAiSettingsRequest;
 import com.smartdroneinspection.inspections.service.PlatformAiSettingsService.AiThresholdConfig;
+import com.smartdroneinspection.shared.api.PlatformAuditPort;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
@@ -24,12 +25,14 @@ import org.springframework.jdbc.core.RowMapper;
 class PlatformAiSettingsServiceAnalyticsTest {
 
   private JdbcTemplate jdbcTemplate;
+  private PlatformAuditPort audit;
   private PlatformAiSettingsService service;
 
   @BeforeEach
   void setUp() {
     jdbcTemplate = mock(JdbcTemplate.class);
-    service = new PlatformAiSettingsService(jdbcTemplate);
+    audit = mock(PlatformAuditPort.class);
+    service = new PlatformAiSettingsService(jdbcTemplate, audit);
   }
 
   @Test
@@ -96,20 +99,29 @@ class PlatformAiSettingsServiceAnalyticsTest {
   }
 
   @Test
-  void updateSettingsAppliesThresholdAndAutoConfirmsEligibleFindings() throws Exception {
+  void updateSettingsPersistsThresholdWithoutRetroactiveApply() throws Exception {
     UUID actorId = UUID.randomUUID();
     stubAnalyticsQueries();
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
 
     var response =
         service.updateSettings(
-            actorId, new UpdatePlatformAiSettingsRequest(true, new BigDecimal("87.126"), true));
+            actorId, new UpdatePlatformAiSettingsRequest(true, new BigDecimal("87.126")));
 
     assertThat(response).isNotNull();
-    assertThat(response.newlyAutoConfirmedCount()).isEqualTo(1);
+    assertThat(response.newlyAutoConfirmedCount()).isZero();
     verify(jdbcTemplate)
         .update(ArgumentMatchers.contains("INSERT INTO platform_ai_settings"), any(Object[].class));
-    verify(jdbcTemplate).update(ArgumentMatchers.contains("UPDATE findings"), any(Object[].class));
+    verify(jdbcTemplate, org.mockito.Mockito.never())
+        .update(ArgumentMatchers.contains("UPDATE findings"), any(Object[].class));
+    verify(audit)
+        .recordPlatformAction(
+            actorId,
+            "PLATFORM_AI_SETTINGS",
+            actorId,
+            "AI_SETTINGS_UPDATED",
+            "SUCCESS",
+            "autoConfirmEnabled=true, autoConfirmThreshold=87.13");
   }
 
   @Test
@@ -118,8 +130,7 @@ class PlatformAiSettingsServiceAnalyticsTest {
 
     var response =
         service.updateSettings(
-            UUID.randomUUID(),
-            new UpdatePlatformAiSettingsRequest(false, new BigDecimal("90"), false));
+            UUID.randomUUID(), new UpdatePlatformAiSettingsRequest(false, new BigDecimal("90")));
 
     assertThat(response.newlyAutoConfirmedCount()).isZero();
     verify(jdbcTemplate)

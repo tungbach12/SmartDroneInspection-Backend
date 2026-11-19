@@ -37,6 +37,7 @@ public class InspectorProfileService {
   private final InspectorProfileRepository profileRepository;
   private final InspectorPartnerLicenseDocumentService licenseDocumentService;
   private final PilotLicenseClassService pilotLicenseClassService;
+  private final SecurityAuditService audit;
   private ApplicationEventPublisher eventPublisher;
 
   @Autowired
@@ -45,12 +46,29 @@ public class InspectorProfileService {
       InspectorFlightLogRepository flightLogRepository,
       InspectorProfileRepository profileRepository,
       InspectorPartnerLicenseDocumentService licenseDocumentService,
-      PilotLicenseClassService pilotLicenseClassService) {
+      PilotLicenseClassService pilotLicenseClassService,
+      SecurityAuditService audit) {
     this.userRepository = userRepository;
     this.flightLogRepository = flightLogRepository;
     this.profileRepository = profileRepository;
     this.licenseDocumentService = licenseDocumentService;
     this.pilotLicenseClassService = pilotLicenseClassService;
+    this.audit = audit;
+  }
+
+  public InspectorProfileService(
+      UserRepository userRepository,
+      InspectorFlightLogRepository flightLogRepository,
+      InspectorProfileRepository profileRepository,
+      InspectorPartnerLicenseDocumentService licenseDocumentService,
+      PilotLicenseClassService pilotLicenseClassService) {
+    this(
+        userRepository,
+        flightLogRepository,
+        profileRepository,
+        licenseDocumentService,
+        pilotLicenseClassService,
+        null);
   }
 
   public InspectorProfileService(
@@ -143,6 +161,11 @@ public class InspectorProfileService {
 
     User saved = userRepository.save(user);
     profileRepository.save(profile);
+    recordProfileAudit(
+        actorId,
+        inspectorUserId,
+        "INSPECTOR_PROFILE_UPDATED",
+        "Licence, flight hours, or personal details changed");
     if (eventPublisher != null && profile.getPilotLicenseExpiresAt() != null) {
       eventPublisher.publishEvent(
           new PilotLicenseUpdatedEvent(inspectorUserId, profile.getPilotLicenseExpiresAt()));
@@ -169,6 +192,8 @@ public class InspectorProfileService {
     }
     userRepository.save(user);
     profileRepository.save(profile);
+    recordProfileAudit(
+        actorId, inspectorUserId, "INSPECTOR_LICENSE_SCAN_UPLOADED", "Licence scan uploaded");
     return toProfileResponse(user, profile);
   }
 
@@ -187,6 +212,11 @@ public class InspectorProfileService {
     profile.approveOnboarding(actorId);
     userRepository.save(user);
     profileRepository.save(profile);
+    recordProfileAudit(
+        actorId,
+        inspectorUserId,
+        "INSPECTOR_PARTNER_CONTRACT_UPLOADED",
+        "Signed partner contract uploaded");
     return toProfileResponse(user, profile);
   }
 
@@ -231,6 +261,8 @@ public class InspectorProfileService {
     }
     profile.approveOnboarding(reviewerId);
     profileRepository.save(profile);
+    recordProfileAudit(
+        reviewerId, inspectorUserId, "INSPECTOR_ONBOARDING_APPROVED", "Onboarding approved");
     return toProfileResponse(user, profile);
   }
 
@@ -240,6 +272,11 @@ public class InspectorProfileService {
     InspectorProfile profile = findOrCreateProfile(inspectorUserId);
     profile.rejectOnboarding(reviewerId, reason != null ? reason.trim() : null);
     profileRepository.save(profile);
+    recordProfileAudit(
+        reviewerId,
+        inspectorUserId,
+        "INSPECTOR_ONBOARDING_REJECTED",
+        reason == null ? "Onboarding rejected" : "Onboarding rejected: " + reason.trim());
     return toProfileResponse(user, profile);
   }
 
@@ -285,6 +322,11 @@ public class InspectorProfileService {
             request.notes() != null ? request.notes().trim() : null,
             actorId);
     InspectorFlightLog saved = flightLogRepository.save(log);
+    recordProfileAudit(
+        actorId,
+        inspectorUserId,
+        "INSPECTOR_FLIGHT_LOG_RECORDED",
+        "Flight log " + request.flightCode().trim() + " recorded");
     return toFlightLogResponse(saved);
   }
 
@@ -301,6 +343,11 @@ public class InspectorProfileService {
           HttpStatus.BAD_REQUEST, "INVALID_FLIGHT_LOG", "Chuyến bay không thuộc về inspector này");
     }
     flightLogRepository.delete(log);
+    recordProfileAudit(
+        actorId,
+        inspectorUserId,
+        "INSPECTOR_FLIGHT_LOG_DELETED",
+        "Flight log " + log.getFlightCode() + " deleted");
   }
 
   public void recordAutomaticFlightSession(
@@ -358,6 +405,13 @@ public class InspectorProfileService {
             () ->
                 new BusinessException(
                     HttpStatus.NOT_FOUND, "NOT_FOUND", "Tài khoản Inspector không tồn tại"));
+  }
+
+  private void recordProfileAudit(UUID actorId, UUID inspectorId, String action, String detail) {
+    if (audit != null) {
+      audit.recordPlatformAction(
+          actorId, "INSPECTOR_PROFILE", inspectorId, action, "SUCCESS", detail);
+    }
   }
 
   private InspectorProfile findOrCreateProfile(UUID userId) {

@@ -7,5 +7,4 @@ import java.math.BigDecimal;
 
 public record UpdatePlatformAiSettingsRequest(
     @NotNull Boolean autoConfirmEnabled,
-    @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal autoConfirmThreshold,
-    Boolean applyToPending) {}
+    @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal autoConfirmThreshold) {}

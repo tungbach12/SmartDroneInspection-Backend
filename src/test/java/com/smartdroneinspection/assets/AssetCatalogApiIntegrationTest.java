@@ -198,11 +198,29 @@ class AssetCatalogApiIntegrationTest {
         .andExpect(status().isNoContent());
   }
 
+  @Test
+  void managerCannotWriteChecklistTemplates() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/asset-categories/checklist-templates")
+                .with(manager(fixture.managerId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"templateType\":\"PRE_FLIGHT\",\"label\":\"Manager attempt\"}"))
+        .andExpect(status().isForbidden());
+  }
+
   private org.springframework.test.web.servlet.request.RequestPostProcessor admin(UUID id) {
     return jwt()
         .jwt(t -> t.subject(id.toString()))
         .authorities(
             new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+  }
+
+  private org.springframework.test.web.servlet.request.RequestPostProcessor manager(UUID id) {
+    return jwt()
+        .jwt(t -> t.subject(id.toString()))
+        .authorities(
+            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_MANAGER"));
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {

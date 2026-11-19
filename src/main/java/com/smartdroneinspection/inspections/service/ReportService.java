@@ -16,6 +16,9 @@ import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
+import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
+import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
@@ -319,7 +322,15 @@ public class ReportService {
     } catch (IllegalStateException | IllegalArgumentException ex) {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
-    return toResponse(versions.saveAndFlush(version), inspection.getInspectorId());
+    InspectionReport saved = versions.saveAndFlush(version);
+    events.publishEvent(
+        new ReportSubmittedEvent(
+            inspectionId,
+            saved.getId(),
+            saved.getVersionNo(),
+            actorId,
+            saved.getSubmittedAt() != null ? saved.getSubmittedAt() : java.time.Instant.now()));
+    return toResponse(saved, inspection.getInspectorId());
   }
 
   /** A draft created before the latest findings confirmation is stale. */
@@ -427,6 +438,15 @@ public class ReportService {
       inspections.saveAndFlush(inspection);
     }
     versions.saveAndFlush(version);
+    events.publishEvent(
+        new ReportReturnedEvent(
+            inspectionId,
+            version.getId(),
+            version.getVersionNo(),
+            inspection.getInspectorId(),
+            reviewer.id(),
+            version.getReturnReason(),
+            version.getReviewedAt() != null ? version.getReviewedAt() : java.time.Instant.now()));
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),
@@ -438,7 +458,7 @@ public class ReportService {
   }
 
   /**
-   * Allows a Customer (or Manager) to request clarification/revision on a PUBLISHED report before
+   * Allows only the owning Customer to request clarification/revision on a PUBLISHED report before
    * commercial acceptance and payment, returning the report to RETURNED with the customer's note.
    */
   @Transactional
@@ -457,6 +477,7 @@ public class ReportService {
           "Cannot request clarification after the report has been accepted or paid.");
     }
     Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    requireOwningCustomer(actorId, inspection);
     if (inspection.getClarificationCount() >= 2) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -477,6 +498,15 @@ public class ReportService {
     }
     inspections.saveAndFlush(inspection);
     versions.saveAndFlush(version);
+    events.publishEvent(
+        new ReportReturnedEvent(
+            inspectionId,
+            version.getId(),
+            version.getVersionNo(),
+            inspection.getInspectorId(),
+            actorId,
+            version.getReturnReason(),
+            version.getReviewedAt() != null ? version.getReviewedAt() : java.time.Instant.now()));
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),
@@ -485,6 +515,24 @@ public class ReportService {
         null,
         List.of(),
         inspection.getStatus());
+  }
+
+  private void requireOwningCustomer(UUID actorId, Inspection inspection) {
+    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
+    boolean isOwningCustomer =
+        actor != null
+            && actor.hasRole(Roles.CUSTOMER)
+            && !actor.hasRole(Roles.MANAGER)
+            && !actor.hasRole(Roles.ADMIN)
+            && !actor.hasRole(Roles.INSPECTOR)
+            && inspection.getOwnerCustomerId() != null
+            && inspection.getOwnerCustomerId().equals(actorId);
+    if (!isOwningCustomer) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only the owning customer can request report clarification");
+    }
   }
 
   @Transactional
@@ -558,6 +606,17 @@ public class ReportService {
       inspection.complete();
     }
     inspections.saveAndFlush(inspection);
+
+    events.publishEvent(
+        new ReportPublishedEvent(
+            version.getId(),
+            version.getId(),
+            inspectionId,
+            inspection.getOwnerCustomerId(),
+            inspection.getAssetId(),
+            publisher.id(),
+            List.of(),
+            version.getPublishedAt() != null ? version.getPublishedAt() : java.time.Instant.now()));
 
     return new ReportPublishedResponse(
         version.getId(),

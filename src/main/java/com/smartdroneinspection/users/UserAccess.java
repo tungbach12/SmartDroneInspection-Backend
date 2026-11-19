@@ -40,6 +40,10 @@ public interface UserAccess {
     return List.of();
   }
 
+  default List<ActiveUser> listActiveAdmins() {
+    return List.of();
+  }
+
   boolean isVisionFallbackEnabled(UUID userId);
 
   ProvisionedWorkforceMember provisionWorkforceUser(

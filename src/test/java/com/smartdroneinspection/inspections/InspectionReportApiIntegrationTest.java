@@ -1553,6 +1553,38 @@ class InspectionReportApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("MAX_CLARIFICATIONS_EXCEEDED"));
   }
 
+  @Test
+  void onlyTheOwningCustomerCanRequestReportClarification() throws Exception {
+    UUID versionId = UUID.randomUUID();
+
+    for (String role : List.of("MANAGER", "ADMIN", "INSPECTOR")) {
+      UUID actor =
+          switch (role) {
+            case "MANAGER", "ADMIN" -> fixture.managerId();
+            default -> fixture.inspectorId();
+          };
+      mockMvc
+          .perform(
+              post(
+                      "/api/v1/inspections/{id}/report/versions/{vid}/clarification",
+                      fixture.inspectionId(),
+                      versionId)
+                  .param("reason", "Clarify crack width")
+                  .with(principal(actor, role)))
+          .andExpect(status().isForbidden());
+    }
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vid}/clarification",
+                    fixture.inspectionId(),
+                    versionId)
+                .param("reason", "Clarify crack width")
+                .with(principal(fixture.outsiderId(), "CUSTOMER")))
+        .andExpect(status().isNotFound());
+  }
+
   private UUID uploadEvidence() throws Exception {
     MvcResult uploaded =
         mockMvc

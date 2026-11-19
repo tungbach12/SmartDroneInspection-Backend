@@ -192,7 +192,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermit(
           @AuthenticationPrincipal Jwt jwt,
@@ -224,7 +224,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.APPLICATION_JSON_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
       uploadFlightPermitJson(
           @AuthenticationPrincipal Jwt jwt,
@@ -786,7 +786,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/clarification")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<ReportPublishedResponse> requestReportClarification(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -1053,7 +1053,7 @@ public class InspectionController {
   private record ByteRange(long start, long end) {}
 
   @PostMapping("/reinspections")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER')")
   public ResponseEntity<ApiResponse<InspectionResponse>> createQuickReinspection(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -1074,7 +1074,7 @@ public class InspectionController {
   }
 
   @PutMapping("/reinspection-verifications/{verificationId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('INSPECTOR')")
   public ApiResponse<ReinspectionVerificationResponse> updateReinspectionVerification(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,

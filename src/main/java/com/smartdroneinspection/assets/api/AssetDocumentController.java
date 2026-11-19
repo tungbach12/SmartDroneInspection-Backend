@@ -34,7 +34,7 @@ public class AssetDocumentController {
   }
 
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<AssetDocumentResponse> upload(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,

@@ -36,6 +36,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
   List<User> findActiveManagers();
 
   @Query(
+      "select u from User u where concat(',', u.roles, ',') like '%,ADMIN,%' "
+          + "and u.status = com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE "
+          + "order by u.fullName asc")
+  List<User> findActiveAdmins();
+
+  @Query(
       "select count(u) > 0 from User u where concat(',', u.roles, ',') like concat('%,', :roleName, ',%')")
   boolean existsByRoleName(@Param("roleName") String roleName);
 

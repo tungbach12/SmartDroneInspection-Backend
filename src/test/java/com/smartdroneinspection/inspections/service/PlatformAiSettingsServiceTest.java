@@ -13,7 +13,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class PlatformAiSettingsServiceTest {
 
   private final PlatformAiSettingsService service =
-      new PlatformAiSettingsService(mock(JdbcTemplate.class));
+      new PlatformAiSettingsService(
+          mock(JdbcTemplate.class),
+          mock(com.smartdroneinspection.shared.api.PlatformAuditPort.class));
 
   @Test
   @DisplayName("auto-confirms detections at or above the configured percentage threshold")

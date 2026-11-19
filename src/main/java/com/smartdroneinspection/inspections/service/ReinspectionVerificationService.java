@@ -356,22 +356,19 @@ public class ReinspectionVerificationService {
   }
 
   private void requireCanEdit(UUID actorId, Inspection inspection) {
-    UserAccess.ActiveUser actor =
-        userAccess
-            .findActiveUser(actorId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Actor not found"));
+    userAccess
+        .findActiveUser(actorId)
+        .orElseThrow(
+            () ->
+                new BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Actor not found"));
 
     boolean isAssignedInspector = inspection.isInspectedBy(actorId);
-    boolean isManagerOrAdmin = actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER);
 
-    if (!isAssignedInspector && !isManagerOrAdmin) {
+    if (!isAssignedInspector) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only the assigned inspector or manager can update defect verifications");
+          "Only the assigned inspector can update defect verifications");
     }
   }
 

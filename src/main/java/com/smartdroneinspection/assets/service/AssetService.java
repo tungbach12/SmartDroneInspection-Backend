@@ -13,6 +13,7 @@ import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.InspectionItemRepository;
+import com.smartdroneinspection.shared.api.AssetInspectionUsagePort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.math.BigDecimal;
@@ -36,13 +37,23 @@ public class AssetService {
   private final InspectionItemRepository inspectionItems;
   private final UserAccess userAccess;
   private final AirspaceAdvisoryService airspaceAdvisory;
+  private final AssetInspectionUsagePort assetInspectionUsage;
 
   public AssetService(
       AssetRepository assets,
       AssetCategoryRepository categories,
       UserAccess userAccess,
       AirspaceAdvisoryService airspaceAdvisory) {
-    this(assets, categories, null, userAccess, airspaceAdvisory);
+    this(assets, categories, null, userAccess, airspaceAdvisory, null);
+  }
+
+  public AssetService(
+      AssetRepository assets,
+      AssetCategoryRepository categories,
+      InspectionItemRepository inspectionItems,
+      UserAccess userAccess,
+      AirspaceAdvisoryService airspaceAdvisory) {
+    this(assets, categories, inspectionItems, userAccess, airspaceAdvisory, null);
   }
 
   @Autowired
@@ -51,12 +62,14 @@ public class AssetService {
       AssetCategoryRepository categories,
       InspectionItemRepository inspectionItems,
       UserAccess userAccess,
-      AirspaceAdvisoryService airspaceAdvisory) {
+      AirspaceAdvisoryService airspaceAdvisory,
+      AssetInspectionUsagePort assetInspectionUsage) {
     this.assets = assets;
     this.categories = categories;
     this.inspectionItems = inspectionItems;
     this.userAccess = userAccess;
     this.airspaceAdvisory = airspaceAdvisory;
+    this.assetInspectionUsage = assetInspectionUsage;
   }
 
   @Transactional
@@ -191,26 +204,27 @@ public class AssetService {
   public AssetResponse updateInspectionItems(
       UUID actorId, UUID assetId, List<String> requestedItems) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    Asset asset;
-    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
-      asset =
-          assets
-              .findById(assetId)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
-    } else {
-      UUID ownerCustomerId = requireOwnerCustomer(actor);
-      asset =
-          assets
-              .findByIdAndOwnerCustomerId(assetId, ownerCustomerId)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+    if (!actor.hasRole("CUSTOMER")) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "FORBIDDEN",
+          "Only the owning customer can change asset inspection checkpoints");
     }
+    UUID ownerCustomerId = requireOwnerCustomer(actor);
+    Asset asset =
+        assets
+            .findByIdAndOwnerCustomerId(assetId, ownerCustomerId)
+            .orElseThrow(
+                () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
     if (asset.getStatus() == AssetStatus.RETIRED) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Retired assets cannot be edited");
+    }
+    if (assetInspectionUsage != null && assetInspectionUsage.hasInspection(assetId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTION_HISTORY_EXISTS",
+          "Inspection checkpoints are locked once an inspection exists for this asset. Create a new request for a new checkpoint set.");
     }
     List<String> sanitized =
         requestedItems == null

@@ -54,8 +54,19 @@ public class AdminUserService {
   }
 
   @Transactional(readOnly = true)
-  public List<UserResponse> list() {
-    return users.findAllWithRoles().stream().map(user -> toResponse(user)).toList();
+  public List<UserResponse> list(UUID actorId) {
+    User actor =
+        users
+            .findDetailedById(actorId)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "User was not found."));
+    boolean isPureManager =
+        actor.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.MANAGER)
+            && !actor.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.ADMIN);
+    List<User> scoped = isPureManager ? users.findAllInspectors() : users.findAllWithRoles();
+    return scoped.stream().map(user -> toResponse(user)).toList();
   }
 
   @Transactional
@@ -142,6 +153,8 @@ public class AdminUserService {
     requireDifferentUser(actorId, userId);
     rolePolicy.validate(request.roles());
     User user = requireUser(userId);
+    requireAnotherActiveAdmin(
+        user, request.roles().contains(com.smartdroneinspection.users.domain.enums.UserRole.ADMIN));
     user.updateAccessProfile(new ArrayList<>(request.roles()));
     auth.revokeAllSessions(userId, "roles-changed");
     audit.record(
@@ -159,11 +172,32 @@ public class AdminUserService {
       String correlationId) {
     requireDifferentUser(actorId, userId);
     User user = requireUser(userId);
+    requireAnotherActiveAdmin(user, status == UserStatus.ACTIVE);
     user.disable(status);
     auth.revokeAllSessions(userId, "account-status-changed");
     audit.record(
         actorId, userId, "USER_STATUS_CHANGED", "SUCCESS", ipAddress, userAgent, correlationId);
     return toResponse(user);
+  }
+
+  /**
+   * The platform must never be left without a usable administrator. A change is only allowed when
+   * the target keeps the ADMIN role (role change) or stays ACTIVE (status change), or when another
+   * active administrator remains.
+   */
+  private void requireAnotherActiveAdmin(User target, boolean keepsAdminAccess) {
+    if (keepsAdminAccess
+        || !target.roleValues().contains(com.smartdroneinspection.shared.auth.Roles.ADMIN)) {
+      return;
+    }
+    boolean anotherActiveAdmin =
+        users.findActiveAdmins().stream().anyMatch(admin -> !admin.getId().equals(target.getId()));
+    if (!anotherActiveAdmin) {
+      throw new AuthException(
+          HttpStatus.CONFLICT,
+          "LAST_ADMIN_REQUIRED",
+          "At least one active platform administrator must remain.");
+    }
   }
 
   private User requireUser(UUID userId) {

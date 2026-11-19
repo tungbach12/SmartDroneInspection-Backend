@@ -1,7 +1,9 @@
 package com.smartdroneinspection.contracts.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -12,6 +14,7 @@ import com.smartdroneinspection.contracts.api.VnPayWebhookController;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus;
+import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.infrastructure.payment.VnPayCrypto;
@@ -26,6 +29,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -35,6 +40,7 @@ class VnPayWebhookAndGatewayTest {
 
   private ServiceRequestOccurrenceRepository occurrences;
   private VnPayPaymentGateway vnPayGateway;
+  private ApplicationEventPublisher events;
   private ContractWorkflowService workflowService;
   private MockMvc mockMvc;
 
@@ -56,6 +62,7 @@ class VnPayWebhookAndGatewayTest {
             "vn",
             15);
     vnPayGateway = new VnPayPaymentGateway(props);
+    events = mock(ApplicationEventPublisher.class);
     workflowService =
         new ContractWorkflowService(
             null,
@@ -72,7 +79,8 @@ class VnPayWebhookAndGatewayTest {
             Optional.empty(),
             null,
             vnPayGateway,
-            null);
+            null,
+            events);
     VnPayWebhookController controller = new VnPayWebhookController(vnPayGateway, workflowService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
@@ -107,6 +115,7 @@ class VnPayWebhookAndGatewayTest {
     Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
     ServiceRequestOccurrence occurrence =
         new ServiceRequestOccurrence(requestId, 1, start, start.plus(2, ChronoUnit.HOURS));
+    ReflectionTestUtils.setField(occurrence, "id", UUID.randomUUID());
     occurrence.assign(inspectorId, UUID.randomUUID(), inspectionId, UUID.randomUUID());
     occurrence.snapshotFinance(
         "VND",
@@ -174,6 +183,7 @@ class VnPayWebhookAndGatewayTest {
     assertThat(occurrence.getPayoutReference()).isNull();
     assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
     assertThat(occurrence.getPaymentReference()).isEqualTo("VNPAY-14998877");
+    verify(events).publishEvent(any(PaymentSettledEvent.class));
 
     // 3. Duplicate IPN returns RspCode 02 (Order already confirmed)
     mockMvc

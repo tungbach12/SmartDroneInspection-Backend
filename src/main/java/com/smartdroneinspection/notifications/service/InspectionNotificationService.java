@@ -5,8 +5,11 @@ import com.smartdroneinspection.notifications.domain.enums.NotificationChannel;
 import com.smartdroneinspection.notifications.repository.NotificationRepository;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -391,6 +394,204 @@ public class InspectionNotificationService {
         body,
         "/manager/inspections/" + inspectionId + "/audit",
         "PERMIT_SUBMITTED:" + inspectionId + ":" + epoch);
+  }
+
+  @Transactional
+  public void recordReportSubmitted(
+      UUID inspectionId,
+      UUID reportVersionId,
+      int versionNo,
+      UUID submittedByUserId,
+      Instant submittedAt) {
+    if (inspectionId == null || reportVersionId == null) {
+      log.warn("Skipping report submitted notification: required identifiers missing");
+      return;
+    }
+    long epoch =
+        submittedAt != null ? submittedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String deduplicationPrefix = "REPORT_SUBMITTED:" + reportVersionId + ":" + epoch;
+    String title = "Report submitted for review";
+    String body =
+        "Report version " + versionNo + " for inspection " + inspectionId + " is awaiting review.";
+
+    for (ActiveUser reviewer : activeReviewers()) {
+      if (reviewer.id() == null
+          || (submittedByUserId != null && submittedByUserId.equals(reviewer.id()))) {
+        continue;
+      }
+      String targetPath =
+          reviewer.hasRole("ADMIN")
+              ? "/admin/inspections/" + inspectionId + "/review"
+              : "/manager/inspections/" + inspectionId + "/review";
+      String key = deduplicationPrefix + ":" + reviewer.id();
+      saveWithDeduplication(
+          new Notification(
+              reviewer.id(),
+              "REPORT_SUBMITTED",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              targetPath,
+              key),
+          key);
+    }
+  }
+
+  @Transactional
+  public void recordReportReturned(
+      UUID inspectionId,
+      UUID reportVersionId,
+      int versionNo,
+      UUID inspectorId,
+      String reason,
+      Instant returnedAt) {
+    if (inspectionId == null || reportVersionId == null || inspectorId == null) {
+      log.warn("Skipping report returned notification: required identifiers missing");
+      return;
+    }
+    ActiveUser recipient = userAccess.findActiveUser(inspectorId).orElse(null);
+    if (recipient == null || !recipient.hasRole("INSPECTOR")) {
+      log.warn(
+          "Cannot record report returned notification: inspector {} is not active", inspectorId);
+      return;
+    }
+    long epoch = returnedAt != null ? returnedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String reasonText =
+        reason != null && !reason.isBlank() ? reason : "Revision requested by the reviewer.";
+    String title = "Report returned for revision";
+    String body =
+        "Report version "
+            + versionNo
+            + " for inspection "
+            + inspectionId
+            + " was returned: "
+            + reasonText;
+    String key = "REPORT_RETURNED:" + reportVersionId + ":" + epoch + ":" + inspectorId;
+    saveWithDeduplication(
+        new Notification(
+            inspectorId,
+            "REPORT_RETURNED",
+            NotificationChannel.IN_APP,
+            title,
+            body,
+            "/operations/inspections/" + inspectionId + "/report",
+            key),
+        key);
+  }
+
+  @Transactional
+  public void recordReportPublished(UUID inspectionId, UUID reportVersionId, UUID ownerCustomerId) {
+    if (inspectionId == null || reportVersionId == null || ownerCustomerId == null) {
+      log.warn("Skipping report published notification: required identifiers missing");
+      return;
+    }
+    ActiveUser recipient = userAccess.findActiveUser(ownerCustomerId).orElse(null);
+    if (recipient == null || !recipient.hasRole("CUSTOMER")) {
+      log.warn(
+          "Cannot record report published notification: customer {} is not active",
+          ownerCustomerId);
+      return;
+    }
+    String title = "Inspection report published";
+    String body =
+        "The inspection report for inspection "
+            + inspectionId
+            + " has been published. Review and accept it to start the payment window.";
+    String key = "REPORT_PUBLISHED:" + reportVersionId + ":" + ownerCustomerId;
+    saveWithDeduplication(
+        new Notification(
+            ownerCustomerId,
+            "REPORT_PUBLISHED",
+            NotificationChannel.IN_APP,
+            title,
+            body,
+            "/client/inspections/" + inspectionId + "/review",
+            key),
+        key);
+  }
+
+  @Transactional
+  public void recordPaymentSettled(
+      UUID occurrenceId,
+      UUID inspectionId,
+      UUID inspectorId,
+      String paymentReference,
+      BigDecimal amount,
+      String paymentMethod,
+      Instant settledAt) {
+    if (occurrenceId == null) {
+      log.warn("Skipping payment settled notification: occurrence identifier missing");
+      return;
+    }
+    long epoch = settledAt != null ? settledAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String subject =
+        inspectionId != null ? "inspection " + inspectionId : "occurrence " + occurrenceId;
+    String amountText = amount != null ? amount.toPlainString() : "the agreed amount";
+    String methodText =
+        paymentMethod != null && !paymentMethod.isBlank() ? paymentMethod : "manual confirmation";
+    String body =
+        "Payment for "
+            + subject
+            + " was settled via "
+            + methodText
+            + " ("
+            + amountText
+            + ")"
+            + (paymentReference != null && !paymentReference.isBlank()
+                ? ", reference " + paymentReference
+                : "")
+            + ".";
+    String title = "Payment settled";
+
+    Map<UUID, String> recipients = new LinkedHashMap<>();
+    for (ActiveUser manager : userAccess.listActiveManagers()) {
+      if (manager.id() != null) {
+        recipients.put(
+            manager.id(),
+            inspectionId != null
+                ? "/manager/inspections/" + inspectionId + "/settlement"
+                : "/manager/contracts");
+      }
+    }
+    if (inspectorId != null) {
+      ActiveUser inspector = userAccess.findActiveUser(inspectorId).orElse(null);
+      if (inspector != null && inspector.hasRole("INSPECTOR")) {
+        recipients.putIfAbsent(
+            inspectorId,
+            inspectionId != null
+                ? "/operations/inspections/" + inspectionId
+                : "/operations/inspections");
+      }
+    }
+
+    for (Map.Entry<UUID, String> recipient : recipients.entrySet()) {
+      String key = "PAYMENT_SETTLED:" + occurrenceId + ":" + epoch + ":" + recipient.getKey();
+      saveWithDeduplication(
+          new Notification(
+              recipient.getKey(),
+              "PAYMENT_SETTLED",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              recipient.getValue(),
+              key),
+          key);
+    }
+  }
+
+  private List<ActiveUser> activeReviewers() {
+    Map<UUID, ActiveUser> reviewers = new LinkedHashMap<>();
+    for (ActiveUser manager : userAccess.listActiveManagers()) {
+      if (manager.id() != null) {
+        reviewers.putIfAbsent(manager.id(), manager);
+      }
+    }
+    for (ActiveUser admin : userAccess.listActiveAdmins()) {
+      if (admin.id() != null) {
+        reviewers.putIfAbsent(admin.id(), admin);
+      }
+    }
+    return List.copyOf(reviewers.values());
   }
 
   @Transactional

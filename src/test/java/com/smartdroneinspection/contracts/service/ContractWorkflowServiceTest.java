@@ -32,6 +32,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
 import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
+import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
 import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageAttachmentRepository;
@@ -62,6 +63,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -83,6 +85,7 @@ class ContractWorkflowServiceTest {
   private InspectionReportAccess reportAccess;
   private PayOSGateway payOSGateway;
   private VnPayGateway vnPayGateway;
+  private ApplicationEventPublisher events;
   private ContractWorkflowService service;
 
   private final UUID customerId = UUID.randomUUID();
@@ -109,6 +112,7 @@ class ContractWorkflowServiceTest {
     reportAccess = mock(InspectionReportAccess.class);
     payOSGateway = mock(PayOSGateway.class);
     vnPayGateway = mock(VnPayGateway.class);
+    events = mock(ApplicationEventPublisher.class);
 
     service =
         new ContractWorkflowService(
@@ -125,7 +129,9 @@ class ContractWorkflowServiceTest {
             financeSettingsService,
             Optional.of(reportAccess),
             payOSGateway,
-            vnPayGateway);
+            vnPayGateway,
+            null,
+            events);
     ReflectionTestUtils.setField(service, "messageAttachments", Optional.of(messageAttachments));
 
     when(users.findActiveUser(customerId))
@@ -2164,6 +2170,7 @@ class ContractWorkflowServiceTest {
             1,
             Instant.parse("2027-02-01T09:00:00Z"),
             Instant.parse("2027-02-01T10:00:00Z"));
+    ReflectionTestUtils.setField(occurrence, "id", occurrenceId);
     occurrence.snapshotFinance(
         "VND",
         new BigDecimal("11000000.00"),
@@ -2211,6 +2218,15 @@ class ContractWorkflowServiceTest {
     service.confirmOccurrencePayment(managerId, requestId, occurrenceId, matching);
     assertThat(occurrence.getPaymentStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAID);
+
+    ArgumentCaptor<PaymentSettledEvent> eventCaptor =
+        ArgumentCaptor.forClass(PaymentSettledEvent.class);
+    verify(events).publishEvent(eventCaptor.capture());
+    PaymentSettledEvent event = eventCaptor.getValue();
+    assertThat(event.occurrenceId()).isEqualTo(occurrenceId);
+    assertThat(event.requestId()).isEqualTo(requestId);
+    assertThat(event.paymentReference()).isEqualTo("TXN-12345");
+    assertThat(event.amount()).isEqualByComparingTo("11000000.00");
   }
 
   @Test

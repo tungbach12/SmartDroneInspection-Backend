@@ -19,6 +19,8 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   Optional<Inspection> findByIdAndOwnerCustomerId(UUID id, UUID ownerCustomerId);
 
+  boolean existsByAssetId(UUID assetId);
+
   Optional<Inspection> findByIdAndOwnerCustomerIdAndInspectorId(
       UUID id, UUID ownerCustomerId, UUID inspectorId);
 

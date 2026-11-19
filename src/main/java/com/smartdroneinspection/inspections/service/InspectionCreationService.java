@@ -261,13 +261,13 @@ public class InspectionCreationService {
   public InspectionResponse createQuickReinspection(
       UUID actorId, UUID sourceInspectionId, CreateReinspectionRequest request) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    boolean isPlatformManager = actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER);
+    boolean isPlatformManager = actor.hasRole(Roles.MANAGER);
     boolean isCustomer = actor.hasRole(Roles.CUSTOMER) || actor.hasRole(Roles.ORG_MANAGER);
     if (!isPlatformManager && !isCustomer) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only organization managers or platform managers can create a re-inspection.");
+          "Only the owning customer or a platform manager can create a re-inspection.");
     }
 
     Inspection source =
@@ -491,19 +491,16 @@ public class InspectionCreationService {
       Instant validTo,
       String droneSerial,
       Integer maxAltitudeM) {
-    UserAccess.ActiveUser actor = requireActive(actorId);
-    Inspection inspection = findInspectionForPermitUpload(actor, inspectionId);
-
-    if (!inspection.isInspectedBy(actorId)
-        && !actor.hasRole(Roles.ORG_MANAGER)
-        && !actor.hasRole(Roles.CUSTOMER)
-        && !actor.hasRole(Roles.MANAGER)
-        && !actor.hasRole(Roles.ADMIN)) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "FORBIDDEN",
-          "Only the assigned inspector or manager can upload the flight permit.");
-    }
+    requireActive(actorId);
+    Inspection inspection =
+        inspections
+            .findAssignedByInspector(inspectionId, actorId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "FORBIDDEN",
+                        "Only the assigned inspector can upload the flight permit."));
 
     if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
       throw new BusinessException(
@@ -639,6 +636,13 @@ public class InspectionCreationService {
           "SELF_REVIEW_FORBIDDEN",
           "The assigned inspector cannot verify their own flight permit.");
     }
+    if (inspection.getFlightPermitUploadedBy() != null
+        && inspection.getFlightPermitUploadedBy().equals(actorId)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SELF_REVIEW_FORBIDDEN",
+          "The flight permit uploader cannot verify their own permit.");
+    }
     if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
@@ -708,21 +712,6 @@ public class InspectionCreationService {
             now));
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
-  }
-
-  private Inspection findInspectionForPermitUpload(UserAccess.ActiveUser actor, UUID inspectionId) {
-    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
-      return inspections
-          .findById(inspectionId)
-          .orElseThrow(
-              () ->
-                  new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-    }
-    return (actor.isInspectorPartner()
-            ? inspections.findAssignedByInspector(inspectionId, actor.id())
-            : inspections.findByIdAndOwnerCustomerId(inspectionId, actor.ownerCustomerId()))
-        .orElseThrow(
-            () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
   }
 
   private Drone requireValidPilotAndDroneForPermit(Inspection inspection, Instant permitCheckAt) {

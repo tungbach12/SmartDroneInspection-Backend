@@ -311,6 +311,60 @@ class FlightPermitVerificationIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
   }
 
+  @Test
+  void prohibitsCustomerAndManagerFlightPermitUploads() throws Exception {
+    MockMultipartFile pdf =
+        new MockMultipartFile(
+            "file",
+            "permit.pdf",
+            "application/pdf",
+            "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n".getBytes(StandardCharsets.UTF_8));
+
+    for (String role : List.of("CUSTOMER", "MANAGER")) {
+      UUID actor = "CUSTOMER".equals(role) ? customerId : managerId;
+      mockMvc
+          .perform(
+              MockMvcRequestBuilders.multipart(
+                      "/api/v1/inspections/{id}/flight-permit", inspectionId)
+                  .file(pdf)
+                  .param("permitNumber", "GP-2026-200")
+                  .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                  .param("validFrom", plannedStart.minus(1, ChronoUnit.HOURS).toString())
+                  .param("validTo", plannedEnd.plus(2, ChronoUnit.HOURS).toString())
+                  .with(principal(actor, role)))
+          .andExpect(status().isForbidden());
+    }
+  }
+
+  @Test
+  void prohibitsThePermitUploaderFromVerifyingTheirOwnPermit() throws Exception {
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    inspection.recordFlightPermit(
+        "permits/legacy-manager-upload.pdf",
+        "legacy-manager-upload.pdf",
+        "GP-LEGACY-1",
+        "Cục Tác chiến - BTTM",
+        plannedStart.minus(1, ChronoUnit.HOURS),
+        plannedEnd.plus(1, ChronoUnit.HOURS),
+        "SN-DJI-M300-88",
+        120,
+        "sha256",
+        1024L,
+        "application/pdf",
+        Instant.now(),
+        managerId);
+    inspections.saveAndFlush(inspection);
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
+                .with(principal(managerId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"decision\":\"APPROVED\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("SELF_REVIEW_FORBIDDEN"));
+  }
+
   private static RequestPostProcessor principal(UUID subjectId, String role) {
     return jwt()
         .jwt(token -> token.subject(subjectId.toString()))

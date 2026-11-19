@@ -36,6 +36,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
+import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
 import com.smartdroneinspection.contracts.gateway.PayOSGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
@@ -72,6 +73,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -117,6 +119,7 @@ public class ContractWorkflowService
   private final PayOSGateway payOSGateway;
   private final VnPayGateway vnPayGateway;
   private final JdbcTemplate jdbcTemplate;
+  private final ApplicationEventPublisher events;
   private Optional<ServiceRefundRepository> refundRepository = Optional.empty();
   private Optional<InspectorReceivableRepository> receivables = Optional.empty();
   private Optional<PlatformOperationsPolicyPort> operationsSettings = Optional.empty();
@@ -138,7 +141,8 @@ public class ContractWorkflowService
       Optional<InspectionReportAccess> reportAccess,
       PayOSGateway payOSGateway,
       VnPayGateway vnPayGateway,
-      JdbcTemplate jdbcTemplate) {
+      JdbcTemplate jdbcTemplate,
+      ApplicationEventPublisher events) {
     this.requests = requests;
     this.messages = messages;
     this.quotes = quotes;
@@ -154,6 +158,42 @@ public class ContractWorkflowService
     this.payOSGateway = payOSGateway;
     this.vnPayGateway = vnPayGateway;
     this.jdbcTemplate = jdbcTemplate;
+    this.events = events;
+  }
+
+  public ContractWorkflowService(
+      ServiceRequestRepository requests,
+      ServiceRequestMessageRepository messages,
+      ServiceRequestQuoteRepository quotes,
+      ServiceRequestOccurrenceRepository occurrences,
+      AssetRepository assets,
+      UserAccess users,
+      Mf2ActorPolicy actorPolicy,
+      PartnerRegistryService partners,
+      Mf2InspectionAssignment assignment,
+      Optional<EvidenceObjectStore> objectStore,
+      InspectionFinanceSettingsService financeSettingsService,
+      Optional<InspectionReportAccess> reportAccess,
+      PayOSGateway payOSGateway,
+      VnPayGateway vnPayGateway,
+      JdbcTemplate jdbcTemplate) {
+    this(
+        requests,
+        messages,
+        quotes,
+        occurrences,
+        assets,
+        users,
+        actorPolicy,
+        partners,
+        assignment,
+        objectStore,
+        financeSettingsService,
+        reportAccess,
+        payOSGateway,
+        vnPayGateway,
+        jdbcTemplate,
+        null);
   }
 
   @Autowired
@@ -1347,7 +1387,28 @@ public class ContractWorkflowService
       throw failure(HttpStatus.CONFLICT, "PAYMENT_CONFIRMATION_INVALID", ex.getMessage());
     }
     occurrences.saveAndFlush(occurrence);
+    if (!alreadyPaid) {
+      publishPaymentSettled(occurrence);
+    }
     return toResponse(request);
+  }
+
+  private void publishPaymentSettled(ServiceRequestOccurrence occurrence) {
+    if (events == null || occurrence == null || occurrence.getId() == null) {
+      return;
+    }
+    events.publishEvent(
+        new PaymentSettledEvent(
+            occurrence.getId(),
+            occurrence.getRequestId(),
+            occurrence.getInspectionId(),
+            occurrence.getInspectorId(),
+            occurrence.getPaymentReference(),
+            occurrence.getTotalPrice(),
+            occurrence.getPaymentMethod(),
+            occurrence.getPaymentConfirmedAt() != null
+                ? occurrence.getPaymentConfirmedAt()
+                : Instant.now()));
   }
 
   @Transactional
@@ -1966,6 +2027,7 @@ public class ContractWorkflowService
         (reference != null && !reference.isBlank()) ? reference.trim() : ("PAYOS-" + orderCode);
     occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "PAYOS");
     occurrences.saveAndFlush(occurrence);
+    publishPaymentSettled(occurrence);
   }
 
   /** Customer creates a signed VNPay checkout URL for an occurrence awaiting payment. */
@@ -2094,6 +2156,7 @@ public class ContractWorkflowService
             : ("VNPAY-" + orderCode);
     occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "VNPAY");
     occurrences.saveAndFlush(occurrence);
+    publishPaymentSettled(occurrence);
     return new VnPayApplyResult(VnPayApplyStatus.CONFIRMED, inspectionId);
   }
 

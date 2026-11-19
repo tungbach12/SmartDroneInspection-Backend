@@ -1,12 +1,15 @@
 package com.smartdroneinspection.users;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smartdroneinspection.shared.exception.AuthException;
 import com.smartdroneinspection.users.api.dto.request.CreateUserRequest;
+import com.smartdroneinspection.users.api.dto.request.UpdateRolesRequest;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserRole;
@@ -14,6 +17,7 @@ import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.service.AdminUserService;
 import com.smartdroneinspection.users.service.AuthService;
 import com.smartdroneinspection.users.service.SecurityAuditService;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -25,6 +29,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class AdminUserServiceTest {
@@ -68,5 +73,34 @@ class AdminUserServiceTest {
             eq("JUnit"),
             eq("test-correlation"));
     assertThat(response.user().email()).isEqualTo("customer@example.com");
+  }
+
+  @Test
+  void rejectsDemotingTheLastActiveAdmin() {
+    UUID actorId = UUID.randomUUID();
+    UUID targetId = UUID.randomUUID();
+    User target =
+        new User(
+            "last-admin@example.com",
+            "Last Admin",
+            "{argon2}encoded-password",
+            com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE);
+    target.addRole(UserRole.ADMIN);
+    ReflectionTestUtils.setField(target, "id", targetId);
+
+    when(users.findDetailedById(targetId)).thenReturn(Optional.of(target));
+    when(users.findActiveAdmins()).thenReturn(List.of(target));
+
+    assertThatThrownBy(
+            () ->
+                service.updateRoles(
+                    actorId,
+                    targetId,
+                    new UpdateRolesRequest(Set.of(UserRole.MANAGER)),
+                    null,
+                    null,
+                    null))
+        .isInstanceOf(AuthException.class)
+        .satisfies(ex -> assertThat(((AuthException) ex).code()).isEqualTo("LAST_ADMIN_REQUIRED"));
   }
 }
