@@ -63,7 +63,7 @@ public class AssetCatalogController {
   }
 
   @PostMapping("/checklist-templates")
-  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @PreAuthorize("hasRole('ADMIN')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<ChecklistTemplateResponse> createChecklistTemplate(
       @org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -73,7 +73,7 @@ public class AssetCatalogController {
   }
 
   @PutMapping("/checklist-templates/{templateId}")
-  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<ChecklistTemplateResponse> updateChecklistTemplate(
       @org.springframework.security.core.annotation.AuthenticationPrincipal
           org.springframework.security.oauth2.jwt.Jwt jwt,
@@ -83,7 +83,7 @@ public class AssetCatalogController {
   }
 
   @DeleteMapping("/checklist-templates/{templateId}")
-  @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+  @PreAuthorize("hasRole('ADMIN')")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void deleteChecklistTemplate(
       @org.springframework.security.core.annotation.AuthenticationPrincipal

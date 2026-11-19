@@ -132,6 +132,16 @@ public class UserAccessService implements UserAccess {
         .toList();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<ActiveUser> listActiveAdmins() {
+    return users.findActiveAdmins().stream()
+        .filter(User::active)
+        .map(this::toActiveUser)
+        .filter(u -> u.hasRole(Roles.ADMIN))
+        .toList();
+  }
+
   private ActiveUser toActiveUser(User user) {
     InspectorProfile profile = inspectorProfileRepository.findById(user.getId()).orElse(null);
     boolean onboardingApproved =

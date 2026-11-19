@@ -42,6 +42,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,6 +82,7 @@ class ReinspectionWorkflowIntegrationTest {
 
   private UUID customerId;
   private UUID managerId;
+  private UUID adminId;
   private UUID inspectorId;
   private UUID assetId;
   private UUID droneId;
@@ -96,6 +98,7 @@ class ReinspectionWorkflowIntegrationTest {
     AssetTestFixture.Data fixture = new AssetTestFixture(categories, assets, users).create();
     customerId = fixture.clientId();
     managerId = createUser(UserRole.MANAGER, "reinsp-mgr");
+    adminId = createUser(UserRole.ADMIN, "reinsp-admin");
     inspectorId = createPartnerInspector("reinsp-insp", "CLASS_B");
 
     assetId =
@@ -592,6 +595,64 @@ class ReinspectionWorkflowIntegrationTest {
     assertThat(dispatched.getInspectionType()).isEqualTo(InspectionType.RE_INSPECTION);
     assertThat(dispatched.getSourceInspectionId()).isEqualTo(sourceInspectionId);
     assertThat(verifications.findByReinspectionIdOrderByCreatedAtAsc(dispatchedId)).hasSize(2);
+  }
+
+  @Test
+  void restrictsReinspectionCreationAndVerificationEditsToTheirOwners() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/reinspections", sourceInspectionId)
+                .with(principal(adminId, "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isForbidden());
+
+    MvcResult createRes =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{id}/reinspections", sourceInspectionId)
+                    .with(principal(customerId, "CUSTOMER"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID reinspectionId =
+        UUID.fromString(
+            objectMapper
+                .readTree(createRes.getResponse().getContentAsString())
+                .get("data")
+                .get("id")
+                .asText());
+
+    MvcResult verifRes =
+        mockMvc
+            .perform(
+                get("/api/v1/inspections/{id}/reinspection-verifications", reinspectionId)
+                    .with(principal(inspectorId, "INSPECTOR")))
+            .andExpect(status().isOk())
+            .andReturn();
+    UUID verificationId =
+        UUID.fromString(
+            objectMapper
+                .readTree(verifRes.getResponse().getContentAsString())
+                .get("data")
+                .get(0)
+                .get("id")
+                .asText());
+
+    for (String role : List.of("MANAGER", "ADMIN")) {
+      UUID actor = "MANAGER".equals(role) ? managerId : adminId;
+      mockMvc
+          .perform(
+              put(
+                      "/api/v1/inspections/{id}/reinspection-verifications/{vid}",
+                      reinspectionId,
+                      verificationId)
+                  .with(principal(actor, role))
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content("{\"resolutionStatus\":\"INCONCLUSIVE\"}"))
+          .andExpect(status().isForbidden());
+    }
   }
 
   private UUID createUser(UserRole role, String label) {

@@ -11,6 +11,9 @@ import com.smartdroneinspection.inspections.events.InspectionAssignmentTimedOutE
 import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
 import com.smartdroneinspection.inspections.events.InspectionOverdueEvent;
 import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
+import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
+import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
+import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -99,6 +102,36 @@ public class InspectionNotificationListener {
         event.assignedManagerId(),
         event.timeoutHours(),
         event.timedOutAt());
+  }
+
+  @ApplicationModuleListener
+  public void onReportSubmitted(ReportSubmittedEvent event) {
+    log.info("Handling ReportSubmittedEvent for report version {}", event.reportVersionId());
+    inspectionNotificationService.recordReportSubmitted(
+        event.inspectionId(),
+        event.reportVersionId(),
+        event.versionNo(),
+        event.submittedByUserId(),
+        event.submittedAt());
+  }
+
+  @ApplicationModuleListener
+  public void onReportReturned(ReportReturnedEvent event) {
+    log.info("Handling ReportReturnedEvent for report version {}", event.reportVersionId());
+    inspectionNotificationService.recordReportReturned(
+        event.inspectionId(),
+        event.reportVersionId(),
+        event.versionNo(),
+        event.inspectorId(),
+        event.reason(),
+        event.returnedAt());
+  }
+
+  @ApplicationModuleListener
+  public void onReportPublished(ReportPublishedEvent event) {
+    log.info("Handling ReportPublishedEvent for report version {}", event.reportVersionId());
+    inspectionNotificationService.recordReportPublished(
+        event.inspectionId(), event.reportVersionId(), event.ownerCustomerId());
   }
 
   @ApplicationModuleListener

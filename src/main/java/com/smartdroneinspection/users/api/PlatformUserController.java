@@ -41,8 +41,8 @@ public class PlatformUserController {
   }
 
   @GetMapping
-  public ApiResponse<List<UserResponse>> list() {
-    return ApiResponse.success(users.list());
+  public ApiResponse<List<UserResponse>> list(@AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(users.list(subject(jwt)));
   }
 
   @PostMapping

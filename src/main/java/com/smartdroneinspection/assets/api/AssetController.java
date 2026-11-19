@@ -78,7 +78,7 @@ public class AssetController {
   }
 
   @PutMapping("/{assetId}/inspection-items")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('CUSTOMER')")
   public ApiResponse<AssetResponse> updateInspectionItems(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID assetId,

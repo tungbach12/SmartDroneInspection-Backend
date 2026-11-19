@@ -12,6 +12,7 @@ import com.smartdroneinspection.assets.api.dto.response.AirspaceZoneResponse;
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.shared.api.AssetInspectionUsagePort;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -30,6 +31,7 @@ class AssetServiceTest {
   private AssetCategoryRepository categories;
   private UserAccess userAccess;
   private AirspaceAdvisoryService airspaceAdvisory;
+  private AssetInspectionUsagePort assetInspectionUsage;
   private AssetService service;
 
   private final UUID actorId = UUID.randomUUID();
@@ -42,7 +44,10 @@ class AssetServiceTest {
     categories = mock(AssetCategoryRepository.class);
     userAccess = mock(UserAccess.class);
     airspaceAdvisory = mock(AirspaceAdvisoryService.class);
-    service = new AssetService(assets, categories, userAccess, airspaceAdvisory);
+    assetInspectionUsage = mock(AssetInspectionUsagePort.class);
+    service =
+        new AssetService(
+            assets, categories, null, userAccess, airspaceAdvisory, assetInspectionUsage);
 
     when(userAccess.findActiveUser(actorId))
         .thenReturn(
@@ -118,5 +123,41 @@ class AssetServiceTest {
         new UpdateAssetRequest(null, null, "Updated District", null, null, null);
     var updated = service.update(actorId, assetId, updateLabelOnly);
     assertThat(updated.locationText()).contains("10.55").contains("106.6519");
+  }
+
+  @Test
+  void adminCannotEditInspectionCheckpoints() {
+    when(userAccess.findActiveUser(actorId))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(actorId, Set.of(Roles.ADMIN), "Admin")));
+
+    assertThatThrownBy(() -> service.updateInspectionItems(actorId, assetId, List.of("Deck")))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).code()).isEqualTo("FORBIDDEN"));
+  }
+
+  @Test
+  void locksInspectionCheckpointsOnceAnInspectionExists() {
+    Asset asset =
+        new Asset(
+            actorId,
+            categoryId,
+            "BR-02",
+            "Bridge",
+            "Main",
+            "District 1",
+            BigDecimal.valueOf(10.5500),
+            BigDecimal.valueOf(106.6519),
+            null,
+            actorId);
+    ReflectionTestUtils.setField(asset, "id", assetId);
+    when(assets.findByIdAndOwnerCustomerId(assetId, actorId)).thenReturn(Optional.of(asset));
+    when(assetInspectionUsage.hasInspection(assetId)).thenReturn(true);
+
+    assertThatThrownBy(
+            () -> service.updateInspectionItems(actorId, assetId, List.of("New checkpoint")))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            ex ->
+                assertThat(((BusinessException) ex).code()).isEqualTo("INSPECTION_HISTORY_EXISTS"));
   }
 }

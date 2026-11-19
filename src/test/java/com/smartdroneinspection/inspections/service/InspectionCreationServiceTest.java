@@ -300,7 +300,7 @@ class InspectionCreationServiceTest {
     Inspection inspection =
         new Inspection(ownerCustomerId, assetId, inspectorId, droneId, start, end);
     ReflectionTestUtils.setField(inspection, "id", inspectionId);
-    when(inspections.findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId))
+    when(inspections.findAssignedByInspector(inspectionId, inspectorId))
         .thenReturn(Optional.of(inspection));
 
     UserAccess.ActiveUser validPilot =
@@ -331,7 +331,7 @@ class InspectionCreationServiceTest {
     assertThatThrownBy(
             () ->
                 service.uploadFlightPermit(
-                    ownerCustomerId,
+                    inspectorId,
                     inspectionId,
                     "permits/p.pdf",
                     "p.pdf",
@@ -355,7 +355,7 @@ class InspectionCreationServiceTest {
     assertThatThrownBy(
             () ->
                 service.uploadFlightPermit(
-                    ownerCustomerId,
+                    inspectorId,
                     inspectionId,
                     "permits/p.pdf",
                     "p.pdf",

@@ -122,6 +122,45 @@ class PlatformUserListApiIntegrationTest {
         .andExpect(jsonPath("$.data.temporaryPassword").isNotEmpty());
   }
 
+  @Test
+  void limitsAPureManagerToInspectorAccounts() throws Exception {
+    String unique = UUID.randomUUID().toString().replace("-", "");
+
+    User manager =
+        new User(
+            "manager-" + unique + "@example.test",
+            "Platform Manager",
+            "{argon2}encoded-password",
+            UserStatus.ACTIVE);
+    manager.addRole(UserRole.MANAGER);
+    manager = users.saveAndFlush(manager);
+
+    User inspector =
+        new User(
+            "inspector-" + unique + "@example.test",
+            "Partner Inspector",
+            "{argon2}encoded-password",
+            UserStatus.ACTIVE);
+    inspector.addRole(UserRole.INSPECTOR);
+    inspector = users.saveAndFlush(inspector);
+
+    User customer =
+        new User(
+            "customer-" + unique + "@example.test",
+            "Customer Manager",
+            "{argon2}encoded-password",
+            UserStatus.ACTIVE);
+    customer.addRole(UserRole.CUSTOMER);
+    customer = users.saveAndFlush(customer);
+
+    mockMvc
+        .perform(get("/api/v1/platform/users").with(manager(manager.getId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[*].email", hasItem(inspector.getEmail())))
+        .andExpect(jsonPath("$.data[?(@.email == '" + admin.getEmail() + "')]").isEmpty())
+        .andExpect(jsonPath("$.data[?(@.email == '" + customer.getEmail() + "')]").isEmpty());
+  }
+
   private User saveAdmin() {
     User user =
         new User(
@@ -137,5 +176,11 @@ class PlatformUserListApiIntegrationTest {
     return jwt()
         .jwt(token -> token.subject(id.toString()))
         .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+  }
+
+  private RequestPostProcessor manager(UUID id) {
+    return jwt()
+        .jwt(token -> token.subject(id.toString()))
+        .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"));
   }
 }

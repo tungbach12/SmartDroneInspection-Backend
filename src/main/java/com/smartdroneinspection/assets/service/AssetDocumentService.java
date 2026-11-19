@@ -76,7 +76,7 @@ public class AssetDocumentService {
       String documentType,
       LocalDate documentDate,
       boolean primaryImage) {
-    Asset asset = requireOwnedAsset(actorId, assetId);
+    Asset asset = requireOwnedAssetForWrite(actorId, assetId);
     if (asset.getStatus() != AssetStatus.ACTIVE) {
       throw new BusinessException(
           HttpStatus.CONFLICT, "INVALID_STATE", "Documents can only be added to active assets");
@@ -160,12 +160,7 @@ public class AssetDocumentService {
   }
 
   private Asset requireOwnedAsset(UUID actorId, UUID assetId) {
-    UserAccess.ActiveUser actor =
-        userAccess
-            .findActiveUser(actorId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
+    UserAccess.ActiveUser actor = requireActive(actorId);
     if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
       return assets
           .findDetailedById(assetId)
@@ -179,6 +174,29 @@ public class AssetDocumentService {
         .findDetailedByIdAndOwnerCustomerId(assetId, actor.ownerCustomerId())
         .orElseThrow(
             () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+  }
+
+  /**
+   * Document upload is a customer-owned write. Platform staff keep read-only oversight through
+   * {@link #list} and {@link #open}; they cannot add or replace a customer's evidence.
+   */
+  private Asset requireOwnedAssetForWrite(UUID actorId, UUID assetId) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (!actor.hasRole("CUSTOMER") || actor.ownerCustomerId() == null) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN, "FORBIDDEN", "Only the owning customer can add asset documents");
+    }
+    return assets
+        .findDetailedByIdAndOwnerCustomerId(assetId, actor.ownerCustomerId())
+        .orElseThrow(
+            () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+  }
+
+  private UserAccess.ActiveUser requireActive(UUID actorId) {
+    return userAccess
+        .findActiveUser(actorId)
+        .orElseThrow(
+            () -> new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
   }
 
   private static String sanitizeFileName(String name) {

@@ -5,6 +5,7 @@ import com.smartdroneinspection.inspections.api.dto.response.PlatformAiAnalytics
 import com.smartdroneinspection.inspections.api.dto.response.PlatformAiAnalyticsResponse.ConfidenceBucketStat;
 import com.smartdroneinspection.inspections.api.dto.response.PlatformAiAnalyticsResponse.DefectPerformanceStat;
 import com.smartdroneinspection.inspections.api.dto.response.PlatformAiAnalyticsResponse.ModelPerformanceStat;
+import com.smartdroneinspection.shared.api.PlatformAuditPort;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Timestamp;
@@ -22,9 +23,11 @@ public class PlatformAiSettingsService {
   private static final BigDecimal DEFAULT_THRESHOLD = new BigDecimal("85.00");
 
   private final JdbcTemplate jdbcTemplate;
+  private final PlatformAuditPort audit;
 
-  public PlatformAiSettingsService(JdbcTemplate jdbcTemplate) {
+  public PlatformAiSettingsService(JdbcTemplate jdbcTemplate, PlatformAuditPort audit) {
     this.jdbcTemplate = jdbcTemplate;
+    this.audit = audit;
   }
 
   public record AiThresholdConfig(
@@ -108,24 +111,18 @@ public class PlatformAiSettingsService {
         normalizedThreshold,
         actorId);
 
-    int newlyConfirmed = 0;
-    boolean applyToPending = request.applyToPending() == null || request.applyToPending();
-    if (enabled && applyToPending) {
-      newlyConfirmed =
-          jdbcTemplate.update(
-              """
-              UPDATE findings
-              SET status = 'CONFIRMED'
-              WHERE is_deleted = FALSE
-                AND status = 'PENDING'
-                AND model_name IS NOT NULL
-                AND confidence IS NOT NULL
-                AND (CASE WHEN confidence <= 1 THEN confidence * 100 ELSE confidence END) >= ?
-              """,
-              normalizedThreshold);
-    }
+    audit.recordPlatformAction(
+        actorId,
+        "PLATFORM_AI_SETTINGS",
+        actorId,
+        "AI_SETTINGS_UPDATED",
+        "SUCCESS",
+        "autoConfirmEnabled="
+            + enabled
+            + ", autoConfirmThreshold="
+            + normalizedThreshold.toPlainString());
 
-    return buildAnalytics(newlyConfirmed);
+    return buildAnalytics(0);
   }
 
   @Transactional(readOnly = true)

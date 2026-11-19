@@ -4,7 +4,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
+import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
+import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
+import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,5 +56,66 @@ class InspectionNotificationListenerTest {
 
     verify(notificationService)
         .recordFieldSessionAborted(inspectionId, ownerCustomerId, inspectorId, reason);
+  }
+
+  @Test
+  void onReportSubmittedDelegatesToService() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+    UUID submittedByUserId = UUID.randomUUID();
+    Instant submittedAt = Instant.now();
+    ReportSubmittedEvent event =
+        new ReportSubmittedEvent(inspectionId, reportVersionId, 2, submittedByUserId, submittedAt);
+
+    listener.onReportSubmitted(event);
+
+    verify(notificationService)
+        .recordReportSubmitted(inspectionId, reportVersionId, 2, submittedByUserId, submittedAt);
+  }
+
+  @Test
+  void onReportReturnedDelegatesToService() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+    UUID inspectorId = UUID.randomUUID();
+    UUID returnedByUserId = UUID.randomUUID();
+    Instant returnedAt = Instant.now();
+    ReportReturnedEvent event =
+        new ReportReturnedEvent(
+            inspectionId,
+            reportVersionId,
+            1,
+            inspectorId,
+            returnedByUserId,
+            "Add evidence",
+            returnedAt);
+
+    listener.onReportReturned(event);
+
+    verify(notificationService)
+        .recordReportReturned(
+            inspectionId, reportVersionId, 1, inspectorId, "Add evidence", returnedAt);
+  }
+
+  @Test
+  void onReportPublishedDelegatesToService() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+    UUID ownerCustomerId = UUID.randomUUID();
+    ReportPublishedEvent event =
+        new ReportPublishedEvent(
+            reportVersionId,
+            reportVersionId,
+            inspectionId,
+            ownerCustomerId,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            List.of(),
+            Instant.now());
+
+    listener.onReportPublished(event);
+
+    verify(notificationService)
+        .recordReportPublished(inspectionId, reportVersionId, ownerCustomerId);
   }
 }

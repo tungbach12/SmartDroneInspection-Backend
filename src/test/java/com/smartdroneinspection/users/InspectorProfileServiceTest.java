@@ -3,6 +3,8 @@ package com.smartdroneinspection.users;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,6 +47,7 @@ class InspectorProfileServiceTest {
   @Mock private InspectorProfileRepository profileRepository;
   @Mock private InspectorPartnerLicenseDocumentService licenseDocumentService;
   @Mock private PilotLicenseClassService pilotLicenseClassService;
+  @Mock private com.smartdroneinspection.users.service.SecurityAuditService audit;
   @Mock private ApplicationEventPublisher eventPublisher;
 
   private InspectorProfile profile;
@@ -62,7 +65,8 @@ class InspectorProfileServiceTest {
             flightLogRepository,
             profileRepository,
             licenseDocumentService,
-            pilotLicenseClassService);
+            pilotLicenseClassService,
+            audit);
     service.setEventPublisher(eventPublisher);
     inspectorId = UUID.randomUUID();
     actorId = UUID.randomUUID();
@@ -182,6 +186,14 @@ class InspectorProfileServiceTest {
     assertThat(response.specializations()).isEqualTo("Duong day dien cao the, Tuabin gio");
     assertThat(response.experienceSummary()).contains("5 nam kinh nghiem");
     verify(eventPublisher).publishEvent(new PilotLicenseUpdatedEvent(inspectorId, expiresAt));
+    verify(audit)
+        .recordPlatformAction(
+            eq(actorId),
+            eq("INSPECTOR_PROFILE"),
+            eq(inspectorId),
+            eq("INSPECTOR_PROFILE_UPDATED"),
+            eq("SUCCESS"),
+            anyString());
   }
 
   @Test
@@ -232,6 +244,14 @@ class InspectorProfileServiceTest {
     assertThat(response.flightDurationHours()).isEqualTo(1.25);
     assertThat(response.safetyIncident()).isFalse();
     verify(flightLogRepository).save(any(InspectorFlightLog.class));
+    verify(audit)
+        .recordPlatformAction(
+            eq(actorId),
+            eq("INSPECTOR_PROFILE"),
+            eq(inspectorId),
+            eq("INSPECTOR_FLIGHT_LOG_RECORDED"),
+            eq("SUCCESS"),
+            anyString());
   }
 
   @Test

@@ -81,4 +81,18 @@ class AssetDocumentServiceTest {
         .hasMessage("Asset photo must be an image");
     verify(objectStore, never()).put(any(), any(), any(Long.class), any());
   }
+
+  @Test
+  void adminCannotUploadAssetDocuments() throws Exception {
+    when(userAccess.findActiveUser(actorId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(actorId, Set.of(Roles.ADMIN), null, "Admin")));
+    MockMultipartFile image =
+        new MockMultipartFile("file", "bridge.png", "image/png", new byte[] {1, 2, 3});
+
+    assertThatThrownBy(() -> service.upload(actorId, assetId, image, "OTHER", null, false))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).code()).isEqualTo("FORBIDDEN"));
+    verify(objectStore, never()).put(any(), any(), any(Long.class), any());
+  }
 }
