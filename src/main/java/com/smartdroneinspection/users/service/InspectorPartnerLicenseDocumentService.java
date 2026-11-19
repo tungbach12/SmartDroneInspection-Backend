@@ -231,10 +231,10 @@ public class InspectorPartnerLicenseDocumentService {
           <div class="box">
             <p><strong>Full Name:</strong> %s</p>
             <p><strong>Account ID:</strong> %s</p>
-            <p><strong>Email:</strong> %s &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Phone:</strong> %s</p>
+            <p><strong>Email:</strong> %s &#160;&#160;|&#160;&#160; <strong>Phone:</strong> %s</p>
             <p><strong>Citizen ID / Passport (CCCD):</strong> %s</p>
             <p><strong>Registered Address:</strong> %s</p>
-            <p><strong>UAV Pilot License No:</strong> %s &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Class:</strong> %s</p>
+            <p><strong>UAV Pilot License No:</strong> %s &#160;&#160;|&#160;&#160; <strong>Class:</strong> %s</p>
             <p><strong>License Expiration Date:</strong> %s</p>
           </div>
 

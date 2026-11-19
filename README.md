@@ -41,12 +41,28 @@ docker compose up -d postgres minio
 # Verify formatting, tests, coverage, and Modulith boundaries
 ./mvnw verify
 # Windows: .\mvnw.cmd verify
+# Windows prerequisites helper: powershell -ExecutionPolicy Bypass -File .\verify-local.ps1
 
 # Run the API
 ./mvnw spring-boot:run
 ```
 
 Swagger UI is available at `/swagger-ui.html` in development. OpenAPI is available at `/v3/api-docs`.
+
+### Local quality gate when GitHub Actions is unavailable
+
+GitHub-hosted Actions are billing-locked on this account, so CI is manual
+dispatch only. Treat `verify` as a required local check before opening or
+merging a PR. The gate needs a running Docker daemon (Testcontainers) and
+`ffmpeg` on `PATH` (video evidence tests). On Windows, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\verify-local.ps1
+```
+
+The script fails early with an actionable message when Docker or ffmpeg is
+missing, then runs Spotless, the full test suite, the JaCoCo 80% line and
+instruction coverage gates, and the Spring Modulith boundary test.
 
 ## Package structure
 

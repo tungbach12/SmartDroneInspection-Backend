@@ -1,7 +1,9 @@
 name: CI
 
 # Manual dispatch while GitHub-hosted Actions runners are billing-locked on the account.
-# Run `./mvnw verify` locally before opening or merging PRs.
+# Run `./mvnw verify` (or `.\verify-local.ps1` on Windows) locally before opening or
+# merging PRs. When billing is restored, add `push`/`pull_request` triggers back and
+# keep this verify job unchanged.
 on:
   workflow_dispatch:
 
