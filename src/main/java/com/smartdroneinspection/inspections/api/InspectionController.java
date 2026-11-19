@@ -25,6 +25,7 @@ import com.smartdroneinspection.inspections.api.dto.response.FindingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionWorkflowStateResponse;
+import com.smartdroneinspection.inspections.api.dto.response.KnowledgeRecommendationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.MediaTicketResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReinspectionVerificationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
@@ -35,6 +36,7 @@ import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.service.EvidenceService;
 import com.smartdroneinspection.inspections.service.EvidenceUploadSessionService;
 import com.smartdroneinspection.inspections.service.FindingService;
+import com.smartdroneinspection.inspections.service.HistoricalCaseService;
 import com.smartdroneinspection.inspections.service.InspectionCreationService;
 import com.smartdroneinspection.inspections.service.InspectionWorkflowService;
 import com.smartdroneinspection.inspections.service.MediaTicketService;
@@ -99,6 +101,7 @@ public class InspectionController {
   private final Optional<MediaTicketService> mediaTicketService;
   private final Optional<ReinspectionVerificationService> reinspectionVerificationService;
   private final PaymentDocumentService paymentDocumentService;
+  private final Optional<HistoricalCaseService> historicalCaseService;
 
   public InspectionController(
       EvidenceService evidenceService,
@@ -163,7 +166,6 @@ public class InspectionController {
         null);
   }
 
-  @org.springframework.beans.factory.annotation.Autowired
   public InspectionController(
       EvidenceService evidenceService,
       FindingService findingService,
@@ -176,6 +178,34 @@ public class InspectionController {
       Optional<MediaTicketService> mediaTicketService,
       Optional<ReinspectionVerificationService> reinspectionVerificationService,
       PaymentDocumentService paymentDocumentService) {
+    this(
+        evidenceService,
+        findingService,
+        reportService,
+        workflowService,
+        creationService,
+        reportAcceptancePort,
+        uploadSessionService,
+        mediaTicketService,
+        reinspectionVerificationService,
+        paymentDocumentService,
+        Optional.empty());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public InspectionController(
+      EvidenceService evidenceService,
+      FindingService findingService,
+      ReportService reportService,
+      InspectionWorkflowService workflowService,
+      InspectionCreationService creationService,
+      java.util.Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+          reportAcceptancePort,
+      Optional<EvidenceUploadSessionService> uploadSessionService,
+      Optional<MediaTicketService> mediaTicketService,
+      Optional<ReinspectionVerificationService> reinspectionVerificationService,
+      PaymentDocumentService paymentDocumentService,
+      Optional<HistoricalCaseService> historicalCaseService) {
     this.evidenceService = evidenceService;
     this.findingService = findingService;
     this.reportService = reportService;
@@ -189,6 +219,8 @@ public class InspectionController {
             ? reinspectionVerificationService
             : Optional.empty();
     this.paymentDocumentService = paymentDocumentService;
+    this.historicalCaseService =
+        historicalCaseService != null ? historicalCaseService : Optional.empty();
   }
 
   @PostMapping(path = "/flight-permit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -679,6 +711,38 @@ public class InspectionController {
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
+  }
+
+  /**
+   * Tenant-isolated historical cases related to one finding. The service applies the same
+   * inspection read scope as the findings endpoints, so role alone never grants cross-org access.
+   */
+  @GetMapping("/findings/{findingId}/recommendations")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<KnowledgeRecommendationResponse> recommendForFinding(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId,
+      @RequestParam(defaultValue = "3") int limit) {
+    return ApiResponse.success(
+        historicalCaseService
+            .map(
+                service ->
+                    service.recommendForFinding(actorId(jwt), inspectionId, findingId, limit))
+            .orElseGet(() -> HistoricalCaseService.emptyRecommendations()));
+  }
+
+  /** Historical cases related to the confirmed findings of this inspection as a whole. */
+  @GetMapping("/knowledge-recommendations")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<KnowledgeRecommendationResponse> recommendForInspection(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(defaultValue = "4") int limit) {
+    return ApiResponse.success(
+        historicalCaseService
+            .map(service -> service.recommendForInspection(actorId(jwt), inspectionId, limit))
+            .orElseGet(() -> HistoricalCaseService.emptyRecommendations()));
   }
 
   @GetMapping("/findings/query")

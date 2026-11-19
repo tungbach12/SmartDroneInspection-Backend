@@ -401,6 +401,14 @@ public class ReportDraftClient implements ReportDraftPort {
       builder.append("\n");
     }
 
+    if (context.knowledgeReferences() != null && !context.knowledgeReferences().isEmpty()) {
+      builder.append(
+          "\nPublished Inspection References (advisory; do not invent further standards):\n");
+      for (String reference : context.knowledgeReferences()) {
+        builder.append("- ").append(reference).append("\n");
+      }
+    }
+
     builder.append(
         "\nUse objective, scope, component scope and criteria to populate purpose/scope/criteria"
             + " when recorded. Do not infer actual inspection dates, methods, equipment, conditions,"

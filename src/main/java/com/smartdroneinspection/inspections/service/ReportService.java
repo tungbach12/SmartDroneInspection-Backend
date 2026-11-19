@@ -6,6 +6,7 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionReportCon
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.DroneContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportContextResponse.FieldSessionContext;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionReportResponse;
+import com.smartdroneinspection.inspections.api.dto.response.KnowledgeReferenceSummary;
 import com.smartdroneinspection.inspections.api.dto.response.ReportAiSummaryResponse;
 import com.smartdroneinspection.inspections.api.dto.response.ReportPublishedResponse;
 import com.smartdroneinspection.inspections.domain.Evidence;
@@ -87,6 +88,7 @@ public class ReportService {
   private final ObjectMapper objectMapper;
   private final Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate;
   private final Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo;
+  private final Optional<HistoricalCaseService> historicalCaseService;
 
   public ReportService(
       InspectionRepository inspections,
@@ -157,7 +159,6 @@ public class ReportService {
         Optional.empty());
   }
 
-  @org.springframework.beans.factory.annotation.Autowired
   public ReportService(
       InspectionRepository inspections,
       ReportContextAccess reportContextAccess,
@@ -175,6 +176,45 @@ public class ReportService {
       ObjectMapper objectMapper,
       Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
       Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo) {
+    this(
+        inspections,
+        reportContextAccess,
+        jdbcTemplate,
+        evidence,
+        findings,
+        fieldSessions,
+        versions,
+        evidenceService,
+        draftPort,
+        renderPort,
+        objectStore,
+        userAccess,
+        events,
+        objectMapper,
+        paymentGate,
+        defectVerificationsRepo,
+        Optional.empty());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ReportService(
+      InspectionRepository inspections,
+      ReportContextAccess reportContextAccess,
+      org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      FieldSessionRepository fieldSessions,
+      InspectionReportRepository versions,
+      EvidenceService evidenceService,
+      Optional<ReportDraftPort> draftPort,
+      ReportRenderPort renderPort,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      ApplicationEventPublisher events,
+      ObjectMapper objectMapper,
+      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
+      Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo,
+      Optional<HistoricalCaseService> historicalCaseService) {
     this.inspections = inspections;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
@@ -192,6 +232,8 @@ public class ReportService {
     this.paymentGate = paymentGate;
     this.defectVerificationsRepo =
         defectVerificationsRepo != null ? defectVerificationsRepo : Optional.empty();
+    this.historicalCaseService =
+        historicalCaseService != null ? historicalCaseService : Optional.empty();
   }
 
   /**
@@ -606,6 +648,11 @@ public class ReportService {
       inspection.complete();
     }
     inspections.saveAndFlush(inspection);
+
+    // A published report is the only point at which a finding becomes a historical benchmark for
+    // its own tenant. Indexing shares the publication transaction and degrades to a no-op when the
+    // advisory capability is not wired.
+    historicalCaseService.ifPresent(service -> service.indexPublishedFindings(inspectionId));
 
     events.publishEvent(
         new ReportPublishedEvent(
@@ -1279,20 +1326,53 @@ public class ReportService {
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
 
-    ReportDraftPort.DraftContext context = buildDraftContext(inspection, locale);
+    List<KnowledgeReferenceSummary> references = knowledgeReferences(inspectionId);
+    ReportDraftPort.DraftContext context = buildDraftContext(inspection, locale, references);
     ReportAiSummaryResponse deterministic = buildDeterministicAiSummary(context);
     if (version.getSummary() != null && !version.getSummary().isBlank()) {
-      return new ReportAiSummaryResponse(
-          version.getSummary(),
-          deterministic.keyHighlights(),
-          deterministic.recommendedActions(),
-          deterministic.overallRisk());
+      return withKnowledgeReferences(
+          new ReportAiSummaryResponse(
+              version.getSummary(),
+              deterministic.keyHighlights(),
+              deterministic.recommendedActions(),
+              deterministic.overallRisk()),
+          references);
     }
 
-    return generateAiSummaryFromContext(context);
+    return withKnowledgeReferences(generateAiSummaryFromContext(context), references);
+  }
+
+  private static ReportAiSummaryResponse withKnowledgeReferences(
+      ReportAiSummaryResponse response, List<KnowledgeReferenceSummary> references) {
+    return new ReportAiSummaryResponse(
+        response.summary(),
+        response.keyHighlights(),
+        response.recommendedActions(),
+        response.overallRisk(),
+        references);
+  }
+
+  private List<KnowledgeReferenceSummary> knowledgeReferences(UUID inspectionId) {
+    return historicalCaseService
+        .map(service -> service.findKnowledgeReferences(inspectionId))
+        .orElse(List.of());
+  }
+
+  /** Renders source-backed references into the compact text the draft prompt can carry. */
+  private static List<String> referencePrompts(List<KnowledgeReferenceSummary> references) {
+    return references.stream()
+        .map(
+            reference ->
+                reference.kind() + " " + reference.codeOrLabel() + ": " + reference.summary())
+        .toList();
   }
 
   private ReportDraftPort.DraftContext buildDraftContext(Inspection inspection, Locale locale) {
+    return buildDraftContext(inspection, locale, knowledgeReferences(inspection.getId()));
+  }
+
+  private ReportDraftPort.DraftContext buildDraftContext(
+      Inspection inspection, Locale locale, List<KnowledgeReferenceSummary> references) {
     UUID inspectionId = inspection.getId();
     List<Evidence> confirmedEvidence =
         evidence.findByInspectionIdAndIsDeletedFalseOrderByCreatedAtAsc(inspectionId);
@@ -1395,7 +1475,8 @@ public class ReportService {
                         droneDisplayReference(reportIdentity, inspection.getDroneId())))
             .toList(),
         locale,
-        defectVerificationsList);
+        defectVerificationsList,
+        referencePrompts(references));
   }
 
   private ReportAiSummaryResponse generateAiSummaryFromContext(

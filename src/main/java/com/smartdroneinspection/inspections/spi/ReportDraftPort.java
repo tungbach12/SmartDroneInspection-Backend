@@ -49,7 +49,33 @@ public interface ReportDraftPort {
       List<CandidateSummary> candidates,
       List<FieldSessionSummary> fieldSessions,
       Locale locale,
-      List<DefectVerificationSummary> defectVerifications) {
+      List<DefectVerificationSummary> defectVerifications,
+      List<String> knowledgeReferences) {
+
+    public DraftContext {
+      defectVerifications = defectVerifications == null ? List.of() : defectVerifications;
+      knowledgeReferences = knowledgeReferences == null ? List.of() : knowledgeReferences;
+    }
+
+    public DraftContext(
+        InspectionSummary inspection,
+        List<FindingSummary> findings,
+        List<EvidenceSummary> evidence,
+        List<CandidateSummary> candidates,
+        List<FieldSessionSummary> fieldSessions,
+        Locale locale,
+        List<DefectVerificationSummary> defectVerifications) {
+      this(
+          inspection,
+          findings,
+          evidence,
+          candidates,
+          fieldSessions,
+          locale,
+          defectVerifications,
+          List.of());
+    }
+
     public DraftContext(
         InspectionSummary inspection,
         List<FindingSummary> findings,
@@ -57,7 +83,7 @@ public interface ReportDraftPort {
         List<CandidateSummary> candidates,
         List<FieldSessionSummary> fieldSessions,
         Locale locale) {
-      this(inspection, findings, evidence, candidates, fieldSessions, locale, List.of());
+      this(inspection, findings, evidence, candidates, fieldSessions, locale, List.of(), List.of());
     }
 
     public DraftContext(
@@ -66,7 +92,15 @@ public interface ReportDraftPort {
         List<EvidenceSummary> evidence,
         List<CandidateSummary> candidates,
         List<FieldSessionSummary> fieldSessions) {
-      this(inspection, findings, evidence, candidates, fieldSessions, Locale.ENGLISH, List.of());
+      this(
+          inspection,
+          findings,
+          evidence,
+          candidates,
+          fieldSessions,
+          Locale.ENGLISH,
+          List.of(),
+          List.of());
     }
   }
 
