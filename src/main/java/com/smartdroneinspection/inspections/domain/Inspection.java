@@ -138,6 +138,9 @@ public class Inspection {
   @Column(name = "assignment_accepted_at")
   private Instant assignmentAcceptedAt;
 
+  @Column(name = "assignment_requested_at")
+  private Instant assignmentRequestedAt;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -582,14 +585,20 @@ public class Inspection {
     return assignmentAcceptedAt;
   }
 
+  public Instant getAssignmentRequestedAt() {
+    return assignmentRequestedAt;
+  }
+
   public boolean isAssignmentPendingAcceptance() {
     return assignmentStatus == AssignmentStatus.PENDING_ACCEPTANCE;
   }
 
   public void markPendingAcceptance() {
+    Instant now = Instant.now();
     this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
     this.assignmentAcceptedAt = null;
-    this.updatedAt = Instant.now();
+    this.assignmentRequestedAt = now;
+    this.updatedAt = now;
   }
 
   public void acceptAssignment(UUID actorId) {
@@ -652,13 +661,27 @@ public class Inspection {
         && this.flightPermitVerificationStatus == FlightPermitVerificationStatus.APPROVED) {
       resetFlightPermitVerificationForReReview();
     }
+    Instant now = Instant.now();
     this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
     this.assignmentAcceptedAt = null;
+    this.assignmentRequestedAt = now;
     this.declineReason = null;
     this.declinedAt = null;
     this.declinedByInspectorId = null;
     this.overdueNotifiedAt = null;
-    this.updatedAt = Instant.now();
+    this.updatedAt = now;
+  }
+
+  public boolean cancelForAcceptanceTimeout(int timeoutHours) {
+    if (status != InspectionStatus.SCHEDULED
+        || assignmentStatus != AssignmentStatus.PENDING_ACCEPTANCE) {
+      return false;
+    }
+    String label = timeoutHours == 1 ? "1 hour" : timeoutHours + " hours";
+    this.cancellationReason =
+        "Auto-cancelled: Inspector did not accept assignment within " + label + ".";
+    moveTo(InspectionStatus.CANCELLED);
+    return true;
   }
 
   public void cancel(String reason) {
@@ -689,6 +712,7 @@ public class Inspection {
     if (this.assignmentStatus == AssignmentStatus.DECLINED) {
       this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
       this.assignmentAcceptedAt = null;
+      this.assignmentRequestedAt = Instant.now();
       this.declineReason = null;
       this.declinedAt = null;
       this.declinedByInspectorId = null;

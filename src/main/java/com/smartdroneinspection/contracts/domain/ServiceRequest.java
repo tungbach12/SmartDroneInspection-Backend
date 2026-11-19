@@ -11,6 +11,8 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -438,18 +440,19 @@ public class ServiceRequest {
   }
 
   private Map<String, Object> acceptedTerms(ServiceRequestQuote quote, Instant at, UUID userId) {
-    return Map.ofEntries(
-        Map.entry("quoteId", quote.getId()),
-        Map.entry("scopeSnapshot", quote.getScopeSnapshot()),
-        Map.entry("firstOccurrenceStartAt", quote.getFirstOccurrenceStartAt()),
-        Map.entry("firstOccurrenceEndAt", quote.getFirstOccurrenceEndAt()),
-        Map.entry("inspectorId", quote.getInspectorId()),
-        Map.entry("droneId", quote.getDroneId()),
-        Map.entry("pricePerOccurrenceVnd", quote.getPricePerOccurrenceVnd()),
-        Map.entry("requiredDroneFeatureCodes", quote.getRequiredDroneFeatureCodes()),
-        Map.entry("issuedByUserId", quote.getIssuedByUserId()),
-        Map.entry("acceptedAt", at),
-        Map.entry("acceptedByUserId", userId));
+    // The partner Inspector and drone are not part of the accepted commercial terms; they are
+    // chosen at dispatch and confirmed by the Inspector afterwards.
+    Map<String, Object> terms = new LinkedHashMap<>();
+    terms.put("quoteId", quote.getId());
+    terms.put("scopeSnapshot", quote.getScopeSnapshot());
+    terms.put("firstOccurrenceStartAt", quote.getFirstOccurrenceStartAt());
+    terms.put("firstOccurrenceEndAt", quote.getFirstOccurrenceEndAt());
+    terms.put("pricePerOccurrenceVnd", quote.getPricePerOccurrenceVnd());
+    terms.put("requiredDroneFeatureCodes", quote.getRequiredDroneFeatureCodes());
+    terms.put("issuedByUserId", quote.getIssuedByUserId());
+    terms.put("acceptedAt", at);
+    terms.put("acceptedByUserId", userId);
+    return Collections.unmodifiableMap(terms);
   }
 
   public void recordSignedContract(String objectKey) {
@@ -486,6 +489,13 @@ public class ServiceRequest {
   public void markAssigned() {
     status = ServiceRequestStatus.ASSIGNED;
     updatedAt = Instant.now();
+  }
+
+  public void reopenForAssignment() {
+    if (status == ServiceRequestStatus.ASSIGNED) {
+      status = ServiceRequestStatus.CONTRACT_SIGNED;
+      updatedAt = Instant.now();
+    }
   }
 
   public enum RequestType {

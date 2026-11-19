@@ -294,6 +294,73 @@ public class InspectionNotificationService {
   }
 
   @Transactional
+  public void recordAssignmentAcceptanceTimeout(
+      UUID inspectionId,
+      UUID inspectorId,
+      UUID requestId,
+      UUID assignedManagerId,
+      int timeoutHours,
+      Instant timedOutAt) {
+    if (inspectionId == null) {
+      return;
+    }
+    String inspectorLabel =
+        inspectorId != null
+            ? userAccess
+                .findActiveUser(inspectorId)
+                .map(ActiveUser::fullName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse(inspectorId.toString())
+            : "Assigned inspector";
+    String hourLabel = timeoutHours == 1 ? "1 hour" : timeoutHours + " hours";
+    String targetPath =
+        requestId != null
+            ? "/manager/contracts?requestId=" + requestId
+            : "/manager/inspections/" + inspectionId;
+    long epoch = timedOutAt != null ? timedOutAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String managerKeyPrefix = "ASSIGNMENT_TIMEOUT:" + inspectionId + ":" + epoch;
+    String title = "Inspector assignment timed out";
+    String managerBody =
+        inspectorLabel
+            + " did not accept the assignment within "
+            + hourLabel
+            + ". The assignment has been automatically cancelled; please assign another inspector.";
+    if (assignedManagerId != null) {
+      String key = managerKeyPrefix + ":" + assignedManagerId;
+      saveWithDeduplication(
+          new Notification(
+              assignedManagerId,
+              "INSPECTION_ASSIGNMENT_TIMEOUT",
+              NotificationChannel.IN_APP,
+              title,
+              managerBody,
+              targetPath,
+              key),
+          key);
+    } else {
+      notifyActiveManagers(
+          "INSPECTION_ASSIGNMENT_TIMEOUT", title, managerBody, targetPath, managerKeyPrefix);
+    }
+    if (inspectorId != null) {
+      String inspectorKey = managerKeyPrefix + ":inspector:" + inspectorId;
+      saveWithDeduplication(
+          new Notification(
+              inspectorId,
+              "INSPECTION_ASSIGNMENT_TIMEOUT",
+              NotificationChannel.IN_APP,
+              "Assignment expired",
+              "Assignment for inspection "
+                  + inspectionId
+                  + " was automatically cancelled because it was not accepted within "
+                  + hourLabel
+                  + ".",
+              "/operations/inspections",
+              inspectorKey),
+          inspectorKey);
+    }
+  }
+
+  @Transactional
   public void recordFlightPermitSubmitted(
       UUID inspectionId, String permitNumber, String issuingAuthority, Instant submittedAt) {
     if (inspectionId == null) {

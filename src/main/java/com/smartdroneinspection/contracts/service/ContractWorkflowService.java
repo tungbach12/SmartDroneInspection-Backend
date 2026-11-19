@@ -49,6 +49,7 @@ import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
 import com.smartdroneinspection.shared.api.InspectionPaymentGate;
 import com.smartdroneinspection.shared.api.InspectionReportAcceptancePort;
+import com.smartdroneinspection.shared.api.PlatformOperationsPolicyPort;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
@@ -118,6 +119,7 @@ public class ContractWorkflowService
   private final JdbcTemplate jdbcTemplate;
   private Optional<ServiceRefundRepository> refundRepository = Optional.empty();
   private Optional<InspectorReceivableRepository> receivables = Optional.empty();
+  private Optional<PlatformOperationsPolicyPort> operationsSettings = Optional.empty();
   private PaymentDueProperties paymentDueProperties = new PaymentDueProperties();
 
   @Autowired
@@ -168,6 +170,11 @@ public class ContractWorkflowService
   @Autowired
   void setReceivables(Optional<InspectorReceivableRepository> receivables) {
     this.receivables = receivables != null ? receivables : Optional.empty();
+  }
+
+  @Autowired
+  void setOperationsSettings(Optional<PlatformOperationsPolicyPort> operationsSettings) {
+    this.operationsSettings = operationsSettings != null ? operationsSettings : Optional.empty();
   }
 
   @Autowired
@@ -887,51 +894,7 @@ public class ContractWorkflowService
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.firstOccurrenceStartAt());
     }
-    List<Instant> proposedOccurrenceStarts =
-        proposedOccurrenceStarts(request, input.firstOccurrenceStartAt());
     partners.validateRequiredDroneFeatureCodes(input.requiredDroneFeatureCodes());
-    Asset quoteAsset =
-        assets
-            .findByIdAndOwnerCustomerId(request.getAssetId(), request.getOwnerCustomerId())
-            .filter(value -> value.getStatus() != AssetStatus.RETIRED)
-            .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
-    boolean contractConflict =
-        occurrences.hasScheduleConflict(
-            input.inspectorId(),
-            input.droneId(),
-            input.firstOccurrenceStartAt(),
-            input.firstOccurrenceEndAt());
-    boolean inspectionConflict =
-        assignment.hasPlatformScheduleConflict(
-            input.inspectorId(),
-            input.droneId(),
-            input.firstOccurrenceStartAt(),
-            input.firstOccurrenceEndAt());
-    var candidate =
-        partners.evaluateCandidate(
-            manager.id(),
-            input.inspectorId(),
-            input.droneId(),
-            input.firstOccurrenceStartAt(),
-            input.firstOccurrenceEndAt(),
-            quoteAsset,
-            input.requiredDroneFeatureCodes(),
-            contractConflict,
-            inspectionConflict);
-    requireCandidateEligible(candidate, HttpStatus.BAD_REQUEST);
-    if (!partners.isEligibleInspectorForAllDates(input.inspectorId(), proposedOccurrenceStarts)) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "INVALID_PARTNER_INSPECTOR",
-          "Selected Inspector must have a valid partner profile and pilot license for every scheduled occurrence");
-    }
-    if (!partners.isEligibleDroneForAllDates(
-        input.droneId(), input.inspectorId(), proposedOccurrenceStarts)) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "INVALID_PARTNER_DRONE",
-          "Selected drone must remain approved and registered, and the Inspector must remain license-qualified, for every scheduled occurrence");
-    }
 
     // New inspection services use VND and require all 3 settlement rates to be configured.
     if ("VND".equals(input.resolvedCurrency())) {
@@ -948,8 +911,6 @@ public class ContractWorkflowService
                 input.scopeSnapshot(),
                 input.firstOccurrenceStartAt(),
                 input.firstOccurrenceEndAt(),
-                input.inspectorId(),
-                input.droneId(),
                 input.resolvedPrice(),
                 input.requiredDroneFeatureCodes(),
                 manager.id());
@@ -959,8 +920,6 @@ public class ContractWorkflowService
             input.scopeSnapshot(),
             input.firstOccurrenceStartAt(),
             input.firstOccurrenceEndAt(),
-            input.inspectorId(),
-            input.droneId(),
             input.resolvedPrice(),
             input.requiredDroneFeatureCodes(),
             manager.id());
@@ -2526,14 +2485,21 @@ public class ContractWorkflowService
 
   private void validatePartnerEligibilityForQuote(
       ServiceRequest request, ServiceRequestQuote quote) {
+    // Quotes no longer carry a partner pair; eligibility for a concrete Inspector/drone is now
+    // enforced by assignOccurrence and by the platform inspection assignment port.
+    UUID inspectorId = quote.getInspectorId();
+    UUID droneId = quote.getDroneId();
+    if (inspectorId == null || droneId == null) {
+      return;
+    }
     List<Instant> starts = proposedOccurrenceStarts(request, quote.getFirstOccurrenceStartAt());
-    if (!partners.isEligibleInspectorForAllDates(quote.getInspectorId(), starts)) {
+    if (!partners.isEligibleInspectorForAllDates(inspectorId, starts)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_INSPECTOR",
           "The selected Inspector's pilot license must remain valid for every scheduled occurrence");
     }
-    if (!partners.isEligibleDroneForAllDates(quote.getDroneId(), quote.getInspectorId(), starts)) {
+    if (!partners.isEligibleDroneForAllDates(droneId, inspectorId, starts)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "INVALID_PARTNER_DRONE",
@@ -2760,8 +2726,8 @@ public class ContractWorkflowService
         quote.getScopeSnapshot(),
         quote.getFirstOccurrenceStartAt().toString(),
         quote.getFirstOccurrenceEndAt().toString(),
-        quote.getInspectorId().toString(),
-        quote.getDroneId().toString(),
+        quote.getInspectorId() == null ? null : quote.getInspectorId().toString(),
+        quote.getDroneId() == null ? null : quote.getDroneId().toString(),
         quote.getPricePerOccurrenceVnd().toPlainString(),
         previousPrice == null ? null : previousPrice.toPlainString(),
         quote.getUpdatedAt().toString());
@@ -2791,8 +2757,8 @@ public class ContractWorkflowService
         quote.getScopeSnapshot(),
         quote.getFirstOccurrenceStartAt().toString(),
         quote.getFirstOccurrenceEndAt().toString(),
-        quote.getInspectorId().toString(),
-        quote.getDroneId().toString(),
+        quote.getInspectorId() == null ? null : quote.getInspectorId().toString(),
+        quote.getDroneId() == null ? null : quote.getDroneId().toString(),
         quote.getPricePerOccurrenceVnd().toPlainString());
   }
 
@@ -2836,7 +2802,7 @@ public class ContractWorkflowService
         managerHasNotClaimed
             ? List.of()
             : occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
-                .map(occ -> ServiceRequestOccurrenceResponse.from(occ, request))
+                .map(occ -> toOccurrenceResponse(occ, request))
                 .toList(),
         managerActor != null && (managerHasNotClaimed || !includeManagerMessages)
             ? List.of()
@@ -2844,6 +2810,45 @@ public class ContractWorkflowService
                 .map(this::toMessageResponse)
                 .toList(),
         canClaim);
+  }
+
+  /**
+   * Adds the Inspector's dispatch answer, so step 4 can show "waiting for the Inspector" or
+   * "reassignment required" instead of assuming every dispatch is confirmed.
+   */
+  private ServiceRequestOccurrenceResponse toOccurrenceResponse(
+      ServiceRequestOccurrence occurrence, ServiceRequest request) {
+    Mf2InspectionAssignment.AssignmentAcceptance acceptance =
+        occurrence.getInspectionId() == null
+            ? null
+            : assignment
+                .findAssignmentState(occurrence.getInspectionId())
+                .filter(state -> state.assignmentStatus() != null)
+                .orElse(null);
+    int timeoutHours =
+        operationsSettings
+            .map(PlatformOperationsPolicyPort::getAssignmentAcceptanceTimeoutHours)
+            .orElse(PlatformOperationsPolicyPort.DEFAULT_ASSIGNMENT_ACCEPTANCE_TIMEOUT_HOURS);
+    Instant deadlineAt =
+        acceptance != null
+                && "PENDING_ACCEPTANCE".equals(acceptance.assignmentStatus())
+                && acceptance.assignmentRequestedAt() != null
+            ? acceptance.assignmentRequestedAt().plus(Duration.ofHours(timeoutHours))
+            : null;
+    String lastTimeoutInspectorName =
+        occurrence.getLastTimeoutInspectorId() == null
+            ? null
+            : users
+                .findActiveUser(occurrence.getLastTimeoutInspectorId())
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null);
+    return ServiceRequestOccurrenceResponse.from(occurrence, request)
+        .withAssignmentAcceptance(
+            acceptance == null ? null : acceptance.assignmentStatus(),
+            acceptance != null && acceptance.reassignmentRequired(),
+            acceptance == null ? null : acceptance.declineReason(),
+            deadlineAt,
+            lastTimeoutInspectorName);
   }
 
   private ServiceRequestMessageResponse toMessageResponse(ServiceRequestMessage message) {
