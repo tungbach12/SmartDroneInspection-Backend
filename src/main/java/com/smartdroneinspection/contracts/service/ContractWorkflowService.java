@@ -431,14 +431,10 @@ public class ContractWorkflowService
       String cadence =
           input.requestType() == RequestType.ONE_TIME
               ? "Inspection"
-              : "Inspection every " + input.recurrenceInterval() + " month(s)";
-      String limit =
-          input.requestType() == RequestType.ONE_TIME
-              ? input.requestedFrom().toString()
-              : input.occurrenceCount() != null
-                  ? input.occurrenceCount() + " occurrence(s)"
-                  : "through " + input.recurrenceEndDate();
-      description = asset.getName() + " · " + cadence + " (" + limit + ")";
+              : input.recurrenceInterval() != null && input.recurrenceInterval() == 1
+                  ? "Monthly inspection"
+                  : "Every " + input.recurrenceInterval() + "-month inspection";
+      description = asset.getName() + " · " + cadence;
     }
 
     ServiceRequest request;
