@@ -3,17 +3,26 @@ package com.smartdroneinspection.inspections.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.inspections.api.dto.response.KnowledgeRecommendationResponse.CaseMatch;
 import com.smartdroneinspection.inspections.api.dto.response.KnowledgeRecommendationResponse.GuidelineMatch;
+import com.smartdroneinspection.inspections.domain.Finding;
+import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.service.HistoricalCaseService.CaseRow;
 import com.smartdroneinspection.inspections.service.HistoricalCaseService.GuidelineRow;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand.CaseReference;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand.GuidelineReference;
 import com.smartdroneinspection.inspections.spi.HistoricalCaseAdvisorPort;
 import java.time.Instant;
 import java.util.List;
@@ -32,35 +41,38 @@ class HistoricalCaseServiceTest {
   private HistoricalCaseService service;
   private HistoricalCaseAdvisorPort advisorPort;
   private InspectionRepository inspections;
+  private FindingRepository findings;
   private JdbcTemplate jdbcTemplate;
 
   @BeforeEach
   void setUp() {
     advisorPort = mock(HistoricalCaseAdvisorPort.class);
     inspections = mock(InspectionRepository.class);
+    findings = mock(FindingRepository.class);
     jdbcTemplate = mock(JdbcTemplate.class);
     service =
         new HistoricalCaseService(
             jdbcTemplate,
             mock(EvidenceService.class),
             inspections,
-            mock(FindingRepository.class),
+            findings,
+            mock(FindingService.class),
             Optional.of(advisorPort));
   }
 
   @Test
   void pgVectorLiteralUsesLocaleIndependentDecimalsAndFullDimension() {
-    float[] vector = new float[1536];
+    float[] vector = new float[384];
     vector[0] = 0.5f;
     vector[1] = -1.25f;
-    vector[1535] = 1.0f;
+    vector[383] = 1.0f;
     vector[10] = Float.NaN;
 
     String literal = HistoricalCaseService.toPgVectorLiteral(vector);
 
     assertThat(literal).startsWith("[0.500000,-1.250000,");
     assertThat(literal).endsWith(",1.000000]");
-    assertThat(literal.split(",", -1)).hasSize(1536);
+    assertThat(literal.split(",", -1)).hasSize(384);
     assertThat(literal).contains(",0,"); // non-finite values are normalized to zero
     assertThat(HistoricalCaseService.toPgVectorLiteral(null)).isEqualTo("[]");
     assertThat(HistoricalCaseService.toPgVectorLiteral(new float[0])).isEqualTo("[]");
@@ -195,9 +207,60 @@ class HistoricalCaseServiceTest {
     doReturn(Optional.of(new float[3])).when(advisorPort).embed(anyString());
     assertThat(service.embed("Facade crack HIGH")).isEmpty();
 
-    float[] valid = new float[1536];
+    float[] valid = new float[384];
     doReturn(Optional.of(valid)).when(advisorPort).embed(anyString());
     assertThat(service.embed("Facade crack HIGH")).contains(valid);
+  }
+
+  @Test
+  void backfillMissingEmbeddingsPopulatesBothGuidelinesAndHistoricalCases() {
+    UUID chunkId = UUID.randomUUID();
+    UUID caseId = UUID.randomUUID();
+    float[] valid = new float[384];
+    valid[0] = 0.5f;
+    doReturn(Optional.of(valid)).when(advisorPort).embed(anyString());
+    when(jdbcTemplate.query(
+            contains("FROM inspection_knowledge_chunks"),
+            any(org.springframework.jdbc.core.RowMapper.class)))
+        .thenAnswer(
+            invocation -> {
+              var rs = mock(java.sql.ResultSet.class);
+              when(rs.getObject("id", UUID.class)).thenReturn(chunkId);
+              when(rs.getString("standard_code")).thenReturn("TCVN 9343:2012");
+              when(rs.getString("title")).thenReturn("Concrete crack");
+              when(rs.getString("defect_patterns")).thenReturn("Crack");
+              when(rs.getString("severity")).thenReturn("HIGH");
+              when(rs.getString("guidance")).thenReturn("Inspect width");
+              org.springframework.jdbc.core.RowMapper<?> mapper = invocation.getArgument(1);
+              return List.of(mapper.mapRow(rs, 0));
+            });
+    when(jdbcTemplate.query(
+            contains("FROM historical_finding_cases"),
+            any(org.springframework.jdbc.core.RowMapper.class)))
+        .thenAnswer(
+            invocation -> {
+              var rs = mock(java.sql.ResultSet.class);
+              when(rs.getObject("id", UUID.class)).thenReturn(caseId);
+              when(rs.getString("defect_label")).thenReturn("Facade crack");
+              when(rs.getString("severity")).thenReturn("HIGH");
+              when(rs.getString("technical_notes")).thenReturn("Hairline crack");
+              org.springframework.jdbc.core.RowMapper<?> mapper = invocation.getArgument(1);
+              return List.of(mapper.mapRow(rs, 0));
+            });
+
+    int missing = service.backfillMissingEmbeddings();
+
+    assertThat(missing).isZero();
+    verify(jdbcTemplate)
+        .update(
+            contains("UPDATE inspection_knowledge_chunks SET embedding = CAST(? AS vector)"),
+            anyString(),
+            eq(chunkId));
+    verify(jdbcTemplate)
+        .update(
+            contains("UPDATE historical_finding_cases SET embedding = CAST(? AS vector)"),
+            anyString(),
+            eq(caseId));
   }
 
   @Test
@@ -209,6 +272,134 @@ class HistoricalCaseServiceTest {
     assertThat(service.findKnowledgeReferences(UUID.randomUUID())).isEmpty();
     assertThat(service.findKnowledgeReferences(null)).isEmpty();
     verifyNoInteractions(jdbcTemplate);
+  }
+
+  @Test
+  void indexPublishedFindingsUpsertsOfficialFindingsAndPropagatesReinspectionOutcomes() {
+    UUID inspectionId = UUID.randomUUID();
+    Inspection inspection = mock(Inspection.class);
+    when(inspection.getOwnerCustomerId()).thenReturn(ORGANIZATION_ID);
+    when(inspection.getAssetId()).thenReturn(ASSET_ID);
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+
+    Finding official =
+        new Finding(
+            inspectionId,
+            UUID.randomUUID(),
+            "F-001",
+            "Facade crack",
+            FindingSeverity.HIGH,
+            "Hairline crack near north mullion.",
+            null,
+            null,
+            null);
+    official.confirmByInspector();
+    Finding pending =
+        new Finding(
+            inspectionId,
+            UUID.randomUUID(),
+            "F-002",
+            "Surface stain",
+            FindingSeverity.LOW,
+            "Pending candidate",
+            null,
+            null,
+            null);
+    when(findings.findByInspectionIdOrderByCreatedAtAsc(inspectionId))
+        .thenReturn(List.of(official, pending));
+
+    service.indexPublishedFindings(inspectionId);
+
+    verify(jdbcTemplate)
+        .update(
+            contains("ON CONFLICT (source_finding_id) DO UPDATE"),
+            any(),
+            eq(inspectionId),
+            eq(ORGANIZATION_ID),
+            eq(ASSET_ID),
+            any(),
+            any(),
+            eq("Facade crack"),
+            eq("HIGH"),
+            eq("Hairline crack near north mullion."),
+            any(),
+            any());
+    verify(jdbcTemplate)
+        .update(contains("FROM reinspection_defect_verifications"), eq(inspectionId));
+  }
+
+  @Test
+  void deterministicNoteIsCompactGroundedAndCitesTheTopReferences() {
+    String note =
+        HistoricalCaseService.synthesizeDeterministicNote(
+            draftCommand("en", "Facade crack", "HIGH", "Crack observed near the mid-span."));
+
+    assertThat(note).contains("high-severity", "Facade crack", "within the marked region");
+    assertThat(note).contains("Inspector's current note: Crack observed near the mid-span.");
+    assertThat(note).contains("TCVN 9343:2012", "classify visible cracks by width", "published");
+    assertThat(note).doesNotContain(ORGANIZATION_ID.toString());
+    assertThat(note.chars().filter(character -> character == '.').count()).isBetween(2L, 3L);
+  }
+
+  @Test
+  void deterministicNoteSupportsVietnameseAndPreservesAnExistingDraft() {
+    String note =
+        HistoricalCaseService.synthesizeDeterministicNote(
+            draftCommand("vi", "Facade crack", "HIGH", "Vết nứt đã thấy tại vị trí giữa nhịp."));
+
+    assertThat(note)
+        .contains("Lỗi Facade crack", "mức HIGH", "trong vùng đã đánh dấu")
+        .contains("Ghi chú hiện tại của kiểm viên: Vết nứt đã thấy tại vị trí giữa nhịp.")
+        .contains("Tiêu chuẩn TCVN 9343:2012", "một ca tương tự");
+  }
+
+  @Test
+  void deterministicNoteWithoutReferencesOrExistingNoteStaysTwoSentences() {
+    DraftFindingNoteCommand command =
+        new DraftFindingNoteCommand(
+            "Coating blistering",
+            "LOW",
+            null,
+            null,
+            "en",
+            "BRIDGE",
+            "Main span",
+            null,
+            null,
+            null,
+            List.of(),
+            List.of());
+
+    String note = HistoricalCaseService.synthesizeDeterministicNote(command);
+
+    assertThat(note)
+        .contains("low-severity Coating blistering is observed.")
+        .contains("No additional inspector observation was recorded.");
+    assertThat(note.chars().filter(character -> character == '.').count()).isEqualTo(2L);
+    assertThat(HistoricalCaseService.normalizeLocale(null)).isEqualTo("en");
+    assertThat(HistoricalCaseService.normalizeLocale("vi-VN")).isEqualTo("vi");
+    assertThat(HistoricalCaseService.normalizeLocale("de")).isEqualTo("en");
+  }
+
+  private static DraftFindingNoteCommand draftCommand(
+      String locale, String defect, String severity, String existingNote) {
+    return new DraftFindingNoteCommand(
+        defect,
+        severity,
+        "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}",
+        existingNote,
+        locale,
+        "HIGH_RISE_OFFICE",
+        "Main tower",
+        null,
+        null,
+        null,
+        List.of(new CaseReference(defect, "Observed during a prior field session", "PUBLISHED")),
+        List.of(
+            new GuidelineReference(
+                "TCVN 9343:2012",
+                "Concrete surface crack assessment",
+                "Classify visible cracks by width. Record their exact location.")));
   }
 
   private static CaseRow row(

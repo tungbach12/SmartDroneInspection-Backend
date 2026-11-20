@@ -1,5 +1,6 @@
 package com.smartdroneinspection.inspections.service;
 
+import com.smartdroneinspection.inspections.api.dto.response.DraftFindingNoteResponse;
 import com.smartdroneinspection.inspections.api.dto.response.KnowledgeRecommendationResponse;
 import com.smartdroneinspection.inspections.api.dto.response.KnowledgeRecommendationResponse.CaseMatch;
 import com.smartdroneinspection.inspections.api.dto.response.KnowledgeRecommendationResponse.GuidelineMatch;
@@ -8,6 +9,9 @@ import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand.CaseReference;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand.GuidelineReference;
 import com.smartdroneinspection.inspections.spi.HistoricalCaseAdvisorPort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import java.sql.ResultSet;
@@ -22,6 +26,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -42,11 +50,15 @@ public class HistoricalCaseService {
 
   public static final String MODE_PGVECTOR = "PGVECTOR_RAG";
   public static final String MODE_HYBRID = "HYBRID_MATCH";
+  public static final String MODE_AI_VISION_RAG = "AI_VISION_RAG";
+  public static final String MODE_DETERMINISTIC_RAG = "DETERMINISTIC_RAG";
   public static final String KIND_GUIDELINE = "GUIDELINE";
   public static final String KIND_CASE = "CASE";
 
-  private static final int EMBEDDING_DIMENSIONS = 1536;
+  private static final int EMBEDDING_DIMENSIONS = 384;
   private static final int MAX_LIMIT = 10;
+  private static final int TOP_MATCHES = 2;
+  private static final int MAX_NOTE_IMAGE_BYTES = 4 * 1024 * 1024;
   private static final String ALL_CATEGORY = "ALL";
 
   /** category(3) + defect overlap(3×2) + same asset(2) + same org(1) + severity proximity(2). */
@@ -59,19 +71,36 @@ public class HistoricalCaseService {
   private final EvidenceService evidenceService;
   private final InspectionRepository inspections;
   private final FindingRepository findings;
+  private final FindingService findingService;
   private final Optional<HistoricalCaseAdvisorPort> advisorPort;
+  private final boolean knowledgeAiEnabled;
 
   public HistoricalCaseService(
       JdbcTemplate jdbcTemplate,
       EvidenceService evidenceService,
       InspectionRepository inspections,
       FindingRepository findings,
+      FindingService findingService,
       Optional<HistoricalCaseAdvisorPort> advisorPort) {
+    this(jdbcTemplate, evidenceService, inspections, findings, findingService, advisorPort, false);
+  }
+
+  @Autowired
+  public HistoricalCaseService(
+      JdbcTemplate jdbcTemplate,
+      EvidenceService evidenceService,
+      InspectionRepository inspections,
+      FindingRepository findings,
+      FindingService findingService,
+      Optional<HistoricalCaseAdvisorPort> advisorPort,
+      @Value("${app.knowledge-ai.enabled:false}") boolean knowledgeAiEnabled) {
     this.jdbcTemplate = jdbcTemplate;
     this.evidenceService = evidenceService;
     this.inspections = inspections;
     this.findings = findings;
+    this.findingService = findingService;
     this.advisorPort = advisorPort;
+    this.knowledgeAiEnabled = knowledgeAiEnabled;
   }
 
   /** Recommendations grounded in one confirmed finding of this inspection. */
@@ -105,6 +134,250 @@ public class HistoricalCaseService {
   /** Neutral payload used when the advisory capability is not wired at all. */
   public static KnowledgeRecommendationResponse emptyRecommendations() {
     return new KnowledgeRecommendationResponse(MODE_HYBRID, List.of(), List.of());
+  }
+
+  /** Neutral fallback for a controller built without the historical case service. */
+  public static DraftFindingNoteResponse emptyDraftNote() {
+    return new DraftFindingNoteResponse(
+        "", MODE_DETERMINISTIC_RAG, MODE_HYBRID, List.of(), List.of());
+  }
+
+  /**
+   * Drafts a concise, source-backed technical note for one finding.
+   *
+   * <p>The finding-edit scope guard is shared with {@link FindingService}: organization/assignment
+   * scope and the locked-report guard are identical to editing a finding. Retrieval supplies the
+   * two best cases and guidelines; the external vision/chat model may then synthesize a note from
+   * the evidence image and that context, with a deterministic fallback when it is unavailable.
+   */
+  @Transactional(readOnly = true)
+  public DraftFindingNoteResponse draftFindingNote(
+      UUID actorId, UUID inspectionId, UUID findingId, String rawLocale, String existingNote) {
+    Finding finding = findingService.requireEditableFinding(actorId, inspectionId, findingId);
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found"));
+    KnowledgeRecommendationResponse matches =
+        retrieve(inspection, describeFinding(finding), TOP_MATCHES, TOP_MATCHES);
+    DraftFindingNoteCommand command =
+        draftCommand(finding, inspection, matches, rawLocale, existingNote);
+
+    Optional<String> aiNote = draftWithAdvisor(command);
+    return new DraftFindingNoteResponse(
+        aiNote.orElseGet(() -> synthesizeDeterministicNote(command)),
+        aiNote.isPresent() ? MODE_AI_VISION_RAG : MODE_DETERMINISTIC_RAG,
+        matches.retrievalMode(),
+        matches.cases(),
+        matches.guidelines());
+  }
+
+  private DraftFindingNoteCommand draftCommand(
+      Finding finding,
+      Inspection inspection,
+      KnowledgeRecommendationResponse matches,
+      String rawLocale,
+      String existingNote) {
+    String categoryCode = resolveCategoryCode(inspection.getAssetId());
+    String assetLabel = resolveAssetLabel(inspection.getAssetId(), categoryCode);
+    List<CaseReference> cases =
+        matches.cases().stream()
+            .limit(TOP_MATCHES)
+            .map(
+                item ->
+                    new CaseReference(item.defectLabel(), item.technicalNotes(), item.outcome()))
+            .toList();
+    List<GuidelineReference> guidelines =
+        matches.guidelines().stream()
+            .limit(TOP_MATCHES)
+            .map(item -> new GuidelineReference(item.standardCode(), item.title(), item.guidance()))
+            .toList();
+    Optional<EvidenceService.AdvisoryImage> image = readNoteImage(inspection.getId(), finding);
+
+    return new DraftFindingNoteCommand(
+        finding.getDefectLabel(),
+        finding.getSeverity() == null ? null : finding.getSeverity().name(),
+        finding.getBoundingBox(),
+        existingNote,
+        normalizeLocale(rawLocale),
+        categoryCode,
+        assetLabel,
+        null,
+        image.map(EvidenceService.AdvisoryImage::bytes).orElse(null),
+        image.map(EvidenceService.AdvisoryImage::contentType).orElse(null),
+        cases,
+        guidelines);
+  }
+
+  private Optional<EvidenceService.AdvisoryImage> readNoteImage(
+      UUID inspectionId, Finding finding) {
+    if (finding.getEvidenceId() == null) {
+      return Optional.empty();
+    }
+    try {
+      return evidenceService.readAdvisoryImage(
+          inspectionId, finding.getEvidenceId(), MAX_NOTE_IMAGE_BYTES);
+    } catch (RuntimeException exception) {
+      return Optional.empty();
+    }
+  }
+
+  private Optional<String> draftWithAdvisor(DraftFindingNoteCommand command) {
+    try {
+      return advisorPort
+          .flatMap(port -> port.draftFindingNote(command))
+          .map(String::strip)
+          .filter(note -> !note.isEmpty());
+    } catch (RuntimeException exception) {
+      return Optional.empty();
+    }
+  }
+
+  static String normalizeLocale(String locale) {
+    String tag = locale == null ? "" : locale.trim().toLowerCase(Locale.ROOT);
+    return tag.equals("vi") || tag.startsWith("vi-") ? "vi" : "en";
+  }
+
+  /**
+   * Deterministic fallback: a compact two-to-three sentence note built strictly from the finding
+   * and the top retrieved references. It invents no measurements and quotes no identifiers.
+   */
+  static String synthesizeDeterministicNote(DraftFindingNoteCommand command) {
+    boolean vietnamese = "vi".equals(normalizeLocale(command.locale()));
+    String defect = cleanText(command.defectLabel(), "defect");
+    String severity = cleanText(command.severity(), "").toUpperCase(Locale.ROOT);
+    String region = regionPhrase(command.boundingBox(), command.checkpointTitle(), vietnamese);
+
+    String observation;
+    if (vietnamese) {
+      observation =
+          "Lỗi " + defect + (severity.isEmpty() ? "" : " ở mức " + severity) + region + ".";
+    } else {
+      observation =
+          "The "
+              + (severity.isEmpty() ? "" : severity.toLowerCase(Locale.ROOT) + "-severity ")
+              + defect
+              + " is observed"
+              + region
+              + ".";
+    }
+
+    String existing = cleanText(command.existingNote(), "");
+    String preserved;
+    if (existing.isEmpty()) {
+      preserved =
+          vietnamese
+              ? "Chưa có ghi chú bổ sung từ kiểm viên."
+              : "No additional inspector observation was recorded.";
+    } else {
+      preserved =
+          (vietnamese ? "Ghi chú hiện tại của kiểm viên: " : "Inspector's current note: ")
+              + asSentence(existing);
+    }
+
+    StringBuilder note = new StringBuilder(observation).append(' ').append(preserved);
+    String reference = referenceSentence(command, vietnamese);
+    if (!reference.isEmpty()) {
+      note.append(' ').append(reference);
+    }
+    return note.toString();
+  }
+
+  private static String referenceSentence(DraftFindingNoteCommand command, boolean vietnamese) {
+    GuidelineReference guideline =
+        command.guidelines() == null || command.guidelines().isEmpty()
+            ? null
+            : command.guidelines().getFirst();
+    CaseReference matchedCase =
+        command.cases() == null || command.cases().isEmpty() ? null : command.cases().getFirst();
+
+    String standardCode = guideline == null ? "" : cleanText(guideline.standardCode(), "");
+    String action = guideline == null ? "" : conciseAction(guideline.guidance());
+    String outcome =
+        matchedCase == null ? "" : cleanText(matchedCase.outcome(), "").toLowerCase(Locale.ROOT);
+
+    if (!standardCode.isEmpty() && !action.isEmpty() && !outcome.isEmpty()) {
+      return vietnamese
+          ? "Tiêu chuẩn "
+              + standardCode
+              + " khuyến nghị "
+              + action
+              + "; một ca tương tự đã ghi nhận kết quả "
+              + outcome
+              + "."
+          : "Reference "
+              + standardCode
+              + " advises "
+              + action
+              + "; a comparable case recorded "
+              + outcome
+              + ".";
+    }
+    if (!standardCode.isEmpty() && !action.isEmpty()) {
+      return vietnamese
+          ? "Tiêu chuẩn " + standardCode + " khuyến nghị " + action + "."
+          : "Reference " + standardCode + " advises " + action + ".";
+    }
+    if (!outcome.isEmpty()) {
+      String label =
+          matchedCase == null
+              ? ""
+              : cleanText(matchedCase.defectLabel(), "defect").toLowerCase(Locale.ROOT);
+      return vietnamese
+          ? "Một ca tương tự về " + label + " đã ghi nhận kết quả " + outcome + "."
+          : "A comparable " + label + " case recorded " + outcome + ".";
+    }
+    return "";
+  }
+
+  private static String regionPhrase(
+      String boundingBox, String checkpointTitle, boolean vietnamese) {
+    if (checkpointTitle != null && !checkpointTitle.isBlank()) {
+      String checkpoint = checkpointTitle.strip();
+      return vietnamese
+          ? " tại điểm kiểm tra " + checkpoint
+          : " at the " + checkpoint + " checkpoint";
+    }
+    if (boundingBox != null && !boundingBox.isBlank()) {
+      return vietnamese ? " trong vùng đã đánh dấu" : " within the marked region";
+    }
+    return "";
+  }
+
+  private static String conciseAction(String guidance) {
+    String text = cleanText(guidance, "");
+    if (text.isEmpty()) {
+      return "";
+    }
+    int cut = text.length();
+    for (String delimiter : List.of(". ", "; ", ": ")) {
+      int index = text.indexOf(delimiter);
+      if (index > 20 && index < cut) {
+        cut = index;
+      }
+    }
+    String action = text.substring(0, Math.min(cut, 90)).strip();
+    return action.replaceAll("[.;,]+$", "").toLowerCase(Locale.ROOT);
+  }
+
+  private static String asSentence(String text) {
+    String trimmed = text.strip();
+    if (trimmed.isEmpty()) {
+      return "";
+    }
+    char last = trimmed.charAt(trimmed.length() - 1);
+    return Character.isLetterOrDigit(last) ? trimmed + "." : trimmed;
+  }
+
+  private static String cleanText(String value, String fallback) {
+    if (value == null || value.isBlank()) {
+      return fallback;
+    }
+    String cleaned = value.strip().replaceAll("\\s+", " ");
+    return cleaned.length() > 200 ? cleaned.substring(0, 200).stripTrailing() : cleaned;
   }
 
   private KnowledgeRecommendationResponse recommend(
@@ -260,7 +533,12 @@ public class HistoricalCaseService {
              asset_category_code, asset_label, defect_label, severity, technical_notes,
              report_outcome, is_anonymized_benchmark, embedding, published_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', FALSE, CAST(? AS vector), ?)
-          ON CONFLICT (source_finding_id) DO NOTHING
+          ON CONFLICT (source_finding_id) DO UPDATE
+          SET defect_label = EXCLUDED.defect_label,
+              severity = EXCLUDED.severity,
+              technical_notes = EXCLUDED.technical_notes,
+              report_outcome = EXCLUDED.report_outcome,
+              embedding = COALESCE(EXCLUDED.embedding, historical_finding_cases.embedding)
           """,
           finding.getId(),
           inspectionId,
@@ -274,7 +552,144 @@ public class HistoricalCaseService {
           vector,
           java.sql.Timestamp.from(publishedAt));
     }
+    jdbcTemplate.update(
+        """
+        UPDATE historical_finding_cases h
+        SET report_outcome = v.resolution_status
+        FROM reinspection_defect_verifications v
+        WHERE v.reinspection_id = ?
+          AND h.source_finding_id = v.source_finding_id
+        """,
+        inspectionId);
+    backfillMissingChunkEmbeddings();
   }
+
+  @EventListener(ApplicationReadyEvent.class)
+  void scheduleStartupBackfill() {
+    if (!knowledgeAiEnabled || advisorPort.isEmpty()) {
+      return;
+    }
+    Thread.ofVirtual()
+        .name("knowledge-rag-backfill")
+        .start(
+            () -> {
+              // Retry briefly in case the local ai-inference container is still loading ONNX
+              // weights.
+              for (int attempt = 0; attempt < 4; attempt++) {
+                try {
+                  int remaining = backfillMissingEmbeddings();
+                  if (remaining == 0) {
+                    return;
+                  }
+                  Thread.sleep(5_000L);
+                } catch (InterruptedException interrupted) {
+                  Thread.currentThread().interrupt();
+                  return;
+                } catch (RuntimeException ignored) {
+                  return;
+                }
+              }
+            });
+  }
+
+  /**
+   * Generates pgvector embeddings for any knowledge chunks or published historical cases that were
+   * inserted without one (for example seed data or Flyway backfills). Returns the count of rows
+   * still missing an embedding so startup callers know whether to retry.
+   */
+  @Transactional
+  public int backfillMissingEmbeddings() {
+    if (advisorPort.isEmpty()) {
+      return 0;
+    }
+    int missing = backfillMissingChunkEmbeddings();
+    List<CaseEmbedRow> unembeddedCases =
+        jdbcTemplate.query(
+            """
+            SELECT id, defect_label, severity, technical_notes
+            FROM historical_finding_cases
+            WHERE embedding IS NULL
+            """,
+            (rs, rowNum) ->
+                new CaseEmbedRow(
+                    rs.getObject("id", UUID.class),
+                    rs.getString("defect_label"),
+                    rs.getString("severity"),
+                    rs.getString("technical_notes")));
+    for (CaseEmbedRow item : unembeddedCases) {
+      String text =
+          cleanText(item.defectLabel(), "")
+              + " "
+              + cleanText(item.severity(), "")
+              + " "
+              + cleanText(item.technicalNotes(), "");
+      Optional<String> vector = embed(text).map(HistoricalCaseService::toPgVectorLiteral);
+      if (vector.isPresent()) {
+        jdbcTemplate.update(
+            "UPDATE historical_finding_cases SET embedding = CAST(? AS vector) WHERE id = ?",
+            vector.get(),
+            item.id());
+      } else {
+        missing++;
+      }
+    }
+    return missing;
+  }
+
+  private int backfillMissingChunkEmbeddings() {
+    if (advisorPort.isEmpty()) {
+      return 0;
+    }
+    int missing = 0;
+    List<ChunkEmbedRow> chunks =
+        jdbcTemplate.query(
+            """
+            SELECT id, standard_code, title, defect_patterns, severity, guidance
+            FROM inspection_knowledge_chunks
+            WHERE embedding IS NULL
+            """,
+            (rs, rowNum) ->
+                new ChunkEmbedRow(
+                    rs.getObject("id", UUID.class),
+                    rs.getString("standard_code"),
+                    rs.getString("title"),
+                    rs.getString("defect_patterns"),
+                    rs.getString("severity"),
+                    rs.getString("guidance")));
+    for (ChunkEmbedRow chunk : chunks) {
+      String text =
+          cleanText(chunk.standardCode(), "")
+              + " "
+              + cleanText(chunk.title(), "")
+              + " "
+              + cleanText(chunk.defectPatterns(), "")
+              + " "
+              + cleanText(chunk.severity(), "")
+              + " "
+              + cleanText(chunk.guidance(), "");
+      Optional<String> vector = embed(text).map(HistoricalCaseService::toPgVectorLiteral);
+      if (vector.isPresent()) {
+        jdbcTemplate.update(
+            "UPDATE inspection_knowledge_chunks SET embedding = CAST(? AS vector) WHERE id = ?",
+            vector.get(),
+            chunk.id());
+      } else {
+        missing++;
+      }
+    }
+    return missing;
+  }
+
+  private record CaseEmbedRow(
+      UUID id, String defectLabel, String severity, String technicalNotes) {}
+
+  private record ChunkEmbedRow(
+      UUID id,
+      String standardCode,
+      String title,
+      String defectPatterns,
+      String severity,
+      String guidance) {}
 
   /**
    * Concise, source-backed references for an executive summary: matched guidelines and matched
@@ -541,7 +956,7 @@ public class HistoricalCaseService {
   }
 
   /**
-   * Renders a finite 1536-d vector as a pgvector literal with a locale-independent decimal point.
+   * Renders a finite 384-d vector as a pgvector literal with a locale-independent decimal point.
    */
   public static String toPgVectorLiteral(float[] vector) {
     if (vector == null || vector.length == 0) {

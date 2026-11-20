@@ -1216,6 +1216,20 @@ public class FindingService {
     rejectFinalizedReportFindingEdits(inspectionId);
   }
 
+  /**
+   * Scope guard for advisory operations that mirror a finding edit (for example note drafting).
+   *
+   * <p>Organization and assignment scope come from {@code requireInspectionInScope}: a reader with
+   * the wrong organization, an unassigned Inspector or a Customer is rejected before the finding is
+   * loaded. The same locked-report guard as {@link #updateFinding} then applies, so no note can be
+   * drafted underneath a submitted or published report.
+   */
+  Finding requireEditableFinding(UUID actorId, UUID inspectionId, UUID findingId) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+    rejectLockedFindingEdits(inspectionId);
+    return requireFinding(inspectionId, findingId);
+  }
+
   private Finding requireFinding(UUID inspectionId, UUID findingId) {
     return findings
         .findByIdAndInspectionId(findingId, inspectionId)

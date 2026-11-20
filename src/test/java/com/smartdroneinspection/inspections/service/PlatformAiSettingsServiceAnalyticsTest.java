@@ -63,7 +63,7 @@ class PlatformAiSettingsServiceAnalyticsTest {
 
     AiThresholdConfig defaults = service.getThresholdConfig();
     assertThat(defaults.autoConfirmEnabled()).isTrue();
-    assertThat(defaults.autoConfirmThreshold()).isEqualByComparingTo("85.00");
+    assertThat(defaults.autoConfirmThreshold()).isEqualByComparingTo("70.00");
     assertThat(defaults.rejectedPendingCount()).isZero();
 
     ResultSet rs = mock(ResultSet.class);
@@ -161,7 +161,7 @@ class PlatformAiSettingsServiceAnalyticsTest {
               if (sql.contains("FROM platform_ai_settings")) {
                 when(rs.getBoolean("auto_confirm_enabled")).thenReturn(true);
                 when(rs.getBigDecimal("auto_confirm_threshold"))
-                    .thenReturn(new BigDecimal("85.00"));
+                    .thenReturn(new BigDecimal("70.00"));
                 when(rs.getLong("rejected_pending_count")).thenReturn(2L);
                 when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(Instant.now()));
               } else if (sql.contains("GROUP BY model_name")) {

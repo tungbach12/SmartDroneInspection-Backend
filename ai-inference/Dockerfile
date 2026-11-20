@@ -19,6 +19,11 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+ENV FASTEMBED_CACHE_PATH=/app/cache/fastembed \
+    EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+RUN mkdir -p /app/cache/fastembed \
+    && python -c "from fastembed import TextEmbedding; import os; list(TextEmbedding(model_name=os.environ['EMBEDDING_MODEL'], cache_dir=os.environ['FASTEMBED_CACHE_PATH']).embed(['warmup']))"
+
 COPY app.py ./
 
 EXPOSE 8000

@@ -5,4 +5,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("app.knowledge-ai")
 public record DroneKnowledgeProperties(
-    boolean enabled, String baseUrl, String apiKey, String embeddingModel, Duration timeout) {}
+    boolean enabled,
+    String baseUrl,
+    String apiKey,
+    String embeddingBaseUrl,
+    String embeddingApiKey,
+    String embeddingModel,
+    String chatModel,
+    Duration timeout) {}

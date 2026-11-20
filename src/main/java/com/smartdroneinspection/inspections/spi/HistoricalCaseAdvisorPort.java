@@ -12,7 +12,15 @@ import java.util.Optional;
 public interface HistoricalCaseAdvisorPort {
 
   /**
-   * Returns a 1536-dimensional embedding for {@code text}, or empty when the model is unavailable.
+   * Returns a 384-dimensional embedding for {@code text}, or empty when the model is unavailable.
    */
   Optional<float[]> embed(String text);
+
+  /**
+   * Drafts a concise technical note from the supplied image and retrieved engineering context, or
+   * empty when the chat/vision model is unconfigured, unavailable or returns no usable text. An
+   * empty result lets the inspection module synthesize the note deterministically instead of
+   * failing the request.
+   */
+  Optional<String> draftFindingNote(DraftFindingNoteCommand command);
 }

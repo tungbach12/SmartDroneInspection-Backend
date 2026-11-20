@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -14,6 +15,7 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.service.HistoricalCaseService;
+import com.smartdroneinspection.inspections.spi.DraftFindingNoteCommand;
 import com.smartdroneinspection.inspections.spi.HistoricalCaseAdvisorPort;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.Base64;
@@ -70,6 +72,8 @@ class HistoricalCaseApiIntegrationTest {
     jdbcTemplate.update(
         "UPDATE historical_finding_cases SET embedding = NULL WHERE is_anonymized_benchmark = TRUE");
     when(advisorPort.embed(anyString())).thenReturn(Optional.empty());
+    when(advisorPort.draftFindingNote(any(DraftFindingNoteCommand.class)))
+        .thenReturn(Optional.empty());
     mockMvc =
         webAppContextSetup(webApplicationContext)
             .apply(
@@ -113,7 +117,7 @@ class HistoricalCaseApiIntegrationTest {
   @Test
   void pgVectorRankingIsUsedWhenQueryAndStoredEmbeddingsExist() throws Exception {
     UUID findingId = createConfirmedFinding("Facade crack", "HIGH");
-    float[] vector = new float[1536];
+    float[] vector = new float[384];
     vector[0] = 1.0f;
     vector[1] = 0.5f;
     UUID bestCaseId =
@@ -279,6 +283,102 @@ class HistoricalCaseApiIntegrationTest {
     }
   }
 
+  @Test
+  void draftNoteProducesGroundedDeterministicNotesInEnglishAndVietnamese() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    UUID findingId = createConfirmedFinding("Facade crack", "HIGH", evidenceId);
+
+    String english =
+        mockMvc
+            .perform(
+                post(
+                        "/api/v1/inspections/{id}/findings/{fid}/draft-note",
+                        fixture.inspectionId(),
+                        findingId)
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        "{\"locale\":\"en\",\"existingNote\":\"Crack observed near the mid-span.\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.mode").value("DETERMINISTIC_RAG"))
+            .andExpect(jsonPath("$.data.retrievalMode").value("HYBRID_MATCH"))
+            .andExpect(
+                jsonPath("$.data.citedCases.length()")
+                    .value(org.hamcrest.Matchers.lessThanOrEqualTo(2)))
+            .andExpect(
+                jsonPath("$.data.citedGuidelines.length()")
+                    .value(org.hamcrest.Matchers.greaterThan(0)))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    JsonNode englishData = objectMapper.readTree(english).path("data");
+    assertThat(englishData.path("note").asString())
+        .contains("high-severity", "Facade crack", "Crack observed near the mid-span.")
+        .contains("TCVN 9343:2012", "within the marked region")
+        .doesNotContain(findingId.toString());
+
+    String vietnamese =
+        mockMvc
+            .perform(
+                post(
+                        "/api/v1/inspections/{id}/findings/{fid}/draft-note",
+                        fixture.inspectionId(),
+                        findingId)
+                    .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"locale\":\"vi\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.mode").value("DETERMINISTIC_RAG"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(objectMapper.readTree(vietnamese).path("data").path("note").asString())
+        .contains("Lỗi Facade crack", "trong vùng đã đánh dấu", "Tiêu chuẩn TCVN 9343:2012");
+  }
+
+  @Test
+  void draftNoteDeniesCustomerAndUnassignedInspector() throws Exception {
+    UUID findingId = createConfirmedFinding("Facade crack", "HIGH");
+    String url =
+        "/api/v1/inspections/" + fixture.inspectionId() + "/findings/" + findingId + "/draft-note";
+
+    mockMvc
+        .perform(
+            post(url)
+                .with(principal(fixture.reviewerId(), "CUSTOMER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isForbidden());
+    mockMvc
+        .perform(
+            post(url)
+                .with(principal(fixture.otherInspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void draftNoteIsLockedOnceTheReportIsSubmitted() throws Exception {
+    UUID evidenceId = uploadEvidence();
+    UUID findingId = createConfirmedFinding("Facade crack", "HIGH", evidenceId);
+    confirmFindings();
+    UUID versionId = createDraftVersion();
+    verifyAndSubmit(versionId);
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/findings/{fid}/draft-note",
+                    fixture.inspectionId(),
+                    findingId)
+                .with(principal(fixture.inspectorId(), "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FINDINGS_LOCKED"));
+  }
+
   private UUID uploadEvidence() throws Exception {
     MvcResult uploaded =
         mockMvc
@@ -297,18 +397,24 @@ class HistoricalCaseApiIntegrationTest {
   }
 
   private UUID createConfirmedFinding(String label, String severity) {
+    return createConfirmedFinding(label, severity, null);
+  }
+
+  private UUID createConfirmedFinding(String label, String severity, UUID evidenceId) {
     UUID findingId = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO findings (id, inspection_id, finding_code, defect_label, severity,
-                              technical_notes, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', CURRENT_TIMESTAMP)
+        INSERT INTO findings (id, inspection_id, evidence_id, finding_code, defect_label, severity,
+                              bounding_box, technical_notes, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, 'CONFIRMED', CURRENT_TIMESTAMP)
         """,
         findingId,
         fixture.inspectionId(),
+        evidenceId,
         "F-" + findingId.toString().substring(0, 6),
         label,
         severity,
+        "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}",
         "Visible during the field session");
     return findingId;
   }
