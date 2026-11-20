@@ -849,6 +849,48 @@ public class EvidenceService {
     }
   }
 
+  /**
+   * Best-effort bounded image read for advisory note drafting. Prefers the stored thumbnail and
+   * falls back to the normalized primary object key. A too-large object, missing store or storage
+   * failure yields an empty result so drafting a note is never blocked by an image fetch.
+   */
+  public Optional<AdvisoryImage> readAdvisoryImage(
+      UUID inspectionId, UUID evidenceId, int maxBytes) {
+    if (evidenceId == null || objectStore.isEmpty() || maxBytes <= 0) {
+      return Optional.empty();
+    }
+    Evidence record = evidence.findByIdAndInspectionId(evidenceId, inspectionId).orElse(null);
+    if (record == null || record.isRetired()) {
+      return Optional.empty();
+    }
+    String key =
+        firstNonBlank(
+            record.getThumbnailObjectKey(), record.getObjectKey(), record.getRawObjectKey());
+    if (key == null) {
+      return Optional.empty();
+    }
+    String contentType =
+        key.endsWith(".png") ? "image/png" : firstNonBlank(record.getContentType(), "image/jpeg");
+    try (InputStream input = objectStore.get().open(key)) {
+      byte[] bytes = input.readNBytes(maxBytes + 1);
+      if (bytes.length == 0 || bytes.length > maxBytes) {
+        return Optional.empty();
+      }
+      return Optional.of(new AdvisoryImage(bytes, contentType));
+    } catch (Exception exception) {
+      return Optional.empty();
+    }
+  }
+
+  private static String firstNonBlank(String... values) {
+    for (String value : values) {
+      if (value != null && !value.isBlank()) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
   Inspection requireAssignedInspection(UUID actorId, UUID inspectionId) {
     UserAccess.ActiveUser actor = requireActiveUser(actorId);
     if (!actor.hasRole(Roles.INSPECTOR)) {
@@ -1039,6 +1081,9 @@ public class EvidenceService {
   }
 
   public record EvidenceContent(String contentType, String fileName, InputStream stream) {}
+
+  /** A bounded image snapshot used only for advisory multimodal prompting. */
+  public record AdvisoryImage(byte[] bytes, String contentType) {}
 
   public record MediaDescriptor(
       String objectKey, String contentType, String fileName, long totalBytes) {}

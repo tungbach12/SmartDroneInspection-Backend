@@ -143,7 +143,13 @@ app:
     enabled: ${KNOWLEDGE_AI_ENABLED:${REPORT_DRAFT_ENABLED:false}}
     base-url: ${KNOWLEDGE_AI_BASE_URL:${REPORT_DRAFT_BASE_URL:http://localhost:11434}}
     api-key: ${KNOWLEDGE_AI_API_KEY:${REPORT_DRAFT_API_KEY:}}
-    embedding-model: ${KNOWLEDGE_AI_EMBEDDING_MODEL:text-embedding-3-small}
+    # Optional dedicated embedding endpoint (for local FastEmbed /v1/embeddings inside ai-inference).
+    embedding-base-url: ${KNOWLEDGE_AI_EMBEDDING_BASE_URL:}
+    embedding-api-key: ${KNOWLEDGE_AI_EMBEDDING_API_KEY:}
+    embedding-model: ${KNOWLEDGE_AI_EMBEDDING_MODEL:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+    # Chat/vision model is optional; when unset, note drafting falls back to the vision or draft
+    # model already configured for the deployment and finally to deterministic RAG synthesis.
+    chat-model: ${KNOWLEDGE_AI_CHAT_MODEL:${COMPATIBLE_VISION_MODEL:${REPORT_DRAFT_MODEL:}}}
     timeout: ${KNOWLEDGE_AI_TIMEOUT:15s}
   maintenance-advisor:
     enabled: ${MAINTENANCE_ADVISOR_ENABLED:false}

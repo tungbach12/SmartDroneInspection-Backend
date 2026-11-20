@@ -289,7 +289,7 @@ class InspectionReportApiIntegrationTest {
                     "capstone",
                     "vision-v1",
                     "surface crack",
-                    new java.math.BigDecimal("0.81"),
+                    new java.math.BigDecimal("0.61"),
                     "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}")));
 
     mockMvc
@@ -382,7 +382,7 @@ class InspectionReportApiIntegrationTest {
                     "capstone",
                     "vision-v1",
                     "surface crack",
-                    new java.math.BigDecimal("0.81"),
+                    new java.math.BigDecimal("0.61"),
                     "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}")));
     mockMvc
         .perform(
@@ -448,7 +448,7 @@ class InspectionReportApiIntegrationTest {
                     "capstone",
                     "vision-v1",
                     "surface crack",
-                    new java.math.BigDecimal("0.81"),
+                    new java.math.BigDecimal("0.61"),
                     "{}")));
     mockMvc
         .perform(

@@ -135,7 +135,7 @@ public class OpenAiCompatibleInferenceClient implements AiInferencePort {
   }
 
   /** Models often wrap JSON in a fenced block even when told not to, so the fence is tolerated. */
-  private static String stripCodeFence(String content) {
+  static String stripCodeFence(String content) {
     String trimmed = content.strip();
     if (!trimmed.startsWith("```")) {
       return trimmed;

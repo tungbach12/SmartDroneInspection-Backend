@@ -17,7 +17,9 @@ class DroneKnowledgeConfiguration {
 
   @Bean
   RestClient droneKnowledgeRestClient(DroneKnowledgeProperties properties) {
-    if (blank(properties.baseUrl())
+    String chatOrFallbackBaseUrl =
+        blank(properties.baseUrl()) ? properties.embeddingBaseUrl() : properties.baseUrl();
+    if (blank(chatOrFallbackBaseUrl)
         || blank(properties.embeddingModel())
         || properties.timeout() == null
         || properties.timeout().isNegative()
@@ -25,23 +27,38 @@ class DroneKnowledgeConfiguration {
       throw new IllegalStateException(
           "Knowledge AI endpoint, embedding model name, and positive timeout are required.");
     }
-    HttpClient httpClient = HttpClient.newBuilder().connectTimeout(properties.timeout()).build();
-    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-    requestFactory.setReadTimeout(properties.timeout());
-    return RestClient.builder()
-        .baseUrl(properties.baseUrl())
-        .requestFactory(requestFactory)
-        .build();
+    return buildClient(chatOrFallbackBaseUrl, properties.timeout());
   }
 
   @Bean
   DroneKnowledgeClient droneKnowledgeClient(
       RestClient droneKnowledgeRestClient, DroneKnowledgeProperties properties) {
+    RestClient chatClient = blank(properties.baseUrl()) ? null : droneKnowledgeRestClient;
+    RestClient embeddingClient =
+        blank(properties.embeddingBaseUrl())
+            ? droneKnowledgeRestClient
+            : buildClient(properties.embeddingBaseUrl(), properties.timeout());
+    String embeddingKey =
+        blank(properties.embeddingBaseUrl()) ? properties.apiKey() : properties.embeddingApiKey();
     return new DroneKnowledgeClient(
-        droneKnowledgeRestClient,
+        chatClient,
         properties.apiKey(),
+        embeddingClient,
+        embeddingKey,
         properties.embeddingModel(),
+        properties.chatModel(),
         new ObjectMapper());
+  }
+
+  private static RestClient buildClient(String baseUrl, java.time.Duration timeout) {
+    HttpClient httpClient =
+        HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(timeout)
+            .build();
+    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+    requestFactory.setReadTimeout(timeout);
+    return RestClient.builder().baseUrl(baseUrl).requestFactory(requestFactory).build();
   }
 
   private static boolean blank(String value) {

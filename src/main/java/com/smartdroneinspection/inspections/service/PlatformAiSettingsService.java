@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PlatformAiSettingsService {
 
-  private static final BigDecimal DEFAULT_THRESHOLD = new BigDecimal("85.00");
+  private static final BigDecimal DEFAULT_THRESHOLD = new BigDecimal("70.00");
 
   private final JdbcTemplate jdbcTemplate;
   private final PlatformAuditPort audit;

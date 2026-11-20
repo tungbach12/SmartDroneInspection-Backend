@@ -8,6 +8,7 @@ import com.smartdroneinspection.inspections.api.dto.request.BulkRetireEvidenceRe
 import com.smartdroneinspection.inspections.api.dto.request.ConfirmFindingsRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CreateReinspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.DeclineInspectionRequest;
+import com.smartdroneinspection.inspections.api.dto.request.DraftFindingNoteRequest;
 import com.smartdroneinspection.inspections.api.dto.request.FindingSourceFilter;
 import com.smartdroneinspection.inspections.api.dto.request.FindingStatusFilter;
 import com.smartdroneinspection.inspections.api.dto.request.ManualFindingRequest;
@@ -17,6 +18,7 @@ import com.smartdroneinspection.inspections.api.dto.request.UpdateDefectVerifica
 import com.smartdroneinspection.inspections.api.dto.request.UpdateEvidenceLocationRequest;
 import com.smartdroneinspection.inspections.api.dto.request.UpdateFindingRequest;
 import com.smartdroneinspection.inspections.api.dto.request.WithdrawVersionRequest;
+import com.smartdroneinspection.inspections.api.dto.response.DraftFindingNoteResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidencePageResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceUploadSessionResponse;
@@ -711,6 +713,29 @@ public class InspectionController {
   public ApiResponse<List<FindingResponse>> listFindings(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(findingService.listFindings(actorId(jwt), inspectionId));
+  }
+
+  /**
+   * Single-click technical note drafting for one finding. Authorization and locked-report guards
+   * mirror finding edits, so a note cannot be drafted for another organization or beneath a
+   * submitted or published report.
+   */
+  @PostMapping("/findings/{findingId}/draft-note")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
+  public ApiResponse<DraftFindingNoteResponse> draftFindingNote(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID findingId,
+      @RequestBody(required = false) DraftFindingNoteRequest request) {
+    String locale = request == null || request.locale() == null ? "en" : request.locale();
+    String existingNote = request == null ? null : request.existingNote();
+    return ApiResponse.success(
+        historicalCaseService
+            .map(
+                service ->
+                    service.draftFindingNote(
+                        actorId(jwt), inspectionId, findingId, locale, existingNote))
+            .orElseGet(HistoricalCaseService::emptyDraftNote));
   }
 
   /**
