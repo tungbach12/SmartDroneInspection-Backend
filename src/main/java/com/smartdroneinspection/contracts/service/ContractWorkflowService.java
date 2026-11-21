@@ -21,7 +21,7 @@ import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageRes
 import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
-import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
+import com.smartdroneinspection.contracts.api.dto.response.SepayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceManagerContactResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestOccurrenceResponse;
@@ -37,7 +37,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
-import com.smartdroneinspection.contracts.gateway.PayOSGateway;
+import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRefundRepository;
@@ -116,7 +116,7 @@ public class ContractWorkflowService
   private final Optional<EvidenceObjectStore> objectStore;
   private final InspectionFinanceSettingsService financeSettingsService;
   private final Optional<InspectionReportAccess> reportAccess;
-  private final PayOSGateway payOSGateway;
+  private final SepayGateway sepayGateway;
   private final VnPayGateway vnPayGateway;
   private final JdbcTemplate jdbcTemplate;
   private final ApplicationEventPublisher events;
@@ -139,7 +139,7 @@ public class ContractWorkflowService
       Optional<EvidenceObjectStore> objectStore,
       InspectionFinanceSettingsService financeSettingsService,
       Optional<InspectionReportAccess> reportAccess,
-      PayOSGateway payOSGateway,
+      SepayGateway sepayGateway,
       VnPayGateway vnPayGateway,
       JdbcTemplate jdbcTemplate,
       ApplicationEventPublisher events) {
@@ -155,7 +155,7 @@ public class ContractWorkflowService
     this.objectStore = objectStore;
     this.financeSettingsService = financeSettingsService;
     this.reportAccess = reportAccess;
-    this.payOSGateway = payOSGateway;
+    this.sepayGateway = sepayGateway;
     this.vnPayGateway = vnPayGateway;
     this.jdbcTemplate = jdbcTemplate;
     this.events = events;
@@ -174,7 +174,7 @@ public class ContractWorkflowService
       Optional<EvidenceObjectStore> objectStore,
       InspectionFinanceSettingsService financeSettingsService,
       Optional<InspectionReportAccess> reportAccess,
-      PayOSGateway payOSGateway,
+      SepayGateway sepayGateway,
       VnPayGateway vnPayGateway,
       JdbcTemplate jdbcTemplate) {
     this(
@@ -190,7 +190,7 @@ public class ContractWorkflowService
         objectStore,
         financeSettingsService,
         reportAccess,
-        payOSGateway,
+        sepayGateway,
         vnPayGateway,
         jdbcTemplate,
         null);
@@ -236,7 +236,7 @@ public class ContractWorkflowService
       Optional<EvidenceObjectStore> objectStore,
       InspectionFinanceSettingsService financeSettingsService,
       Optional<InspectionReportAccess> reportAccess,
-      PayOSGateway payOSGateway,
+      SepayGateway sepayGateway,
       VnPayGateway vnPayGateway) {
     this(
         requests,
@@ -251,7 +251,7 @@ public class ContractWorkflowService
         objectStore,
         financeSettingsService,
         reportAccess,
-        payOSGateway,
+        sepayGateway,
         vnPayGateway,
         null);
   }
@@ -269,7 +269,7 @@ public class ContractWorkflowService
       Optional<EvidenceObjectStore> objectStore,
       InspectionFinanceSettingsService financeSettingsService,
       Optional<InspectionReportAccess> reportAccess,
-      PayOSGateway payOSGateway) {
+      SepayGateway sepayGateway) {
     this(
         requests,
         messages,
@@ -283,7 +283,7 @@ public class ContractWorkflowService
         objectStore,
         financeSettingsService,
         reportAccess,
-        payOSGateway,
+        sepayGateway,
         new DisabledVnPayGatewayDummy(),
         null);
   }
@@ -314,7 +314,7 @@ public class ContractWorkflowService
         objectStore,
         financeSettingsService,
         reportAccess,
-        new DisabledPayOSGatewayDummy(),
+        new DisabledSepayGatewayDummy(),
         new DisabledVnPayGatewayDummy(),
         null);
   }
@@ -343,7 +343,7 @@ public class ContractWorkflowService
         objectStore,
         new InspectionFinanceSettingsService(null, users),
         Optional.empty(),
-        new DisabledPayOSGatewayDummy(),
+        new DisabledSepayGatewayDummy(),
         new DisabledVnPayGatewayDummy(),
         null);
   }
@@ -1577,7 +1577,7 @@ public class ContractWorkflowService
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
-    Long orderCode = occurrence.getPayosOrderCode();
+    Long orderCode = occurrence.getGatewayOrderCode();
     String method = occurrence.getPaymentMethod();
     if (orderCode == null || orderCode <= 0 || method == null || method.isBlank()) {
       throw failure(
@@ -1589,21 +1589,9 @@ public class ContractWorkflowService
           "PAYMENT_ORDER_NOT_CANCELLABLE",
           "Only an unpaid due order can be cancelled");
     }
-    if ("PAYOS".equalsIgnoreCase(method)) {
-      PayOSGateway.PayOSPaymentLink existing = payOSGateway.getPaymentLink(orderCode);
-      if (existing == null || "PAID".equalsIgnoreCase(existing.status())) {
-        throw failure(
-            HttpStatus.CONFLICT,
-            "PAYMENT_ORDER_UNRESOLVED",
-            "PayOS did not confirm the order is unpaid; reconcile gateway status first");
-      }
-      if (!"CANCELLED".equalsIgnoreCase(existing.status())
-          && !payOSGateway.cancelPaymentLink(orderCode)) {
-        throw failure(
-            HttpStatus.BAD_GATEWAY,
-            "PAYMENT_ORDER_CANCEL_FAILED",
-            "PayOS did not confirm order cancellation");
-      }
+    if ("SEPAY".equalsIgnoreCase(method)) {
+      // Sepay has no cancel API; the unpaid order can only be cleared manually by the manager.
+      // No gateway-side confirmation is required.
     } else if ("VNPAY".equalsIgnoreCase(method)) {
       throw failure(
           HttpStatus.CONFLICT,
@@ -1867,9 +1855,9 @@ public class ContractWorkflowService
     return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
   }
 
-  /** Customer creates a PayOS VietQR payment link for an occurrence awaiting payment. */
+  /** Customer creates a Sepay VietQR payment code for an occurrence awaiting payment. */
   @Transactional
-  public PayOSPaymentLinkResponse createPayOSPaymentLink(
+  public SepayPaymentLinkResponse createSepayPaymentLink(
       UUID actorId, UUID requestId, UUID occurrenceId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
@@ -1892,16 +1880,15 @@ public class ContractWorkflowService
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
     if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
-      PayOSGateway.PayOSPaymentLink existing =
-          occurrence.getPayosOrderCode() != null
-              ? payOSGateway.getPaymentLink(occurrence.getPayosOrderCode())
-              : null;
-      return new PayOSPaymentLinkResponse(
-          occurrence.getPayosOrderCode() != null ? occurrence.getPayosOrderCode() : 0,
-          existing != null ? existing.checkoutUrl() : null,
-          existing != null ? existing.qrCode() : null,
+      // Already settled: nothing to pay, so return the recorded order without a fresh QR.
+      long existingOrderCode =
+          occurrence.getGatewayOrderCode() != null ? occurrence.getGatewayOrderCode() : 0L;
+      return new SepayPaymentLinkResponse(
+          existingOrderCode,
+          null,
+          "SDI" + existingOrderCode,
           occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : 0,
-          existing != null ? existing.paymentLinkId() : null);
+          String.valueOf(existingOrderCode));
     }
 
     if (occurrence.getReportAcceptedAt() == null
@@ -1915,7 +1902,7 @@ public class ContractWorkflowService
       throw failure(
           HttpStatus.BAD_REQUEST,
           "CURRENCY_UNSUPPORTED",
-          "PayOS online checkout is only supported for VND contracts. Currency is "
+          "Sepay online checkout is only supported for VND contracts. Currency is "
               + occurrence.getCurrency());
     }
     if (occurrence.getTotalPrice() == null
@@ -1928,27 +1915,14 @@ public class ContractWorkflowService
 
     long amount = occurrence.getTotalPrice().longValue();
     long orderCode;
-    if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
-      if (!"PAYOS".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+    if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
+      if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
         throw failure(
             HttpStatus.CONFLICT,
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
       }
-      orderCode = occurrence.getPayosOrderCode();
-      PayOSGateway.PayOSPaymentLink existing = payOSGateway.getPaymentLink(orderCode);
-      if (existing != null && existing.checkoutUrl() != null && !existing.checkoutUrl().isBlank()) {
-        return new PayOSPaymentLinkResponse(
-            existing.orderCode(),
-            existing.checkoutUrl(),
-            existing.qrCode(),
-            amount,
-            existing.paymentLinkId());
-      }
-      throw failure(
-          HttpStatus.CONFLICT,
-          "PAYMENT_ORDER_UNRESOLVED",
-          "The existing PayOS order could not be verified as cancelled; contact the platform before retrying.");
+      orderCode = occurrence.getGatewayOrderCode();
     } else {
       orderCode = (System.currentTimeMillis() % 9000000000L) + 1000000000L;
     }
@@ -1958,45 +1932,22 @@ public class ContractWorkflowService
       description = description.substring(0, 25);
     }
 
-    String returnUrl = null;
-    String cancelUrl = null;
-    if (occurrence.getInspectionId() != null) {
-      returnUrl = payOSGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode);
-      cancelUrl = payOSGateway.resolveCancelUrl(occurrence.getInspectionId().toString());
-    }
+    SepayGateway.SepayPaymentLink link =
+        sepayGateway.createPaymentLink(orderCode, amount, description, null, null, null);
 
-    PayOSGateway.PayOSPaymentLink link;
-    try {
-      link = payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
-    } catch (IllegalStateException ex) {
-      if (ex.getMessage() != null && ex.getMessage().contains("[231]")) {
-        orderCode =
-            (System.currentTimeMillis() % 9000000000L)
-                + 2000000000L
-                + (long) (Math.random() * 10000);
-        if (occurrence.getInspectionId() != null) {
-          returnUrl =
-              payOSGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode);
-        }
-        link = payOSGateway.createPaymentLink(orderCode, amount, description, returnUrl, cancelUrl);
-      } else {
-        throw ex;
-      }
-    }
-
-    occurrence.assignPayOSOrder(orderCode, link.paymentLinkId());
+    occurrence.assignSepayOrder(orderCode, link.paymentLinkId());
     occurrences.saveAndFlush(occurrence);
 
-    return new PayOSPaymentLinkResponse(
+    return new SepayPaymentLinkResponse(
         orderCode, link.checkoutUrl(), link.qrCode(), amount, link.paymentLinkId());
   }
 
-  /** Webhook applies verified PayOS online payment to an occurrence. */
+  /** Webhook applies verified Sepay online payment to an occurrence. */
   @Transactional
-  public void applyPayOSWebhookPayment(long orderCode, long amount, String reference) {
+  public void applySepayWebhookPayment(long orderCode, long amount, String reference) {
     ServiceRequestOccurrence occurrence =
         occurrences
-            .findWithLockByPayosOrderCode(orderCode)
+            .findWithLockByGatewayOrderCode(orderCode)
             .orElseThrow(
                 () ->
                     failure(
@@ -2020,8 +1971,8 @@ public class ContractWorkflowService
     }
 
     String paymentRef =
-        (reference != null && !reference.isBlank()) ? reference.trim() : ("PAYOS-" + orderCode);
-    occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "PAYOS");
+        (reference != null && !reference.isBlank()) ? reference.trim() : ("SEPAY-" + orderCode);
+    occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "SEPAY");
     occurrences.saveAndFlush(occurrence);
     publishPaymentSettled(occurrence);
   }
@@ -2052,7 +2003,7 @@ public class ContractWorkflowService
 
     if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
       long existingOrderCode =
-          occurrence.getPayosOrderCode() != null ? occurrence.getPayosOrderCode() : 0L;
+          occurrence.getGatewayOrderCode() != null ? occurrence.getGatewayOrderCode() : 0L;
       long paidAmount =
           occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : 0L;
       return new VnPayPaymentLinkResponse(
@@ -2082,7 +2033,7 @@ public class ContractWorkflowService
     }
 
     long amount = occurrence.getTotalPrice().longValue();
-    if (occurrence.getPayosOrderCode() != null && occurrence.getPayosOrderCode() > 0) {
+    if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
       if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
         throw failure(
             HttpStatus.CONFLICT,
@@ -2129,7 +2080,7 @@ public class ContractWorkflowService
   /** Applies verified VNPay Return/IPN payment notification to an occurrence. */
   @Transactional
   public VnPayApplyResult applyVnPayPayment(long orderCode, long amountVnd, String transactionNo) {
-    Optional<ServiceRequestOccurrence> opt = occurrences.findWithLockByPayosOrderCode(orderCode);
+    Optional<ServiceRequestOccurrence> opt = occurrences.findWithLockByGatewayOrderCode(orderCode);
     if (opt.isEmpty()) {
       return new VnPayApplyResult(VnPayApplyStatus.NOT_FOUND, null);
     }
@@ -2159,7 +2110,7 @@ public class ContractWorkflowService
   @Transactional(readOnly = true)
   public Optional<String> findInspectionIdByOrderCode(long orderCode) {
     return occurrences
-        .findByPayosOrderCode(orderCode)
+        .findByGatewayOrderCode(orderCode)
         .map(ServiceRequestOccurrence::getInspectionId)
         .filter(java.util.Objects::nonNull)
         .map(UUID::toString);
@@ -2220,7 +2171,7 @@ public class ContractWorkflowService
 
   @Override
   @Transactional
-  public InspectionReportAcceptancePort.PayOSCheckoutDetails createPayOSPaymentLink(
+  public InspectionReportAcceptancePort.SepayCheckoutDetails createSepayPaymentLink(
       UUID actorId, UUID inspectionId) {
     if (actorId == null || inspectionId == null) {
       throw failure(
@@ -2241,9 +2192,9 @@ public class ContractWorkflowService
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
 
-    PayOSPaymentLinkResponse resp =
-        createPayOSPaymentLink(actorId, request.getId(), occurrence.getId());
-    return new InspectionReportAcceptancePort.PayOSCheckoutDetails(
+    SepayPaymentLinkResponse resp =
+        createSepayPaymentLink(actorId, request.getId(), occurrence.getId());
+    return new InspectionReportAcceptancePort.SepayCheckoutDetails(
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
   }
 
@@ -2292,17 +2243,22 @@ public class ContractWorkflowService
     boolean accepted = occurrence.getReportAcceptedAt() != null;
     boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
     String status = occurrence.getPaymentStatus().name();
-    Long orderCode = occurrence.getPayosOrderCode();
+    Long orderCode = occurrence.getGatewayOrderCode();
     Long amount =
         occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : null;
     String checkoutUrl = null;
     if (orderCode != null
         && orderCode > 0
-        && "PAYOS".equalsIgnoreCase(occurrence.getPaymentMethod())) {
-      PayOSGateway.PayOSPaymentLink link = payOSGateway.getPaymentLink(orderCode);
-      if (link != null) {
-        checkoutUrl = link.checkoutUrl();
-      }
+        && "SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      SepayGateway.SepayPaymentLink link =
+          sepayGateway.createPaymentLink(
+              orderCode,
+              amount != null ? amount : 0L,
+              "SDI OCC " + occurrence.getOccurrenceIndex(),
+              null,
+              null,
+              null);
+      checkoutUrl = link.checkoutUrl();
     }
     return toPaymentStatusDetails(occurrence, checkoutUrl);
   }
@@ -2357,7 +2313,7 @@ public class ContractWorkflowService
     boolean accepted = occurrence.getReportAcceptedAt() != null;
     boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
     String status = occurrence.getPaymentStatus().name();
-    Long orderCode = occurrence.getPayosOrderCode();
+    Long orderCode = occurrence.getGatewayOrderCode();
     Long amount =
         occurrence.getTotalPrice() != null ? occurrence.getTotalPrice().longValue() : null;
 
@@ -3170,19 +3126,23 @@ public class ContractWorkflowService
   public record DownloadedContract(
       String fileName, String contentType, Long sizeBytes, InputStream stream) {}
 
-  private static final class DisabledPayOSGatewayDummy implements PayOSGateway {
+  private static final class DisabledSepayGatewayDummy implements SepayGateway {
     @Override
-    public PayOSPaymentLink createPaymentLink(
-        long orderCode, long amount, String description, String returnUrl, String cancelUrl) {
+    public SepayPaymentLink createPaymentLink(
+        long orderCode,
+        long amount,
+        String description,
+        String accountNumber,
+        String bankName,
+        String accountHolder) {
       throw new BusinessException(
           HttpStatus.SERVICE_UNAVAILABLE,
           "PAYMENT_GATEWAY_DISABLED",
-          "Online payments via PayOS are not enabled. Use corporate wire transfer instead.");
+          "Online payments via Sepay are not enabled. Use corporate wire transfer instead.");
     }
 
     @Override
-    public boolean verifyWebhookSignature(
-        java.util.Map<String, Object> data, String receivedSignature) {
+    public boolean verifyWebhookApiKey(String receivedApiKey) {
       return false;
     }
   }
@@ -3194,7 +3154,7 @@ public class ContractWorkflowService
       throw new BusinessException(
           HttpStatus.SERVICE_UNAVAILABLE,
           "PAYMENT_GATEWAY_DISABLED",
-          "Online payments via VNPay are not enabled. Use PayOS or corporate wire transfer instead.");
+          "Online payments via VNPay are not enabled. Use Sepay or corporate wire transfer instead.");
     }
 
     @Override

@@ -1,34 +1,38 @@
 package com.smartdroneinspection.infrastructure.payment;
 
-import com.smartdroneinspection.contracts.gateway.PayOSGateway;
+import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.shared.exception.BusinessException;
-import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
- * Fallback gateway when PayOS is disabled in configuration.
+ * Fallback gateway when Sepay is disabled in configuration.
  *
  * <p>Fails closed for online checkout attempts with HTTP 503 PAYMENT_GATEWAY_DISABLED while keeping
  * manual corporate wire transfer available.
  */
 @Component
 @ConditionalOnProperty(
-    prefix = "app.payment.payos",
+    prefix = "app.payment.sepay",
     name = "enabled",
     havingValue = "false",
     matchIfMissing = true)
-public class DisabledPayOSGateway implements PayOSGateway {
+public class DisabledSepayGateway implements SepayGateway {
 
   @Override
-  public PayOSPaymentLink createPaymentLink(
-      long orderCode, long amount, String description, String returnUrl, String cancelUrl) {
+  public SepayPaymentLink createPaymentLink(
+      long orderCode,
+      long amount,
+      String description,
+      String accountNumber,
+      String bankName,
+      String accountHolder) {
     throw unavailable();
   }
 
   @Override
-  public boolean verifyWebhookSignature(Map<String, Object> data, String receivedSignature) {
+  public boolean verifyWebhookApiKey(String receivedApiKey) {
     return false;
   }
 
@@ -36,6 +40,6 @@ public class DisabledPayOSGateway implements PayOSGateway {
     return new BusinessException(
         HttpStatus.SERVICE_UNAVAILABLE,
         "PAYMENT_GATEWAY_DISABLED",
-        "Online payments via PayOS are not enabled. Use corporate wire transfer instead.");
+        "Online payments via Sepay are not enabled. Use corporate wire transfer instead.");
   }
 }

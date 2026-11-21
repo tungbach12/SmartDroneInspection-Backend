@@ -132,8 +132,8 @@ class VnPayWebhookAndGatewayTest {
     occurrence.acceptReport(reportVersionId, customerId);
     occurrence.assignVnPayOrder(orderCode);
 
-    when(occurrences.findWithLockByPayosOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
-    when(occurrences.findByPayosOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findWithLockByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
 
     Map<String, String> vnpParams = new LinkedHashMap<>();
     vnpParams.put("vnp_TxnRef", String.valueOf(orderCode));

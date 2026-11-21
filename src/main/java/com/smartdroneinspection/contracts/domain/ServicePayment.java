@@ -124,8 +124,8 @@ public class ServicePayment {
     updatedAt = Instant.now();
   }
 
-  void assignPayOSOrder(long orderCode) {
-    assignGatewayOrder(orderCode, "PAYOS");
+  void assignSepayOrder(long orderCode) {
+    assignGatewayOrder(orderCode, "SEPAY");
   }
 
   void assignVnPayOrder(long orderCode) {
@@ -301,7 +301,7 @@ public class ServicePayment {
 
   void confirm(String reference, String method) {
     if (paymentStatus == OccurrencePaymentStatus.PAID) {
-      String normalizedMethod = (method != null && !method.isBlank()) ? method : "PAYOS";
+      String normalizedMethod = (method != null && !method.isBlank()) ? method : "SEPAY";
       if (reference.trim().equals(paymentReference) && normalizedMethod.equals(paymentMethod)) {
         return;
       }
@@ -309,7 +309,7 @@ public class ServicePayment {
     }
     paymentStatus = OccurrencePaymentStatus.PAID;
     paymentReference = reference.trim();
-    paymentMethod = (method != null && !method.isBlank()) ? method : "PAYOS";
+    paymentMethod = (method != null && !method.isBlank()) ? method : "SEPAY";
     paymentConfirmedAt = Instant.now();
     paymentDueAt = null;
     paymentOverdueNotifiedAt = null;
@@ -340,7 +340,7 @@ public class ServicePayment {
     return paymentOverdueNotifiedAt;
   }
 
-  public Long getPayosOrderCode() {
+  public Long getGatewayOrderCode() {
     return payosOrderCode;
   }
 

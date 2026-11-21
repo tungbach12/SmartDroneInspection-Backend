@@ -205,8 +205,8 @@ class ServicePaymentSchemaMigrationTest {
         new BigDecimal("15.00"),
         new BigDecimal("10.00"));
     occurrence.acceptReport();
-    occurrence.assignPayOSOrder(9922334455L);
-    occurrence.confirmOnlinePayment("PAY-TEST-REF", new BigDecimal("11000000.00"), "PAYOS");
+    occurrence.assignSepayOrder(9922334455L);
+    occurrence.confirmOnlinePayment("PAY-TEST-REF", new BigDecimal("11000000.00"), "SEPAY");
     occurrence.recordPayout("BANK-TRANSFER-REF", customer.getId());
     occurrences.saveAndFlush(occurrence);
 

@@ -150,13 +150,14 @@ services:
       KNOWLEDGE_AI_ENABLED: ${KNOWLEDGE_AI_ENABLED:-true}
       KNOWLEDGE_AI_EMBEDDING_BASE_URL: ${KNOWLEDGE_AI_EMBEDDING_BASE_URL:-http://ai-inference:8000}
       KNOWLEDGE_AI_EMBEDDING_MODEL: ${KNOWLEDGE_AI_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-      PAYOS_ENABLED: ${PAYOS_ENABLED:-false}
-      PAYOS_BASE_URL: ${PAYOS_BASE_URL:-https://api-merchant.payos.vn}
-      PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-}
-      PAYOS_API_KEY: ${PAYOS_API_KEY:-}
-      PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-}
-      PAYOS_RETURN_URL: ${PAYOS_RETURN_URL:-http://localhost:5173/client/reports/{inspectionId}}
-      PAYOS_CANCEL_URL: ${PAYOS_CANCEL_URL:-http://localhost:5173/client/reports/{inspectionId}}
+      SEPAY_ENABLED: ${SEPAY_ENABLED:-false}
+      SEPAY_API_KEY: ${SEPAY_API_KEY:-}
+      SEPAY_ACCOUNT_NUMBER: ${SEPAY_ACCOUNT_NUMBER:-}
+      SEPAY_BANK_NAME: ${SEPAY_BANK_NAME:-}
+      SEPAY_ACCOUNT_HOLDER: ${SEPAY_ACCOUNT_HOLDER:-}
+      SEPAY_QR_BASE_URL: ${SEPAY_QR_BASE_URL:-https://vietqr.app}
+      SEPAY_RETURN_URL: ${SEPAY_RETURN_URL:-http://localhost:5173/client/reports/{inspectionId}}
+      SEPAY_CANCEL_URL: ${SEPAY_CANCEL_URL:-http://localhost:5173/client/reports/{inspectionId}}
       VNPAY_ENABLED: ${VNPAY_ENABLED:-false}
       VNPAY_PAY_URL: ${VNPAY_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
