@@ -304,7 +304,7 @@ class ContractWorkflowServiceTest {
     ArgumentCaptor<ServiceRequest> captor = ArgumentCaptor.forClass(ServiceRequest.class);
     verify(requests).saveAndFlush(captor.capture());
     assertThat(captor.getValue().getRequestedUntil()).isEqualTo(start.plusMonths(18));
-    assertThat(response.description()).contains("Bridge 1", "6 month(s)", "4 occurrence(s)");
+    assertThat(response.description()).isEqualTo("Bridge 1 · Every 6-month inspection");
   }
 
   @Test
