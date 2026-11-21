@@ -44,10 +44,10 @@ class PaymentDocumentRendererTest {
 
     String html =
         renderer.toHtml(
-            details(PaymentDocumentRenderer.Kind.RECEIPT, "PAID", "PAYOS #998877", DUE, false));
+            details(PaymentDocumentRenderer.Kind.RECEIPT, "PAID", "SEPAY #998877", DUE, false));
 
     assertThat(html).contains("Payment receipt");
-    assertThat(html).contains("PAYOS #998877");
+    assertThat(html).contains("SEPAY #998877");
     assertThat(html).contains("not an electronic VAT invoice");
     assertThat(html).doesNotContain("Payment due by");
   }
@@ -58,7 +58,7 @@ class PaymentDocumentRendererTest {
 
     byte[] pdf =
         renderer.render(
-            details(PaymentDocumentRenderer.Kind.RECEIPT, "PAID", "PAYOS #1", DUE, false));
+            details(PaymentDocumentRenderer.Kind.RECEIPT, "PAID", "SEPAY #1", DUE, false));
 
     assertThat(pdf).isNotEmpty();
     assertThat(
@@ -113,7 +113,7 @@ class PaymentDocumentRendererTest {
         new BigDecimal("90000"),
         new BigDecimal("990000"),
         status,
-        "PAYOS",
+        "SEPAY",
         reference,
         kind == PaymentDocumentRenderer.Kind.RECEIPT ? Instant.parse("2026-11-12T02:00:00Z") : null,
         ACCEPTED,

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * Fallback gateway when VNPay is disabled in configuration.
  *
  * <p>Fails closed for online checkout attempts with HTTP 503 PAYMENT_GATEWAY_DISABLED while keeping
- * PayOS and corporate wire transfer available.
+ * Sepay and corporate wire transfer available.
  */
 @Component
 @ConditionalOnProperty(
@@ -36,6 +36,6 @@ public class DisabledVnPayGateway implements VnPayGateway {
     return new BusinessException(
         HttpStatus.SERVICE_UNAVAILABLE,
         "PAYMENT_GATEWAY_DISABLED",
-        "Online payments via VNPay are not enabled. Configure VNPAY_ENABLED=true with merchant credentials or use PayOS / corporate wire transfer.");
+        "Online payments via VNPay are not enabled. Configure VNPAY_ENABLED=true with merchant credentials or use Sepay / corporate wire transfer.");
   }
 }

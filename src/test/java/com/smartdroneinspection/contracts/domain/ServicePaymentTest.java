@@ -41,7 +41,7 @@ class ServicePaymentTest {
     Instant deadline = occurrence.getPaymentDueAt();
     occurrence.markOverdueNotified(deadline.plus(Duration.ofDays(1)));
 
-    occurrence.confirmOnlinePayment("PAYOS-123", new BigDecimal("100.00"), "PAYOS");
+    occurrence.confirmOnlinePayment("SEPAY-123", new BigDecimal("100.00"), "SEPAY");
 
     assertThat(occurrence.getPaymentStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAID);

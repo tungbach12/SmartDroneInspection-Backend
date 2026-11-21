@@ -162,7 +162,7 @@ public record ServiceRequestOccurrenceResponse(
             occurrence.getReportAcceptedAt()),
         new OccurrenceFinanceResponse.ServicePaymentSummary(
             occurrence.getPaymentStatus(),
-            occurrence.getPayosOrderCode(),
+            occurrence.getGatewayOrderCode(),
             occurrence.getPaymentMethod(),
             occurrence.getPaymentReference(),
             occurrence.getPaymentConfirmedAt()),

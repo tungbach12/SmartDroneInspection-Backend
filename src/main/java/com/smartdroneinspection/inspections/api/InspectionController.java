@@ -885,9 +885,9 @@ public class InspectionController {
         reportService.requestCustomerClarification(actorId(jwt), inspectionId, versionId, reason));
   }
 
-  @PostMapping("/payos/create-payment-link")
+  @PostMapping("/sepay/create-payment-link")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
-  public ApiResponse<InspectionReportAcceptancePort.PayOSCheckoutDetails> createPayOSPaymentLink(
+  public ApiResponse<InspectionReportAcceptancePort.SepayCheckoutDetails> createSepayPaymentLink(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     if (reportAcceptancePort.isEmpty()) {
       throw new BusinessException(
@@ -896,7 +896,7 @@ public class InspectionController {
           "Inspection payment service is not configured");
     }
     return ApiResponse.success(
-        reportAcceptancePort.get().createPayOSPaymentLink(actorId(jwt), inspectionId));
+        reportAcceptancePort.get().createSepayPaymentLink(actorId(jwt), inspectionId));
   }
 
   @PostMapping("/vnpay/create-payment-url")

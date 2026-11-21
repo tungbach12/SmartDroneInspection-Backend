@@ -14,8 +14,8 @@ public interface InspectionReportAcceptancePort {
   /** Accepts the published report version for the occurrence associated with this inspection. */
   void acceptReport(UUID actorId, UUID inspectionId, UUID reportVersionId);
 
-  /** Creates a PayOS checkout link for the occurrence associated with this inspection. */
-  PayOSCheckoutDetails createPayOSPaymentLink(UUID actorId, UUID inspectionId);
+  /** Creates a Sepay VietQR code for the occurrence associated with this inspection. */
+  SepayCheckoutDetails createSepayPaymentLink(UUID actorId, UUID inspectionId);
 
   /** Creates a VNPay checkout link for the occurrence associated with this inspection. */
   default VnPayCheckoutDetails createVnPayPaymentLink(
@@ -35,7 +35,7 @@ public interface InspectionReportAcceptancePort {
     return Map.of();
   }
 
-  record PayOSCheckoutDetails(
+  record SepayCheckoutDetails(
       long orderCode, long amount, String paymentLinkId, String checkoutUrl, String qrCode) {}
 
   record VnPayCheckoutDetails(long orderCode, long amount, String txnRef, String checkoutUrl) {}

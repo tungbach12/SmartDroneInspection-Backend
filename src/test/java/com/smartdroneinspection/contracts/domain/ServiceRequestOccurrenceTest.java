@@ -217,12 +217,12 @@ class ServiceRequestOccurrenceTest {
   void onlinePaymentConfirmationRecordsGatewayMethod() {
     ServiceRequestOccurrence occurrence = occurrence();
     occurrence.acceptReport();
-    occurrence.assignPayOSOrder(12345L);
+    occurrence.assignSepayOrder(12345L);
 
-    occurrence.confirmOnlinePayment("PAYOS-1", TOTAL, "PAYOS");
+    occurrence.confirmOnlinePayment("SEPAY-1", TOTAL, "SEPAY");
 
-    assertThat(occurrence.getPaymentMethod()).isEqualTo("PAYOS");
-    assertThat(occurrence.getPayosOrderCode()).isEqualTo(12345L);
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("SEPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(12345L);
     assertThat(occurrence.getPaymentStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PAID);
   }
@@ -230,24 +230,24 @@ class ServiceRequestOccurrenceTest {
   @Test
   void gatewayOrderLifecycleRejectsConflicts() {
     ServiceRequestOccurrence occurrence = occurrence();
-    assertThatThrownBy(() -> occurrence.assignPayOSOrder(1L))
+    assertThatThrownBy(() -> occurrence.assignSepayOrder(1L))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not due");
 
     occurrence.acceptReport();
-    occurrence.assignPayOSOrder(42L);
-    occurrence.assignPayOSOrder(42L);
-    assertThat(occurrence.hasActivePaymentOrder("PAYOS")).isTrue();
+    occurrence.assignSepayOrder(42L);
+    occurrence.assignSepayOrder(42L);
+    assertThat(occurrence.hasActivePaymentOrder("SEPAY")).isTrue();
     assertThat(occurrence.hasActivePaymentOrder("VNPAY")).isFalse();
-    assertThatThrownBy(() -> occurrence.assignPayOSOrder(43L))
+    assertThatThrownBy(() -> occurrence.assignSepayOrder(43L))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("active payment order");
     assertThatThrownBy(() -> occurrence.assignVnPayOrder(44L))
         .isInstanceOf(IllegalStateException.class);
-    assertThatThrownBy(() -> occurrence.clearUnpaidPaymentOrder(43L, "PAYOS"))
+    assertThatThrownBy(() -> occurrence.clearUnpaidPaymentOrder(43L, "SEPAY"))
         .isInstanceOf(IllegalStateException.class);
-    occurrence.clearUnpaidPaymentOrder(42L, "PAYOS");
-    assertThat(occurrence.getPayosOrderCode()).isNull();
+    occurrence.clearUnpaidPaymentOrder(42L, "SEPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isNull();
     occurrence.assignVnPayOrder(44L);
     assertThat(occurrence.hasActivePaymentOrder("VNPAY")).isTrue();
   }

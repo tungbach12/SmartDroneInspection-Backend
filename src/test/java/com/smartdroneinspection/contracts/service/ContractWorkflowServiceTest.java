@@ -33,7 +33,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
-import com.smartdroneinspection.contracts.gateway.PayOSGateway;
+import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageAttachmentRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageRepository;
@@ -83,7 +83,7 @@ class ContractWorkflowServiceTest {
   private EvidenceObjectStore objectStore;
   private InspectionFinanceSettingsService financeSettingsService;
   private InspectionReportAccess reportAccess;
-  private PayOSGateway payOSGateway;
+  private SepayGateway sepayGateway;
   private VnPayGateway vnPayGateway;
   private ApplicationEventPublisher events;
   private ContractWorkflowService service;
@@ -110,7 +110,7 @@ class ContractWorkflowServiceTest {
     objectStore = mock(EvidenceObjectStore.class);
     financeSettingsService = mock(InspectionFinanceSettingsService.class);
     reportAccess = mock(InspectionReportAccess.class);
-    payOSGateway = mock(PayOSGateway.class);
+    sepayGateway = mock(SepayGateway.class);
     vnPayGateway = mock(VnPayGateway.class);
     events = mock(ApplicationEventPublisher.class);
 
@@ -128,7 +128,7 @@ class ContractWorkflowServiceTest {
             Optional.of(objectStore),
             financeSettingsService,
             Optional.of(reportAccess),
-            payOSGateway,
+            sepayGateway,
             vnPayGateway,
             null,
             events);
@@ -304,7 +304,7 @@ class ContractWorkflowServiceTest {
     ArgumentCaptor<ServiceRequest> captor = ArgumentCaptor.forClass(ServiceRequest.class);
     verify(requests).saveAndFlush(captor.capture());
     assertThat(captor.getValue().getRequestedUntil()).isEqualTo(start.plusMonths(18));
-    assertThat(response.description()).contains("Bridge 1", "6 month(s)", "4 occurrence(s)");
+    assertThat(response.description()).isEqualTo("Bridge 1 · Every 6-month inspection");
   }
 
   @Test
@@ -644,7 +644,7 @@ class ContractWorkflowServiceTest {
         new BigDecimal("15.00"),
         new BigDecimal("10.00"));
     paidOccurrence.acceptReport(UUID.randomUUID(), customerId);
-    paidOccurrence.confirmOnlinePayment("PAY-200", new BigDecimal("11000000.00"), "PAYOS");
+    paidOccurrence.confirmOnlinePayment("PAY-200", new BigDecimal("11000000.00"), "SEPAY");
 
     var pageable = org.springframework.data.domain.PageRequest.of(0, 20);
     var page =
@@ -2304,7 +2304,7 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  void unpaidPaymentOrderCannotBeOverwrittenAndPayosMustConfirmCancellation() {
+  void unpaidSepayPaymentOrderCanBeClearedWithoutGatewayConfirmation() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
     ServiceRequest request =
@@ -2317,33 +2317,19 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
     occurrence.acceptReport(UUID.randomUUID(), customerId);
-    occurrence.assignPayOSOrder(123456L);
+    occurrence.assignSepayOrder(123456L);
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
         .thenReturn(List.of(occurrence));
     when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
-    when(payOSGateway.getPaymentLink(123456L))
-        .thenReturn(
-            new PayOSGateway.PayOSPaymentLink(
-                123456L, "https://pay.test/123456", "qr", 100000L, "link-1", "PENDING"));
-    when(payOSGateway.cancelPaymentLink(123456L)).thenReturn(true);
 
     service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId);
-    assertThat(occurrence.getPayosOrderCode()).isNull();
-    assertThat(occurrence.getPaymentMethod()).isNull();
 
-    occurrence.assignPayOSOrder(123456L);
-    when(payOSGateway.getPaymentLink(123456L))
-        .thenReturn(
-            new PayOSGateway.PayOSPaymentLink(
-                123456L, "https://pay.test/123456", "qr", 100000L, "link-1", "PENDING"));
-    when(payOSGateway.cancelPaymentLink(123456L)).thenReturn(false);
-    assertThatThrownBy(() -> service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("did not confirm order cancellation");
-    assertThat(occurrence.getPayosOrderCode()).isEqualTo(123456L);
+    verifyNoInteractions(sepayGateway);
+    assertThat(occurrence.getGatewayOrderCode()).isNull();
+    assertThat(occurrence.getPaymentMethod()).isNull();
   }
 
   @Test
@@ -2373,7 +2359,7 @@ class ContractWorkflowServiceTest {
         new BigDecimal("850000.00"),
         new BigDecimal("7650000.00"));
     occurrence.acceptReport(UUID.randomUUID(), customerId);
-    occurrence.confirmOnlinePayment("PAYOS-REFUND-TEST", new BigDecimal("11000000.00"), "PAYOS");
+    occurrence.confirmOnlinePayment("SEPAY-REFUND-TEST", new BigDecimal("11000000.00"), "SEPAY");
 
     ServiceRefund partial =
         occurrence.initiateRefund(
@@ -2468,7 +2454,7 @@ class ContractWorkflowServiceTest {
     occurrence.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
     occurrence.snapshotFinance(new BigDecimal("100.00"), null, null, null);
     occurrence.acceptReport(UUID.randomUUID(), customerId);
-    occurrence.confirmOnlinePayment("PAY-100", new BigDecimal("100.00"), "PAYOS");
+    occurrence.confirmOnlinePayment("PAY-100", new BigDecimal("100.00"), "SEPAY");
 
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);

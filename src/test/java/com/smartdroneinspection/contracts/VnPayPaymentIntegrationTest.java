@@ -261,7 +261,7 @@ class VnPayPaymentIntegrationTest {
     long allocatedOrderCode = objectMapper.readTree(urlResponse).at("/data/orderCode").longValue();
 
     ServiceRequestOccurrence occAfterUrl = occurrences.findById(occurrenceId).orElseThrow();
-    assertThat(occAfterUrl.getPayosOrderCode()).isEqualTo(allocatedOrderCode);
+    assertThat(occAfterUrl.getGatewayOrderCode()).isEqualTo(allocatedOrderCode);
     assertThat(occAfterUrl.getPaymentMethod()).isEqualTo("VNPAY");
     assertThat(occAfterUrl.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 

@@ -17,7 +17,7 @@ import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageRes
 import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
-import com.smartdroneinspection.contracts.api.dto.response.PayOSPaymentLinkResponse;
+import com.smartdroneinspection.contracts.api.dto.response.SepayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
 import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.service.ContractWorkflowService;
@@ -406,13 +406,13 @@ public class ContractWorkflowController {
         workflow.getOccurrenceFinance(actorId(jwt), requestId, occurrenceId));
   }
 
-  @PostMapping("/{requestId}/occurrences/{occurrenceId}/payos/create-payment-link")
-  public ApiResponse<PayOSPaymentLinkResponse> createPayOSPaymentLink(
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/sepay/create-payment-link")
+  public ApiResponse<SepayPaymentLinkResponse> createSepayPaymentLink(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID requestId,
       @PathVariable UUID occurrenceId) {
     return ApiResponse.success(
-        workflow.createPayOSPaymentLink(actorId(jwt), requestId, occurrenceId));
+        workflow.createSepayPaymentLink(actorId(jwt), requestId, occurrenceId));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/vnpay/create-payment-url")

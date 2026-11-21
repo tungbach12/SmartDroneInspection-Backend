@@ -115,13 +115,13 @@ public interface ServiceRequestOccurrenceRepository
 
   @Query(
       "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment where payment.payosOrderCode = :payosOrderCode")
-  Optional<ServiceRequestOccurrence> findByPayosOrderCode(
+  Optional<ServiceRequestOccurrence> findByGatewayOrderCode(
       @Param("payosOrderCode") Long payosOrderCode);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
       "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payment payment where payment.payosOrderCode = :orderCode")
-  Optional<ServiceRequestOccurrence> findWithLockByPayosOrderCode(
+  Optional<ServiceRequestOccurrence> findWithLockByGatewayOrderCode(
       @Param("orderCode") Long orderCode);
 
   @Query(

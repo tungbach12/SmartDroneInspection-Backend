@@ -24,10 +24,9 @@ import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus;
-import com.smartdroneinspection.contracts.gateway.PayOSGateway;
+import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestOccurrenceRepository;
 import com.smartdroneinspection.contracts.repository.ServiceRequestRepository;
-import com.smartdroneinspection.infrastructure.payment.PayOSCrypto;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.domain.User;
@@ -62,16 +61,15 @@ import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(
     properties = {
-      "app.payment.payos.enabled=true",
-      "app.payment.payos.client-id=test-client-id",
-      "app.payment.payos.api-key=test-api-key",
-      "app.payment.payos.checksum-key=test_payos_checksum_key_12345",
-      "app.payment.payos.base-url=https://api-merchant.payos.vn"
+      "app.payment.sepay.enabled=true",
+      "app.payment.sepay.api-key=test-sepay-api-key",
+      "app.payment.sepay.account-number=0123456789",
+      "app.payment.sepay.bank-name=MB",
+      "app.payment.sepay.account-holder=TEST HOLDER"
     })
 @Import(TestcontainersConfiguration.class)
-class PayOSPaymentIntegrationTest {
+class SepayPaymentIntegrationTest {
 
-  private static final String TEST_CHECKSUM_KEY = "test_payos_checksum_key_12345";
   private static final byte[] VALID_PNG_BYTES =
       Base64.getDecoder()
           .decode(
@@ -89,7 +87,7 @@ class PayOSPaymentIntegrationTest {
   @Autowired InspectionReportRepository reports;
   @Autowired JdbcTemplate jdbcTemplate;
 
-  @MockitoBean PayOSGateway payOSGateway;
+  @MockitoBean SepayGateway sepayGateway;
 
   private MockMvc mockMvc;
 
@@ -106,27 +104,29 @@ class PayOSPaymentIntegrationTest {
     mockMvc =
         MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
 
-    // Mock PayOS gateway behavior
-    when(payOSGateway.createPaymentLink(anyLong(), anyLong(), anyString(), any(), any()))
+    // Mock Sepay gateway behavior
+    when(sepayGateway.createPaymentLink(anyLong(), anyLong(), anyString(), any(), any(), any()))
         .thenAnswer(
             invocation -> {
               long orderCode = invocation.getArgument(0);
               long amount = invocation.getArgument(1);
-              return new PayOSGateway.PayOSPaymentLink(
+              return new SepayGateway.SepayPaymentLink(
                   orderCode,
-                  "https://pay.payos.vn/web/test-" + orderCode,
-                  "00020101021238540010A00000072701260006970422011212345678900208QRIBFTTA5204",
+                  "https://vietqr.app/img?acc=0123456789&bank=MB&amount="
+                      + amount
+                      + "&des=SDI"
+                      + orderCode,
+                  "SDI" + orderCode,
                   amount,
-                  "plink_" + orderCode,
+                  String.valueOf(orderCode),
                   "PENDING");
             });
 
-    when(payOSGateway.verifyWebhookSignature(any(), any()))
+    when(sepayGateway.verifyWebhookApiKey(any()))
         .thenAnswer(
             invocation -> {
-              Map<String, Object> data = invocation.getArgument(0);
-              String signature = invocation.getArgument(1);
-              return PayOSCrypto.verifyWebhookSignature(data, signature, TEST_CHECKSUM_KEY);
+              String key = invocation.getArgument(0);
+              return "test-sepay-api-key".equals(key);
             });
 
     // Clean tables
@@ -162,7 +162,7 @@ class PayOSPaymentIntegrationTest {
 
     customerUserId =
         createUser(
-            UserRole.CUSTOMER, "customer." + UUID.randomUUID() + "@payos.test", "Customer Primary");
+            UserRole.CUSTOMER, "customer." + UUID.randomUUID() + "@sepay.test", "Customer Primary");
 
     otherCustomerUserId =
         createUser(
@@ -249,8 +249,8 @@ class PayOSPaymentIntegrationTest {
 
   @Test
   @DisplayName(
-      "Full PayOS Lifecycle: Create Link, Webhook Settlement, Idempotency, and Deliverable Unblocking")
-  void testFullPayOSLifecycle() throws Exception {
+      "Full Sepay Lifecycle: Create Link, Webhook Settlement, Idempotency, and Deliverable Unblocking")
+  void testFullSepayLifecycle() throws Exception {
     // 1. Setup Service Request through acceptance and report publishing
     PreparedInspection prepared = prepareInspectionReadyForPayment();
     UUID requestId = prepared.requestId();
@@ -273,18 +273,18 @@ class PayOSPaymentIntegrationTest {
     mockMvc
         .perform(
             post(
-                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/payos/create-payment-link",
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/sepay/create-payment-link",
                     requestId,
                     occurrenceId)
                 .with(principal(otherCustomerUserId, "CUSTOMER")))
         .andExpect(status().isNotFound());
 
-    // 4. Customer creates PayOS payment link
+    // 4. Customer creates Sepay payment link
     String linkResponse =
         mockMvc
             .perform(
                 post(
-                        "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/payos/create-payment-link",
+                        "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/sepay/create-payment-link",
                         requestId,
                         occurrenceId)
                     .with(principal(customerUserId, "CUSTOMER")))
@@ -301,93 +301,80 @@ class PayOSPaymentIntegrationTest {
     long allocatedOrderCode = objectMapper.readTree(linkResponse).at("/data/orderCode").longValue();
     assertThat(allocatedOrderCode).isGreaterThanOrEqualTo(100001L);
 
-    // Verify occurrence has been assigned orderCode and method PAYOS
+    // Verify occurrence has been assigned orderCode and method SEPAY
     ServiceRequestOccurrence occAfterLink = occurrences.findById(occurrenceId).orElseThrow();
-    assertThat(occAfterLink.getPayosOrderCode()).isEqualTo(allocatedOrderCode);
-    assertThat(occAfterLink.getPaymentMethod()).isEqualTo("PAYOS");
+    assertThat(occAfterLink.getGatewayOrderCode()).isEqualTo(allocatedOrderCode);
+    assertThat(occAfterLink.getPaymentMethod()).isEqualTo("SEPAY");
     assertThat(occAfterLink.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
-    // 5. Webhook: Rejects invalid signature with 401
-    Map<String, Object> webhookData = new LinkedHashMap<>();
-    webhookData.put("orderCode", allocatedOrderCode);
-    webhookData.put("amount", agreedPrice);
-    webhookData.put("reference", "PAYOS-TXN-12345");
-    webhookData.put("code", "00");
-
-    Map<String, Object> invalidPayload =
-        Map.of(
-            "code", "00",
-            "desc", "success",
-            "data", webhookData,
-            "signature", "invalid_forged_hex_signature");
+    // 5. Webhook: Rejects invalid API key with 401
+    Map<String, Object> validSepayPayload = new LinkedHashMap<>();
+    validSepayPayload.put("id", 1L);
+    validSepayPayload.put("gateway", "MB");
+    validSepayPayload.put("transactionDate", "2027-03-01 10:00:00");
+    validSepayPayload.put("accountNumber", "0123456789");
+    validSepayPayload.put("subAccount", null);
+    validSepayPayload.put("code", String.valueOf(allocatedOrderCode));
+    validSepayPayload.put("content", "SDI" + allocatedOrderCode);
+    validSepayPayload.put("transferType", "in");
+    validSepayPayload.put("description", "SDI" + allocatedOrderCode);
+    validSepayPayload.put("transferAmount", agreedPrice);
+    validSepayPayload.put("accumulated", 0L);
+    validSepayPayload.put("referenceCode", "SEPAY-TXN-12345");
 
     mockMvc
         .perform(
-            post("/api/v1/webhooks/payos")
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey wrong-key")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(invalidPayload)))
+                .content(objectMapper.writeValueAsString(validSepayPayload)))
         .andExpect(status().isUnauthorized());
 
     // Occurrence remains PAYMENT_DUE
     assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
         .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
-    // 6. Webhook: Rejects amount mismatch with 400 Bad Request
-    Map<String, Object> mismatchData = new LinkedHashMap<>(webhookData);
-    mismatchData.put("amount", 1000000L); // mismatch!
-    String mismatchCanonical =
-        "amount=1000000&code=00&orderCode=" + allocatedOrderCode + "&reference=PAYOS-TXN-12345";
-    String mismatchSig = PayOSCrypto.hmacSha256Hex(mismatchCanonical, TEST_CHECKSUM_KEY);
-
-    Map<String, Object> mismatchPayload =
-        Map.of("code", "00", "desc", "success", "data", mismatchData, "signature", mismatchSig);
-
+    // 6. Webhook: amount mismatch is reported and does not settle
+    Map<String, Object> mismatchPayload = new LinkedHashMap<>(validSepayPayload);
+    mismatchPayload.put("transferAmount", 1000000L); // mismatch!
     mockMvc
         .perform(
-            post("/api/v1/webhooks/payos")
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey test-sepay-api-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(mismatchPayload)))
         .andExpect(status().isBadRequest());
 
-    // 7. Webhook: Valid signature settles payment and marks occurrence PAID
-    String validCanonical =
-        "amount="
-            + agreedPrice
-            + "&code=00&orderCode="
-            + allocatedOrderCode
-            + "&reference=PAYOS-TXN-12345";
-    String validSig = PayOSCrypto.hmacSha256Hex(validCanonical, TEST_CHECKSUM_KEY);
-
-    Map<String, Object> validPayload =
-        Map.of("code", "00", "desc", "success", "data", webhookData, "signature", validSig);
-
+    // 7. Webhook: valid API key settles payment and marks occurrence PAID
     mockMvc
         .perform(
-            post("/api/v1/webhooks/payos")
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey test-sepay-api-key")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(validPayload)))
+                .content(objectMapper.writeValueAsString(validSepayPayload)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.code").value("00"))
-        .andExpect(jsonPath("$.desc").value("success"));
+        .andExpect(jsonPath("$.success").value(true));
 
     // Customer payment settles; Inspector payout is only eligible, not automatically disbursed.
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
     assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
     assertThat(settledOcc.getPayoutReference()).isNull();
-    assertThat(settledOcc.getPaymentReference()).isEqualTo("PAYOS-TXN-12345");
+    assertThat(settledOcc.getPaymentReference()).isEqualTo("SEPAY-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(settledOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
 
     // 8. Idempotency: Duplicate webhook delivery is a safe no-op returning 200 OK
     mockMvc
         .perform(
-            post("/api/v1/webhooks/payos")
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey test-sepay-api-key")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(validPayload)))
+                .content(objectMapper.writeValueAsString(validSepayPayload)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.code").value("00"));
+        .andExpect(jsonPath("$.success").value(true));
 
+    // 9. Deliverable download is unblocked! Customer can download report PDF now
     // 9. Deliverable download is unblocked! Customer can download report PDF now
     mockMvc
         .perform(
@@ -400,7 +387,7 @@ class PayOSPaymentIntegrationTest {
   }
 
   @Test
-  @DisplayName("Cannot create PayOS payment link before report acceptance (PAYMENT_NOT_DUE)")
+  @DisplayName("Cannot create Sepay payment link before report acceptance (PAYMENT_NOT_DUE)")
   void cannotCreatePaymentLinkBeforeAcceptance() throws Exception {
     ZoneId utc = ZoneId.of("UTC");
     LocalDate reqDate = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
@@ -419,7 +406,7 @@ class PayOSPaymentIntegrationTest {
                                 "assetId",
                                 assetId,
                                 "description",
-                                "PayOS E2E Pre-Acceptance Test",
+                                "Sepay E2E Pre-Acceptance Test",
                                 "requestedFrom",
                                 reqDate,
                                 "requestedUntil",
@@ -470,7 +457,7 @@ class PayOSPaymentIntegrationTest {
     mockMvc
         .perform(
             post(
-                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/payos/create-payment-link",
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/sepay/create-payment-link",
                     requestId,
                     occurrenceId)
                 .with(principal(customerUserId, "CUSTOMER")))
@@ -500,7 +487,7 @@ class PayOSPaymentIntegrationTest {
                                 "assetId",
                                 assetId,
                                 "description",
-                                "PayOS full lifecycle test",
+                                "Sepay full lifecycle test",
                                 "requestedFrom",
                                 reqDate,
                                 "requestedUntil",
@@ -612,7 +599,7 @@ class PayOSPaymentIntegrationTest {
                             "fileName",
                             "p1.pdf",
                             "permitNumber",
-                            "GP-PAYOS-001",
+                            "GP-SEPAY-001",
                             "issuingAuthority",
                             "Cục Tác chiến - BTTM",
                             "validFrom",

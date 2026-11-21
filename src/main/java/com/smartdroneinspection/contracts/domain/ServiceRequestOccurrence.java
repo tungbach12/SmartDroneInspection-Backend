@@ -155,13 +155,13 @@ public class ServiceRequestOccurrence {
     updatedAt = payment.getPaymentConfirmedAt();
   }
 
-  public void assignPayOSOrder(long orderCode) {
-    payment.assignPayOSOrder(orderCode);
+  public void assignSepayOrder(long orderCode) {
+    payment.assignSepayOrder(orderCode);
     updatedAt = Instant.now();
   }
 
-  public void assignPayOSOrder(long orderCode, String paymentLinkId) {
-    assignPayOSOrder(orderCode);
+  public void assignSepayOrder(long orderCode, String paymentLinkId) {
+    assignSepayOrder(orderCode);
   }
 
   public void assignVnPayOrder(long orderCode) {
@@ -907,8 +907,8 @@ public class ServiceRequestOccurrence {
     return payment.getPaymentConfirmedAt();
   }
 
-  public Long getPayosOrderCode() {
-    return payment.getPayosOrderCode();
+  public Long getGatewayOrderCode() {
+    return payment.getGatewayOrderCode();
   }
 
   public String getPaymentMethod() {

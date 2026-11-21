@@ -41,7 +41,7 @@ class OccurrenceFinanceResponseTest {
     assertThat(response.inspectorReceivables().getFirst().recoveries()).hasSize(1);
     assertThat(response.accountingDisclaimer()).contains("MVP assumption");
     assertThat(response.invoice().totalPrice()).isEqualByComparingTo(TOTAL);
-    assertThat(response.payment().method()).isEqualTo("PAYOS");
+    assertThat(response.payment().method()).isEqualTo("SEPAY");
     assertThat(response.payout().heldForRefund()).isFalse();
   }
 
@@ -97,8 +97,8 @@ class OccurrenceFinanceResponseTest {
     occurrence.assign(inspectorId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
     occurrence.acceptReport(UUID.randomUUID(), UUID.randomUUID());
     UUID managerId = UUID.randomUUID();
-    occurrence.assignPayOSOrder(1001L);
-    occurrence.confirmPayment("PAYOS-1", TOTAL, managerId);
+    occurrence.assignSepayOrder(1001L);
+    occurrence.confirmPayment("SEPAY-1", TOTAL, managerId);
     occurrence.recordPayout("PAYOUT-1", managerId);
 
     ServiceRefund refund =

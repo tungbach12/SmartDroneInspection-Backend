@@ -52,7 +52,7 @@ public record OccurrenceFinanceResponse(
 
   public record ServicePaymentSummary(
       OccurrencePaymentStatus status,
-      Long payosOrderCode,
+      Long gatewayOrderCode,
       String method,
       String reference,
       Instant confirmedAt) {}
@@ -227,7 +227,7 @@ public record OccurrenceFinanceResponse(
   private static ServicePaymentSummary paymentSummary(ServiceRequestOccurrence occurrence) {
     return new ServicePaymentSummary(
         occurrence.getPaymentStatus(),
-        occurrence.getPayosOrderCode(),
+        occurrence.getGatewayOrderCode(),
         occurrence.getPaymentMethod(),
         occurrence.getPaymentReference(),
         occurrence.getPaymentConfirmedAt());
@@ -331,7 +331,7 @@ public record OccurrenceFinanceResponse(
             occurrence.getReportAcceptedAt()),
         new ServicePaymentSummary(
             occurrence.getPaymentStatus(),
-            occurrence.getPayosOrderCode(),
+            occurrence.getGatewayOrderCode(),
             occurrence.getPaymentMethod(),
             null,
             occurrence.getPaymentConfirmedAt()),
@@ -378,7 +378,7 @@ public record OccurrenceFinanceResponse(
         invoiceSummary(occurrence),
         new ServicePaymentSummary(
             occurrence.getPaymentStatus(),
-            occurrence.getPayosOrderCode(),
+            occurrence.getGatewayOrderCode(),
             occurrence.getPaymentMethod(),
             null,
             occurrence.getPaymentConfirmedAt()),
