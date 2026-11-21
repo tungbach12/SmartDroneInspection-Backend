@@ -3,6 +3,8 @@ package com.smartdroneinspection.contracts.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -2330,6 +2332,122 @@ class ContractWorkflowServiceTest {
     verifyNoInteractions(sepayGateway);
     assertThat(occurrence.getGatewayOrderCode()).isNull();
     assertThat(occurrence.getPaymentMethod()).isNull();
+  }
+
+  @Test
+  void vnPayOrderBlocksRetryWhileLiveAndReleasesOnceExpired() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.assignVnPayOrder(555001L);
+
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    when(vnPayGateway.orderLifetimeMinutes()).thenReturn(15);
+
+    // Live order cannot be retried or cancelled
+    assertThatThrownBy(
+            () -> service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("code")
+        .isEqualTo("PAYMENT_ORDER_UNRESOLVED");
+    assertThatThrownBy(() -> service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId))
+        .isInstanceOf(BusinessException.class)
+        .extracting("code")
+        .isEqualTo("PAYMENT_ORDER_UNRESOLVED");
+
+    // Backdate gatewayOrderCreatedAt past lifetime + grace (20 minutes)
+    ReflectionTestUtils.setField(
+        occurrence.getPayment(),
+        "gatewayOrderCreatedAt",
+        Instant.now().minus(java.time.Duration.ofMinutes(25)));
+
+    when(vnPayGateway.createPaymentUrl(anyLong(), eq(100000L), anyString(), eq("127.0.0.1"), any()))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new VnPayGateway.VnPayPaymentLink(
+                  code, "https://sandbox.vnpayment.vn/pay?" + code, 100000L, String.valueOf(code));
+            });
+
+    var link = service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
+    assertThat(link.orderCode()).isNotEqualTo(555001L);
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(link.orderCode());
+
+    // Backdate the new order and verify manager can clear it once expired
+    ReflectionTestUtils.setField(
+        occurrence.getPayment(),
+        "gatewayOrderCreatedAt",
+        Instant.now().minus(java.time.Duration.ofMinutes(25)));
+    service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId);
+    assertThat(occurrence.getGatewayOrderCode()).isNull();
+    assertThat(occurrence.getPaymentMethod()).isNull();
+  }
+
+  @Test
+  void onlineCheckoutRejectsFractionalVndAmount() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.snapshotFinance(new BigDecimal("100000.50"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+
+    assertThatThrownBy(() -> service.createSepayPaymentLink(customerId, requestId, occurrenceId))
+        .isInstanceOf(BusinessException.class)
+        .extracting("code")
+        .isEqualTo("PAYMENT_AMOUNT_INVALID");
+    assertThatThrownBy(
+            () -> service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("code")
+        .isEqualTo("PAYMENT_AMOUNT_INVALID");
+  }
+
+  @Test
+  void applySepayWebhookRejectsOccurrenceAssignedToDifferentGateway() {
+    long orderCode = 888001L;
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            UUID.randomUUID(),
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.assignVnPayOrder(orderCode);
+
+    when(occurrences.findWithLockByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+
+    assertThatThrownBy(() -> service.applySepayWebhookPayment(orderCode, 100000L, "FT-001"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("code")
+        .isEqualTo("PAYMENT_NOT_PAYABLE");
   }
 
   @Test

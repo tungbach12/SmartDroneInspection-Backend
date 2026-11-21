@@ -68,6 +68,7 @@ public class VnPayWebhookController {
       if (contractWorkflowService.findInspectionIdByOrderCode(orderCode).isEmpty()) {
         return ResponseEntity.ok(Map.of("RspCode", "01", "Message", "Order not Found"));
       }
+      releaseOnTerminalFailure(orderCode, responseCode);
       return ResponseEntity.ok(Map.of("RspCode", "00", "Message", "Confirm Success"));
     }
 
@@ -80,6 +81,8 @@ public class VnPayWebhookController {
           ResponseEntity.ok(Map.of("RspCode", "04", "Message", "Invalid Amount"));
       case ALREADY_CONFIRMED ->
           ResponseEntity.ok(Map.of("RspCode", "02", "Message", "Order already confirmed"));
+      case NOT_PAYABLE ->
+          ResponseEntity.ok(Map.of("RspCode", "02", "Message", "Order not payable"));
       case CONFIRMED -> ResponseEntity.ok(Map.of("RspCode", "00", "Message", "Confirm Success"));
     };
   }
@@ -129,9 +132,9 @@ public class VnPayWebhookController {
               inspectionId, resolvedOrderCode, appliedOk, responseCode);
       if (redirectUrl == null || redirectUrl.isBlank()) {
         redirectUrl =
-            "http://localhost:3000/client/reports/"
+            "http://localhost:3000/client/inspections/"
                 + inspectionId
-                + "?payment="
+                + "/settlement?payment="
                 + (appliedOk ? "success" : "cancelled")
                 + "&gateway=vnpay&orderCode="
                 + resolvedOrderCode;
@@ -139,6 +142,9 @@ public class VnPayWebhookController {
       return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
     }
 
+    if (validSignature && orderCode != null) {
+      releaseOnTerminalFailure(orderCode, responseCode);
+    }
     String redirectUrl =
         vnPayGateway.resolveFrontendReturnUrl(
             inspectionId,
@@ -147,12 +153,27 @@ public class VnPayWebhookController {
             validSignature ? responseCode : "invalid_signature");
     if (redirectUrl == null || redirectUrl.isBlank()) {
       redirectUrl =
-          "http://localhost:3000/client/reports/"
+          "http://localhost:3000/client/inspections/"
               + inspectionId
-              + "?payment=cancelled&gateway=vnpay&orderCode="
+              + "/settlement?payment=cancelled&gateway=vnpay&orderCode="
               + resolvedOrderCode;
     }
     return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
+  }
+
+  /**
+   * Response codes after which VNPay will not accept this checkout any more: 24 (customer
+   * cancelled) and 11 (checkout timed out). Other failures (for example insufficient balance) can
+   * still be retried on the VNPay page, so the order is kept and expires on its own.
+   */
+  private static boolean isTerminalFailure(String responseCode) {
+    return "24".equals(responseCode) || "11".equals(responseCode);
+  }
+
+  private void releaseOnTerminalFailure(long orderCode, String responseCode) {
+    if (isTerminalFailure(responseCode)) {
+      contractWorkflowService.releaseVnPayOrderAfterFailure(orderCode);
+    }
   }
 
   private static Long parseLongOrNull(String value) {

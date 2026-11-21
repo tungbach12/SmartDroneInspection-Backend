@@ -100,6 +100,11 @@ class VnPayWebhookAndGatewayTest {
         .contains("vnp_TmnCode=DEMOTMN1")
         .contains("vnp_IpAddr=127.0.0.1")
         .contains("&vnp_SecureHash=");
+
+    VnPayGateway.VnPayPaymentLink mappedLink =
+        vnPayGateway.createPaymentUrl(
+            100002L, 5000000L, "Thanh toan SDI OCC 1", "::ffff:203.0.113.10", null);
+    assertThat(mappedLink.checkoutUrl()).contains("vnp_IpAddr=203.0.113.10");
   }
 
   @Test
@@ -198,5 +203,114 @@ class VnPayWebhookAndGatewayTest {
                 .param("vnp_SecureHash", validHash))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.RspCode").value("02"));
+  }
+
+  @Test
+  void returnWithValidCancelCode24ReleasesUnpaidOrderButInvalidSignatureDoesNot() throws Exception {
+    UUID requestId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    long orderCode = 100009L;
+    long agreedVnd = 5000000L;
+
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(requestId, 1, start, start.plus(2, ChronoUnit.HOURS));
+    ReflectionTestUtils.setField(occurrence, "id", UUID.randomUUID());
+    occurrence.assign(UUID.randomUUID(), UUID.randomUUID(), inspectionId, UUID.randomUUID());
+    occurrence.snapshotFinance(BigDecimal.valueOf(agreedVnd), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), UUID.randomUUID());
+    occurrence.assignVnPayOrder(orderCode);
+
+    when(occurrences.findWithLockByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+
+    // Invalid signature must NOT release the order
+    mockMvc
+        .perform(
+            get("/api/v1/webhooks/vnpay/return")
+                .param("vnp_TxnRef", String.valueOf(orderCode))
+                .param("vnp_Amount", String.valueOf(agreedVnd * 100L))
+                .param("vnp_ResponseCode", "24")
+                .param("vnp_SecureHash", "bad_sig"))
+        .andExpect(status().isFound());
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(orderCode);
+
+    // Valid signature with code 24 releases the unpaid order so customer can retry
+    Map<String, String> vnpParams = new LinkedHashMap<>();
+    vnpParams.put("vnp_TxnRef", String.valueOf(orderCode));
+    vnpParams.put("vnp_Amount", String.valueOf(agreedVnd * 100L));
+    vnpParams.put("vnp_ResponseCode", "24");
+    String query = VnPayCrypto.buildSignedQueryString(vnpParams, TEST_SECRET);
+    String validHash = query.substring(query.indexOf("&vnp_SecureHash=") + 16);
+
+    mockMvc
+        .perform(
+            get("/api/v1/webhooks/vnpay/return")
+                .param("vnp_TxnRef", String.valueOf(orderCode))
+                .param("vnp_Amount", String.valueOf(agreedVnd * 100L))
+                .param("vnp_ResponseCode", "24")
+                .param("vnp_SecureHash", validHash))
+        .andExpect(status().isFound());
+
+    assertThat(occurrence.getGatewayOrderCode()).isNull();
+    assertThat(occurrence.getPaymentMethod()).isNull();
+  }
+
+  @Test
+  void releaseAfterFailureNeverTouchesPaidOrder() {
+    long orderCode = 100010L;
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(UUID.randomUUID(), 1, start, start.plus(2, ChronoUnit.HOURS));
+    occurrence.snapshotFinance(BigDecimal.valueOf(5000000L), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), UUID.randomUUID());
+    occurrence.assignVnPayOrder(orderCode);
+    occurrence.confirmOnlinePayment("VNPAY-123", BigDecimal.valueOf(5000000L), "VNPAY");
+
+    when(occurrences.findWithLockByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+
+    assertThat(workflowService.releaseVnPayOrderAfterFailure(orderCode)).isFalse();
+    assertThat(occurrence.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(orderCode);
+  }
+
+  @Test
+  void applyVnPayPaymentRejectsOccurrenceNotAwaitingVnPay() throws Exception {
+    long orderCode = 100011L;
+    long agreedVnd = 5000000L;
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(UUID.randomUUID(), 1, start, start.plus(2, ChronoUnit.HOURS));
+    occurrence.assign(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+    occurrence.snapshotFinance(BigDecimal.valueOf(agreedVnd), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), UUID.randomUUID());
+    // Assigned to SEPAY, not VNPAY
+    occurrence.assignSepayOrder(orderCode);
+
+    when(occurrences.findWithLockByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+
+    Map<String, String> vnpParams = new LinkedHashMap<>();
+    vnpParams.put("vnp_TxnRef", String.valueOf(orderCode));
+    vnpParams.put("vnp_Amount", String.valueOf(agreedVnd * 100L));
+    vnpParams.put("vnp_ResponseCode", "00");
+    vnpParams.put("vnp_TransactionStatus", "00");
+    vnpParams.put("vnp_TransactionNo", "14998899");
+    String query = VnPayCrypto.buildSignedQueryString(vnpParams, TEST_SECRET);
+    String validHash = query.substring(query.indexOf("&vnp_SecureHash=") + 16);
+
+    mockMvc
+        .perform(
+            get("/api/v1/webhooks/vnpay/ipn")
+                .param("vnp_TxnRef", String.valueOf(orderCode))
+                .param("vnp_Amount", String.valueOf(agreedVnd * 100L))
+                .param("vnp_ResponseCode", "00")
+                .param("vnp_TransactionStatus", "00")
+                .param("vnp_TransactionNo", "14998899")
+                .param("vnp_SecureHash", validHash))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.RspCode").value("02"));
+
+    assertThat(occurrence.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
   }
 }

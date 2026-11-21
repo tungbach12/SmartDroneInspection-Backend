@@ -136,6 +136,21 @@ Authentication is owned by the `users` module. Browser auth uses a memory-only a
 CSRF protection, and an HttpOnly refresh cookie. Mobile auth uses the mobile contract and
 secure client storage. Shared security configuration remains in `shared/`.
 
+## Payment Gateway UAT (VNPay Sandbox & Sepay)
+
+Local `localhost` URLs work for browser redirects (VNPay Return URL), but server-to-server callbacks (**VNPay IPN** and **Sepay Webhook**) require a public HTTPS endpoint (for example Cloudflare Tunnel, ngrok, or a staging domain).
+
+1. Expose port `8080` over HTTPS (`https://<public-host>`).
+2. Set in `.env` (never commit `.env`):
+   - `VNPAY_ENABLED=true`, `VNPAY_PAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`, `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET`
+   - `VNPAY_RETURN_URL=https://<public-host>/api/v1/webhooks/vnpay/return`
+   - `VNPAY_FRONTEND_RETURN_URL=http://localhost:3000/client/inspections/{inspectionId}/settlement`
+   - `SEPAY_ENABLED=true`, `SEPAY_API_KEY`, `SEPAY_ACCOUNT_NUMBER`, `SEPAY_BANK_NAME`, `SEPAY_ACCOUNT_HOLDER`
+3. Register on external portals:
+   - **VNPay Sandbox Merchant Portal**: set IPN URL to `https://<public-host>/api/v1/webhooks/vnpay/ipn`.
+   - **Sepay Dashboard**: create webhook `https://<public-host>/api/v1/webhooks/sepay` with auth header `Authorization: Apikey <SEPAY_API_KEY>` and ensure transfer descriptions preserve `SDI<orderCode>`.
+4. Run `.\scripts\uat-payment-check.ps1` to verify `.env` completeness and test signed VNPay IPN / Sepay webhook calls against a running local backend (without committing any secrets).
+
 ## Formatting and coverage
 
 - `mvn spotless:apply` formats Java and configuration files.

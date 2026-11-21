@@ -37,11 +37,6 @@ public class SepayPaymentGateway implements SepayGateway {
       throw new IllegalStateException(
           "Sepay merchant account number and bank name are required to build a VietQR code.");
     }
-    String cleanDescription =
-        (description != null && !description.isBlank()) ? description : ("SDI " + orderCode);
-    if (cleanDescription.length() > 25) {
-      cleanDescription = cleanDescription.substring(0, 25);
-    }
     String transferContent = "SDI" + orderCode;
     String qrUrl =
         properties.qrBaseUrl()
@@ -57,6 +52,11 @@ public class SepayPaymentGateway implements SepayGateway {
             + (StringUtils.hasText(holder) ? "&holder=" + url(holder) : "");
     return new SepayPaymentLink(
         orderCode, qrUrl, transferContent, amount, String.valueOf(orderCode), "PENDING");
+  }
+
+  @Override
+  public String expectedAccountNumber() {
+    return properties.accountNumber();
   }
 
   @Override

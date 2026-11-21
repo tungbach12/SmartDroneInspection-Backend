@@ -16,7 +16,8 @@ public record VnPayProperties(
     String tmnCode,
     String hashSecret,
     @DefaultValue("http://localhost:8080/api/v1/webhooks/vnpay/return") String returnUrl,
-    @DefaultValue("http://localhost:3000/client/reports/{inspectionId}") String frontendReturnUrl,
+    @DefaultValue("http://localhost:3000/client/inspections/{inspectionId}/settlement")
+        String frontendReturnUrl,
     @DefaultValue("2.1.0") String version,
     @DefaultValue("pay") String command,
     @DefaultValue("other") String orderType,
@@ -32,7 +33,7 @@ public record VnPayProperties(
       returnUrl = "http://localhost:8080/api/v1/webhooks/vnpay/return";
     }
     if (frontendReturnUrl == null || frontendReturnUrl.isBlank()) {
-      frontendReturnUrl = "http://localhost:3000/client/reports/{inspectionId}";
+      frontendReturnUrl = "http://localhost:3000/client/inspections/{inspectionId}/settlement";
     }
     if (version == null || version.isBlank()) {
       version = "2.1.0";

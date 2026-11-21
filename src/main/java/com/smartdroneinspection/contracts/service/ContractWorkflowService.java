@@ -1593,10 +1593,14 @@ public class ContractWorkflowService
       // Sepay has no cancel API; the unpaid order can only be cleared manually by the manager.
       // No gateway-side confirmation is required.
     } else if ("VNPAY".equalsIgnoreCase(method)) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "PAYMENT_ORDER_UNRESOLVED",
-          "VNPay cancellation cannot be verified automatically; wait for expiry or reconcile with the gateway before clearing the order");
+      // VNPay has no cancel API. Only an order past its checkout lifetime is certain to be
+      // unpayable, so a live order stays blocked to avoid double settlement.
+      if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYMENT_ORDER_UNRESOLVED",
+            "VNPay order is still payable; wait for it to expire or reconcile with the gateway before clearing the order");
+      }
     } else if (!"MANUAL_WIRE".equalsIgnoreCase(method)) {
       throw failure(
           HttpStatus.CONFLICT,
@@ -1905,15 +1909,7 @@ public class ContractWorkflowService
           "Sepay online checkout is only supported for VND contracts. Currency is "
               + occurrence.getCurrency());
     }
-    if (occurrence.getTotalPrice() == null
-        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "PAYMENT_AMOUNT_INVALID",
-          "Occurrence total price must be greater than zero");
-    }
-
-    long amount = occurrence.getTotalPrice().longValue();
+    long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     long orderCode;
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
       if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
@@ -1924,7 +1920,7 @@ public class ContractWorkflowService
       }
       orderCode = occurrence.getGatewayOrderCode();
     } else {
-      orderCode = (System.currentTimeMillis() % 9000000000L) + 1000000000L;
+      orderCode = generateUniqueGatewayOrderCode();
     }
 
     String description = "SDI OCC " + occurrence.getOccurrenceIndex();
@@ -1957,6 +1953,13 @@ public class ContractWorkflowService
 
     if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
       return; // Idempotent no-op
+    }
+
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE
+        || !"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      throw failure(
+          HttpStatus.CONFLICT, "PAYMENT_NOT_PAYABLE", "Occurrence is not awaiting a Sepay payment");
     }
 
     if (occurrence.getTotalPrice() == null
@@ -2024,15 +2027,7 @@ public class ContractWorkflowService
           "VNPay online checkout is only supported for VND contracts. Currency is "
               + occurrence.getCurrency());
     }
-    if (occurrence.getTotalPrice() == null
-        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "PAYMENT_AMOUNT_INVALID",
-          "Occurrence total price must be greater than zero");
-    }
-
-    long amount = occurrence.getTotalPrice().longValue();
+    long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
       if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
         throw failure(
@@ -2040,13 +2035,16 @@ public class ContractWorkflowService
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
       }
-      throw failure(
-          HttpStatus.CONFLICT,
-          "PAYMENT_ORDER_UNRESOLVED",
-          "The existing VNPay order must be settled or cancelled before retrying.");
+      if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYMENT_ORDER_UNRESOLVED",
+            "The existing VNPay order is still payable; complete it or wait for it to expire before retrying.");
+      }
+      // The previous checkout can no longer be paid at VNPay: release it so the customer can retry.
+      occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
     }
-    long orderCode =
-        (System.currentTimeMillis() % 9000000000L) + 1000000000L + (long) (Math.random() * 10000);
+    long orderCode = generateUniqueGatewayOrderCode();
 
     String description =
         "Thanh toan dich vu kiem tra SDI OCC "
@@ -2068,10 +2066,76 @@ public class ContractWorkflowService
         link.orderCode(), link.checkoutUrl(), link.amount(), link.txnRef());
   }
 
+  /** Checkout lifetime plus a grace period for a payment landing right at the VNPay deadline. */
+  private java.time.Duration vnPayOrderLifetime() {
+    int minutes = vnPayGateway.orderLifetimeMinutes();
+    return java.time.Duration.ofMinutes((minutes > 0 ? minutes : 15) + 5L);
+  }
+
+  /**
+   * Releases an unpaid VNPay order after VNPay reported a terminal failure (customer cancelled or
+   * the checkout timed out) so the customer can start a new payment. Never touches a paid order.
+   *
+   * @return true when an open VNPay order was released
+   */
+  @Transactional
+  public boolean releaseVnPayOrderAfterFailure(long orderCode) {
+    Optional<ServiceRequestOccurrence> opt = occurrences.findWithLockByGatewayOrderCode(orderCode);
+    if (opt.isEmpty()) {
+      return false;
+    }
+    ServiceRequestOccurrence occurrence = opt.get();
+    if (occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE
+        || !"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      return false;
+    }
+    occurrence.clearUnpaidPaymentOrder(orderCode, "VNPAY");
+    occurrences.saveAndFlush(occurrence);
+    return true;
+  }
+
+  private static final java.security.SecureRandom ORDER_CODE_RANDOM =
+      new java.security.SecureRandom();
+
+  private long generateUniqueGatewayOrderCode() {
+    for (int attempt = 0; attempt < 5; attempt++) {
+      // 10-digit numeric code combining time and randomness to avoid same-millisecond collisions.
+      long timePart = (System.currentTimeMillis() % 1_000_000L) * 1_000L;
+      long randomPart = ORDER_CODE_RANDOM.nextInt(1_000);
+      long candidate = 1_000_000_000L + timePart + randomPart;
+      if (occurrences.findByGatewayOrderCode(candidate).isEmpty()) {
+        return candidate;
+      }
+    }
+    throw failure(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "ORDER_CODE_GENERATION_FAILED",
+        "Could not allocate a unique payment order code; please retry");
+  }
+
+  private static long toGatewayAmountVnd(java.math.BigDecimal totalPrice) {
+    if (totalPrice == null || totalPrice.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_INVALID",
+          "Occurrence total price must be greater than zero");
+    }
+    try {
+      return totalPrice.stripTrailingZeros().longValueExact();
+    } catch (ArithmeticException ex) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_INVALID",
+          "Online VND payment requires a whole-number amount without fractional digits: "
+              + totalPrice);
+    }
+  }
+
   public enum VnPayApplyStatus {
     CONFIRMED,
     ALREADY_CONFIRMED,
     AMOUNT_MISMATCH,
+    NOT_PAYABLE,
     NOT_FOUND
   }
 
@@ -2095,6 +2159,12 @@ public class ContractWorkflowService
 
     if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
       return new VnPayApplyResult(VnPayApplyStatus.ALREADY_CONFIRMED, inspectionId);
+    }
+
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE
+        || !"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      return new VnPayApplyResult(VnPayApplyStatus.NOT_PAYABLE, inspectionId);
     }
 
     String paymentRef =
