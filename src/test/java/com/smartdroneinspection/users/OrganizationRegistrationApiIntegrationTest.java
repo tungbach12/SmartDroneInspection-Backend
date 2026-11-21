@@ -82,6 +82,13 @@ class OrganizationRegistrationApiIntegrationTest {
                 customer.getId(),
                 assetCode.toUpperCase(java.util.Locale.ROOT)))
         .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT ownership_information FROM assets WHERE owner_customer_id = ? AND asset_code = ?",
+                String.class,
+                customer.getId(),
+                assetCode.toUpperCase(java.util.Locale.ROOT)))
+        .isEqualTo("Customer-owned bridge");
   }
 
   @Test
@@ -178,7 +185,7 @@ class OrganizationRegistrationApiIntegrationTest {
           "password":"a sufficiently long passphrase",
           "firstAsset":{"code":"%s","name":"First bridge","categoryId":"%s",
             "locationText":"District 1","latitude":%s,"longitude":%s,
-            "ownershipInformation":"{\\"ownership\\":\\"Customer-owned bridge\\"}"}
+            "ownershipInformation":"Customer-owned bridge"}
         }
         """
         .formatted(email, organizationCode, assetCode, categoryId, lat, lon);

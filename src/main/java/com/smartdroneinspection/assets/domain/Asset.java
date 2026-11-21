@@ -64,8 +64,7 @@ public class Asset {
   @Column(precision = 9, scale = 6)
   private BigDecimal longitude;
 
-  @Column(name = "technical_profile", columnDefinition = "jsonb")
-  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "ownership_information", length = 1000)
   private String ownershipInformation;
 
   @Column(name = "structure_height_meters", precision = 8, scale = 2)
