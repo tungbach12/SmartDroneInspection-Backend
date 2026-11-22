@@ -156,14 +156,12 @@ services:
       SEPAY_BANK_NAME: ${SEPAY_BANK_NAME:-}
       SEPAY_ACCOUNT_HOLDER: ${SEPAY_ACCOUNT_HOLDER:-}
       SEPAY_QR_BASE_URL: ${SEPAY_QR_BASE_URL:-https://vietqr.app}
-      SEPAY_RETURN_URL: ${SEPAY_RETURN_URL:-http://localhost:5173/client/reports/{inspectionId}}
-      SEPAY_CANCEL_URL: ${SEPAY_CANCEL_URL:-http://localhost:5173/client/reports/{inspectionId}}
       VNPAY_ENABLED: ${VNPAY_ENABLED:-false}
       VNPAY_PAY_URL: ${VNPAY_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
       VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
       VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:8080/api/v1/webhooks/vnpay/return}
-      VNPAY_FRONTEND_RETURN_URL: ${VNPAY_FRONTEND_RETURN_URL:-http://localhost:3000/client/inspections/{inspectionId}/report}
+      VNPAY_FRONTEND_RETURN_URL: ${VNPAY_FRONTEND_RETURN_URL:-http://localhost:3000/client/inspections/{inspectionId}/settlement}
       VNPAY_EXPIRE_MINUTES: ${VNPAY_EXPIRE_MINUTES:-15}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

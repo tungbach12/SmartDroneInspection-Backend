@@ -60,6 +60,9 @@ public class ServicePayment {
   @Column(name = "payment_method", length = 30)
   private String paymentMethod;
 
+  @Column(name = "gateway_order_created_at")
+  private Instant gatewayOrderCreatedAt;
+
   @Column(name = "payment_due_at")
   private Instant paymentDueAt;
 
@@ -152,6 +155,7 @@ public class ServicePayment {
     }
     payosOrderCode = orderCode;
     paymentMethod = method;
+    gatewayOrderCreatedAt = Instant.now();
     updatedAt = Instant.now();
   }
 
@@ -164,7 +168,20 @@ public class ServicePayment {
     }
     payosOrderCode = null;
     paymentMethod = null;
+    gatewayOrderCreatedAt = null;
     updatedAt = Instant.now();
+  }
+
+  /**
+   * True when the open gateway order is older than {@code lifetime}. An order without a recorded
+   * creation time (legacy rows) is treated as expired.
+   */
+  boolean isGatewayOrderExpired(Instant now, java.time.Duration lifetime) {
+    return gatewayOrderCreatedAt == null || now.isAfter(gatewayOrderCreatedAt.plus(lifetime));
+  }
+
+  Instant getGatewayOrderCreatedAt() {
+    return gatewayOrderCreatedAt;
   }
 
   ServiceRefund initiateRefund(

@@ -224,6 +224,46 @@ public record OccurrenceFinanceResponse(
         .toList();
   }
 
+  /**
+   * Inspector-scoped refund view: only amounts that affect the Inspector payout/receivable.
+   * Platform absorbed amounts, commission/VAT adjustments, actor ids, and reconciliation notes are
+   * masked.
+   */
+  private static java.util.List<RefundSummary> inspectorRefundSummaries(
+      ServiceRequestOccurrence occurrence) {
+    return occurrence.getRefunds().stream()
+        .map(
+            refund ->
+                new RefundSummary(
+                    refund.getId(),
+                    refund.getAmount(),
+                    refund.getStatus().name(),
+                    null,
+                    refund.getInspectorReceivableAmount(),
+                    null,
+                    null,
+                    refund.getInitiatedAt(),
+                    null,
+                    refund.getCompletedAt(),
+                    null,
+                    refund.getCancelledAt(),
+                    null,
+                    refund.getInspectorPayoutReduction(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    refund.getRecordedAt()))
+        .toList();
+  }
+
   private static ServicePaymentSummary paymentSummary(ServiceRequestOccurrence occurrence) {
     return new ServicePaymentSummary(
         occurrence.getPaymentStatus(),
@@ -366,7 +406,7 @@ public record OccurrenceFinanceResponse(
         occurrence.getPaymentAmount(),
         occurrence.getRefundedAmount(),
         occurrence.getRefundStatus(),
-        refundSummaries(occurrence),
+        inspectorRefundSummaries(occurrence),
         java.util.List.of(),
         occurrence.getPaymentConfirmedAt(),
         null,

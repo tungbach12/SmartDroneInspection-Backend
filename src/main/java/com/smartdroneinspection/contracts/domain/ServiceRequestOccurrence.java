@@ -574,6 +574,10 @@ public class ServiceRequestOccurrence {
     updatedAt = Instant.now();
   }
 
+  public boolean isGatewayOrderExpired(Instant now, java.time.Duration lifetime) {
+    return payment.isGatewayOrderExpired(now, lifetime);
+  }
+
   public boolean hasActivePaymentOrder(String method) {
     return payment.hasActiveGatewayOrder(method);
   }

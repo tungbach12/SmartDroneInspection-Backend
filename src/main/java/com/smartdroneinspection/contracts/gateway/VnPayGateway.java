@@ -18,6 +18,11 @@ public interface VnPayGateway {
   VnPayPaymentLink createPaymentUrl(
       long orderCode, long amount, String description, String clientIp, String returnUrl);
 
+  /** Minutes a created VNPay checkout stays payable (vnp_ExpireDate window). */
+  default int orderLifetimeMinutes() {
+    return 15;
+  }
+
   /** Resolves the return URL for a specific inspection and order code. */
   default String resolveReturnUrl(String inspectionId, long orderCode) {
     return null;

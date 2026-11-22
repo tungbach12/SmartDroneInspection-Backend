@@ -26,6 +26,11 @@ public class VnPayPaymentGateway implements VnPayGateway {
   }
 
   @Override
+  public int orderLifetimeMinutes() {
+    return properties.expireMinutes() > 0 ? properties.expireMinutes() : 15;
+  }
+
+  @Override
   public String resolveReturnUrl(String inspectionId, long orderCode) {
     String base = properties.returnUrl();
     if (base == null || base.isBlank()) {
@@ -39,7 +44,7 @@ public class VnPayPaymentGateway implements VnPayGateway {
       String inspectionId, long orderCode, boolean success, String responseCode) {
     String base = properties.frontendReturnUrl();
     if (base == null || base.isBlank()) {
-      base = "http://localhost:3000/client/reports/{inspectionId}";
+      base = "http://localhost:3000/client/inspections/{inspectionId}/settlement";
     }
     String resolved =
         base.replace(
@@ -119,6 +124,12 @@ public class VnPayPaymentGateway implements VnPayGateway {
       return "127.0.0.1";
     }
     String ip = clientIp.split(",")[0].trim();
+    if (ip.regionMatches(true, 0, "::ffff:", 0, "::ffff:".length())) {
+      String mappedIpv4 = ip.substring("::ffff:".length()).trim();
+      if (!mappedIpv4.isBlank() && !mappedIpv4.contains(":")) {
+        return mappedIpv4;
+      }
+    }
     if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip) || ip.contains(":")) {
       return "127.0.0.1";
     }

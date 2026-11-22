@@ -1,7 +1,9 @@
 package com.smartdroneinspection.contracts.api;
 
+import com.smartdroneinspection.contracts.domain.GatewayInboundTransaction.Status;
 import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.service.ContractWorkflowService;
+import com.smartdroneinspection.contracts.service.GatewayInboundTransactionService;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -27,16 +29,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/webhooks/sepay")
 public class SepayWebhookController {
 
-  private static final Pattern ORDER_CODE_PATTERN = Pattern.compile("SDI(\\d+)");
+  private static final Pattern ORDER_CODE_PATTERN = Pattern.compile("(?i)SDI\\s*(\\d+)");
   private static final Logger log = LoggerFactory.getLogger(SepayWebhookController.class);
+
+  private static final String GATEWAY = "SEPAY";
 
   private final SepayGateway sepayGateway;
   private final ContractWorkflowService contractWorkflowService;
+  private final GatewayInboundTransactionService inbound;
 
   public SepayWebhookController(
-      SepayGateway sepayGateway, ContractWorkflowService contractWorkflowService) {
+      SepayGateway sepayGateway,
+      ContractWorkflowService contractWorkflowService,
+      GatewayInboundTransactionService inbound) {
     this.sepayGateway = sepayGateway;
     this.contractWorkflowService = contractWorkflowService;
+    this.inbound = inbound;
   }
 
   @PostMapping
@@ -58,11 +66,43 @@ public class SepayWebhookController {
       return ResponseEntity.ok(Map.of("success", true));
     }
 
-    long orderCode = resolveOrderCode(payload);
-    if (orderCode <= 0) {
+    String externalId = payload.id() != null ? String.valueOf(payload.id()) : null;
+    long amount = payload.transferAmount() != null ? payload.transferAmount() : 0L;
+    if (inbound.isAlreadyHandled(GATEWAY, externalId)) {
+      // Redelivery of a notification that already reached a final outcome.
       return ResponseEntity.ok(Map.of("success", true));
     }
-    long amount = payload.transferAmount() != null ? payload.transferAmount() : 0L;
+
+    String expectedAccount = sepayGateway.expectedAccountNumber();
+    if (expectedAccount != null && !expectedAccount.isBlank()) {
+      String actualAccount = payload.accountNumber() != null ? payload.accountNumber().trim() : "";
+      if (!expectedAccount.trim().equalsIgnoreCase(actualAccount)) {
+        log.warn(
+            "Ignoring Sepay webhook {}: accountNumber '{}' does not match configured receiving account",
+            externalId,
+            actualAccount);
+        record(
+            payload,
+            externalId,
+            null,
+            amount,
+            Status.REJECTED,
+            "ACCOUNT_MISMATCH: received " + actualAccount);
+        return ResponseEntity.ok(Map.of("success", true));
+      }
+    }
+
+    long orderCode = resolveOrderCode(payload);
+    if (orderCode <= 0) {
+      record(
+          payload,
+          externalId,
+          null,
+          amount,
+          Status.ORDER_NOT_FOUND,
+          "No SDI order code in transfer content");
+      return ResponseEntity.ok(Map.of("success", true));
+    }
     String reference =
         payload.referenceCode() != null && !payload.referenceCode().isBlank()
             ? payload.referenceCode().trim()
@@ -70,18 +110,56 @@ public class SepayWebhookController {
 
     try {
       contractWorkflowService.applySepayWebhookPayment(orderCode, amount, reference);
+      record(payload, externalId, orderCode, amount, Status.APPLIED, null);
     } catch (BusinessException ex) {
       log.warn(
           "Rejected Sepay webhook for orderCode {}: {} - {}",
           orderCode,
           ex.code(),
           ex.getMessage());
-      return ResponseEntity.status(ex.status())
-          .body(Map.of("success", false, "message", ex.code()));
+      Status status =
+          switch (ex.code()) {
+            case "PAYMENT_AMOUNT_MISMATCH" -> Status.AMOUNT_MISMATCH;
+            case "OCCURRENCE_NOT_FOUND" -> Status.ORDER_NOT_FOUND;
+            default -> Status.REJECTED;
+          };
+      record(payload, externalId, orderCode, amount, status, ex.code() + ": " + ex.getMessage());
+      if (status == Status.REJECTED) {
+        return ResponseEntity.status(ex.status())
+            .body(Map.of("success", false, "message", ex.code()));
+      }
+      // The transfer is stored for manual reconciliation; retrying cannot change the outcome.
+      return ResponseEntity.ok(Map.of("success", true));
     } catch (RuntimeException ex) {
       log.error("Unexpected error applying Sepay webhook for orderCode {}", orderCode, ex);
+      record(payload, externalId, orderCode, amount, Status.ERROR, ex.getClass().getSimpleName());
+      // A non-2xx response makes Sepay redeliver, so a transient failure cannot lose the payment.
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(Map.of("success", false, "message", "INTERNAL_ERROR"));
     }
     return ResponseEntity.ok(Map.of("success", true));
+  }
+
+  private void record(
+      SepayWebhookPayload payload,
+      String externalId,
+      Long orderCode,
+      long amount,
+      Status status,
+      String detail) {
+    try {
+      inbound.record(
+          GATEWAY,
+          externalId,
+          orderCode,
+          amount,
+          payload.accountNumber(),
+          payload.toString(),
+          status,
+          detail);
+    } catch (RuntimeException ex) {
+      log.error("Failed to record Sepay inbound transaction {}", externalId, ex);
+    }
   }
 
   private static String extractApiKey(String authorization) {

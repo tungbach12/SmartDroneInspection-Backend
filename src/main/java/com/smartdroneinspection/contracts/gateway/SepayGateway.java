@@ -30,6 +30,14 @@ public interface SepayGateway {
    */
   boolean verifyWebhookApiKey(String receivedApiKey);
 
+  /**
+   * Configured merchant receiving bank account number, used to verify that an inbound webhook
+   * actually credited the platform's account. Null when not configured.
+   */
+  default String expectedAccountNumber() {
+    return null;
+  }
+
   record SepayPaymentLink(
       long orderCode,
       String checkoutUrl,
