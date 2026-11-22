@@ -6,11 +6,14 @@ import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.domain.AssetCategory;
 import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.Drone;
+import com.smartdroneinspection.contracts.domain.GatewayInboundTransaction;
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.EvidenceUploadSession;
 import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.domain.FieldSessionTelemetry;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.domain.InspectionFlightPermit;
 import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
 import com.smartdroneinspection.notifications.domain.Notification;
@@ -34,9 +37,12 @@ class PersistenceEntityMappingTest {
           AssetCategory.class,
           AssetDocument.class,
           Drone.class,
+          GatewayInboundTransaction.class,
           Inspection.class,
+          InspectionFlightPermit.class,
           InspectorReliabilityEvent.class,
           FieldSession.class,
+          FieldSessionTelemetry.class,
           Evidence.class,
           EvidenceUploadSession.class,
           Finding.class,

@@ -31,6 +31,7 @@ class RuntimePersistenceInventoryTest {
           "drone_document_configs",
           "drone_feature_configs",
           "inspections",
+          "inspection_flight_permits",
           "reinspection_defect_verifications",
           "notifications",
           "prospective_customer_registrations",
@@ -39,6 +40,7 @@ class RuntimePersistenceInventoryTest {
           "inspector_flight_logs",
           "inspector_reliability_events",
           "field_sessions",
+          "field_session_telemetry",
           "evidence",
           "evidence_upload_sessions",
           "findings",
@@ -54,6 +56,7 @@ class RuntimePersistenceInventoryTest {
           "service_request_occurrences",
           "service_invoices",
           "service_payments",
+          "gateway_inbound_transactions",
           "inspector_payouts",
           "service_refunds",
           "inspector_receivables",
@@ -80,8 +83,10 @@ class RuntimePersistenceInventoryTest {
           "assets",
           "asset_documents",
           "inspections",
+          "inspection_flight_permits",
           "reinspection_defect_verifications",
           "field_sessions",
+          "field_session_telemetry",
           "evidence",
           "evidence_upload_sessions",
           "findings",
@@ -96,6 +101,7 @@ class RuntimePersistenceInventoryTest {
           "service_request_occurrences",
           "service_invoices",
           "service_payments",
+          "gateway_inbound_transactions",
           "inspector_payouts",
           "service_refunds",
           "inspector_receivables",
@@ -143,8 +149,8 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(45);
-    assertThat(RUNTIME_ENTITY_TABLES).hasSize(44);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(48);
+    assertThat(RUNTIME_ENTITY_TABLES).hasSize(47);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

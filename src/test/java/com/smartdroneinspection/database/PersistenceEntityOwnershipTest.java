@@ -53,8 +53,16 @@ class PersistenceEntityOwnershipTest {
             "inspections", "inspections", "com.smartdroneinspection.inspections.domain.Inspection"),
         Arguments.of(
             "inspections",
+            "inspection_flight_permits",
+            "com.smartdroneinspection.inspections.domain.InspectionFlightPermit"),
+        Arguments.of(
+            "inspections",
             "field_sessions",
             "com.smartdroneinspection.inspections.domain.FieldSession"),
+        Arguments.of(
+            "inspections",
+            "field_session_telemetry",
+            "com.smartdroneinspection.inspections.domain.FieldSessionTelemetry"),
         Arguments.of(
             "inspections", "evidence", "com.smartdroneinspection.inspections.domain.Evidence"),
         Arguments.of(
@@ -71,6 +79,10 @@ class PersistenceEntityOwnershipTest {
             "contracts",
             "inspection_finance_settings",
             "com.smartdroneinspection.contracts.domain.InspectionFinanceSettings"),
+        Arguments.of(
+            "contracts",
+            "gateway_inbound_transactions",
+            "com.smartdroneinspection.contracts.domain.GatewayInboundTransaction"),
         Arguments.of(
             "contracts",
             "platform_operations_settings",
