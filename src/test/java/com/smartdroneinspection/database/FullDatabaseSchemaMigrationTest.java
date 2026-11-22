@@ -42,8 +42,10 @@ class FullDatabaseSchemaMigrationTest {
             "assets",
             "asset_documents",
             "inspections",
+            "inspection_flight_permits",
             "reinspection_defect_verifications",
             "field_sessions",
+            "field_session_telemetry",
             "evidence",
             "evidence_upload_sessions",
             "findings",
@@ -57,6 +59,7 @@ class FullDatabaseSchemaMigrationTest {
             "service_request_occurrences",
             "service_invoices",
             "service_payments",
+            "gateway_inbound_transactions",
             "inspector_payouts",
             "service_refunds",
             "inspector_receivables",
@@ -77,7 +80,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(47);
+    assertThat(expected).hasSize(50);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -156,26 +159,47 @@ class FullDatabaseSchemaMigrationTest {
         jdbcTemplate.queryForList(
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
     assertThat(versions)
-        .containsExactly("1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66");
+        .containsExactly(
+            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69");
 
     assertColumns(
-        "inspections",
-        "flight_permit_number",
-        "flight_permit_authority",
-        "flight_permit_valid_from",
-        "flight_permit_valid_to",
-        "flight_permit_drone_serial",
-        "flight_permit_max_altitude_m",
-        "flight_permit_file_sha256",
-        "flight_permit_file_size_bytes",
-        "flight_permit_content_type",
-        "flight_permit_uploaded_at",
-        "flight_permit_uploaded_by",
-        "flight_permit_verification_status",
-        "flight_permit_verified_by",
-        "flight_permit_verified_at",
-        "flight_permit_rejection_reason",
-        "flight_permit_review_notes");
+        "inspection_flight_permits",
+        "inspection_id",
+        "file_key",
+        "file_name",
+        "permit_number",
+        "authority",
+        "valid_from",
+        "valid_to",
+        "drone_serial",
+        "max_altitude_m",
+        "file_sha256",
+        "file_size_bytes",
+        "content_type",
+        "uploaded_at",
+        "uploaded_by",
+        "verification_status",
+        "verified_by",
+        "verified_at",
+        "rejection_reason",
+        "review_notes");
+    assertNoColumn("inspections", "flight_permit_file_key");
+    assertNoColumn("inspections", "flight_permit_verification_status");
+    assertColumns(
+        "field_session_telemetry",
+        "field_session_id",
+        "telemetry_source",
+        "flight_duration_seconds",
+        "distance_flown_meters",
+        "max_altitude_meters",
+        "start_battery_percent",
+        "end_battery_percent",
+        "flight_final_state",
+        "flight_report_note",
+        "flight_trace_json",
+        "flight_video_evidence_id");
+    assertNoColumn("field_sessions", "telemetry_source");
+    assertNoColumn("field_sessions", "flight_trace_json");
 
     assertColumns(
         "evidence",

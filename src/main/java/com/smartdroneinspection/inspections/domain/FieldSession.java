@@ -1,9 +1,12 @@
 package com.smartdroneinspection.inspections.domain;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
@@ -53,35 +56,12 @@ public class FieldSession {
   @Column(name = "pre_flight_checklist_note", length = 2000)
   private String preFlightChecklistNote;
 
-  @Column(name = "telemetry_source", length = 64)
-  private String telemetrySource;
-
-  @Column(name = "flight_duration_seconds")
-  private Integer flightDurationSeconds;
-
-  @Column(name = "distance_flown_meters", precision = 10, scale = 2)
-  private java.math.BigDecimal distanceFlownMeters;
-
-  @Column(name = "max_altitude_meters", precision = 8, scale = 2)
-  private java.math.BigDecimal maxAltitudeMeters;
-
-  @Column(name = "start_battery_percent")
-  private Integer startBatteryPercent;
-
-  @Column(name = "end_battery_percent")
-  private Integer endBatteryPercent;
-
-  @Column(name = "flight_final_state", length = 32)
-  private String flightFinalState;
-
-  @Column(name = "flight_report_note", length = 1000)
-  private String flightReportNote;
-
-  @Column(name = "flight_trace_json", columnDefinition = "TEXT")
-  private String flightTraceJson;
-
-  @Column(name = "flight_video_evidence_id")
-  private UUID flightVideoEvidenceId;
+  @OneToOne(
+      mappedBy = "fieldSession",
+      cascade = CascadeType.ALL,
+      orphanRemoval = true,
+      fetch = FetchType.EAGER)
+  private FieldSessionTelemetry telemetry;
 
   @Column(name = "hung_notified_at")
   private Instant hungNotifiedAt;
@@ -237,75 +217,74 @@ public class FieldSession {
       String finalState,
       String note,
       String flightTraceJson) {
-    this.telemetrySource = telemetrySource;
-    this.flightDurationSeconds = durationSeconds == null ? null : Math.max(0, durationSeconds);
-    this.distanceFlownMeters =
-        distanceFlownMeters == null
-            ? null
-            : java.math.BigDecimal.valueOf(Math.max(0.0, distanceFlownMeters))
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-    this.maxAltitudeMeters =
-        maxAltitudeMeters == null
-            ? null
-            : java.math.BigDecimal.valueOf(maxAltitudeMeters)
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-    this.startBatteryPercent = startBatteryPercent;
-    this.endBatteryPercent = endBatteryPercent;
-    this.flightFinalState = finalState;
-    this.flightReportNote = note != null && note.length() > 1000 ? note.substring(0, 1000) : note;
-    if (flightTraceJson != null && !flightTraceJson.isBlank()) {
-      this.flightTraceJson = flightTraceJson;
-    }
+    ensureTelemetry()
+        .recordReport(
+            telemetrySource,
+            durationSeconds,
+            distanceFlownMeters,
+            maxAltitudeMeters,
+            startBatteryPercent,
+            endBatteryPercent,
+            finalState,
+            note,
+            flightTraceJson);
     this.updatedAt = Instant.now();
   }
 
   public void recordFlightVideoEvidenceId(UUID evidenceId) {
-    this.flightVideoEvidenceId = evidenceId;
+    ensureTelemetry().recordVideoEvidenceId(evidenceId);
     this.updatedAt = Instant.now();
   }
 
+  private FieldSessionTelemetry ensureTelemetry() {
+    if (this.telemetry == null) {
+      this.telemetry = new FieldSessionTelemetry(this);
+    }
+    return this.telemetry;
+  }
+
   public boolean hasPersistedFlightReport() {
-    return telemetrySource != null && !"NONE".equals(telemetrySource);
+    return telemetry != null && telemetry.hasPersistedReport();
   }
 
   public String getTelemetrySource() {
-    return telemetrySource;
+    return telemetry == null ? null : telemetry.getTelemetrySource();
   }
 
   public Integer getFlightDurationSeconds() {
-    return flightDurationSeconds;
+    return telemetry == null ? null : telemetry.getFlightDurationSeconds();
   }
 
   public java.math.BigDecimal getDistanceFlownMeters() {
-    return distanceFlownMeters;
+    return telemetry == null ? null : telemetry.getDistanceFlownMeters();
   }
 
   public java.math.BigDecimal getMaxAltitudeMeters() {
-    return maxAltitudeMeters;
+    return telemetry == null ? null : telemetry.getMaxAltitudeMeters();
   }
 
   public Integer getStartBatteryPercent() {
-    return startBatteryPercent;
+    return telemetry == null ? null : telemetry.getStartBatteryPercent();
   }
 
   public Integer getEndBatteryPercent() {
-    return endBatteryPercent;
+    return telemetry == null ? null : telemetry.getEndBatteryPercent();
   }
 
   public String getFlightFinalState() {
-    return flightFinalState;
+    return telemetry == null ? null : telemetry.getFlightFinalState();
   }
 
   public String getFlightReportNote() {
-    return flightReportNote;
+    return telemetry == null ? null : telemetry.getFlightReportNote();
   }
 
   public String getFlightTraceJson() {
-    return flightTraceJson;
+    return telemetry == null ? null : telemetry.getFlightTraceJson();
   }
 
   public UUID getFlightVideoEvidenceId() {
-    return flightVideoEvidenceId;
+    return telemetry == null ? null : telemetry.getFlightVideoEvidenceId();
   }
 
   public Instant getCreatedAt() {

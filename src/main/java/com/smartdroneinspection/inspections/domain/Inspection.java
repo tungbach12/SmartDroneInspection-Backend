@@ -3,12 +3,15 @@ package com.smartdroneinspection.inspections.domain;
 import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
 import com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
@@ -39,61 +42,12 @@ public class Inspection {
   @Column(name = "planned_end_at")
   private Instant plannedEndAt;
 
-  @Column(name = "flight_permit_file_key", length = 1000)
-  private String flightPermitFileKey;
-
-  @Column(name = "flight_permit_file_name", length = 500)
-  private String flightPermitFileName;
-
-  @Column(name = "flight_permit_number", length = 120)
-  private String flightPermitNumber;
-
-  @Column(name = "flight_permit_authority", length = 200)
-  private String flightPermitAuthority;
-
-  @Column(name = "flight_permit_valid_from")
-  private Instant flightPermitValidFrom;
-
-  @Column(name = "flight_permit_valid_to")
-  private Instant flightPermitValidTo;
-
-  @Column(name = "flight_permit_drone_serial", length = 120)
-  private String flightPermitDroneSerial;
-
-  @Column(name = "flight_permit_max_altitude_m")
-  private Integer flightPermitMaxAltitudeM;
-
-  @Column(name = "flight_permit_file_sha256", length = 64)
-  private String flightPermitFileSha256;
-
-  @Column(name = "flight_permit_file_size_bytes")
-  private Long flightPermitFileSizeBytes;
-
-  @Column(name = "flight_permit_content_type", length = 120)
-  private String flightPermitContentType;
-
-  @Column(name = "flight_permit_uploaded_at")
-  private Instant flightPermitUploadedAt;
-
-  @Column(name = "flight_permit_uploaded_by")
-  private UUID flightPermitUploadedBy;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "flight_permit_verification_status", nullable = false, length = 32)
-  private FlightPermitVerificationStatus flightPermitVerificationStatus =
-      FlightPermitVerificationStatus.NOT_UPLOADED;
-
-  @Column(name = "flight_permit_verified_by")
-  private UUID flightPermitVerifiedBy;
-
-  @Column(name = "flight_permit_verified_at")
-  private Instant flightPermitVerifiedAt;
-
-  @Column(name = "flight_permit_rejection_reason", length = 1000)
-  private String flightPermitRejectionReason;
-
-  @Column(name = "flight_permit_review_notes", length = 1000)
-  private String flightPermitReviewNotes;
+  @OneToOne(
+      mappedBy = "inspection",
+      cascade = CascadeType.ALL,
+      orphanRemoval = true,
+      fetch = FetchType.EAGER)
+  private InspectionFlightPermit flightPermit;
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 32)
@@ -255,29 +209,23 @@ public class Inspection {
           "Flight permit max altitude must be between 1 and 2000 meters");
     }
     Instant effectiveUploadedAt = uploadedAt != null ? uploadedAt : Instant.now();
-    this.flightPermitFileKey = fileKey.trim();
-    this.flightPermitFileName = fileName.trim();
-    this.flightPermitNumber =
-        permitNumber == null || permitNumber.isBlank() ? null : permitNumber.trim();
-    this.flightPermitAuthority =
-        issuingAuthority == null || issuingAuthority.isBlank() ? null : issuingAuthority.trim();
-    this.flightPermitValidFrom = validFrom;
-    this.flightPermitValidTo = validTo;
-    this.flightPermitDroneSerial =
-        droneSerial == null || droneSerial.isBlank() ? null : droneSerial.trim();
-    this.flightPermitMaxAltitudeM = maxAltitudeM;
-    this.flightPermitFileSha256 =
-        fileSha256 == null || fileSha256.isBlank() ? null : fileSha256.trim();
-    this.flightPermitFileSizeBytes = fileSizeBytes;
-    this.flightPermitContentType =
-        contentType == null || contentType.isBlank() ? null : contentType.trim();
-    this.flightPermitUploadedAt = effectiveUploadedAt;
-    this.flightPermitUploadedBy = uploadedBy;
-    this.flightPermitVerificationStatus = FlightPermitVerificationStatus.PENDING_REVIEW;
-    this.flightPermitVerifiedBy = null;
-    this.flightPermitVerifiedAt = null;
-    this.flightPermitRejectionReason = null;
-    this.flightPermitReviewNotes = null;
+    if (this.flightPermit == null) {
+      this.flightPermit = new InspectionFlightPermit(this);
+    }
+    this.flightPermit.record(
+        fileKey,
+        fileName,
+        permitNumber,
+        issuingAuthority,
+        validFrom,
+        validTo,
+        droneSerial,
+        maxAltitudeM,
+        fileSha256,
+        fileSizeBytes,
+        contentType,
+        effectiveUploadedAt,
+        uploadedBy);
     this.updatedAt = effectiveUploadedAt;
   }
 
@@ -285,16 +233,12 @@ public class Inspection {
     if (!hasFlightPermit()) {
       throw new IllegalStateException("Cannot approve a missing flight permit");
     }
-    if (flightPermitVerificationStatus != FlightPermitVerificationStatus.PENDING_REVIEW) {
+    if (getFlightPermitVerificationStatus() != FlightPermitVerificationStatus.PENDING_REVIEW) {
       throw new IllegalStateException(
           "Flight permit can only be approved from PENDING_REVIEW status");
     }
     Instant now = verifiedAt != null ? verifiedAt : Instant.now();
-    this.flightPermitVerificationStatus = FlightPermitVerificationStatus.APPROVED;
-    this.flightPermitVerifiedBy = Objects.requireNonNull(reviewerId, "Reviewer ID is required");
-    this.flightPermitVerifiedAt = now;
-    this.flightPermitRejectionReason = null;
-    this.flightPermitReviewNotes = notes == null || notes.isBlank() ? null : notes.trim();
+    this.flightPermit.approve(reviewerId, notes, now);
     this.updatedAt = now;
   }
 
@@ -302,8 +246,9 @@ public class Inspection {
     if (!hasFlightPermit()) {
       throw new IllegalStateException("Cannot reject a missing flight permit");
     }
-    if (flightPermitVerificationStatus != FlightPermitVerificationStatus.PENDING_REVIEW
-        && flightPermitVerificationStatus != FlightPermitVerificationStatus.APPROVED) {
+    FlightPermitVerificationStatus currentStatus = getFlightPermitVerificationStatus();
+    if (currentStatus != FlightPermitVerificationStatus.PENDING_REVIEW
+        && currentStatus != FlightPermitVerificationStatus.APPROVED) {
       throw new IllegalStateException(
           "Flight permit can only be rejected from PENDING_REVIEW or APPROVED status");
     }
@@ -311,21 +256,16 @@ public class Inspection {
       throw new IllegalArgumentException("Rejection reason is required");
     }
     Instant now = verifiedAt != null ? verifiedAt : Instant.now();
-    this.flightPermitVerificationStatus = FlightPermitVerificationStatus.REJECTED;
-    this.flightPermitVerifiedBy = Objects.requireNonNull(reviewerId, "Reviewer ID is required");
-    this.flightPermitVerifiedAt = now;
-    this.flightPermitRejectionReason = reason.trim();
-    this.flightPermitReviewNotes = notes == null || notes.isBlank() ? null : notes.trim();
+    this.flightPermit.reject(reviewerId, reason, notes, now);
     this.updatedAt = now;
   }
 
   public boolean hasFlightPermit() {
-    return flightPermitFileKey != null && !flightPermitFileKey.isBlank();
+    return flightPermit != null && flightPermit.hasFile();
   }
 
   public boolean isFlightPermitApproved() {
-    return hasFlightPermit()
-        && flightPermitVerificationStatus == FlightPermitVerificationStatus.APPROVED;
+    return flightPermit != null && flightPermit.isApproved();
   }
 
   /** MF3-06: the Inspector confirms the reviewed evidence/findings baseline before drafting. */
@@ -441,77 +381,77 @@ public class Inspection {
   }
 
   public String getFlightPermitFileKey() {
-    return flightPermitFileKey;
+    return flightPermit == null ? null : flightPermit.getFileKey();
   }
 
   public String getFlightPermitFileName() {
-    return flightPermitFileName;
+    return flightPermit == null ? null : flightPermit.getFileName();
   }
 
   public String getFlightPermitNumber() {
-    return flightPermitNumber;
+    return flightPermit == null ? null : flightPermit.getPermitNumber();
   }
 
   public String getFlightPermitAuthority() {
-    return flightPermitAuthority;
+    return flightPermit == null ? null : flightPermit.getAuthority();
   }
 
   public Instant getFlightPermitValidFrom() {
-    return flightPermitValidFrom;
+    return flightPermit == null ? null : flightPermit.getValidFrom();
   }
 
   public Instant getFlightPermitValidTo() {
-    return flightPermitValidTo;
+    return flightPermit == null ? null : flightPermit.getValidTo();
   }
 
   public String getFlightPermitDroneSerial() {
-    return flightPermitDroneSerial;
+    return flightPermit == null ? null : flightPermit.getDroneSerial();
   }
 
   public Integer getFlightPermitMaxAltitudeM() {
-    return flightPermitMaxAltitudeM;
+    return flightPermit == null ? null : flightPermit.getMaxAltitudeM();
   }
 
   public String getFlightPermitFileSha256() {
-    return flightPermitFileSha256;
+    return flightPermit == null ? null : flightPermit.getFileSha256();
   }
 
   public Long getFlightPermitFileSizeBytes() {
-    return flightPermitFileSizeBytes;
+    return flightPermit == null ? null : flightPermit.getFileSizeBytes();
   }
 
   public String getFlightPermitContentType() {
-    return flightPermitContentType;
+    return flightPermit == null ? null : flightPermit.getContentType();
   }
 
   public Instant getFlightPermitUploadedAt() {
-    return flightPermitUploadedAt;
+    return flightPermit == null ? null : flightPermit.getUploadedAt();
   }
 
   public UUID getFlightPermitUploadedBy() {
-    return flightPermitUploadedBy;
+    return flightPermit == null ? null : flightPermit.getUploadedBy();
   }
 
   public FlightPermitVerificationStatus getFlightPermitVerificationStatus() {
-    return flightPermitVerificationStatus == null
+    return flightPermit == null
         ? FlightPermitVerificationStatus.NOT_UPLOADED
-        : flightPermitVerificationStatus;
+        : flightPermit.getVerificationStatus();
   }
 
   public UUID getFlightPermitVerifiedBy() {
-    return flightPermitVerifiedBy;
+    return flightPermit == null ? null : flightPermit.getVerifiedBy();
   }
 
   public Instant getFlightPermitVerifiedAt() {
-    return flightPermitVerifiedAt;
+    return flightPermit == null ? null : flightPermit.getVerifiedAt();
   }
 
   public String getFlightPermitRejectionReason() {
-    return flightPermitRejectionReason;
+    return flightPermit == null ? null : flightPermit.getRejectionReason();
   }
 
   public String getFlightPermitReviewNotes() {
-    return flightPermitReviewNotes;
+    return flightPermit == null ? null : flightPermit.getReviewNotes();
   }
 
   public Instant getPlannedStartAt() {
@@ -656,9 +596,7 @@ public class Inspection {
     this.inspectorId = Objects.requireNonNull(newInspectorId, "Inspector ID is required");
     boolean droneChanged = !Objects.equals(this.droneId, newDroneId);
     this.droneId = newDroneId;
-    if (droneChanged
-        && hasFlightPermit()
-        && this.flightPermitVerificationStatus == FlightPermitVerificationStatus.APPROVED) {
+    if (droneChanged && isFlightPermitApproved()) {
       resetFlightPermitVerificationForReReview();
     }
     Instant now = Instant.now();
@@ -701,12 +639,11 @@ public class Inspection {
     }
     this.plannedStartAt = plannedStartAt;
     this.plannedEndAt = plannedEndAt;
-    if (hasFlightPermit()
-        && this.flightPermitVerificationStatus == FlightPermitVerificationStatus.APPROVED
-        && ((this.flightPermitValidFrom != null
-                && plannedStartAt.isBefore(this.flightPermitValidFrom))
-            || (this.flightPermitValidTo != null
-                && plannedEndAt.isAfter(this.flightPermitValidTo)))) {
+    Instant permitValidFrom = getFlightPermitValidFrom();
+    Instant permitValidTo = getFlightPermitValidTo();
+    if (isFlightPermitApproved()
+        && ((permitValidFrom != null && plannedStartAt.isBefore(permitValidFrom))
+            || (permitValidTo != null && plannedEndAt.isAfter(permitValidTo)))) {
       resetFlightPermitVerificationForReReview();
     }
     if (this.assignmentStatus == AssignmentStatus.DECLINED) {
@@ -721,11 +658,9 @@ public class Inspection {
   }
 
   private void resetFlightPermitVerificationForReReview() {
-    this.flightPermitVerificationStatus = FlightPermitVerificationStatus.PENDING_REVIEW;
-    this.flightPermitVerifiedBy = null;
-    this.flightPermitVerifiedAt = null;
-    this.flightPermitRejectionReason = null;
-    this.flightPermitReviewNotes = null;
+    if (this.flightPermit != null) {
+      this.flightPermit.resetVerificationForReReview();
+    }
   }
 
   /**
@@ -741,7 +676,8 @@ public class Inspection {
     if (!isFlightPermitApproved()) {
       throw new IllegalStateException("Cannot bring forward an unapproved flight permit");
     }
-    if (this.flightPermitValidTo != null && !this.flightPermitValidTo.isAfter(effectiveNow)) {
+    Instant permitValidTo = getFlightPermitValidTo();
+    if (permitValidTo != null && !permitValidTo.isAfter(effectiveNow)) {
       throw new IllegalStateException("Cannot start immediately with an expired flight permit");
     }
     if (this.plannedEndAt != null && !this.plannedEndAt.isAfter(effectiveNow)) {
@@ -749,8 +685,9 @@ public class Inspection {
           "Cannot start immediately after the scheduled window has expired");
     }
     Instant shiftedStart = effectiveNow.minusSeconds(60);
-    if (this.flightPermitValidFrom != null && effectiveNow.isBefore(this.flightPermitValidFrom)) {
-      this.flightPermitValidFrom = shiftedStart;
+    Instant permitValidFrom = getFlightPermitValidFrom();
+    if (permitValidFrom != null && effectiveNow.isBefore(permitValidFrom)) {
+      this.flightPermit.shiftValidFrom(shiftedStart);
     }
     if (this.plannedStartAt != null && effectiveNow.isBefore(this.plannedStartAt)) {
       java.time.Duration originalDuration =

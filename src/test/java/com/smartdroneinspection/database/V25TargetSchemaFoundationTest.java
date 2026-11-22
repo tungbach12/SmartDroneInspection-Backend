@@ -94,9 +94,10 @@ class V25TargetSchemaFoundationTest {
                     "planned_end_at",
                     "inspector_id",
                     "drone_id",
-                    "flight_permit_file_key",
-                    "flight_permit_file_name",
                     "status")),
+            Map.entry(
+                "inspection_flight_permits",
+                Set.of("inspection_id", "file_key", "file_name", "verification_status")),
             Map.entry(
                 "field_sessions",
                 Set.of(
@@ -106,6 +107,13 @@ class V25TargetSchemaFoundationTest {
                     "ended_at",
                     "pre_flight_checklist_note",
                     "outcome_notes")),
+            Map.entry(
+                "field_session_telemetry",
+                Set.of(
+                    "field_session_id",
+                    "telemetry_source",
+                    "flight_duration_seconds",
+                    "flight_trace_json")),
             Map.entry(
                 "evidence",
                 Set.of(
@@ -172,7 +180,7 @@ class V25TargetSchemaFoundationTest {
                     "payout_reference",
                     "payout_recorded_at")));
 
-    assertThat(targetColumns).hasSize(21);
+    assertThat(targetColumns).hasSize(23);
     for (Map.Entry<String, Set<String>> contract : targetColumns.entrySet()) {
       Set<String> actualColumns =
           jdbcTemplate

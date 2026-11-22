@@ -179,8 +179,7 @@ class InspectionDroneHubServiceSessionTest {
   @Test
   void syncFlightVideoReusesExistingEvidence() {
     UUID evidenceId = UUID.randomUUID();
-    org.springframework.test.util.ReflectionTestUtils.setField(
-        session, "flightVideoEvidenceId", evidenceId);
+    session.recordFlightVideoEvidenceId(evidenceId);
     EvidenceResponse existing = mock(EvidenceResponse.class);
     when(existing.id()).thenReturn(evidenceId);
     when(existing.isDeleted()).thenReturn(false);

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
-import com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import java.math.BigDecimal;
@@ -161,23 +160,21 @@ class InspectionResponseTest {
     ReflectionTestUtils.setField(inspection, "clarificationCount", 2);
     ReflectionTestUtils.setField(inspection, "assignmentStatus", AssignmentStatus.DECLINED);
     ReflectionTestUtils.setField(inspection, "assignmentAcceptedAt", Instant.now());
-    ReflectionTestUtils.setField(inspection, "flightPermitNumber", "FP-1");
-    ReflectionTestUtils.setField(inspection, "flightPermitAuthority", "CAA");
-    ReflectionTestUtils.setField(inspection, "flightPermitValidFrom", Instant.now());
-    ReflectionTestUtils.setField(inspection, "flightPermitValidTo", Instant.now());
-    ReflectionTestUtils.setField(inspection, "flightPermitDroneSerial", "SN-1");
-    ReflectionTestUtils.setField(inspection, "flightPermitMaxAltitudeM", 120);
-    ReflectionTestUtils.setField(inspection, "flightPermitFileSha256", "abc");
-    ReflectionTestUtils.setField(inspection, "flightPermitFileSizeBytes", 2048L);
-    ReflectionTestUtils.setField(inspection, "flightPermitContentType", "application/pdf");
-    ReflectionTestUtils.setField(inspection, "flightPermitUploadedAt", Instant.now());
-    ReflectionTestUtils.setField(inspection, "flightPermitUploadedBy", UUID.randomUUID());
-    ReflectionTestUtils.setField(
-        inspection, "flightPermitVerificationStatus", FlightPermitVerificationStatus.APPROVED);
-    ReflectionTestUtils.setField(inspection, "flightPermitVerifiedBy", UUID.randomUUID());
-    ReflectionTestUtils.setField(inspection, "flightPermitVerifiedAt", Instant.now());
-    ReflectionTestUtils.setField(inspection, "flightPermitRejectionReason", null);
-    ReflectionTestUtils.setField(inspection, "flightPermitReviewNotes", "Looks good");
+    inspection.recordFlightPermit(
+        "permits/fp-1.pdf",
+        "fp-1.pdf",
+        "FP-1",
+        "CAA",
+        Instant.now(),
+        Instant.now().plusSeconds(3600),
+        "SN-1",
+        120,
+        "abc",
+        2048L,
+        "application/pdf",
+        Instant.now(),
+        UUID.randomUUID());
+    inspection.approveFlightPermit(UUID.randomUUID(), "Looks good", Instant.now());
     return inspection;
   }
 }

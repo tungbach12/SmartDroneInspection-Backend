@@ -156,47 +156,44 @@ class FlightPermitPolicyTest {
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_REQUIRED");
 
-    ReflectionTestUtils.setField(inspection, "flightPermitFileKey", "permits/fp.pdf");
-    ReflectionTestUtils.setField(
-        inspection,
-        "flightPermitVerificationStatus",
-        FlightPermitVerificationStatus.PENDING_REVIEW);
+    inspection.recordFlightPermit("permits/fp.pdf", "fp.pdf", NOW);
+    Object permit = ReflectionTestUtils.getField(inspection, "flightPermit");
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_PENDING_REVIEW");
 
     ReflectionTestUtils.setField(
-        inspection, "flightPermitVerificationStatus", FlightPermitVerificationStatus.REJECTED);
+        permit, "verificationStatus", FlightPermitVerificationStatus.REJECTED);
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_REJECTED");
 
     ReflectionTestUtils.setField(
-        inspection, "flightPermitVerificationStatus", FlightPermitVerificationStatus.NOT_UPLOADED);
+        permit, "verificationStatus", FlightPermitVerificationStatus.NOT_UPLOADED);
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_NOT_APPROVED");
 
     ReflectionTestUtils.setField(
-        inspection, "flightPermitVerificationStatus", FlightPermitVerificationStatus.APPROVED);
-    ReflectionTestUtils.setField(inspection, "flightPermitValidTo", NOW.minusSeconds(1));
+        permit, "verificationStatus", FlightPermitVerificationStatus.APPROVED);
+    ReflectionTestUtils.setField(permit, "validTo", NOW.minusSeconds(1));
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_EXPIRED");
 
-    ReflectionTestUtils.setField(inspection, "flightPermitValidTo", VALID_TO);
-    ReflectionTestUtils.setField(inspection, "flightPermitValidFrom", NOW.plusSeconds(3600));
+    ReflectionTestUtils.setField(permit, "validTo", VALID_TO);
+    ReflectionTestUtils.setField(permit, "validFrom", NOW.plusSeconds(3600));
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_NOT_YET_VALID");
 
-    ReflectionTestUtils.setField(inspection, "flightPermitValidFrom", VALID_FROM);
-    ReflectionTestUtils.setField(inspection, "flightPermitDroneSerial", "SN-2");
+    ReflectionTestUtils.setField(permit, "validFrom", VALID_FROM);
+    ReflectionTestUtils.setField(permit, "droneSerial", "SN-2");
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, drone, NOW),
         "PERMIT_DRONE_MISMATCH");
 
-    ReflectionTestUtils.setField(inspection, "flightPermitDroneSerial", "SN-1");
+    ReflectionTestUtils.setField(permit, "droneSerial", "SN-1");
     FlightPermitPolicy.requireApprovedForFlight(inspection, drone, NOW);
   }
 

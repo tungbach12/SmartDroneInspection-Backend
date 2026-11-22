@@ -167,7 +167,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void anInspectionWithoutFlightPermitCannotStart() {
     jdbcTemplate.update(
-        "UPDATE inspections SET flight_permit_file_key = NULL WHERE id = ?", inspectionId);
+        "DELETE FROM inspection_flight_permits WHERE inspection_id = ?", inspectionId);
     entityManager.clear();
 
     assertThatThrownBy(() -> service.start(inspectorId, inspectionId, "Ready at the gate"))
@@ -372,9 +372,12 @@ class InspectionFieldSessionServiceTest {
   void startNowBringsFuturePermitAndScheduleStartForwardWhileStrictStartRefusesEarlyStart() {
     Instant futureStart = Instant.now().plus(30, ChronoUnit.DAYS);
     jdbcTemplate.update(
-        "UPDATE inspections SET planned_start_at = ?, planned_end_at = ?, flight_permit_valid_from = ?, flight_permit_valid_to = ? WHERE id = ?",
+        "UPDATE inspections SET planned_start_at = ?, planned_end_at = ? WHERE id = ?",
         Timestamp.from(futureStart),
         Timestamp.from(futureStart.plus(2, ChronoUnit.HOURS)),
+        inspectionId);
+    jdbcTemplate.update(
+        "UPDATE inspection_flight_permits SET valid_from = ?, valid_to = ? WHERE inspection_id = ?",
         Timestamp.from(futureStart),
         Timestamp.from(futureStart.plus(4, ChronoUnit.HOURS)),
         inspectionId);
@@ -397,7 +400,7 @@ class InspectionFieldSessionServiceTest {
     Instant updatedPermitFrom =
         jdbcTemplate
             .queryForObject(
-                "SELECT flight_permit_valid_from FROM inspections WHERE id = ?",
+                "SELECT valid_from FROM inspection_flight_permits WHERE inspection_id = ?",
                 Timestamp.class,
                 inspectionId)
             .toInstant();
@@ -407,7 +410,7 @@ class InspectionFieldSessionServiceTest {
   @Test
   void startNowStillRefusesUnapprovedPermit() {
     jdbcTemplate.update(
-        "UPDATE inspections SET flight_permit_verification_status = 'PENDING_REVIEW' WHERE id = ?",
+        "UPDATE inspection_flight_permits SET verification_status = 'PENDING_REVIEW' WHERE inspection_id = ?",
         inspectionId);
     entityManager.clear();
 
@@ -456,19 +459,26 @@ class InspectionFieldSessionServiceTest {
     UUID id = UUID.randomUUID();
     jdbcTemplate.update(
         """
-        INSERT INTO inspections (id, owner_customer_id, asset_id, inspector_id, drone_id, flight_permit_file_key, flight_permit_file_name, flight_permit_verification_status, flight_permit_valid_from, flight_permit_valid_to, status,
+        INSERT INTO inspections (id, owner_customer_id, asset_id, inspector_id, drone_id, status,
           partner_assignment, planned_start_at, planned_end_at)
-        VALUES (?, ?, ?, ?, ?, 'permits/test.pdf', 'test.pdf', 'APPROVED', ?, ?, 'SCHEDULED', TRUE, ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'SCHEDULED', TRUE, ?, ?)
         """,
         id,
         reviewerId,
         assetId,
         inspectorId,
         droneId,
-        Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
-        Timestamp.from(PLANNED_START.plus(6, ChronoUnit.HOURS)),
         Timestamp.from(PLANNED_START),
         Timestamp.from(PLANNED_START.plus(2, ChronoUnit.HOURS)));
+    jdbcTemplate.update(
+        """
+        INSERT INTO inspection_flight_permits
+          (inspection_id, file_key, file_name, verification_status, valid_from, valid_to)
+        VALUES (?, 'permits/test.pdf', 'test.pdf', 'APPROVED', ?, ?)
+        """,
+        id,
+        Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
+        Timestamp.from(PLANNED_START.plus(6, ChronoUnit.HOURS)));
     return id;
   }
 
