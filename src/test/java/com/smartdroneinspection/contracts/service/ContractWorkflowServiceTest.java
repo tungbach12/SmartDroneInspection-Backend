@@ -393,6 +393,95 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void oneTimeQuoteMayMoveTheInspectionLaterAndMaterializesTheAcceptedDate() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    request.markQuoted();
+    ServiceRequestQuote laterQuote =
+        quoteEntity(
+            requestId,
+            Instant.parse("2027-02-10T09:00:00Z"),
+            Instant.parse("2027-02-10T10:00:00Z"));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.of(laterQuote));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(laterQuote));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(occurrences.save(any(ServiceRequestOccurrence.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.acceptQuote(
+        customerId, requestId, new AcceptServiceQuoteRequest(laterQuote.getRowVersion()));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences).save(captor.capture());
+    assertThat(captor.getValue().getPlannedStartAt())
+        .isEqualTo(Instant.parse("2027-02-10T09:00:00Z"));
+    assertThat(captor.getValue().getPlannedEndAt())
+        .isEqualTo(Instant.parse("2027-02-10T10:00:00Z"));
+  }
+
+  @Test
+  void rejectsMovingTheFirstInspectionEarlierThanTheCustomerRequestedDate() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 10), LocalDate.of(2027, 2, 10));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                service.saveQuote(
+                    managerId,
+                    requestId,
+                    quote(
+                        Instant.parse("2027-02-09T09:00:00Z"),
+                        Instant.parse("2027-02-09T10:00:00Z"))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("cannot be earlier");
+    verify(quotes, never()).saveAndFlush(any(ServiceRequestQuote.class));
+  }
+
+  @Test
+  void rejectsEndDateRecurringQuoteThatLeavesFewerThanTwoOccurrences() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        new ServiceRequest(
+            orgId,
+            assetId,
+            customerId,
+            "Bridge inspection",
+            LocalDate.of(2027, 2, 1),
+            LocalDate.of(2027, 3, 1),
+            "UTC",
+            LocalTime.of(8, 0),
+            LocalTime.of(17, 0),
+            RequestType.RECURRING,
+            "MONTH",
+            1,
+            null,
+            LocalDate.of(2027, 3, 1));
+    setRequestId(request, requestId);
+    request.claimByManager(managerId, Instant.now());
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                service.saveQuote(
+                    managerId,
+                    requestId,
+                    quote(
+                        Instant.parse("2027-03-01T09:00:00Z"),
+                        Instant.parse("2027-03-01T10:00:00Z"))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("at least two");
+    verify(quotes, never()).saveAndFlush(any(ServiceRequestQuote.class));
+  }
+
+  @Test
   void rejectsAcceptingRecurringQuoteIfPilotLicenseExpiresBeforeLastOccurrence() {
     UUID requestId = UUID.randomUUID();
     LocalDate requestedFrom = LocalDate.of(2026, 12, 4);
@@ -457,7 +546,7 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  void rejectsRecurringQuoteWhoseFirstDateDiffersFromCustomerRequestedDate() {
+  void allowsRecurringQuoteToMoveTheFirstDateLaterThanTheCustomerRequestedDate() {
     UUID requestId = UUID.randomUUID();
     LocalDate requestedFrom = LocalDate.of(2027, 2, 1);
     ServiceRequest request =
@@ -480,18 +569,21 @@ class ContractWorkflowServiceTest {
     request.claimByManager(managerId, Instant.now());
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(quotes.findWithLockByRequestId(requestId)).thenReturn(Optional.empty());
+    when(quotes.saveAndFlush(any(ServiceRequestQuote.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(requests.saveAndFlush(any(ServiceRequest.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
 
-    assertThatThrownBy(
-            () ->
-                service.saveQuote(
-                    managerId,
-                    requestId,
-                    quote(
-                        Instant.parse("2027-02-02T09:00:00Z"),
-                        Instant.parse("2027-02-02T10:00:00Z"))))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("must match the customer-requested start date");
-    verify(quotes, never()).saveAndFlush(any(ServiceRequestQuote.class));
+    service.saveQuote(
+        managerId,
+        requestId,
+        quote(Instant.parse("2027-02-02T09:00:00Z"), Instant.parse("2027-02-02T10:00:00Z")));
+
+    ArgumentCaptor<ServiceRequestQuote> captor = ArgumentCaptor.forClass(ServiceRequestQuote.class);
+    verify(quotes).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().getFirstOccurrenceStartAt())
+        .isEqualTo(Instant.parse("2027-02-02T09:00:00Z"));
+    assertThat(request.getStatus()).isEqualTo(ServiceRequestStatus.QUOTED);
   }
 
   @Test
@@ -759,6 +851,29 @@ class ContractWorkflowServiceTest {
     assertThat(service.list(managerId)).hasSize(1);
     assertThat(service.list(managerId).getFirst().serviceManager()).isNull();
     assertThat(service.list(managerId).getFirst().canClaim()).isFalse();
+  }
+
+  @Test
+  void managerDetailIncludesTheOwnerCustomerNameForTheAssetOverview() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        assignedRequestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(quotes.findByRequestId(any())).thenReturn(Optional.empty());
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(any())).thenReturn(List.of());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(any())).thenReturn(List.of());
+    when(users.findActiveUser(orgId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    orgId,
+                    Set.of(Roles.CUSTOMER),
+                    "Customer Representative",
+                    "customer@example.test")));
+
+    var response = service.get(managerId, requestId);
+
+    assertThat(response.ownerCustomerName()).isEqualTo("Customer Representative");
   }
 
   @Test
@@ -1256,7 +1371,7 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  void rejectsCountBoundOccurrencesPastTheRequestedUntilDate() throws IOException {
+  void countBoundRecurringQuoteShiftsTheTermPastTheOriginalRequestedUntilDate() throws IOException {
     UUID requestId = UUID.randomUUID();
     ServiceRequest request = recurringRequest(requestId, 5, null);
     request.markQuoted();
@@ -1275,10 +1390,19 @@ class ContractWorkflowServiceTest {
     when(occurrences.save(any(ServiceRequestOccurrence.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    assertThatThrownBy(() -> service.uploadSignedContract(managerId, requestId, pdf("signed.pdf")))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("contract term has changed");
-    verify(occurrences, never()).save(any(ServiceRequestOccurrence.class));
+    service.uploadSignedContract(managerId, requestId, pdf("signed.pdf"));
+
+    ArgumentCaptor<ServiceRequestOccurrence> captor =
+        ArgumentCaptor.forClass(ServiceRequestOccurrence.class);
+    verify(occurrences, org.mockito.Mockito.times(5)).save(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(ServiceRequestOccurrence::getPlannedStartAt)
+        .containsExactly(
+            Instant.parse("2027-02-08T09:00:00Z"),
+            Instant.parse("2027-02-15T09:00:00Z"),
+            Instant.parse("2027-02-22T09:00:00Z"),
+            Instant.parse("2027-03-01T09:00:00Z"),
+            Instant.parse("2027-03-08T09:00:00Z"));
   }
 
   @Test

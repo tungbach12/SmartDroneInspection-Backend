@@ -13,6 +13,7 @@ import java.util.UUID;
 public record ServiceRequestResponse(
     UUID id,
     UUID ownerCustomerId,
+    String ownerCustomerName,
     UUID assetId,
     String description,
     LocalDate requestedFrom,
@@ -49,6 +50,7 @@ public record ServiceRequestResponse(
     return new ServiceRequestResponse(
         request.getId(),
         null,
+        null,
         request.getAssetId(),
         request.getDescription(),
         request.getRequestedFrom(),
@@ -84,6 +86,7 @@ public record ServiceRequestResponse(
 
   public static ServiceRequestResponse from(
       ServiceRequest request,
+      String ownerCustomerName,
       ServiceRequestQuoteResponse currentQuote,
       ServiceManagerContactResponse serviceManager,
       List<ServiceRequestOccurrenceResponse> occurrences,
@@ -92,6 +95,7 @@ public record ServiceRequestResponse(
     return new ServiceRequestResponse(
         request.getId(),
         request.getOwnerCustomerId(),
+        ownerCustomerName,
         request.getAssetId(),
         request.getDescription(),
         request.getRequestedFrom(),

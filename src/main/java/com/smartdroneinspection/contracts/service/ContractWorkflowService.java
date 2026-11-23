@@ -66,6 +66,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -507,12 +508,22 @@ public class ContractWorkflowService
     boolean isManager = actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER;
     boolean includeManagerProfile = includeManagerContact && request.getAssignedManagerId() != null;
     boolean managerOwnsRequest = isManager && request.getAssignedManagerId() != null;
+    // Only the Manager detail needs the customer label for its persistent asset overview, so the
+    // lookup stays off the list path and does not turn it into an N+1 query.
+    String ownerCustomerName =
+        isManager
+            ? users
+                .findActiveUser(request.getOwnerCustomerId())
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null)
+            : null;
     ServiceRequestResponse response =
         toResponse(
             request,
             includeManagerProfile,
             isManager ? actor : null,
-            !isManager || managerOwnsRequest);
+            !isManager || managerOwnsRequest,
+            ownerCustomerName);
     return isManager ? withAssignmentOptions(actor, response) : response;
   }
 
@@ -881,7 +892,7 @@ public class ContractWorkflowService
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManager(manager, requestId);
     requireAssignedManager(request, manager);
-    requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
+    requireQuoteFirstOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.plannedStartAt());
     }
@@ -925,7 +936,7 @@ public class ContractWorkflowService
       throw failure(
           HttpStatus.CONFLICT, "QUOTE_STATE_INVALID", "Request quote state is inconsistent");
     }
-    requireRequestedOccurrenceWindow(
+    requireQuoteFirstOccurrenceWindow(
         request, input.firstOccurrenceStartAt(), input.firstOccurrenceEndAt());
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.firstOccurrenceStartAt());
@@ -1179,7 +1190,6 @@ public class ContractWorkflowService
           "Service request must have a signed contract attached before assignment");
     }
 
-    requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
     Map<String, Object> acceptedSnapshot = request.getAcceptedTermsSnapshot();
     if (acceptedSnapshot == null) {
       throw failure(
@@ -1187,6 +1197,11 @@ public class ContractWorkflowService
           "ACCEPTED_TERMS_MISSING",
           "The accepted quote snapshot is required before dispatch");
     }
+    requireQuotedOccurrenceWindow(
+        request,
+        acceptedFirstOccurrenceStart(acceptedSnapshot),
+        input.plannedStartAt(),
+        input.plannedEndAt());
     List<String> acceptedFeatures = stringList(acceptedSnapshot.get("requiredDroneFeatureCodes"));
     partners.validateRequiredDroneFeatureCodes(acceptedFeatures);
     Asset dispatchAsset =
@@ -2477,9 +2492,15 @@ public class ContractWorkflowService
 
     for (int index = 0; index < count; index++) {
       LocalDate date = index == 0 ? firstDate : recurrenceDate(request, firstDate, index);
-      if (date.isAfter(request.getRequestedUntil())
-          || (request.getRecurrenceEndDate() != null
-              && date.isAfter(request.getRecurrenceEndDate()))) {
+      // An end-date recurring term stays on the customer-selected end date. A one-time quote may
+      // move later and a count-based term shifts with its first date, so only the end-date case is
+      // bounded by the original requested window.
+      boolean boundedByCustomerEndDate =
+          request.getRequestType() == RequestType.RECURRING && request.getOccurrenceCount() == null;
+      if (boundedByCustomerEndDate
+          && (date.isAfter(request.getRequestedUntil())
+              || (request.getRecurrenceEndDate() != null
+                  && date.isAfter(request.getRecurrenceEndDate())))) {
         throw failure(
             HttpStatus.BAD_REQUEST,
             "RECURRENCE_INVALID",
@@ -2518,53 +2539,49 @@ public class ContractWorkflowService
   private void validateRecurringQuoteSchedule(ServiceRequest request, Instant firstStartAt) {
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = firstStartAt.atZone(zone).toLocalDate();
-    if ("MONTH".equals(request.getRecurrenceUnit())
-        && !firstDate.equals(request.getRequestedFrom())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "The first quoted occurrence must match the customer-requested start date");
-    }
     if (firstDate.isBefore(request.getRequestedFrom())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "RECURRENCE_INVALID",
           "The first quoted occurrence cannot be earlier than the requested start date");
     }
-    LocalDate lastDate =
-        request.getOccurrenceCount() != null
-            ? recurrenceDate(request, request.getRequestedFrom(), request.getOccurrenceCount() - 1)
-            : request.getRecurrenceEndDate();
-    if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "The recurring schedule contract term has changed; create a new request with a valid end date");
-    }
-    LocalDate occurrenceEnd = lastDate;
-    if (request.getOccurrenceCount() == null) {
-      occurrenceEnd =
-          firstDate.isAfter(request.getRecurrenceEndDate())
-              ? firstDate
-              : request.getRecurrenceEndDate();
+    LocalDate occurrenceEnd;
+    if (request.getOccurrenceCount() != null) {
+      // The customer bought a fixed number of visits. Moving the first date shifts the whole term.
+      occurrenceEnd = recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1);
+    } else {
+      // The customer chose an end date. It stays fixed; a later start must still fit two visits.
+      occurrenceEnd = request.getRecurrenceEndDate();
+      if (occurrenceEnd == null || occurrenceEnd.isAfter(request.getRequestedUntil())) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The recurring schedule contract term has changed; create a new request with a valid end date");
+      }
+      if (firstDate.isAfter(occurrenceEnd)) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The first quoted occurrence must be on or before the customer-selected end date");
+      }
     }
     int count = 0;
     for (int index = 0; index <= 100; index++) {
       LocalDate date = recurrenceDate(request, firstDate, index);
       if (date.isAfter(occurrenceEnd)) break;
       count++;
-      if (count > 100) {
-        throw failure(
-            HttpStatus.BAD_REQUEST,
-            "RECURRENCE_INVALID",
-            "The recurring request cannot contain more than 100 inspection occurrences");
-      }
     }
     if (count < 2) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "RECURRENCE_INVALID",
-          "The recurring request must contain at least two inspection occurrences");
+          "The revised schedule must keep at least two inspection occurrences");
+    }
+    if (count > 100) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The recurring request cannot contain more than 100 inspection occurrences");
     }
   }
 
@@ -2600,15 +2617,25 @@ public class ContractWorkflowService
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = quotedStart.atZone(zone).toLocalDate();
     LocalTime firstTime = quotedStart.atZone(zone).toLocalTime();
-    LocalDate lastDate =
-        request.getOccurrenceCount() != null
-            ? recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1)
-            : request.getRecurrenceEndDate();
-    if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "The recurring schedule contract term has changed; create a new request with a valid end date");
+    LocalDate lastDate;
+    if (request.getOccurrenceCount() != null) {
+      // A count-based term shifts with the proposed first date.
+      lastDate = recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1);
+    } else {
+      // An end-date term stays fixed on the customer-selected end date.
+      lastDate = request.getRecurrenceEndDate();
+      if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The recurring schedule contract term has changed; create a new request with a valid end date");
+      }
+      if (firstDate.isAfter(lastDate)) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The first quoted occurrence must be on or before the customer-selected end date");
+      }
     }
 
     List<Instant> starts = new java.util.ArrayList<>();
@@ -2703,7 +2730,33 @@ public class ContractWorkflowService
     }
   }
 
-  private void requireRequestedOccurrenceWindow(
+  private Instant acceptedFirstOccurrenceStart(Map<String, Object> acceptedSnapshot) {
+    Object rawStart = acceptedSnapshot.get("firstOccurrenceStartAt");
+    if (rawStart instanceof Instant instant) {
+      return instant;
+    }
+    if (rawStart == null) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "ACCEPTED_TERMS_MISSING",
+          "The accepted quote schedule is required before dispatch");
+    }
+    try {
+      return Instant.parse(rawStart.toString());
+    } catch (DateTimeParseException exception) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "ACCEPTED_TERMS_MISSING",
+          "The accepted quote schedule is required before dispatch");
+    }
+  }
+
+  /**
+   * The Manager may move the first inspection later than the customer's requested date. The quote
+   * still has to use the customer's daily time window, and an end-date recurring quote may not run
+   * past the customer-selected end date.
+   */
+  private void requireQuoteFirstOccurrenceWindow(
       ServiceRequest request, Instant start, Instant end) {
     if (start == null || end == null || !end.isAfter(start)) {
       throw failure(HttpStatus.BAD_REQUEST, "INVALID_DATES", "Occurrence end must be after start");
@@ -2711,14 +2764,71 @@ public class ContractWorkflowService
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate date = start.atZone(zone).toLocalDate();
     LocalDate endDate = end.minusNanos(1).atZone(zone).toLocalDate();
-    if (date.isBefore(request.getRequestedFrom())
-        || date.isAfter(request.getRequestedUntil())
-        || endDate.isAfter(request.getRequestedUntil())) {
+    if (!date.equals(endDate)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "OUTSIDE_REQUESTED_WINDOW",
-          "Occurrence must fit the requested date range");
+          "The first occurrence must start and end on the same day");
     }
+    if (date.isBefore(request.getRequestedFrom())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "The first occurrence cannot be earlier than the customer-requested date");
+    }
+    if (request.getRequestType() == RequestType.RECURRING
+        && request.getOccurrenceCount() == null
+        && (request.getRecurrenceEndDate() == null
+            || date.isAfter(request.getRecurrenceEndDate()))) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "The first occurrence must be on or before the customer-selected end date");
+    }
+    requireDailyTimeWindow(request, start, end, zone);
+  }
+
+  /**
+   * Dispatch may adjust the time inside an accepted occurrence but not move it outside the term the
+   * Customer accepted. A count-based recurring term shifts with the quoted first date.
+   */
+  private void requireQuotedOccurrenceWindow(
+      ServiceRequest request, Instant acceptedFirstStartAt, Instant start, Instant end) {
+    if (start == null || end == null || !end.isAfter(start)) {
+      throw failure(HttpStatus.BAD_REQUEST, "INVALID_DATES", "Occurrence end must be after start");
+    }
+    ZoneId zone = ZoneId.of(request.getTimezone());
+    LocalDate date = start.atZone(zone).toLocalDate();
+    LocalDate endDate = end.minusNanos(1).atZone(zone).toLocalDate();
+    if (!date.equals(endDate)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "An occurrence must start and end on the same day");
+    }
+    LocalDate firstDate = acceptedFirstStartAt.atZone(zone).toLocalDate();
+    LocalDate lastDate;
+    if (request.getRequestType() == RequestType.ONE_TIME) {
+      lastDate = firstDate;
+    } else if (request.getOccurrenceCount() != null) {
+      lastDate = recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1);
+    } else {
+      lastDate =
+          request.getRecurrenceEndDate() != null
+              ? request.getRecurrenceEndDate()
+              : request.getRequestedUntil();
+    }
+    if (date.isBefore(firstDate) || date.isAfter(lastDate)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "Occurrence must stay inside the accepted quote schedule");
+    }
+    requireDailyTimeWindow(request, start, end, zone);
+  }
+
+  private void requireDailyTimeWindow(
+      ServiceRequest request, Instant start, Instant end, ZoneId zone) {
     LocalTime localStart = start.atZone(zone).toLocalTime();
     LocalTime localEnd = end.atZone(zone).toLocalTime();
     if (localStart.isBefore(request.getWindowStart()) || localEnd.isAfter(request.getWindowEnd())) {
@@ -2852,7 +2962,7 @@ public class ContractWorkflowService
   }
 
   private ServiceRequestResponse toResponse(ServiceRequest request) {
-    return toResponse(request, false, null, false);
+    return toResponse(request, false, null, false, null);
   }
 
   private ServiceRequestResponse toResponse(
@@ -2860,6 +2970,15 @@ public class ContractWorkflowService
       boolean includeManagerContact,
       UserAccess.ActiveUser managerActor,
       boolean includeManagerMessages) {
+    return toResponse(request, includeManagerContact, managerActor, includeManagerMessages, null);
+  }
+
+  private ServiceRequestResponse toResponse(
+      ServiceRequest request,
+      boolean includeManagerContact,
+      UserAccess.ActiveUser managerActor,
+      boolean includeManagerMessages,
+      String ownerCustomerName) {
     boolean managerHasNotClaimed = managerActor != null && request.getAssignedManagerId() == null;
     ServiceRequestQuoteResponse quote =
         managerHasNotClaimed
@@ -2882,6 +3001,7 @@ public class ContractWorkflowService
             && request.getAssignedManagerId() == null;
     return ServiceRequestResponse.from(
         request,
+        ownerCustomerName,
         quote,
         managerContact,
         managerHasNotClaimed
@@ -3047,6 +3167,7 @@ public class ContractWorkflowService
     return new ServiceRequestResponse(
         response.id(),
         response.ownerCustomerId(),
+        response.ownerCustomerName(),
         response.assetId(),
         response.description(),
         response.requestedFrom(),
