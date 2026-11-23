@@ -438,8 +438,8 @@ public class ReportService {
   }
 
   /**
-   * MF3-09: the qualified reviewer decides. Only an in-organization ORG_MANAGER who is not the
-   * author may review, and returning a draft requires a reason.
+   * MF3-09: an independent MANAGER or ADMIN reviewer decides, and returning a draft requires a
+   * reason.
    */
   @Transactional
   public ReportPublishedResponse reviewVersion(
@@ -524,7 +524,7 @@ public class ReportService {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "MAX_CLARIFICATIONS_EXCEEDED",
-          "Báo cáo đã qua 02 lần yêu cầu làm rõ theo quy định hợp đồng. Vui lòng liên hệ trực tiếp Quản lý nền tảng để đối soát và hòa giải.");
+          "Báo cáo đã qua 02 lần yêu cầu làm rõ theo quy định hợp đồng. Vui lòng liên hệ trực tiếp Quản lý (Manager) để đối soát và hòa giải.");
     }
     InspectionReport version = requireVersion(inspectionId, versionId);
     try {

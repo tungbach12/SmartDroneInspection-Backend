@@ -66,7 +66,7 @@ class EvidenceServiceTest {
             managerId,
             Set.of(Roles.MANAGER),
             "PLATFORM",
-            "Platform Manager",
+            "Manager",
             "manager@platform.test",
             null,
             null,

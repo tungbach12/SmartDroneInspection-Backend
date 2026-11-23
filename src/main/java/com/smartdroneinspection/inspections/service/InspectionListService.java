@@ -34,12 +34,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The inspection list is the entry point to MF3, so it answers two questions for every row: what
- * may the caller see, and in which tenant.
+ * may the caller see, and for which customer/inspector scope.
  *
- * <p>Scope is decided from the caller, never from a query parameter. An Inspector sees only the
- * inspections assigned to them, an ORG_MANAGER sees their own organization, and a platform ADMIN
- * sees every organization read-only. Cross-tenant administrative reads stay a separate, explicitly
- * authorized capability, so ADMIN is given no write path on this resource.
+ * <p>Scope is decided from the caller, never from a query parameter. An INSPECTOR sees only the
+ * inspections assigned to them, a CUSTOMER sees their own inspections, and ADMIN/MANAGER see across
+ * customers. ADMIN has read-only cross-customer visibility with no write path here.
  */
 @Service
 public class InspectionListService {
@@ -124,7 +123,7 @@ public class InspectionListService {
     String defaultManagerName =
         content.isEmpty()
             ? null
-            : userAccess.listActivePlatformManagers().stream()
+            : userAccess.listActiveManagers().stream()
                 .findFirst()
                 .map(UserAccess.ActiveUser::fullName)
                 .orElse(null);
@@ -311,7 +310,7 @@ public class InspectionListService {
         throw new BusinessException(
             HttpStatus.FORBIDDEN, "FORBIDDEN", "The user has no customer ownership scope.");
       }
-      return new Scope.OrganizationManager(ownerCustomerId, inspections);
+      return new Scope.CustomerScope(ownerCustomerId, inspections);
     }
     if (actor.hasRole("INSPECTOR")) {
       return new Scope.Inspector(ownerCustomerId, actor.id(), inspections);
@@ -359,8 +358,7 @@ public class InspectionListService {
       }
     }
 
-    record OrganizationManager(UUID ownerCustomerId, InspectionRepository repository)
-        implements Scope {
+    record CustomerScope(UUID ownerCustomerId, InspectionRepository repository) implements Scope {
       @Override
       public Page<Inspection> query(Pageable pageable) {
         return repository.findByOwnerCustomerId(ownerCustomerId, pageable);

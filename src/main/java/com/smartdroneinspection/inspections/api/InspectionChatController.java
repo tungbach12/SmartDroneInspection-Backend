@@ -34,21 +34,21 @@ public class InspectionChatController {
   }
 
   @GetMapping("/messages/threads")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'CLIENT', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<List<InspectionChatThreadResponse>> listThreads(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(chat.listThreads(actorId(jwt)));
   }
 
   @GetMapping("/{inspectionId}/messages")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'CLIENT', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<InspectionChatThreadResponse> getThread(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(chat.getThread(actorId(jwt), inspectionId));
   }
 
   @PostMapping(path = "/{inspectionId}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'CLIENT', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<InspectionChatThreadResponse> postMessage(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -58,14 +58,14 @@ public class InspectionChatController {
   }
 
   @PostMapping("/{inspectionId}/messages/read")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'CLIENT', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ApiResponse<InspectionChatThreadResponse> markMessagesRead(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     return ApiResponse.success(chat.markMessagesRead(actorId(jwt), inspectionId));
   }
 
   @GetMapping("/{inspectionId}/messages/{messageId}/attachments/{attachmentId}")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'CLIENT', 'ORG_MANAGER')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER')")
   public ResponseEntity<InputStreamResource> downloadMessageAttachment(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,

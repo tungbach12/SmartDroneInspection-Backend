@@ -97,7 +97,7 @@ class ReportServiceReviewerScopeTest {
             managerId,
             Set.of(Roles.MANAGER),
             "PLATFORM",
-            "Platform Manager",
+            "Manager",
             "manager@platform.test",
             null,
             null,
@@ -182,7 +182,7 @@ class ReportServiceReviewerScopeTest {
             managerId,
             Set.of(Roles.MANAGER),
             "PLATFORM",
-            "Platform Manager",
+            "Manager",
             "manager@platform.test",
             null,
             null,
@@ -352,7 +352,7 @@ class ReportServiceReviewerScopeTest {
     Inspection inspection =
         new Inspection(customerId, UUID.randomUUID(), inspectorId, null, null, null);
     UserAccess.ActiveUser manager =
-        new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Platform Manager");
+        new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Manager");
 
     when(evidenceService.requireInspectionInScope(managerId, inspectionId)).thenReturn(inspection);
     when(userAccess.findActiveUser(managerId)).thenReturn(Optional.of(manager));

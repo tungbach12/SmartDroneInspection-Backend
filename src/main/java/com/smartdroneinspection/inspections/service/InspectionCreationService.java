@@ -260,17 +260,17 @@ public class InspectionCreationService {
   public InspectionResponse createQuickReinspection(
       UUID actorId, UUID sourceInspectionId, CreateReinspectionRequest request) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    boolean isPlatformManager = actor.hasRole(Roles.MANAGER);
-    boolean isCustomer = actor.hasRole(Roles.CUSTOMER) || actor.hasRole(Roles.ORG_MANAGER);
-    if (!isPlatformManager && !isCustomer) {
+    boolean isManager = actor.hasRole(Roles.MANAGER);
+    boolean isCustomer = actor.hasRole(Roles.CUSTOMER);
+    if (!isManager && !isCustomer) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only the owning customer or a platform manager can create a re-inspection.");
+          "Only the owning customer or a manager can create a re-inspection.");
     }
 
     Inspection source =
-        isPlatformManager
+        isManager
             ? inspections
                 .findById(sourceInspectionId)
                 .orElseThrow(
@@ -322,11 +322,11 @@ public class InspectionCreationService {
 
     UUID reqInspectorId = request != null ? request.inspectorId() : null;
     UUID reqDroneId = request != null ? request.droneId() : null;
-    if ((reqInspectorId != null || reqDroneId != null) && !isPlatformManager) {
+    if ((reqInspectorId != null || reqDroneId != null) && !isManager) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only platform managers can override partner inspector or drone assignment.");
+          "Only managers can override partner inspector or drone assignment.");
     }
     if ((reqInspectorId != null) != (reqDroneId != null)) {
       throw new BusinessException(
@@ -1328,7 +1328,7 @@ public class InspectionCreationService {
     String ownerCustomerAvatarUrl =
         ownerCustomerUser != null ? ownerCustomerUser.avatarUrl() : null;
     UserAccess.ActiveUser managerUser =
-        userAccess.listActivePlatformManagers().stream().findFirst().orElse(null);
+        userAccess.listActiveManagers().stream().findFirst().orElse(null);
     String managerName = managerUser != null ? managerUser.fullName() : null;
     String managerEmail = managerUser != null ? managerUser.email() : null;
     String managerPhone = managerUser != null ? managerUser.phoneNumber() : null;
@@ -1414,7 +1414,7 @@ public class InspectionCreationService {
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_MANAGER) && !actor.hasRole(Roles.CUSTOMER)) {
+    if (!actor.hasRole(Roles.CUSTOMER)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Only a customer can perform this action.");
     }

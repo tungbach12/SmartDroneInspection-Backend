@@ -234,7 +234,7 @@ public class InspectionChatService {
   }
 
   private static boolean isCustomerActor(UserAccess.ActiveUser actor) {
-    return actor.hasRole(Roles.CUSTOMER) || actor.hasRole("CLIENT") || actor.hasRole("ORG_MANAGER");
+    return actor.hasRole(Roles.CUSTOMER);
   }
 
   private static boolean isChatEligible(Inspection inspection) {
