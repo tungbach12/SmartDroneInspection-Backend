@@ -31,6 +31,14 @@ public interface InspectorRatingRepository extends JpaRepository<InspectorRating
   List<InspectorRatingAggregateProjection> summarizeByInspectorIds(
       @Param("inspectorIds") Collection<UUID> inspectorIds);
 
+  @Query(
+      value =
+          "SELECT EXISTS (SELECT 1 FROM inspector_ratings "
+              + "WHERE rater_role = :raterRole AND jsonb_exists(criterion_scores, :code))",
+      nativeQuery = true)
+  boolean existsByRaterRoleAndCriterionCode(
+      @Param("raterRole") String raterRole, @Param("code") String code);
+
   interface InspectorRatingAggregateProjection {
     UUID getInspectorId();
 

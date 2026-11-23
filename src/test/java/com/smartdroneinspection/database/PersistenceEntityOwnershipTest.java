@@ -64,6 +64,18 @@ class PersistenceEntityOwnershipTest {
             "field_session_telemetry",
             "com.smartdroneinspection.inspections.domain.FieldSessionTelemetry"),
         Arguments.of(
+            "inspections",
+            "field_session_flights",
+            "com.smartdroneinspection.inspections.domain.FieldSessionFlight"),
+        Arguments.of(
+            "inspections",
+            "inspector_ratings",
+            "com.smartdroneinspection.inspections.domain.InspectorRating"),
+        Arguments.of(
+            "inspections",
+            "rating_criterion_configs",
+            "com.smartdroneinspection.inspections.domain.RatingCriterionConfig"),
+        Arguments.of(
             "inspections", "evidence", "com.smartdroneinspection.inspections.domain.Evidence"),
         Arguments.of(
             "inspections",

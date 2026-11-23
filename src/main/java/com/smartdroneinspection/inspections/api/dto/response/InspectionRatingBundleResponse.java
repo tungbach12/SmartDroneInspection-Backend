@@ -13,6 +13,7 @@ public record InspectionRatingBundleResponse(
     String ineligibleReason,
     String actorRole,
     List<String> expectedCriteriaKeys,
+    List<RatingCriterionDefinitionResponse> expectedCriteria,
     Instant editableUntil,
     InspectorRatingResponse myRating,
     InspectorRatingResponse customerRating,
@@ -22,5 +23,39 @@ public record InspectionRatingBundleResponse(
   public InspectionRatingBundleResponse {
     expectedCriteriaKeys =
         expectedCriteriaKeys == null ? List.of() : List.copyOf(expectedCriteriaKeys);
+    expectedCriteria = expectedCriteria == null ? List.of() : List.copyOf(expectedCriteria);
+  }
+
+  public InspectionRatingBundleResponse(
+      UUID inspectionId,
+      UUID inspectorId,
+      String inspectorName,
+      String inspectorAvatarUrl,
+      boolean canRate,
+      String ineligibleReason,
+      String actorRole,
+      List<String> expectedCriteriaKeys,
+      Instant editableUntil,
+      InspectorRatingResponse myRating,
+      InspectorRatingResponse customerRating,
+      InspectorRatingResponse managerRating,
+      Double inspectorAverageRating,
+      long inspectorRatingCount) {
+    this(
+        inspectionId,
+        inspectorId,
+        inspectorName,
+        inspectorAvatarUrl,
+        canRate,
+        ineligibleReason,
+        actorRole,
+        expectedCriteriaKeys,
+        List.of(),
+        editableUntil,
+        myRating,
+        customerRating,
+        managerRating,
+        inspectorAverageRating,
+        inspectorRatingCount);
   }
 }

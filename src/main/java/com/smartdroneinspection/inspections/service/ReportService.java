@@ -22,6 +22,7 @@ import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
 import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
@@ -89,6 +90,7 @@ public class ReportService {
   private final Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate;
   private final Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo;
   private final Optional<HistoricalCaseService> historicalCaseService;
+  private final Optional<FieldSessionFlightRepository> fieldSessionFlights;
 
   public ReportService(
       InspectionRepository inspections,
@@ -196,7 +198,6 @@ public class ReportService {
         Optional.empty());
   }
 
-  @org.springframework.beans.factory.annotation.Autowired
   public ReportService(
       InspectionRepository inspections,
       ReportContextAccess reportContextAccess,
@@ -215,6 +216,47 @@ public class ReportService {
       Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
       Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo,
       Optional<HistoricalCaseService> historicalCaseService) {
+    this(
+        inspections,
+        reportContextAccess,
+        jdbcTemplate,
+        evidence,
+        findings,
+        fieldSessions,
+        versions,
+        evidenceService,
+        draftPort,
+        renderPort,
+        objectStore,
+        userAccess,
+        events,
+        objectMapper,
+        paymentGate,
+        defectVerificationsRepo,
+        historicalCaseService,
+        Optional.empty());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ReportService(
+      InspectionRepository inspections,
+      ReportContextAccess reportContextAccess,
+      org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+      EvidenceRepository evidence,
+      FindingRepository findings,
+      FieldSessionRepository fieldSessions,
+      InspectionReportRepository versions,
+      EvidenceService evidenceService,
+      Optional<ReportDraftPort> draftPort,
+      ReportRenderPort renderPort,
+      Optional<EvidenceObjectStore> objectStore,
+      UserAccess userAccess,
+      ApplicationEventPublisher events,
+      ObjectMapper objectMapper,
+      Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
+      Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo,
+      Optional<HistoricalCaseService> historicalCaseService,
+      Optional<FieldSessionFlightRepository> fieldSessionFlights) {
     this.inspections = inspections;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
@@ -234,6 +276,7 @@ public class ReportService {
         defectVerificationsRepo != null ? defectVerificationsRepo : Optional.empty();
     this.historicalCaseService =
         historicalCaseService != null ? historicalCaseService : Optional.empty();
+    this.fieldSessionFlights = fieldSessionFlights != null ? fieldSessionFlights : Optional.empty();
   }
 
   /**
@@ -1677,6 +1720,17 @@ public class ReportService {
 
   private InspectionReportContextResponse buildReportContextResponse(
       Inspection inspection, Identity identity, DroneContext drone, List<FieldSession> sessions) {
+    var flights =
+        fieldSessionFlights
+            .map(
+                repo ->
+                    repo
+                        .findByInspectionIdOrderByFlightDateAscStartedAtAscFlightNumberAsc(
+                            inspection.getId())
+                        .stream()
+                        .map(InspectionDroneHubService::toFlightResponse)
+                        .toList())
+            .orElse(List.of());
     return new InspectionReportContextResponse(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1698,10 +1752,15 @@ public class ReportService {
                         session.getOutcomeNotes(),
                         drone == null ? null : drone.serialNumber(),
                         drone == null ? null : drone.manufacturer(),
-                        drone == null ? null : drone.model()))
+                        drone == null ? null : drone.model(),
+                        session.getSessionDate(),
+                        session.getPreFlightChecklistSnapshot(),
+                        session.getPreFlightConditions(),
+                        session.getPostFlightChecklistSnapshot()))
             .toList(),
         "Application role/organization/separation checks ran; professional qualification was not independently validated.",
-        inspection.getFindingsConfirmedAt());
+        inspection.getFindingsConfirmedAt(),
+        flights);
   }
 
   private ReportRenderPort.ReportContext buildRenderReportContext(

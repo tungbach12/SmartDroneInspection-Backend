@@ -8,13 +8,17 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionRatingBun
 import com.smartdroneinspection.inspections.api.dto.response.InspectorRatingProfileResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectorRatingResponse;
 import com.smartdroneinspection.inspections.api.dto.response.InspectorRatingSummaryResponse;
+import com.smartdroneinspection.inspections.api.dto.response.RatingCriterionConfigResponse;
+import com.smartdroneinspection.inspections.api.dto.response.RatingCriterionDefinitionResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectorRating;
+import com.smartdroneinspection.inspections.domain.RatingCriterionConfig;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.RaterRole;
 import com.smartdroneinspection.inspections.events.InspectorRatedEvent;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.InspectorRatingRepository;
+import com.smartdroneinspection.inspections.repository.RatingCriterionConfigRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -46,15 +50,15 @@ public class InspectionRatingService {
   private final UserAccess userAccess;
   private final ApplicationEventPublisher eventPublisher;
   private final Clock clock;
+  private final RatingCriterionConfigRepository criteriaConfigs;
 
-  @Autowired
   public InspectionRatingService(
       InspectorRatingRepository ratings,
       InspectionRepository inspections,
       AssetRepository assets,
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher) {
-    this(ratings, inspections, assets, userAccess, eventPublisher, Clock.systemUTC());
+    this(ratings, inspections, assets, userAccess, eventPublisher, Clock.systemUTC(), null);
   }
 
   public InspectionRatingService(
@@ -64,12 +68,42 @@ public class InspectionRatingService {
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher,
       Clock clock) {
+    this(ratings, inspections, assets, userAccess, eventPublisher, clock, null);
+  }
+
+  @Autowired
+  public InspectionRatingService(
+      InspectorRatingRepository ratings,
+      InspectionRepository inspections,
+      AssetRepository assets,
+      UserAccess userAccess,
+      ApplicationEventPublisher eventPublisher,
+      RatingCriterionConfigRepository criteriaConfigs) {
+    this(
+        ratings,
+        inspections,
+        assets,
+        userAccess,
+        eventPublisher,
+        Clock.systemUTC(),
+        criteriaConfigs);
+  }
+
+  public InspectionRatingService(
+      InspectorRatingRepository ratings,
+      InspectionRepository inspections,
+      AssetRepository assets,
+      UserAccess userAccess,
+      ApplicationEventPublisher eventPublisher,
+      Clock clock,
+      RatingCriterionConfigRepository criteriaConfigs) {
     this.ratings = ratings;
     this.inspections = inspections;
     this.assets = assets;
     this.userAccess = userAccess;
     this.eventPublisher = eventPublisher;
     this.clock = clock != null ? clock : Clock.systemUTC();
+    this.criteriaConfigs = criteriaConfigs;
   }
 
   @Transactional
@@ -99,12 +133,21 @@ public class InspectionRatingService {
     Instant now = Instant.now(clock);
     InspectorRating existing =
         ratings.findByInspectionIdAndRaterRole(inspectionId, raterRole).orElse(null);
+    List<String> expectedKeys =
+        activeDefinitionsFor(raterRole).stream()
+            .map(RatingCriterionDefinitionResponse::code)
+            .toList();
 
     boolean isUpdate = existing != null;
     InspectorRating saved;
     if (isUpdate) {
       existing.updateRating(
-          actorId, request.overallScore(), request.criterionScores(), request.comment(), now);
+          actorId,
+          request.overallScore(),
+          request.criterionScores(),
+          expectedKeys,
+          request.comment(),
+          now);
       saved = ratings.saveAndFlush(existing);
     } else {
       InspectorRating created =
@@ -115,6 +158,7 @@ public class InspectionRatingService {
               raterRole,
               request.overallScore(),
               request.criterionScores(),
+              expectedKeys,
               request.comment(),
               now);
       saved = ratings.saveAndFlush(created);
@@ -309,6 +353,10 @@ public class InspectionRatingService {
     }
 
     boolean showManagerRating = isManager || isAdminOnly || isAssignedInspector;
+    List<RatingCriterionDefinitionResponse> writableDefinitions =
+        writableRole != null ? activeDefinitionsFor(writableRole) : List.of();
+    List<String> writableKeys =
+        writableDefinitions.stream().map(RatingCriterionDefinitionResponse::code).toList();
     return new InspectionRatingBundleResponse(
         inspection.getId(),
         inspectorId,
@@ -317,7 +365,8 @@ public class InspectionRatingService {
         canRate,
         ineligibleReason,
         actorRoleLabel,
-        writableRole != null ? writableRole.expectedCriteriaKeys() : List.of(),
+        writableKeys,
+        writableDefinitions,
         myRating != null ? myRating.editableUntil() : null,
         myRating,
         customerDto,
@@ -354,13 +403,15 @@ public class InspectionRatingService {
     long managerCount = 0L;
     long managerSum = 0L;
 
+    List<RatingCriterionDefinitionResponse> definitions = allDefinitions();
     Map<String, long[]> customerCriteriaSums = new LinkedHashMap<>();
-    for (String key : RaterRole.CUSTOMER.expectedCriteriaKeys()) {
-      customerCriteriaSums.put(key, new long[2]);
-    }
     Map<String, long[]> managerCriteriaSums = new LinkedHashMap<>();
-    for (String key : RaterRole.MANAGER.expectedCriteriaKeys()) {
-      managerCriteriaSums.put(key, new long[2]);
+    for (RatingCriterionDefinitionResponse def : definitions) {
+      if (RaterRole.CUSTOMER.name().equals(def.raterRole())) {
+        customerCriteriaSums.put(def.code(), new long[2]);
+      } else if (RaterRole.MANAGER.name().equals(def.raterRole())) {
+        managerCriteriaSums.put(def.code(), new long[2]);
+      }
     }
 
     for (InspectorRating rating : allRatings) {
@@ -389,7 +440,82 @@ public class InspectionRatingService {
         managerCount,
         distribution,
         toCriteriaAverages(customerCriteriaSums),
-        toCriteriaAverages(managerCriteriaSums));
+        toCriteriaAverages(managerCriteriaSums),
+        definitions);
+  }
+
+  private List<RatingCriterionDefinitionResponse> activeDefinitionsFor(RaterRole role) {
+    if (criteriaConfigs != null) {
+      List<RatingCriterionConfig> configured =
+          criteriaConfigs.findAllByRaterRoleAndIsActiveTrueOrderByDisplayOrderAscCreatedAtAsc(role);
+      if (!configured.isEmpty()) {
+        return configured.stream()
+            .map(RatingCriterionConfigResponse::from)
+            .map(RatingCriterionConfigResponse::toDefinition)
+            .toList();
+      }
+    }
+    return defaultDefinitions(role);
+  }
+
+  private List<RatingCriterionDefinitionResponse> allDefinitions() {
+    if (criteriaConfigs != null) {
+      List<RatingCriterionConfig> configured =
+          criteriaConfigs.findAllByOrderByRaterRoleAscDisplayOrderAscCreatedAtAsc();
+      if (!configured.isEmpty()) {
+        return configured.stream()
+            .map(RatingCriterionConfigResponse::from)
+            .map(RatingCriterionConfigResponse::toDefinition)
+            .toList();
+      }
+    }
+    return java.util.stream.Stream.concat(
+            defaultDefinitions(RaterRole.CUSTOMER).stream(),
+            defaultDefinitions(RaterRole.MANAGER).stream())
+        .toList();
+  }
+
+  private static List<RatingCriterionDefinitionResponse> defaultDefinitions(RaterRole role) {
+    List<String> keys = role.expectedCriteriaKeys();
+    java.util.List<RatingCriterionDefinitionResponse> list = new java.util.ArrayList<>();
+    for (int i = 0; i < keys.size(); i++) {
+      String code = keys.get(i);
+      list.add(
+          new RatingCriterionDefinitionResponse(
+              code,
+              role.name(),
+              defaultLabelEn(code),
+              defaultLabelVi(code),
+              null,
+              null,
+              i + 1,
+              true));
+    }
+    return list;
+  }
+
+  private static String defaultLabelEn(String code) {
+    return switch (code) {
+      case "communication" -> "Communication";
+      case "professionalism" -> "Professionalism";
+      case "evidenceQuality" -> "Evidence & report";
+      case "timeliness" -> "Timeliness";
+      case "technicalAccuracy" -> "Technical accuracy";
+      case "sopAndSafety" -> "SOP & safety";
+      default -> code;
+    };
+  }
+
+  private static String defaultLabelVi(String code) {
+    return switch (code) {
+      case "communication" -> "Giao tiếp & phối hợp";
+      case "professionalism" -> "Tác phong chuyên nghiệp";
+      case "evidenceQuality" -> "Chất lượng bằng chứng & báo cáo";
+      case "timeliness" -> "Đúng tiến độ";
+      case "technicalAccuracy" -> "Độ chính xác kỹ thuật";
+      case "sopAndSafety" -> "Tuân thủ SOP & an toàn bay";
+      default -> code;
+    };
   }
 
   private static void accumulateCriteria(
@@ -397,11 +523,12 @@ public class InspectionRatingService {
     if (criterionScores == null) {
       return;
     }
-    for (var entry : sums.entrySet()) {
-      Integer value = criterionScores.get(entry.getKey());
+    for (var entry : criterionScores.entrySet()) {
+      Integer value = entry.getValue();
       if (value != null) {
-        entry.getValue()[0] += value;
-        entry.getValue()[1] += 1;
+        long[] bucket = sums.computeIfAbsent(entry.getKey(), ignored -> new long[2]);
+        bucket[0] += value;
+        bucket[1] += 1;
       }
     }
   }

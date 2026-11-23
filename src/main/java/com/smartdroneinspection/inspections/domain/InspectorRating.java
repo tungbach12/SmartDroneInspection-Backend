@@ -70,12 +70,35 @@ public class InspectorRating {
       Map<String, Integer> criterionScores,
       String comment,
       Instant now) {
+    this(
+        inspectionId,
+        inspectorId,
+        raterUserId,
+        raterRole,
+        overallScore,
+        criterionScores,
+        raterRole != null ? raterRole.expectedCriteriaKeys() : List.of(),
+        comment,
+        now);
+  }
+
+  public InspectorRating(
+      UUID inspectionId,
+      UUID inspectorId,
+      UUID raterUserId,
+      RaterRole raterRole,
+      int overallScore,
+      Map<String, Integer> criterionScores,
+      List<String> expectedCriteriaKeys,
+      String comment,
+      Instant now) {
     this.inspectionId = Objects.requireNonNull(inspectionId, "Inspection ID is required");
     this.inspectorId = Objects.requireNonNull(inspectorId, "Inspector ID is required");
     this.raterUserId = Objects.requireNonNull(raterUserId, "Rater user ID is required");
     this.raterRole = Objects.requireNonNull(raterRole, "Rater role is required");
     this.overallScore = validateScore("overallScore", overallScore);
-    this.criterionScores = validateAndNormalizeCriteria(raterRole, criterionScores);
+    this.criterionScores =
+        validateAndNormalizeCriteria(raterRole, expectedCriteriaKeys, criterionScores);
     this.comment = normalizeComment(comment);
     Instant timestamp = now != null ? now : Instant.now();
     this.createdAt = timestamp;
@@ -97,6 +120,22 @@ public class InspectorRating {
       Map<String, Integer> criterionScores,
       String comment,
       Instant now) {
+    updateRating(
+        editorUserId,
+        overallScore,
+        criterionScores,
+        this.raterRole != null ? this.raterRole.expectedCriteriaKeys() : List.of(),
+        comment,
+        now);
+  }
+
+  public void updateRating(
+      UUID editorUserId,
+      int overallScore,
+      Map<String, Integer> criterionScores,
+      List<String> expectedCriteriaKeys,
+      String comment,
+      Instant now) {
     Instant timestamp = now != null ? now : Instant.now();
     if (!isEditableAt(timestamp)) {
       throw new BusinessException(
@@ -106,7 +145,8 @@ public class InspectorRating {
     }
     this.raterUserId = Objects.requireNonNull(editorUserId, "Rater user ID is required");
     this.overallScore = validateScore("overallScore", overallScore);
-    this.criterionScores = validateAndNormalizeCriteria(this.raterRole, criterionScores);
+    this.criterionScores =
+        validateAndNormalizeCriteria(this.raterRole, expectedCriteriaKeys, criterionScores);
     this.comment = normalizeComment(comment);
     this.updatedAt = timestamp;
   }
@@ -122,22 +162,25 @@ public class InspectorRating {
   }
 
   private static Map<String, Integer> validateAndNormalizeCriteria(
-      RaterRole role, Map<String, Integer> raw) {
+      RaterRole role, List<String> expectedKeys, Map<String, Integer> raw) {
     if (raw == null) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "INVALID_RATING_PAYLOAD",
           "criterionScores is required for role " + role.name() + ".");
     }
-    List<String> expectedKeys = role.expectedCriteriaKeys();
-    if (raw.size() != expectedKeys.size() || !raw.keySet().containsAll(expectedKeys)) {
+    List<String> requiredKeys =
+        expectedKeys != null && !expectedKeys.isEmpty()
+            ? expectedKeys
+            : role.expectedCriteriaKeys();
+    if (raw.size() != requiredKeys.size() || !raw.keySet().containsAll(requiredKeys)) {
       throw new BusinessException(
           HttpStatus.BAD_REQUEST,
           "INVALID_RATING_PAYLOAD",
-          "criterionScores must contain exactly: " + String.join(", ", expectedKeys) + ".");
+          "criterionScores must contain exactly: " + String.join(", ", requiredKeys) + ".");
     }
     Map<String, Integer> normalized = new LinkedHashMap<>();
-    for (String key : expectedKeys) {
+    for (String key : requiredKeys) {
       normalized.put(key, validateScore("criterionScores." + key, raw.get(key)));
     }
     return normalized;
