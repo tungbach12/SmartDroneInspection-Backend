@@ -56,6 +56,7 @@ class AssetServiceLifecycleTest {
     assertThat(response.id()).isEqualTo(assetId);
     assertThat(response.code()).isEqualTo("BR-01");
     assertThat(response.inspectionItems()).containsExactly("Roof");
+    assertThat(response.checkpointsLocked()).isFalse();
   }
 
   @Test

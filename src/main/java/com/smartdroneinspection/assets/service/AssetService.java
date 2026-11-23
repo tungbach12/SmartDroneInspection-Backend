@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -151,8 +152,16 @@ public class AssetService {
               ? assets.findByOwnerCustomerId(ownerCustomerId, pageRequest)
               : assets.searchByOwnerCustomerId(ownerCustomerId, search.trim(), pageRequest);
     }
+    List<Asset> pageAssets = result.getContent();
+    Set<UUID> lockedAssetIds =
+        assetInspectionUsage == null
+            ? Set.of()
+            : assetInspectionUsage.inspectedAssetIds(
+                pageAssets.stream().map(Asset::getId).toList());
     return new AssetPageResponse(
-        result.getContent().stream().map(this::toResponse).toList(),
+        pageAssets.stream()
+            .map(asset -> toResponse(asset, lockedAssetIds.contains(asset.getId())))
+            .toList(),
         safePage,
         safePageSize,
         result.getTotalElements(),
@@ -307,6 +316,12 @@ public class AssetService {
   }
 
   private AssetResponse toResponse(Asset asset) {
+    boolean checkpointsLocked =
+        assetInspectionUsage != null && assetInspectionUsage.hasInspection(asset.getId());
+    return toResponse(asset, checkpointsLocked);
+  }
+
+  private AssetResponse toResponse(Asset asset, boolean checkpointsLocked) {
     List<String> items = asset.getInspectionItems();
     if ((items == null || items.isEmpty())
         && inspectionItems != null
@@ -332,6 +347,7 @@ public class AssetService {
         asset.getCreatedAt(),
         items,
         asset.getStructureHeightMeters(),
-        asset.getFootprintAreaSquareMeters());
+        asset.getFootprintAreaSquareMeters(),
+        checkpointsLocked);
   }
 }

@@ -11,7 +11,10 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppC
 import com.smartdroneinspection.TestcontainersConfiguration;
 import com.smartdroneinspection.assets.repository.AssetCategoryRepository;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.inspections.domain.Inspection;
+import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +38,7 @@ class AssetApiIntegrationTest {
   @Autowired AssetRepository assets;
   @Autowired UserRepository users;
   @Autowired com.smartdroneinspection.assets.repository.DroneRepository drones;
+  @Autowired InspectionRepository inspections;
 
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -318,6 +322,48 @@ class AssetApiIntegrationTest {
     var updated = assets.findById(asset.getId()).orElseThrow();
     org.assertj.core.api.Assertions.assertThat(updated.getInspectionItems())
         .containsExactly("Trụ cầu P1", "Gối cầu");
+  }
+
+  @Test
+  void exposesCheckpointLockOnceAnInspectionExists() throws Exception {
+    MvcResult created =
+        mockMvc
+            .perform(
+                post("/api/v1/assets")
+                    .with(client(fixture.clientId()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        "{\"code\":\"BR-LOCK-01\",\"name\":\"Locked Bridge\",\"categoryId\":\""
+                            + fixture.categoryId()
+                            + "\",\"locationText\":\"District 1\","
+                            + "\"inspectionItems\":[\"Deck\"]}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.data.checkpointsLocked").value(false))
+            .andReturn();
+    UUID assetId =
+        UUID.fromString(
+            com.jayway.jsonpath.JsonPath.read(
+                created.getResponse().getContentAsString(), "$.data.id"));
+
+    inspections.saveAndFlush(
+        new Inspection(fixture.clientId(), assetId, Instant.now().plusSeconds(3600)));
+
+    mockMvc
+        .perform(get("/api/v1/assets/{id}", assetId).with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.checkpointsLocked").value(true));
+    mockMvc
+        .perform(get("/api/v1/assets").with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items[0].checkpointsLocked").value(true));
+    mockMvc
+        .perform(
+            put("/api/v1/assets/{id}/inspection-items", assetId)
+                .with(client(fixture.clientId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"inspectionItems\":[\"Deck\",\"Roof\"]}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTION_HISTORY_EXISTS"));
   }
 
   @Test
