@@ -37,6 +37,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
+import com.smartdroneinspection.contracts.events.ServiceRequestCreatedEvent;
 import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
@@ -461,7 +462,16 @@ public class ContractWorkflowService
       throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", exception.getMessage());
     }
     request.markCustomerOwned(actor.id());
-    return toResponse(requests.saveAndFlush(request));
+    ServiceRequest saved = requests.saveAndFlush(request);
+    if (events != null) {
+      events.publishEvent(
+          new ServiceRequestCreatedEvent(
+              saved.getId(),
+              saved.getOwnerCustomerId(),
+              saved.getDescription(),
+              saved.getRequestedFrom()));
+    }
+    return toResponse(saved);
   }
 
   @Transactional(readOnly = true)

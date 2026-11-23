@@ -15,6 +15,7 @@ import com.smartdroneinspection.notifications.repository.NotificationRepository;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.Set;
@@ -35,6 +36,37 @@ class InspectionNotificationServiceTest {
     notificationRepository = mock(NotificationRepository.class);
     userAccess = mock(UserAccess.class);
     service = new InspectionNotificationService(notificationRepository, userAccess);
+  }
+
+  @Test
+  void serviceRequestCreatedNotifiesEveryActiveManagerWithARequestDeepLink() {
+    UUID requestId = UUID.randomUUID();
+    UUID firstManagerId = UUID.randomUUID();
+    UUID secondManagerId = UUID.randomUUID();
+    when(userAccess.listActiveManagers())
+        .thenReturn(
+            java.util.List.of(
+                new ActiveUser(firstManagerId, Set.of("MANAGER"), "First Manager"),
+                new ActiveUser(secondManagerId, Set.of("MANAGER"), "Second Manager")));
+
+    service.recordServiceRequestCreated(requestId, "Tower inspection", LocalDate.of(2026, 12, 25));
+
+    ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+    verify(notificationRepository, org.mockito.Mockito.times(2)).saveAndFlush(captor.capture());
+
+    assertThat(captor.getAllValues())
+        .extracting(Notification::getRecipientUserId)
+        .containsExactlyInAnyOrder(firstManagerId, secondManagerId);
+    assertThat(captor.getAllValues())
+        .allSatisfy(
+            notification -> {
+              assertThat(notification.getEventType()).isEqualTo("SERVICE_REQUEST_CREATED");
+              assertThat(notification.getTargetPath())
+                  .isEqualTo("/manager/contracts?requestId=" + requestId);
+              assertThat(notification.getBody())
+                  .contains("Tower inspection")
+                  .contains("2026-12-25");
+            });
   }
 
   @Test

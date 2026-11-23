@@ -35,6 +35,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
+import com.smartdroneinspection.contracts.events.ServiceRequestCreatedEvent;
 import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.ServiceRequestMessageAttachmentRepository;
@@ -246,6 +247,13 @@ class ContractWorkflowServiceTest {
     assertThat(captor.getValue().getWindowStart()).isEqualTo(LocalTime.of(8, 0));
     assertThat(captor.getValue().getWindowEnd()).isEqualTo(LocalTime.of(17, 0));
     assertThat(response.description()).contains("Bridge 1", "Inspection");
+
+    ArgumentCaptor<ServiceRequestCreatedEvent> eventCaptor =
+        ArgumentCaptor.forClass(ServiceRequestCreatedEvent.class);
+    verify(events).publishEvent(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().requestId()).isEqualTo(response.id());
+    assertThat(eventCaptor.getValue().description()).isEqualTo(response.description());
+    assertThat(eventCaptor.getValue().requestedFrom()).isEqualTo(response.requestedFrom());
   }
 
   @Test

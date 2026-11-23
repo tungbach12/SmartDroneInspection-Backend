@@ -7,6 +7,7 @@ import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -577,6 +578,24 @@ public class InspectionNotificationService {
               key),
           key);
     }
+  }
+
+  @Transactional
+  public void recordServiceRequestCreated(
+      UUID requestId, String description, LocalDate requestedFrom) {
+    if (requestId == null) {
+      log.warn("Skipping service request created notification: request identifier missing");
+      return;
+    }
+    String requestLabel =
+        description != null && !description.isBlank() ? description : "A new service request";
+    String dateLabel = requestedFrom != null ? " for " + requestedFrom : "";
+    notifyActiveManagers(
+        "SERVICE_REQUEST_CREATED",
+        "New service request",
+        requestLabel + dateLabel + " is awaiting Manager assignment.",
+        "/manager/contracts?requestId=" + requestId,
+        "SERVICE_REQUEST_CREATED:" + requestId);
   }
 
   private List<ActiveUser> activeReviewers() {
