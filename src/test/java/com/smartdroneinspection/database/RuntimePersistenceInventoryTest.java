@@ -52,6 +52,8 @@ class RuntimePersistenceInventoryTest {
           "service_requests",
           "service_request_messages",
           "service_request_message_attachments",
+          "service_request_partner_messages",
+          "service_request_partner_message_attachments",
           "service_request_quotes",
           "service_request_occurrences",
           "service_invoices",
@@ -97,6 +99,8 @@ class RuntimePersistenceInventoryTest {
           "service_requests",
           "service_request_messages",
           "service_request_message_attachments",
+          "service_request_partner_messages",
+          "service_request_partner_message_attachments",
           "service_request_quotes",
           "service_request_occurrences",
           "service_invoices",
@@ -149,8 +153,8 @@ class RuntimePersistenceInventoryTest {
             .stream()
             .collect(Collectors.toSet());
 
-    assertThat(TARGET_APPLICATION_TABLES).hasSize(48);
-    assertThat(RUNTIME_ENTITY_TABLES).hasSize(47);
+    assertThat(TARGET_APPLICATION_TABLES).hasSize(50);
+    assertThat(RUNTIME_ENTITY_TABLES).hasSize(49);
     assertThat(actualApplicationTables)
         .containsExactlyInAnyOrderElementsOf(TARGET_APPLICATION_TABLES);
     assertThat(normalized(mappedTableNames()))

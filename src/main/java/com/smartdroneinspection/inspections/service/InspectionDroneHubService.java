@@ -90,7 +90,7 @@ public class InspectionDroneHubService {
             asset.getName(),
             asset.getLatitude(),
             asset.getLongitude(),
-            asset.getInspectionItems(),
+            Inspection.resolveInspectionItems(scope.inspection(), asset.getInspectionItems()),
             normalizeTelemetrySource(telemetrySource));
     return hub.createMission(request);
   }

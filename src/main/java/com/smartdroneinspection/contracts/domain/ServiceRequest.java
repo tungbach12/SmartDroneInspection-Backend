@@ -11,8 +11,11 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -80,6 +83,10 @@ public class ServiceRequest {
 
   @Column(name = "source_inspection_id")
   private UUID sourceInspectionId;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "inspection_items", columnDefinition = "jsonb", nullable = false)
+  private List<String> inspectionItems = new ArrayList<>();
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 24)
@@ -496,6 +503,27 @@ public class ServiceRequest {
       status = ServiceRequestStatus.CONTRACT_SIGNED;
       updatedAt = Instant.now();
     }
+  }
+
+  public List<String> getInspectionItems() {
+    return inspectionItems == null ? List.of() : Collections.unmodifiableList(inspectionItems);
+  }
+
+  public void setInspectionItems(List<String> items) {
+    if (items == null || items.isEmpty()) {
+      this.inspectionItems = new ArrayList<>();
+    } else {
+      LinkedHashSet<String> cleaned = new LinkedHashSet<>();
+      for (String item : items) {
+        if (item == null) continue;
+        String trimmed = item.trim();
+        if (!trimmed.isEmpty()) {
+          cleaned.add(trimmed);
+        }
+      }
+      this.inspectionItems = new ArrayList<>(cleaned);
+    }
+    this.updatedAt = Instant.now();
   }
 
   public enum RequestType {

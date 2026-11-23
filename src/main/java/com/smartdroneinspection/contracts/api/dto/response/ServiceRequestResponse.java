@@ -15,6 +15,9 @@ public record ServiceRequestResponse(
     UUID ownerCustomerId,
     String ownerCustomerName,
     UUID assetId,
+    String assetName,
+    String assetCode,
+    String assetLocationText,
     String description,
     LocalDate requestedFrom,
     LocalDate requestedUntil,
@@ -44,6 +47,7 @@ public record ServiceRequestResponse(
     List<ServiceRequestOccurrenceResponse> occurrences,
     List<ServiceRequestMessageResponse> messages,
     UUID sourceInspectionId,
+    List<String> inspectionItems,
     boolean canClaim) {
 
   public static ServiceRequestResponse forAssignmentRegistry(ServiceRequest request) {
@@ -52,6 +56,9 @@ public record ServiceRequestResponse(
         null,
         null,
         request.getAssetId(),
+        null,
+        null,
+        null,
         request.getDescription(),
         request.getRequestedFrom(),
         request.getRequestedUntil(),
@@ -81,6 +88,7 @@ public record ServiceRequestResponse(
         List.of(),
         List.of(),
         request.getSourceInspectionId(),
+        List.of(),
         false);
   }
 
@@ -92,11 +100,38 @@ public record ServiceRequestResponse(
       List<ServiceRequestOccurrenceResponse> occurrences,
       List<ServiceRequestMessageResponse> messages,
       boolean canClaim) {
+    return from(
+        request,
+        ownerCustomerName,
+        null,
+        null,
+        null,
+        currentQuote,
+        serviceManager,
+        occurrences,
+        messages,
+        canClaim);
+  }
+
+  public static ServiceRequestResponse from(
+      ServiceRequest request,
+      String ownerCustomerName,
+      String assetName,
+      String assetCode,
+      String assetLocationText,
+      ServiceRequestQuoteResponse currentQuote,
+      ServiceManagerContactResponse serviceManager,
+      List<ServiceRequestOccurrenceResponse> occurrences,
+      List<ServiceRequestMessageResponse> messages,
+      boolean canClaim) {
     return new ServiceRequestResponse(
         request.getId(),
         request.getOwnerCustomerId(),
         ownerCustomerName,
         request.getAssetId(),
+        assetName,
+        assetCode,
+        assetLocationText,
         request.getDescription(),
         request.getRequestedFrom(),
         request.getRequestedUntil(),
@@ -126,6 +161,7 @@ public record ServiceRequestResponse(
         List.copyOf(occurrences),
         List.copyOf(messages),
         request.getSourceInspectionId(),
+        List.copyOf(request.getInspectionItems()),
         canClaim);
   }
 }

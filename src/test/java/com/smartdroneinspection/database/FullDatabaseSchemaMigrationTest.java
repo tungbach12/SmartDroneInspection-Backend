@@ -55,6 +55,8 @@ class FullDatabaseSchemaMigrationTest {
             "service_requests",
             "service_request_messages",
             "service_request_message_attachments",
+            "service_request_partner_messages",
+            "service_request_partner_message_attachments",
             "service_request_quotes",
             "service_request_occurrences",
             "service_invoices",
@@ -80,7 +82,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(50);
+    assertThat(expected).hasSize(52);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -466,8 +468,29 @@ class FullDatabaseSchemaMigrationTest {
             "accepted_terms_snapshot",
             "assigned_manager_id",
             "manager_assigned_at",
-            "manager_assigned_by_user_id")
+            "manager_assigned_by_user_id",
+            "inspection_items")
         .doesNotContain("accepted_quote_version");
+    assertColumns("inspections", "inspection_items");
+    assertColumns(
+        "service_request_partner_messages",
+        "id",
+        "request_id",
+        "inspector_id",
+        "author_user_id",
+        "body",
+        "read_at",
+        "created_at");
+    assertColumns(
+        "service_request_partner_message_attachments",
+        "id",
+        "message_id",
+        "file_name",
+        "content_type",
+        "size_bytes",
+        "checksum_sha256",
+        "object_key",
+        "created_at");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'ix_service_requests_assigned_manager'",

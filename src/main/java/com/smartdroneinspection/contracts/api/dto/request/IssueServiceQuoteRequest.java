@@ -20,13 +20,18 @@ public record IssueServiceQuoteRequest(
     @NotNull Instant firstOccurrenceEndAt,
     @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceVnd,
     @DecimalMin(value = "0.01") BigDecimal pricePerOccurrenceUsd,
-    List<@NotBlank @Size(max = 64) String> requiredDroneFeatureCodes) {
+    List<@NotBlank @Size(max = 64) String> requiredDroneFeatureCodes,
+    @Size(max = 50) List<@NotBlank @Size(max = 200) String> inspectionItems) {
 
   public IssueServiceQuoteRequest {
     requiredDroneFeatureCodes =
         requiredDroneFeatureCodes == null
             ? List.of()
             : Collections.unmodifiableList(new ArrayList<>(requiredDroneFeatureCodes));
+    inspectionItems =
+        inspectionItems == null
+            ? null
+            : Collections.unmodifiableList(new ArrayList<>(inspectionItems));
     if ((pricePerOccurrenceVnd == null || pricePerOccurrenceVnd.signum() <= 0)
         && (pricePerOccurrenceUsd == null || pricePerOccurrenceUsd.signum() <= 0)) {
       throw new IllegalArgumentException("A valid positive price per occurrence must be provided");
@@ -53,7 +58,25 @@ public record IssueServiceQuoteRequest(
         firstOccurrenceEndAt,
         pricePerOccurrenceVnd,
         pricePerOccurrenceUsd,
-        List.of());
+        List.of(),
+        null);
+  }
+
+  public IssueServiceQuoteRequest(
+      String scopeSnapshot,
+      Instant firstOccurrenceStartAt,
+      Instant firstOccurrenceEndAt,
+      BigDecimal pricePerOccurrenceVnd,
+      BigDecimal pricePerOccurrenceUsd,
+      List<String> requiredDroneFeatureCodes) {
+    this(
+        scopeSnapshot,
+        firstOccurrenceStartAt,
+        firstOccurrenceEndAt,
+        pricePerOccurrenceVnd,
+        pricePerOccurrenceUsd,
+        requiredDroneFeatureCodes,
+        null);
   }
 
   public String resolvedCurrency() {

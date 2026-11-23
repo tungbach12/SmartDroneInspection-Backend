@@ -2717,6 +2717,151 @@ class ContractWorkflowServiceTest {
         .hasMessageContaining("Payout recorder is required");
   }
 
+  @Test
+  void includesAssetAndPartnerOverviewSummariesAcrossManagerListAndCustomerDetail() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest unclaimed =
+        unassignedRequestWithId(requestId, LocalDate.of(2027, 3, 1), LocalDate.of(2027, 3, 1));
+    Asset asset = mock(Asset.class);
+    when(asset.getId()).thenReturn(assetId);
+    when(asset.getName()).thenReturn("Can Tho Bridge");
+    when(asset.getCode()).thenReturn("CTB-01");
+    when(asset.getLocationText()).thenReturn("Can Tho");
+    when(assets.findAllById(any())).thenReturn(List.of(asset));
+    when(assets.findById(assetId)).thenReturn(Optional.of(asset));
+    when(requests.findManagerQueue(managerId)).thenReturn(List.of(unclaimed));
+
+    var managerList = service.list(managerId);
+    assertThat(managerList).hasSize(1);
+    assertThat(managerList.get(0).assetName()).isEqualTo("Can Tho Bridge");
+    assertThat(managerList.get(0).assetCode()).isEqualTo("CTB-01");
+    assertThat(managerList.get(0).assetLocationText()).isEqualTo("Can Tho");
+    assertThat(managerList.get(0).ownerCustomerName()).isEqualTo("CUSTOMER");
+    assertThat(managerList.get(0).canClaim()).isTrue();
+    assertThat(managerList.get(0).occurrences()).isEmpty();
+
+    ServiceRequestOccurrence assignedOcc =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-03-01T01:00:00Z"),
+            Instant.parse("2027-03-01T03:00:00Z"));
+    assignedOcc.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(unclaimed));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(assignedOcc));
+    when(partners.findDroneLabels(any()))
+        .thenReturn(java.util.Map.of(droneId, "Test Drone · SDI-TEST-001"));
+
+    var customerDetail = service.get(customerId, requestId);
+    assertThat(customerDetail.ownerCustomerName()).isNull();
+    assertThat(customerDetail.assetName()).isEqualTo("Can Tho Bridge");
+    assertThat(customerDetail.assetCode()).isEqualTo("CTB-01");
+    assertThat(customerDetail.assetLocationText()).isEqualTo("Can Tho");
+    assertThat(customerDetail.occurrences()).hasSize(1);
+    assertThat(customerDetail.occurrences().get(0).inspectorName()).isEqualTo("Inspector");
+    assertThat(customerDetail.occurrences().get(0).droneLabel())
+        .isEqualTo("Test Drone · SDI-TEST-001");
+  }
+
+  @Test
+  @DisplayName("Assigned manager configures trimmed deduplicated checkpoints before dispatch")
+  void assignedManagerUpdatesInspectionItemsBeforeDispatch() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId)).thenReturn(List.of());
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    var response =
+        service.updateInspectionItems(
+            managerId, requestId, List.of(" Roof membrane ", "Facade glazing", "Roof membrane"));
+
+    assertThat(response.inspectionItems()).containsExactly("Roof membrane", "Facade glazing");
+    assertThat(request.getInspectionItems()).containsExactly("Roof membrane", "Facade glazing");
+  }
+
+  @Test
+  @DisplayName("Manager cannot update request checkpoints after an occurrence is dispatched")
+  void managerCannotUpdateInspectionItemsAfterDispatch() {
+    UUID requestId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    ServiceRequestOccurrence dispatched =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    dispatched.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(dispatched));
+
+    assertThatThrownBy(
+            () -> service.updateInspectionItems(managerId, requestId, List.of("Roof membrane")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("after dispatch");
+  }
+
+  @Test
+  @DisplayName("Dispatch forwards request-configured checkpoints to inspection assignment SPI")
+  void dispatchForwardsRequestInspectionItems() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
+    request.setInspectionItems(List.of("Thermal sweep", "Anchor bolts"));
+    request.markQuoted();
+    ServiceRequestQuote acceptedQuote =
+        quoteEntity(
+            requestId,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    request.acceptQuote(acceptedQuote, customerId);
+    request.recordSignedContract("contracts/requests/" + requestId + "/signed.pdf");
+
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(false);
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(acceptedQuote));
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+    UUID expectedInspectionId = UUID.randomUUID();
+    when(assignment.assign(
+            org.mockito.ArgumentMatchers.eq(orgId),
+            org.mockito.ArgumentMatchers.eq(assetId),
+            org.mockito.ArgumentMatchers.eq(inspectorId),
+            org.mockito.ArgumentMatchers.eq(droneId),
+            any(),
+            any(),
+            org.mockito.ArgumentMatchers.eq(managerId),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq(List.of("Thermal sweep", "Anchor bolts"))))
+        .thenReturn(expectedInspectionId);
+
+    service.assignOccurrence(
+        managerId,
+        requestId,
+        occurrenceId,
+        new AssignOccurrenceRequest(
+            occurrence.getPlannedStartAt(), occurrence.getPlannedEndAt(), inspectorId, droneId));
+
+    assertThat(occurrence.getInspectionId()).isEqualTo(expectedInspectionId);
+  }
+
   private ServiceRequest request(LocalDate from, LocalDate until) {
     return assignedRequestWithId(UUID.randomUUID(), from, until);
   }

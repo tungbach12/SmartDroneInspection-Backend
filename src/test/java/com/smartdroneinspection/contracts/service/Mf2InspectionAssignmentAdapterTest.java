@@ -162,4 +162,26 @@ class Mf2InspectionAssignmentAdapterTest {
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("Class B pilot license");
   }
+
+  @Test
+  void persistsRequestInspectionItemsOverAssetSuggestions() {
+    UUID inspectionId =
+        adapter.assign(
+            organizationId,
+            assetId,
+            inspectorId,
+            droneId,
+            start,
+            end,
+            managerId,
+            null,
+            java.util.List.of("Custom checkpoint", "Category item"));
+
+    org.mockito.ArgumentCaptor<Inspection> captor =
+        org.mockito.ArgumentCaptor.forClass(Inspection.class);
+    verify(inspections).saveAndFlush(captor.capture());
+    assertThat(inspectionId).isNotNull();
+    assertThat(captor.getValue().getInspectionItems())
+        .containsExactly("Custom checkpoint", "Category item");
+  }
 }

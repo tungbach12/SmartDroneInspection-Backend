@@ -52,7 +52,9 @@ public record ServiceRequestOccurrenceResponse(
     Instant acceptanceDeadlineAt,
     Instant lastTimeoutCancelledAt,
     UUID lastTimeoutInspectorId,
-    String lastTimeoutInspectorName) {
+    String lastTimeoutInspectorName,
+    String inspectorName,
+    String droneLabel) {
 
   public ServiceRequestOccurrenceResponse withAssignmentAcceptance(
       String assignmentStatus, boolean reassignmentRequired, String declineReason) {
@@ -112,7 +114,58 @@ public record ServiceRequestOccurrenceResponse(
         acceptanceDeadlineAt,
         lastTimeoutCancelledAt,
         lastTimeoutInspectorId,
-        lastTimeoutInspectorName);
+        lastTimeoutInspectorName,
+        inspectorName,
+        droneLabel);
+  }
+
+  public ServiceRequestOccurrenceResponse withAssignedPartnerSummary(
+      String inspectorName, String droneLabel) {
+    return new ServiceRequestOccurrenceResponse(
+        id,
+        occurrenceIndex,
+        plannedStartAt,
+        plannedEndAt,
+        status,
+        inspectorId,
+        droneId,
+        inspectionId,
+        assignedAt,
+        contractFileName,
+        contractContentType,
+        contractSizeBytes,
+        contractUploadedAt,
+        currency,
+        totalPrice,
+        serviceBaseAmount,
+        vatRate,
+        vatAmount,
+        commissionRate,
+        commissionAmount,
+        inspectorGrossPayout,
+        tncnRate,
+        tncnAmount,
+        inspectorNetPayout,
+        remainingInspectorNetPayout,
+        paymentStatus,
+        paymentConfirmedAt,
+        refundedAmount,
+        refundStatus,
+        payoutStatus,
+        payoutRecordedAt,
+        reportAcceptedAt,
+        invoice,
+        payment,
+        payout,
+        assignmentStatus,
+        reassignmentRequired,
+        declineReason,
+        acceptanceDeadlineAt,
+        lastTimeoutCancelledAt,
+        lastTimeoutInspectorId,
+        lastTimeoutInspectorName,
+        inspectorName,
+        droneLabel);
   }
 
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
@@ -180,6 +233,8 @@ public record ServiceRequestOccurrenceResponse(
         null,
         occurrence.getLastTimeoutCancelledAt(),
         occurrence.getLastTimeoutInspectorId(),
+        null,
+        null,
         null);
   }
 }

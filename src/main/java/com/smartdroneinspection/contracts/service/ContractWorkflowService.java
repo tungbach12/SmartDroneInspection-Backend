@@ -67,6 +67,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -477,8 +480,13 @@ public class ContractWorkflowService
   public List<ServiceRequestResponse> list(UUID actorId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
-      return requests.findByOwnerCustomerIdOrderByCreatedAtDesc(actor.ownerCustomerId()).stream()
-          .map(request -> toResponse(request, true, null, true))
+      List<ServiceRequest> customerRequests =
+          requests.findByOwnerCustomerIdOrderByCreatedAtDesc(actor.ownerCustomerId());
+      Map<UUID, Asset> assetById = loadAssetMap(customerRequests);
+      return customerRequests.stream()
+          .map(
+              request ->
+                  toResponse(request, true, null, true, null, assetById.get(request.getAssetId())))
           .toList();
     }
     if (actor.hasRole(Roles.ADMIN)) {
@@ -487,7 +495,10 @@ public class ContractWorkflowService
           .toList();
     }
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
-      return requests.findManagerQueue(actor.id()).stream()
+      List<ServiceRequest> queue = requests.findManagerQueue(actor.id());
+      Map<UUID, Asset> assetById = loadAssetMap(queue);
+      Map<UUID, String> customerNameById = loadCustomerNameMap(queue);
+      return queue.stream()
           .map(
               request ->
                   withAssignmentOptions(
@@ -497,7 +508,9 @@ public class ContractWorkflowService
                           false,
                           actor,
                           request.getAssignedManagerId() != null
-                              && request.getAssignedManagerId().equals(actor.id()))))
+                              && request.getAssignedManagerId().equals(actor.id()),
+                          customerNameById.get(request.getOwnerCustomerId()),
+                          assetById.get(request.getAssetId()))))
           .toList();
     }
     throw forbidden();
@@ -985,8 +998,34 @@ public class ContractWorkflowService
     } catch (IllegalArgumentException | IllegalStateException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "QUOTE_INVALID", exception.getMessage());
     }
+    if (input.inspectionItems() != null) {
+      request.setInspectionItems(input.inspectionItems());
+    }
     requests.saveAndFlush(request);
     recordQuoteAudit(manager, request, quote, previousPrice, previousStatus);
+    return toResponse(request);
+  }
+
+  /** Replaces the per-request inspection checkpoints managed by the assigned Service Manager. */
+  @Transactional
+  public ServiceRequestResponse updateInspectionItems(
+      UUID actorId, UUID requestId, List<String> inspectionItems) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    requireAssignedManager(request, manager);
+    boolean anyDispatched =
+        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).stream()
+            .anyMatch(occ -> occ.getInspectionId() != null);
+    if (anyDispatched
+        || request.getStatus() == ServiceRequest.ServiceRequestStatus.ASSIGNED
+        || request.getStatus() == ServiceRequest.ServiceRequestStatus.CANCELLED) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "CHECKPOINTS_LOCKED",
+          "Inspection checkpoints cannot be modified after dispatch has started");
+    }
+    request.setInspectionItems(inspectionItems);
+    requests.saveAndFlush(request);
     return toResponse(request);
   }
 
@@ -1278,25 +1317,42 @@ public class ContractWorkflowService
             dispatchAsset,
             acceptedFeatures);
     requireCandidateEligible(lockedCandidate, HttpStatus.CONFLICT);
-    UUID inspectionId =
-        request.getSourceInspectionId() != null
-            ? assignment.assign(
-                request.getOwnerCustomerId(),
-                request.getAssetId(),
-                input.inspectorId(),
-                input.droneId(),
-                input.plannedStartAt(),
-                input.plannedEndAt(),
-                manager.id(),
-                request.getSourceInspectionId())
-            : assignment.assign(
-                request.getOwnerCustomerId(),
-                request.getAssetId(),
-                input.inspectorId(),
-                input.droneId(),
-                input.plannedStartAt(),
-                input.plannedEndAt(),
-                manager.id());
+    List<String> requestItems = request.getInspectionItems();
+    UUID inspectionId;
+    if (!requestItems.isEmpty()) {
+      inspectionId =
+          assignment.assign(
+              request.getOwnerCustomerId(),
+              request.getAssetId(),
+              input.inspectorId(),
+              input.droneId(),
+              input.plannedStartAt(),
+              input.plannedEndAt(),
+              manager.id(),
+              request.getSourceInspectionId(),
+              requestItems);
+    } else if (request.getSourceInspectionId() != null) {
+      inspectionId =
+          assignment.assign(
+              request.getOwnerCustomerId(),
+              request.getAssetId(),
+              input.inspectorId(),
+              input.droneId(),
+              input.plannedStartAt(),
+              input.plannedEndAt(),
+              manager.id(),
+              request.getSourceInspectionId());
+    } else {
+      inspectionId =
+          assignment.assign(
+              request.getOwnerCustomerId(),
+              request.getAssetId(),
+              input.inspectorId(),
+              input.droneId(),
+              input.plannedStartAt(),
+              input.plannedEndAt(),
+              manager.id());
+    }
     occurrence.assign(
         input.inspectorId(),
         input.droneId(),
@@ -2976,6 +3032,26 @@ public class ContractWorkflowService
       UserAccess.ActiveUser managerActor,
       boolean includeManagerMessages,
       String ownerCustomerName) {
+    Asset asset =
+        assets != null && request.getAssetId() != null
+            ? assets.findById(request.getAssetId()).orElse(null)
+            : null;
+    return toResponse(
+        request,
+        includeManagerContact,
+        managerActor,
+        includeManagerMessages,
+        ownerCustomerName,
+        asset);
+  }
+
+  private ServiceRequestResponse toResponse(
+      ServiceRequest request,
+      boolean includeManagerContact,
+      UserAccess.ActiveUser managerActor,
+      boolean includeManagerMessages,
+      String ownerCustomerName,
+      Asset asset) {
     boolean managerHasNotClaimed = managerActor != null && request.getAssignedManagerId() == null;
     ServiceRequestQuoteResponse quote =
         managerHasNotClaimed
@@ -2996,16 +3072,26 @@ public class ContractWorkflowService
         managerActor != null
             && !managerActor.hasRole(Roles.ADMIN)
             && request.getAssignedManagerId() == null;
+    List<ServiceRequestOccurrenceResponse> occurrenceResponses = List.of();
+    if (!managerHasNotClaimed) {
+      List<ServiceRequestOccurrence> requestOccurrences =
+          occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId());
+      Map<UUID, String> droneLabels = loadDroneLabels(requestOccurrences);
+      Map<UUID, String> inspectorNames = new HashMap<>();
+      occurrenceResponses =
+          requestOccurrences.stream()
+              .map(occ -> toOccurrenceResponse(occ, request, droneLabels, inspectorNames))
+              .toList();
+    }
     return ServiceRequestResponse.from(
         request,
         ownerCustomerName,
+        asset != null ? asset.getName() : null,
+        asset != null ? asset.getCode() : null,
+        asset != null ? asset.getLocationText() : null,
         quote,
         managerContact,
-        managerHasNotClaimed
-            ? List.of()
-            : occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
-                .map(occ -> toOccurrenceResponse(occ, request))
-                .toList(),
+        occurrenceResponses,
         managerActor != null && (managerHasNotClaimed || !includeManagerMessages)
             ? List.of()
             : messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
@@ -3014,12 +3100,65 @@ public class ContractWorkflowService
         canClaim);
   }
 
+  private Map<UUID, Asset> loadAssetMap(Collection<ServiceRequest> requestList) {
+    if (assets == null || requestList == null || requestList.isEmpty()) {
+      return Map.of();
+    }
+    Set<UUID> assetIds = new HashSet<>();
+    for (ServiceRequest req : requestList) {
+      if (req.getAssetId() != null) {
+        assetIds.add(req.getAssetId());
+      }
+    }
+    if (assetIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, Asset> map = new HashMap<>();
+    for (Asset asset : assets.findAllById(assetIds)) {
+      map.put(asset.getId(), asset);
+    }
+    return map;
+  }
+
+  private Map<UUID, String> loadCustomerNameMap(Collection<ServiceRequest> requestList) {
+    if (users == null || requestList == null || requestList.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, String> names = new HashMap<>();
+    for (ServiceRequest req : requestList) {
+      UUID customerId = req.getOwnerCustomerId();
+      if (customerId != null && !names.containsKey(customerId)) {
+        String fullName =
+            users.findActiveUser(customerId).map(UserAccess.ActiveUser::fullName).orElse(null);
+        names.put(customerId, fullName);
+      }
+    }
+    return names;
+  }
+
+  private Map<UUID, String> loadDroneLabels(List<ServiceRequestOccurrence> requestOccurrences) {
+    if (partners == null || requestOccurrences == null || requestOccurrences.isEmpty()) {
+      return Map.of();
+    }
+    Set<UUID> droneIds = new HashSet<>();
+    for (ServiceRequestOccurrence occ : requestOccurrences) {
+      if (occ.getDroneId() != null) {
+        droneIds.add(occ.getDroneId());
+      }
+    }
+    Map<UUID, String> labels = droneIds.isEmpty() ? Map.of() : partners.findDroneLabels(droneIds);
+    return labels == null ? Map.of() : labels;
+  }
+
   /**
    * Adds the Inspector's dispatch answer, so step 4 can show "waiting for the Inspector" or
    * "reassignment required" instead of assuming every dispatch is confirmed.
    */
   private ServiceRequestOccurrenceResponse toOccurrenceResponse(
-      ServiceRequestOccurrence occurrence, ServiceRequest request) {
+      ServiceRequestOccurrence occurrence,
+      ServiceRequest request,
+      Map<UUID, String> droneLabels,
+      Map<UUID, String> inspectorNames) {
     Mf2InspectionAssignment.AssignmentAcceptance acceptance =
         occurrence.getInspectionId() == null
             ? null
@@ -3044,13 +3183,26 @@ public class ContractWorkflowService
                 .findActiveUser(occurrence.getLastTimeoutInspectorId())
                 .map(UserAccess.ActiveUser::fullName)
                 .orElse(null);
+    String inspectorName = null;
+    if (occurrence.getInspectorId() != null && users != null) {
+      UUID inspectorId = occurrence.getInspectorId();
+      if (!inspectorNames.containsKey(inspectorId)) {
+        inspectorNames.put(
+            inspectorId,
+            users.findActiveUser(inspectorId).map(UserAccess.ActiveUser::fullName).orElse(null));
+      }
+      inspectorName = inspectorNames.get(inspectorId);
+    }
+    String droneLabel =
+        occurrence.getDroneId() == null ? null : droneLabels.get(occurrence.getDroneId());
     return ServiceRequestOccurrenceResponse.from(occurrence, request)
         .withAssignmentAcceptance(
             acceptance == null ? null : acceptance.assignmentStatus(),
             acceptance != null && acceptance.reassignmentRequired(),
             acceptance == null ? null : acceptance.declineReason(),
             deadlineAt,
-            lastTimeoutInspectorName);
+            lastTimeoutInspectorName)
+        .withAssignedPartnerSummary(inspectorName, droneLabel);
   }
 
   private ServiceRequestMessageResponse toMessageResponse(ServiceRequestMessage message) {
@@ -3166,6 +3318,9 @@ public class ContractWorkflowService
         response.ownerCustomerId(),
         response.ownerCustomerName(),
         response.assetId(),
+        response.assetName(),
+        response.assetCode(),
+        response.assetLocationText(),
         response.description(),
         response.requestedFrom(),
         response.requestedUntil(),
@@ -3195,6 +3350,7 @@ public class ContractWorkflowService
         response.occurrences(),
         response.messages(),
         response.sourceInspectionId(),
+        response.inspectionItems(),
         response.canClaim());
   }
 
