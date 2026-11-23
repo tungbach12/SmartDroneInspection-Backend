@@ -1664,12 +1664,12 @@ class ContractWorkflowServiceTest {
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
     request.markQuoted();
-    request.acceptQuote(
+    ServiceRequestQuote acceptedQuote =
         quoteEntity(
             requestId,
             Instant.parse("2027-02-01T09:00:00Z"),
-            Instant.parse("2027-02-01T10:00:00Z")),
-        customerId);
+            Instant.parse("2027-02-01T10:00:00Z"));
+    request.acceptQuote(acceptedQuote, customerId);
     request.recordSignedContract(
         "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
     ServiceRequestOccurrence occurrence =
@@ -1683,7 +1683,7 @@ class ContractWorkflowServiceTest {
     when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(false);
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
         .thenReturn(List.of(occurrence));
-    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(acceptedQuote));
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
     when(assignment.assign(any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(UUID.randomUUID());
@@ -1719,12 +1719,12 @@ class ContractWorkflowServiceTest {
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
     request.markQuoted();
-    request.acceptQuote(
+    ServiceRequestQuote acceptedQuote =
         quoteEntity(
             requestId,
             Instant.parse("2027-02-01T09:00:00Z"),
-            Instant.parse("2027-02-01T10:00:00Z")),
-        customerId);
+            Instant.parse("2027-02-01T10:00:00Z"));
+    request.acceptQuote(acceptedQuote, customerId);
     request.recordSignedContract(
         "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
     ServiceRequestOccurrence occurrence =
@@ -1735,6 +1735,7 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(acceptedQuote));
     when(partners.lockEligibleDrone(eq(droneId), eq(inspectorId), any(Instant.class)))
         .thenThrow(
             new BusinessException(
@@ -1766,12 +1767,12 @@ class ContractWorkflowServiceTest {
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
     request.markQuoted();
-    request.acceptQuote(
+    ServiceRequestQuote acceptedQuote =
         quoteEntity(
             requestId,
             Instant.parse("2027-02-01T09:00:00Z"),
-            Instant.parse("2027-02-01T10:00:00Z")),
-        customerId);
+            Instant.parse("2027-02-01T10:00:00Z"));
+    request.acceptQuote(acceptedQuote, customerId);
     request.recordSignedContract(
         "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
     ServiceRequestOccurrence occurrence =
@@ -1782,6 +1783,7 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(acceptedQuote));
 
     assertThatThrownBy(
             () ->
@@ -1810,12 +1812,12 @@ class ContractWorkflowServiceTest {
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
     request.markQuoted();
-    request.acceptQuote(
+    ServiceRequestQuote acceptedQuote =
         quoteEntity(
             requestId,
             Instant.parse("2027-02-01T09:00:00Z"),
-            Instant.parse("2027-02-01T10:00:00Z")),
-        customerId);
+            Instant.parse("2027-02-01T10:00:00Z"));
+    request.acceptQuote(acceptedQuote, customerId);
     request.recordSignedContract(
         "contracts/key", "signed.pdf", "application/pdf", 8, "a".repeat(64), managerId);
     ServiceRequestOccurrence occurrence =
@@ -1826,6 +1828,7 @@ class ContractWorkflowServiceTest {
             Instant.parse("2027-02-01T10:00:00Z"));
     when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
     when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(acceptedQuote));
     when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(true);
 
     assertThatThrownBy(
@@ -1998,12 +2001,12 @@ class ContractWorkflowServiceTest {
     UUID occ2Id = UUID.randomUUID();
     ServiceRequest request = recurringRequest(requestId, 2, null);
     request.markQuoted();
-    request.acceptQuote(
+    ServiceRequestQuote acceptedQuote =
         quoteEntity(
             requestId,
             Instant.parse("2027-02-01T09:00:00Z"),
-            Instant.parse("2027-02-01T10:00:00Z")),
-        customerId);
+            Instant.parse("2027-02-01T10:00:00Z"));
+    request.acceptQuote(acceptedQuote, customerId);
     request.recordSignedContract("contracts/requests/" + requestId + "/signed-master.pdf");
 
     ServiceRequestOccurrence occ1 =
@@ -2026,7 +2029,7 @@ class ContractWorkflowServiceTest {
     when(occurrences.hasScheduleConflict(any(), any(), any(), any())).thenReturn(false);
     when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
         .thenReturn(List.of(occ1, occ2));
-    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.of(acceptedQuote));
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
     when(assignment.assign(any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(UUID.randomUUID());

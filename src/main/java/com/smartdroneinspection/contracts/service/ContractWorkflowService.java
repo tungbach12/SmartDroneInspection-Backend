@@ -67,7 +67,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -1207,9 +1206,18 @@ public class ContractWorkflowService
           "ACCEPTED_TERMS_MISSING",
           "The accepted quote snapshot is required before dispatch");
     }
+    ServiceRequestQuote acceptedQuote =
+        quotes
+            .findByRequestId(requestId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.CONFLICT,
+                        "QUOTE_NOT_FOUND",
+                        "The accepted quote is required before dispatch"));
     requireQuotedOccurrenceWindow(
         request,
-        acceptedFirstOccurrenceStart(acceptedSnapshot),
+        acceptedQuote.getFirstOccurrenceStartAt(),
         input.plannedStartAt(),
         input.plannedEndAt());
     List<String> acceptedFeatures = stringList(acceptedSnapshot.get("requiredDroneFeatureCodes"));
@@ -2737,27 +2745,6 @@ public class ContractWorkflowService
           failureStatus,
           "PARTNER_PAIR_INELIGIBLE",
           "Selected partner pair fails eligibility checks");
-    }
-  }
-
-  private Instant acceptedFirstOccurrenceStart(Map<String, Object> acceptedSnapshot) {
-    Object rawStart = acceptedSnapshot.get("firstOccurrenceStartAt");
-    if (rawStart instanceof Instant instant) {
-      return instant;
-    }
-    if (rawStart == null) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "ACCEPTED_TERMS_MISSING",
-          "The accepted quote schedule is required before dispatch");
-    }
-    try {
-      return Instant.parse(rawStart.toString());
-    } catch (DateTimeParseException exception) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "ACCEPTED_TERMS_MISSING",
-          "The accepted quote schedule is required before dispatch");
     }
   }
 
