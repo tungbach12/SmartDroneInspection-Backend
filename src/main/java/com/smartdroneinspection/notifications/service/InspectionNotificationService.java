@@ -577,6 +577,47 @@ public class InspectionNotificationService {
     }
   }
 
+  @Transactional
+  public void recordInspectorRated(
+      UUID ratingId,
+      UUID inspectionId,
+      UUID inspectorId,
+      String raterRole,
+      int overallScore,
+      boolean updated,
+      Instant occurredAt) {
+    if (ratingId == null || inspectionId == null || inspectorId == null) {
+      return;
+    }
+    String roleLabel = "MANAGER".equalsIgnoreCase(raterRole) ? "Manager" : "Customer";
+    String title = updated ? "Inspector rating updated" : "New inspector rating received";
+    String body =
+        roleLabel
+            + (updated ? " updated their rating to " : " rated your inspection performance ")
+            + overallScore
+            + "/5 stars (inspection "
+            + inspectionId
+            + ").";
+    long epoch = occurredAt != null ? occurredAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String key =
+        "INSPECTOR_RATED:"
+            + ratingId
+            + ":"
+            + (updated ? "UPDATE:" + epoch : "CREATE")
+            + ":"
+            + inspectorId;
+    saveWithDeduplication(
+        new Notification(
+            inspectorId,
+            "INSPECTOR_RATED",
+            NotificationChannel.IN_APP,
+            title,
+            body,
+            "/operations/dashboard",
+            key),
+        key);
+  }
+
   private List<ActiveUser> activeReviewers() {
     Map<UUID, ActiveUser> reviewers = new LinkedHashMap<>();
     for (ActiveUser manager : userAccess.listActiveManagers()) {

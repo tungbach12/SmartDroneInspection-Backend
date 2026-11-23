@@ -26,6 +26,7 @@ import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.InspectorRatingRepository;
 import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
 import com.smartdroneinspection.shared.api.InspectionContractSyncPort;
 import com.smartdroneinspection.shared.api.InspectionReassignCandidatePort;
@@ -61,6 +62,7 @@ public class InspectionCreationService {
   private final ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider;
   private final ObjectProvider<FindingRepository> findingsProvider;
   private final ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider;
+  private final ObjectProvider<InspectorRatingRepository> ratingsProvider;
 
   public InspectionCreationService(
       InspectionRepository inspections,
@@ -76,6 +78,7 @@ public class InspectionCreationService {
         userAccess,
         objectStore,
         eventPublisher,
+        null,
         null,
         null,
         null,
@@ -107,6 +110,36 @@ public class InspectionCreationService {
         contractSyncProvider,
         reassignCandidatesProvider,
         null,
+        null,
+        null);
+  }
+
+  public InspectionCreationService(
+      InspectionRepository inspections,
+      AssetRepository assets,
+      DroneRepository drones,
+      UserAccess userAccess,
+      Optional<EvidenceObjectStore> objectStore,
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<FieldSessionRepository> sessionsProvider,
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider,
+      ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
+      ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider,
+      ObjectProvider<FindingRepository> findingsProvider,
+      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider) {
+    this(
+        inspections,
+        assets,
+        drones,
+        userAccess,
+        objectStore,
+        eventPublisher,
+        sessionsProvider,
+        reliabilityProvider,
+        contractSyncProvider,
+        reassignCandidatesProvider,
+        findingsProvider,
+        reinspectionVerificationsProvider,
         null);
   }
 
@@ -123,7 +156,8 @@ public class InspectionCreationService {
       ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
       ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider,
       ObjectProvider<FindingRepository> findingsProvider,
-      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider) {
+      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider,
+      ObjectProvider<InspectorRatingRepository> ratingsProvider) {
     this.inspections = inspections;
     this.assets = assets;
     this.drones = drones;
@@ -136,6 +170,7 @@ public class InspectionCreationService {
     this.reassignCandidatesProvider = reassignCandidatesProvider;
     this.findingsProvider = findingsProvider;
     this.reinspectionVerificationsProvider = reinspectionVerificationsProvider;
+    this.ratingsProvider = ratingsProvider;
   }
 
   @Transactional
@@ -1348,6 +1383,24 @@ public class InspectionCreationService {
                 .map(AssetDocument::getId)
                 .toList();
 
+    Double inspectorAverageRating = null;
+    long inspectorRatingCount = 0L;
+    InspectorRatingRepository ratingRepository =
+        ratingsProvider != null ? ratingsProvider.getIfAvailable() : null;
+    if (ratingRepository != null && inspection.getInspectorId() != null) {
+      long count = 0L;
+      long sum = 0L;
+      for (var row :
+          ratingRepository.summarizeByInspectorIds(List.of(inspection.getInspectorId()))) {
+        count += row.getRatingCount();
+        sum += row.getScoreSum();
+      }
+      if (count > 0) {
+        inspectorRatingCount = count;
+        inspectorAverageRating = Math.round(((double) sum / count) * 100.0) / 100.0;
+      }
+    }
+
     return new InspectionResponse(
         inspection.getId(),
         inspection.getOwnerCustomerId(),
@@ -1409,7 +1462,9 @@ public class InspectionCreationService {
         inspectorAvatarUrl,
         ownerCustomerAvatarUrl,
         managerAvatarUrl,
-        assetPhotoDocumentIds);
+        assetPhotoDocumentIds,
+        inspectorAverageRating,
+        inspectorRatingCount);
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {

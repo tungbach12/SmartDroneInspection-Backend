@@ -24,7 +24,11 @@ public record PartnerCandidateResponse(
     String disclaimer,
     long declineCount,
     long noShowCount,
-    long abortCount) {
+    long abortCount,
+    Double averageRating,
+    long ratingCount,
+    Double customerAverageRating,
+    Double managerAverageRating) {
 
   public PartnerCandidateResponse {
     droneFeatureCodes = List.copyOf(droneFeatureCodes);
@@ -68,7 +72,11 @@ public record PartnerCandidateResponse(
         disclaimer,
         0L,
         0L,
-        0L);
+        0L,
+        null,
+        0L,
+        null,
+        null);
   }
 
   public static PartnerCandidateResponse from(PartnerCandidateEvaluation.Result result) {
@@ -91,6 +99,10 @@ public record PartnerCandidateResponse(
         result.disclaimer(),
         result.declineCount(),
         result.noShowCount(),
-        result.abortCount());
+        result.abortCount(),
+        result.averageRating(),
+        result.ratingCount(),
+        result.customerAverageRating(),
+        result.managerAverageRating());
   }
 }
