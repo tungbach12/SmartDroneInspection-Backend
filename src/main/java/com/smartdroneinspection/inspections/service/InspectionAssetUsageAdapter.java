@@ -2,6 +2,8 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.shared.api.AssetInspectionUsagePort;
+import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -18,5 +20,13 @@ class InspectionAssetUsageAdapter implements AssetInspectionUsagePort {
   @Override
   public boolean hasInspection(UUID assetId) {
     return inspections.existsByAssetId(assetId);
+  }
+
+  @Override
+  public Set<UUID> inspectedAssetIds(Collection<UUID> assetIds) {
+    if (assetIds == null || assetIds.isEmpty()) {
+      return Set.of();
+    }
+    return Set.copyOf(inspections.findDistinctAssetIdsByAssetIdIn(assetIds));
   }
 }

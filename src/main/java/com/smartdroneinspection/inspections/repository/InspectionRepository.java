@@ -4,6 +4,7 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +21,9 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
   Optional<Inspection> findByIdAndOwnerCustomerId(UUID id, UUID ownerCustomerId);
 
   boolean existsByAssetId(UUID assetId);
+
+  @Query("select distinct i.assetId from Inspection i where i.assetId in :assetIds")
+  List<UUID> findDistinctAssetIdsByAssetIdIn(@Param("assetIds") Collection<UUID> assetIds);
 
   Optional<Inspection> findByIdAndOwnerCustomerIdAndInspectorId(
       UUID id, UUID ownerCustomerId, UUID inspectorId);
