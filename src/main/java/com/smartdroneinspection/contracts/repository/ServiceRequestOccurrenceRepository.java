@@ -15,6 +15,12 @@ public interface ServiceRequestOccurrenceRepository
 
   List<ServiceRequestOccurrence> findByRequestIdOrderByOccurrenceIndexAsc(UUID requestId);
 
+  List<ServiceRequestOccurrence> findByInspectorIdAndStatusOrderByPlannedStartAtAsc(
+      UUID inspectorId, ServiceRequestOccurrence.OccurrenceStatus status);
+
+  List<ServiceRequestOccurrence> findByRequestIdAndInspectorIdAndStatusOrderByOccurrenceIndexAsc(
+      UUID requestId, UUID inspectorId, ServiceRequestOccurrence.OccurrenceStatus status);
+
   @Query(
       value =
           "select occurrence from ServiceRequestOccurrence occurrence "

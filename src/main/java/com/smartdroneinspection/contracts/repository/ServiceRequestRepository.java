@@ -14,6 +14,9 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
 
   List<ServiceRequest> findByOwnerCustomerIdOrderByCreatedAtDesc(UUID ownerCustomerId);
 
+  List<ServiceRequest> findByAssignedManagerIdAndStatusNotOrderByCreatedAtDesc(
+      UUID assignedManagerId, ServiceRequest.ServiceRequestStatus excludedStatus);
+
   List<ServiceRequest> findByOwnerCustomerIdAndAssetId(UUID ownerCustomerId, UUID assetId);
 
   List<ServiceRequest> findAllByOrderByCreatedAtDesc();
