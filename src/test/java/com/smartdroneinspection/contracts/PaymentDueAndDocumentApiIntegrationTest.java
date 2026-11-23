@@ -424,14 +424,6 @@ class PaymentDueAndDocumentApiIntegrationTest {
                             "validTo", Instant.now().plus(30, ChronoUnit.DAYS)))))
         .andExpect(status().isOk());
 
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerUserId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "APPROVED"))))
-        .andExpect(status().isOk());
-
     String sessionResp =
         mockMvc
             .perform(

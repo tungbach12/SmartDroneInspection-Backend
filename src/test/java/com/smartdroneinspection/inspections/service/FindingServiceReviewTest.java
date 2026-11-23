@@ -15,6 +15,7 @@ import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.Finding;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FindingSeverity;
+import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
@@ -245,6 +246,30 @@ class FindingServiceReviewTest {
     assertThat(response.defectLabel()).isEqualTo("Spall");
     assertThat(inspection.hasFindingsConfirmation()).isFalse();
     verify(inspections).saveAndFlush(inspection);
+  }
+
+  @Test
+  void preservesConfirmedStatusWhenUpdatingFindingNotes() {
+    createEditableInspection();
+    Evidence record = evidenceRecord();
+    Finding finding = manualFinding("Crack");
+    finding.confirmByInspector();
+    when(findings.findByIdAndInspectionId(FINDING_ID, INSPECTION_ID))
+        .thenReturn(Optional.of(finding));
+    when(evidence.findByIdAndInspectionId(EVIDENCE_ID, INSPECTION_ID))
+        .thenReturn(Optional.of(record));
+    when(findings.saveAndFlush(finding)).thenReturn(finding);
+
+    var response =
+        service.updateFinding(
+            ACTOR_ID,
+            INSPECTION_ID,
+            FINDING_ID,
+            new UpdateFindingRequest(
+                EVIDENCE_ID, "Crack", FindingSeverity.MEDIUM, "AI drafted technical note"));
+
+    assertThat(response.status()).isEqualTo(FindingStatus.CONFIRMED);
+    assertThat(response.technicalNotes()).isEqualTo("AI drafted technical note");
   }
 
   @Test

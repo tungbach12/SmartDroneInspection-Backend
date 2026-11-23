@@ -282,26 +282,32 @@ public class InspectionController {
             request.maxAltitudeM()));
   }
 
-  @PostMapping("/flight-permit/review")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
-  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
-      reviewFlightPermit(
-          @AuthenticationPrincipal Jwt jwt,
-          @PathVariable UUID inspectionId,
-          @Valid @RequestBody
-              com.smartdroneinspection.inspections.api.dto.request.ReviewFlightPermitRequest
-                  request) {
-    return ApiResponse.success(
-        creationService.reviewFlightPermit(
-            actorId(jwt), inspectionId, request.decision(), request.reason(), request.notes()));
-  }
-
   @GetMapping("/flight-permit/content")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<byte[]> flightPermitContent(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     InspectionCreationService.FlightPermitContent content =
         creationService.openFlightPermit(actorId(jwt), inspectionId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(content.contentType()))
+        .contentLength(content.bytes().length)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline()
+                .filename(content.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .build()
+                .toString())
+        .body(content.bytes());
+  }
+
+  @GetMapping("/asset-photos/{documentId}/content")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ResponseEntity<byte[]> assetPhotoContent(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID documentId) {
+    InspectionCreationService.FlightPermitContent content =
+        creationService.openAssetPhoto(actorId(jwt), inspectionId, documentId);
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(content.contentType()))
         .contentLength(content.bytes().length)

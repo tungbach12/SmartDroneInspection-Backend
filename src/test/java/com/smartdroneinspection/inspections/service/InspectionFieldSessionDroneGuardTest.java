@@ -78,7 +78,6 @@ class InspectionFieldSessionDroneGuardTest {
             Instant.now().plus(1, ChronoUnit.HOURS),
             Instant.now().plus(3, ChronoUnit.HOURS));
     inspection.recordFlightPermit("permits/permit.pdf", "permit.pdf", Instant.now());
-    inspection.approveFlightPermit(UUID.randomUUID(), "Approved for guard test", Instant.now());
     ReflectionTestUtils.setField(inspection, "id", inspectionId);
 
     when(inspections.findAssignedByInspectorWithLock(inspectionId, inspectorId))

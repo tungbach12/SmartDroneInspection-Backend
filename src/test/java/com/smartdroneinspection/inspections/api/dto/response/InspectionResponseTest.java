@@ -38,7 +38,7 @@ class InspectionResponseTest {
     assertThat(response.flightPermitMaxAltitudeM()).isEqualTo(120);
     assertThat(response.flightPermitFileSizeBytes()).isEqualTo(2048L);
     assertThat(response.flightPermitVerifiedBy()).isNotNull();
-    assertThat(response.flightPermitReviewNotes()).isEqualTo("Looks good");
+    assertThat(response.flightPermitReviewNotes()).isNull();
     assertThat(response.inspectionItems()).isEmpty();
   }
 
@@ -174,7 +174,6 @@ class InspectionResponseTest {
         "application/pdf",
         Instant.now(),
         UUID.randomUUID());
-    inspection.approveFlightPermit(UUID.randomUUID(), "Looks good", Instant.now());
     return inspection;
   }
 }

@@ -60,6 +60,7 @@ class FlightPermitVerificationIntegrationTest {
   private UUID inspectorId;
   private UUID assetId;
   private UUID droneId;
+  private UUID replacementDroneId;
   private UUID inspectionId;
   private Instant plannedStart;
   private Instant plannedEnd;
@@ -123,19 +124,7 @@ class FlightPermitVerificationIntegrationTest {
     assets.saveAndFlush(asset);
     assetId = asset.getId();
 
-    Drone drone =
-        new Drone(
-            inspectorId,
-            "SN-DJI-M300-88",
-            "DJI Matrice 300",
-            "DJI",
-            "{\"mtowKg\":6.3}",
-            DroneServiceability.ACTIVE,
-            null,
-            "REG-88",
-            "drones/reg-88.pdf",
-            Instant.now().plus(365, ChronoUnit.DAYS));
-    droneId = drones.saveAndFlush(drone).getId();
+    droneId = createDrone("SN-DJI-M300-88", "REG-88").getId();
 
     plannedStart = Instant.now().minus(30, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.SECONDS);
     plannedEnd = Instant.now().plus(3, ChronoUnit.HOURS).truncatedTo(ChronoUnit.SECONDS);
@@ -145,8 +134,47 @@ class FlightPermitVerificationIntegrationTest {
     inspectionId = inspections.saveAndFlush(inspection).getId();
   }
 
+  private Drone createDrone(String serial, String registration) {
+    Drone drone =
+        new Drone(
+            inspectorId,
+            serial,
+            "DJI Matrice 300",
+            "DJI",
+            "{\"mtowKg\":6.3}",
+            DroneServiceability.ACTIVE,
+            null,
+            registration,
+            "drones/" + registration + ".pdf",
+            Instant.now().plus(365, ChronoUnit.DAYS));
+    return drones.saveAndFlush(drone);
+  }
+
+  private MockMultipartFile validPdf() {
+    return new MockMultipartFile(
+        "file",
+        "permit.pdf",
+        "application/pdf",
+        "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n".getBytes(StandardCharsets.UTF_8));
+  }
+
+  private void uploadPermit(String permitNumber, String droneSerial) throws Exception {
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
+                .file(validPdf())
+                .param("permitNumber", permitNumber)
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", plannedStart.minus(1, ChronoUnit.HOURS).toString())
+                .param("validTo", plannedEnd.plus(2, ChronoUnit.HOURS).toString())
+                .param("droneSerial", droneSerial)
+                .param("maxAltitudeM", "120")
+                .with(principal(inspectorId, "INSPECTOR")))
+        .andExpect(status().isOk());
+  }
+
   @Test
-  void enforcesFileMetadataCrossChecksAndMandatoryManagerApprovalBeforeFlight() throws Exception {
+  void enforcesFileMetadataCrossChecksAndSelfAttestedUploadBeforeFlight() throws Exception {
     String validFrom = plannedStart.minus(1, ChronoUnit.HOURS).toString();
     String validTo = plannedEnd.plus(2, ChronoUnit.HOURS).toString();
 
@@ -170,16 +198,10 @@ class FlightPermitVerificationIntegrationTest {
         .andExpect(jsonPath("$.code").value("INVALID_PERMIT_FILE"));
 
     // 2. Reject mismatched drone serial number
-    MockMultipartFile validPdf =
-        new MockMultipartFile(
-            "file",
-            "permit.pdf",
-            "application/pdf",
-            "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n".getBytes(StandardCharsets.UTF_8));
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
-                .file(validPdf)
+                .file(validPdf())
                 .param("permitNumber", "GP-2026-100")
                 .param("issuingAuthority", "Cục Tác chiến - BTTM")
                 .param("validFrom", validFrom)
@@ -193,7 +215,7 @@ class FlightPermitVerificationIntegrationTest {
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
-                .file(validPdf)
+                .file(validPdf())
                 .param("permitNumber", "GP-2026-100")
                 .param("issuingAuthority", "Cục Tác chiến - BTTM")
                 .param("validFrom", validFrom)
@@ -202,11 +224,11 @@ class FlightPermitVerificationIntegrationTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("PERMIT_SCHEDULE_MISMATCH"));
 
-    // 4. Valid upload -> PENDING_REVIEW, pendingAction = PERMIT_REVIEW
+    // 4. A valid upload is self-attested by the assigned inspector and is immediately usable
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
-                .file(validPdf)
+                .file(validPdf())
                 .param("permitNumber", "GP-2026-100")
                 .param("issuingAuthority", "Cục Tác chiến - BTTM")
                 .param("validFrom", validFrom)
@@ -215,91 +237,16 @@ class FlightPermitVerificationIntegrationTest {
                 .param("maxAltitudeM", "120")
                 .with(principal(inspectorId, "INSPECTOR")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"))
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"))
+        .andExpect(jsonPath("$.data.flightPermitVerifiedBy").value(inspectorId.toString()))
+        .andExpect(jsonPath("$.data.flightPermitVerifiedAt").isNotEmpty())
         .andExpect(jsonPath("$.data.flightPermitNumber").value("GP-2026-100"))
         .andExpect(jsonPath("$.data.flightPermitFileSha256").isNotEmpty());
 
     mockMvc
         .perform(get("/api/v1/inspections").with(principal(managerId, "MANAGER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.items[0].pendingAction").value("PERMIT_REVIEW"));
-
-    // 5. Starting field session before Manager approval is blocked
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/field-sessions", inspectionId)
-                .with(principal(inspectorId, "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"preFlightChecklistNote\":\"All ready\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("FLIGHT_PERMIT_PENDING_REVIEW"));
-
-    // 6. Inspector cannot verify/approve their own permit
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(inspectorId, "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\":\"APPROVED\"}"))
-        .andExpect(status().isForbidden());
-
-    // 7. Manager rejection without reason fails; rejection with reason blocks startSession
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\":\"REJECTED\",\"reason\":\"\"}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("REJECTION_REASON_REQUIRED"));
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\":\"REJECTED\",\"reason\":\"Stamp on page 2 is illegible\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("REJECTED"))
-        .andExpect(
-            jsonPath("$.data.flightPermitRejectionReason").value("Stamp on page 2 is illegible"));
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/field-sessions", inspectionId)
-                .with(principal(inspectorId, "INSPECTOR"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"preFlightChecklistNote\":\"All ready\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("FLIGHT_PERMIT_REJECTED"));
-
-    // 8. Inspector re-uploads clear scan -> PENDING_REVIEW, Manager approves -> startSession
-    // succeeds
-    mockMvc
-        .perform(
-            MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
-                .file(validPdf)
-                .param("permitNumber", "GP-2026-100-REV2")
-                .param("issuingAuthority", "Cục Tác chiến - BTTM")
-                .param("validFrom", validFrom)
-                .param("validTo", validTo)
-                .param("droneSerial", "SN-DJI-M300-88")
-                .param("maxAltitudeM", "120")
-                .with(principal(inspectorId, "INSPECTOR")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"))
-        .andExpect(jsonPath("$.data.flightPermitRejectionReason").doesNotExist());
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    "{\"decision\":\"APPROVED\",\"notes\":\"Verified stamp, coordinates, and drone SN\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"))
-        .andExpect(jsonPath("$.data.flightPermitVerifiedBy").value(managerId.toString()));
+        .andExpect(jsonPath("$.data.items[0].pendingAction").value("NONE"));
 
     mockMvc
         .perform(
@@ -312,37 +259,79 @@ class FlightPermitVerificationIntegrationTest {
   }
 
   @Test
-  void prohibitsCustomerAndManagerFlightPermitUploads() throws Exception {
-    MockMultipartFile pdf =
-        new MockMultipartFile(
-            "file",
-            "permit.pdf",
-            "application/pdf",
-            "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n".getBytes(StandardCharsets.UTF_8));
+  void flightPermitReviewEndpointNoLongerExists() throws Exception {
+    uploadPermit("GP-2026-100", "SN-DJI-M300-88");
 
-    for (String role : List.of("CUSTOMER", "MANAGER")) {
-      UUID actor = "CUSTOMER".equals(role) ? customerId : managerId;
-      mockMvc
-          .perform(
-              MockMvcRequestBuilders.multipart(
-                      "/api/v1/inspections/{id}/flight-permit", inspectionId)
-                  .file(pdf)
-                  .param("permitNumber", "GP-2026-200")
-                  .param("issuingAuthority", "Cục Tác chiến - BTTM")
-                  .param("validFrom", plannedStart.minus(1, ChronoUnit.HOURS).toString())
-                  .param("validTo", plannedEnd.plus(2, ChronoUnit.HOURS).toString())
-                  .with(principal(actor, role)))
-          .andExpect(status().isForbidden());
-    }
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
+                .with(principal(managerId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"decision\":\"APPROVED\"}"))
+        .andExpect(
+            result -> {
+              int status = result.getResponse().getStatus();
+              org.assertj.core.api.Assertions.assertThat(status).isIn(404, 405);
+            });
   }
 
   @Test
-  void prohibitsThePermitUploaderFromVerifyingTheirOwnPermit() throws Exception {
+  void reassignmentWithDifferentDroneRequiresPermitReupload() throws Exception {
+    uploadPermit("GP-2026-100", "SN-DJI-M300-88");
+
+    replacementDroneId = createDrone("SN-DJI-M300-89", "REG-89").getId();
+    Inspection inspection = inspections.findById(inspectionId).orElseThrow();
+    inspection.reassign(inspectorId, replacementDroneId);
+    inspections.saveAndFlush(inspection);
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/accept", inspectionId)
+                .with(principal(inspectorId, "INSPECTOR")))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/field-sessions", inspectionId)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"preFlightChecklistNote\":\"All ready\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("FLIGHT_PERMIT_PENDING_REVIEW"));
+
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
+                .file(validPdf())
+                .param("permitNumber", "GP-2026-100-REV2")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", plannedStart.minus(1, ChronoUnit.HOURS).toString())
+                .param("validTo", plannedEnd.plus(2, ChronoUnit.HOURS).toString())
+                .param("droneSerial", "SN-DJI-M300-89")
+                .param("maxAltitudeM", "120")
+                .with(principal(inspectorId, "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"))
+        .andExpect(jsonPath("$.data.flightPermitVerifiedBy").value(inspectorId.toString()))
+        .andExpect(jsonPath("$.data.flightPermitRejectionReason").doesNotExist());
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/field-sessions", inspectionId)
+                .with(principal(inspectorId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"preFlightChecklistNote\":\"All ready\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+  }
+
+  @Test
+  void reuploadResetsVerificationFieldsToTheNewUploader() {
     Inspection inspection = inspections.findById(inspectionId).orElseThrow();
     inspection.recordFlightPermit(
-        "permits/legacy-manager-upload.pdf",
-        "legacy-manager-upload.pdf",
-        "GP-LEGACY-1",
+        "permits/old.pdf",
+        "old.pdf",
+        "GP-OLD",
         "Cục Tác chiến - BTTM",
         plannedStart.minus(1, ChronoUnit.HOURS),
         plannedEnd.plus(1, ChronoUnit.HOURS),
@@ -351,18 +340,52 @@ class FlightPermitVerificationIntegrationTest {
         "sha256",
         1024L,
         "application/pdf",
-        Instant.now(),
+        plannedStart,
         managerId);
     inspections.saveAndFlush(inspection);
 
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\":\"APPROVED\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("SELF_REVIEW_FORBIDDEN"));
+    Inspection reloaded = inspections.findById(inspectionId).orElseThrow();
+    reloaded.recordFlightPermit(
+        "permits/new.pdf",
+        "new.pdf",
+        "GP-NEW",
+        "Cục Tác chiến - BTTM",
+        plannedStart.minus(1, ChronoUnit.HOURS),
+        plannedEnd.plus(1, ChronoUnit.HOURS),
+        "SN-DJI-M300-88",
+        120,
+        "sha256",
+        1024L,
+        "application/pdf",
+        plannedEnd,
+        inspectorId);
+
+    org.assertj.core.api.Assertions.assertThat(reloaded.getFlightPermitVerificationStatus().name())
+        .isEqualTo("APPROVED");
+    org.assertj.core.api.Assertions.assertThat(reloaded.getFlightPermitVerifiedBy())
+        .isEqualTo(inspectorId);
+    org.assertj.core.api.Assertions.assertThat(reloaded.getFlightPermitVerifiedAt())
+        .isEqualTo(plannedEnd);
+    org.assertj.core.api.Assertions.assertThat(reloaded.getFlightPermitRejectionReason()).isNull();
+    org.assertj.core.api.Assertions.assertThat(reloaded.getFlightPermitReviewNotes()).isNull();
+  }
+
+  @Test
+  void prohibitsCustomerAndManagerFlightPermitUploads() throws Exception {
+    for (String role : List.of("CUSTOMER", "MANAGER")) {
+      UUID actor = "CUSTOMER".equals(role) ? customerId : managerId;
+      mockMvc
+          .perform(
+              MockMvcRequestBuilders.multipart(
+                      "/api/v1/inspections/{id}/flight-permit", inspectionId)
+                  .file(validPdf())
+                  .param("permitNumber", "GP-2026-200")
+                  .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                  .param("validFrom", plannedStart.minus(1, ChronoUnit.HOURS).toString())
+                  .param("validTo", plannedEnd.plus(2, ChronoUnit.HOURS).toString())
+                  .with(principal(actor, role)))
+          .andExpect(status().isForbidden());
+    }
   }
 
   private static RequestPostProcessor principal(UUID subjectId, String role) {

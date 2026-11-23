@@ -15,7 +15,10 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Flight permit artifact metadata and verification lifecycle for one {@link Inspection}. */
+/**
+ * Flight permit artifact metadata for one {@link Inspection}. The uploaded permit is self-attested
+ * by the assigned inspector, who is responsible for its validity.
+ */
 @Entity
 @Table(name = "inspection_flight_permits")
 public class InspectionFlightPermit {
@@ -119,30 +122,14 @@ public class InspectionFlightPermit {
     this.contentType = contentType == null || contentType.isBlank() ? null : contentType.trim();
     this.uploadedAt = uploadedAt;
     this.uploadedBy = uploadedBy;
-    this.verificationStatus = FlightPermitVerificationStatus.PENDING_REVIEW;
-    this.verifiedBy = null;
-    this.verifiedAt = null;
+    this.verificationStatus = FlightPermitVerificationStatus.APPROVED;
+    this.verifiedBy = uploadedBy;
+    this.verifiedAt = uploadedAt;
     this.rejectionReason = null;
     this.reviewNotes = null;
   }
 
-  void approve(UUID reviewerId, String notes, Instant now) {
-    this.verificationStatus = FlightPermitVerificationStatus.APPROVED;
-    this.verifiedBy = Objects.requireNonNull(reviewerId, "Reviewer ID is required");
-    this.verifiedAt = now;
-    this.rejectionReason = null;
-    this.reviewNotes = notes == null || notes.isBlank() ? null : notes.trim();
-  }
-
-  void reject(UUID reviewerId, String reason, String notes, Instant now) {
-    this.verificationStatus = FlightPermitVerificationStatus.REJECTED;
-    this.verifiedBy = Objects.requireNonNull(reviewerId, "Reviewer ID is required");
-    this.verifiedAt = now;
-    this.rejectionReason = reason.trim();
-    this.reviewNotes = notes == null || notes.isBlank() ? null : notes.trim();
-  }
-
-  void resetVerificationForReReview() {
+  void requireReupload() {
     this.verificationStatus = FlightPermitVerificationStatus.PENDING_REVIEW;
     this.verifiedBy = null;
     this.verifiedAt = null;

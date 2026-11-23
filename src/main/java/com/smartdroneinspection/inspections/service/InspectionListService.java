@@ -204,13 +204,6 @@ public class InspectionListService {
 
   /** The one decision the organization administrator is being asked for on this inspection. */
   private String pendingAction(Inspection inspection, InspectionReport report) {
-    if (inspection.getStatus()
-            == com.smartdroneinspection.inspections.domain.enums.InspectionStatus.SCHEDULED
-        && inspection.getFlightPermitVerificationStatus()
-            == com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
-                .PENDING_REVIEW) {
-      return "PERMIT_REVIEW";
-    }
     if (report != null) {
       ReportStatus reportStatus = report.getStatus();
       if (reportStatus == ReportStatus.SUBMITTED) {
