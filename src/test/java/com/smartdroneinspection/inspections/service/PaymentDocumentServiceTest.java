@@ -235,12 +235,36 @@ class PaymentDocumentServiceTest {
   }
 
   @Test
-  @DisplayName("A verified payment produces a receipt with method and transaction reference")
+  @DisplayName(
+      "A verified payment produces a receipt with method, transaction reference, and confirmed timestamp")
   void paidProducesReceipt() throws Exception {
     stubRenderedPdf();
     stubOwningCustomer();
+    Instant confirmedAt = Instant.parse("2026-11-12T08:15:30Z");
     when(acceptancePort.getPaymentStatus(OWNER_CUSTOMER_ID, INSPECTION_ID))
-        .thenReturn(status(true, true, "PAID", 9901L, "VNPAY", DUE_AT));
+        .thenReturn(
+            new InspectionReportAcceptancePort.PaymentStatusDetails(
+                true,
+                true,
+                "PAID",
+                9901L,
+                1100000L,
+                null,
+                new BigDecimal("1000000.00"),
+                new BigDecimal("10.00"),
+                new BigDecimal("100000.00"),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "VNPAY",
+                DUE_AT,
+                confirmedAt));
 
     service.render(OWNER_CUSTOMER_ID, INSPECTION_ID);
 
@@ -248,7 +272,7 @@ class PaymentDocumentServiceTest {
     assertThat(details.kind()).isEqualTo(PaymentDocumentRenderer.Kind.RECEIPT);
     assertThat(details.paymentMethod()).isEqualTo("VNPAY");
     assertThat(details.paymentReference()).isEqualTo("VNPAY #9901");
-    assertThat(details.paidAt()).isNotNull();
+    assertThat(details.paidAt()).isEqualTo(confirmedAt);
   }
 
   @Test

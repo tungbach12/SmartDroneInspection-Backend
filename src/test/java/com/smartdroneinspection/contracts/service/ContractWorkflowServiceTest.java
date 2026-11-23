@@ -2335,6 +2335,57 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void owningCustomerCanCancelUnpaidSepayOrderAndSwitchDirectlyFromSepayToVnPay() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+    occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.assignSepayOrder(123456L);
+
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    service.cancelUnpaidPaymentOrder(customerId, requestId, occurrenceId);
+    assertThat(occurrence.getGatewayOrderCode()).isNull();
+    assertThat(occurrence.getPaymentMethod()).isNull();
+
+    // Re-open Sepay order, then switch directly to VNPay without hitting PAYMENT_ORDER_ALREADY_OPEN
+    occurrence.assignSepayOrder(123457L);
+    when(vnPayGateway.resolveReturnUrl(eq(inspectionId.toString()), anyLong(), eq(true)))
+        .thenReturn("http://localhost:8080/api/v1/webhooks/vnpay/return/mobile");
+    when(vnPayGateway.createPaymentUrl(anyLong(), eq(100000L), anyString(), eq("127.0.0.1"), any()))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new VnPayGateway.VnPayPaymentLink(
+                  code, "https://sandbox.vnpayment.vn/pay?" + code, 100000L, String.valueOf(code));
+            });
+
+    var link =
+        service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1", true);
+    assertThat(link.orderCode()).isNotEqualTo(123457L);
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(link.orderCode());
+  }
+
+  @Test
   void vnPayOrderBlocksRetryWhileLiveAndReleasesOnceExpired() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
