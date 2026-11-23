@@ -13,6 +13,7 @@ public record InspectorRatingResponse(
     String raterAvatarUrl,
     String raterRole,
     String assetName,
+    UUID assetPhotoDocumentId,
     int overallScore,
     Map<String, Integer> criterionScores,
     String comment,

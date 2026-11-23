@@ -8,6 +8,7 @@ public record InspectionRatingBundleResponse(
     UUID inspectionId,
     UUID inspectorId,
     String inspectorName,
+    String inspectorAvatarUrl,
     boolean canRate,
     String ineligibleReason,
     String actorRole,

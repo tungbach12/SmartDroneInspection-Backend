@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.inspections.api.dto.request.UpsertInspectorRatingRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionRatingBundleResponse;
@@ -177,17 +178,20 @@ public class InspectionRatingService {
             inspectorId, PageRequest.of(safePage, safeSize));
     List<InspectorRating> content = page.getContent();
     Map<UUID, UserAccess.ActiveUser> usersCache = new HashMap<>();
-    Map<UUID, String> assetNames = resolveAssetNames(content);
+    Map<UUID, AssetMeta> assetMetas = resolveAssetMeta(content);
     Instant now = Instant.now(clock);
     List<InspectorRatingResponse> items =
         content.stream()
             .map(
-                rating ->
-                    toResponse(
-                        rating,
-                        findUserCached(rating.getRaterUserId(), usersCache),
-                        assetNames.get(rating.getInspectionId()),
-                        now))
+                rating -> {
+                  AssetMeta meta = assetMetas.get(rating.getInspectionId());
+                  return toResponse(
+                      rating,
+                      findUserCached(rating.getRaterUserId(), usersCache),
+                      meta != null ? meta.assetName() : null,
+                      meta != null ? meta.photoDocumentId() : null,
+                      now);
+                })
             .toList();
 
     return new InspectorRatingProfileResponse(
@@ -208,10 +212,15 @@ public class InspectionRatingService {
     UserAccess.ActiveUser inspectorUser =
         inspectorId != null ? findUserCached(inspectorId, usersCache) : null;
     String inspectorName = inspectorUser != null ? inspectorUser.fullName() : null;
-    String assetName =
+    String inspectorAvatarUrl = inspectorUser != null ? inspectorUser.avatarUrl() : null;
+    Asset singleAsset =
         inspection.getAssetId() != null
-            ? assets.findById(inspection.getAssetId()).map(Asset::getName).orElse(null)
+            ? assets
+                .findDetailedById(inspection.getAssetId())
+                .orElseGet(() -> assets.findById(inspection.getAssetId()).orElse(null))
             : null;
+    String assetName = singleAsset != null ? singleAsset.getName() : null;
+    UUID assetPhotoDocumentId = firstAssetPhotoId(singleAsset);
 
     List<InspectorRating> inspectionRatings =
         ratings.findByInspectionIdOrderByCreatedAtAsc(inspection.getId());
@@ -232,6 +241,7 @@ public class InspectionRatingService {
                 customerEntity,
                 findUserCached(customerEntity.getRaterUserId(), usersCache),
                 assetName,
+                assetPhotoDocumentId,
                 now)
             : null;
     InspectorRatingResponse managerDto =
@@ -240,6 +250,7 @@ public class InspectionRatingService {
                 managerEntity,
                 findUserCached(managerEntity.getRaterUserId(), usersCache),
                 assetName,
+                assetPhotoDocumentId,
                 now)
             : null;
 
@@ -302,6 +313,7 @@ public class InspectionRatingService {
         inspection.getId(),
         inspectorId,
         inspectorName,
+        inspectorAvatarUrl,
         canRate,
         ineligibleReason,
         actorRoleLabel,
@@ -409,7 +421,9 @@ public class InspectionRatingService {
     return Math.round(value * 100.0) / 100.0;
   }
 
-  private Map<UUID, String> resolveAssetNames(List<InspectorRating> items) {
+  private record AssetMeta(String assetName, UUID photoDocumentId) {}
+
+  private Map<UUID, AssetMeta> resolveAssetMeta(List<InspectorRating> items) {
     Set<UUID> inspectionIds =
         items.stream()
             .map(InspectorRating::getInspectionId)
@@ -424,24 +438,49 @@ public class InspectionRatingService {
             .map(Inspection::getAssetId)
             .filter(Objects::nonNull)
             .collect(Collectors.toSet());
-    Map<UUID, String> assetsById = new HashMap<>();
+    Map<UUID, Asset> assetsById = new HashMap<>();
     if (!assetIds.isEmpty()) {
-      for (Asset asset : assets.findAllById(assetIds)) {
-        assetsById.put(asset.getId(), asset.getName());
+      List<Asset> detailed = assets.findDetailedByIdIn(assetIds);
+      List<Asset> loaded =
+          detailed != null && !detailed.isEmpty() ? detailed : assets.findAllById(assetIds);
+      for (Asset asset : loaded) {
+        assetsById.put(asset.getId(), asset);
       }
     }
-    Map<UUID, String> result = new HashMap<>();
+    Map<UUID, AssetMeta> result = new HashMap<>();
     for (Inspection inspection : foundInspections) {
-      String name = assetsById.get(inspection.getAssetId());
-      if (name != null) {
-        result.put(inspection.getId(), name);
+      Asset asset = assetsById.get(inspection.getAssetId());
+      if (asset != null) {
+        result.put(inspection.getId(), new AssetMeta(asset.getName(), firstAssetPhotoId(asset)));
       }
     }
     return result;
   }
 
+  private static UUID firstAssetPhotoId(Asset asset) {
+    if (asset == null || asset.getDocuments() == null) {
+      return null;
+    }
+    return asset.getDocuments().stream()
+        .filter(
+            doc ->
+                doc.getId() != null
+                    && doc.getContentType() != null
+                    && doc.getContentType().startsWith("image/"))
+        .sorted(
+            java.util.Comparator.comparing(
+                doc -> !"ASSET_PHOTO".equalsIgnoreCase(doc.getDocumentType())))
+        .map(AssetDocument::getId)
+        .findFirst()
+        .orElse(null);
+  }
+
   private InspectorRatingResponse toResponse(
-      InspectorRating rating, UserAccess.ActiveUser rater, String assetName, Instant now) {
+      InspectorRating rating,
+      UserAccess.ActiveUser rater,
+      String assetName,
+      UUID assetPhotoDocumentId,
+      Instant now) {
     return new InspectorRatingResponse(
         rating.getId(),
         rating.getInspectionId(),
@@ -451,6 +490,7 @@ public class InspectionRatingService {
         rater != null ? rater.avatarUrl() : null,
         rating.getRaterRole().name(),
         assetName,
+        assetPhotoDocumentId,
         rating.getOverallScore(),
         rating.getCriterionScores(),
         rating.getComment(),

@@ -613,7 +613,7 @@ public class InspectionNotificationService {
             NotificationChannel.IN_APP,
             title,
             body,
-            "/operations/dashboard",
+            "/operations/dashboard?tab=ratings",
             key),
         key);
   }
