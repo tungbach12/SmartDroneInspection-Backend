@@ -1362,8 +1362,12 @@ public class InspectionCreationService {
     String ownerCustomerPhone = ownerCustomerUser != null ? ownerCustomerUser.phoneNumber() : null;
     String ownerCustomerAvatarUrl =
         ownerCustomerUser != null ? ownerCustomerUser.avatarUrl() : null;
+    List<UserAccess.ActiveUser> activeManagers = userAccess.listActiveManagers();
     UserAccess.ActiveUser managerUser =
-        userAccess.listActiveManagers().stream().findFirst().orElse(null);
+        activeManagers.stream()
+            .filter(user -> user.avatarUrl() != null && !user.avatarUrl().isBlank())
+            .findFirst()
+            .orElse(activeManagers.stream().findFirst().orElse(null));
     String managerName = managerUser != null ? managerUser.fullName() : null;
     String managerEmail = managerUser != null ? managerUser.email() : null;
     String managerPhone = managerUser != null ? managerUser.phoneNumber() : null;
