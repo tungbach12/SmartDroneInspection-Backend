@@ -236,6 +236,7 @@ public class ReportService {
         paymentGate,
         defectVerificationsRepo,
         historicalCaseService,
+        Optional.empty(),
         Optional.empty());
   }
 
