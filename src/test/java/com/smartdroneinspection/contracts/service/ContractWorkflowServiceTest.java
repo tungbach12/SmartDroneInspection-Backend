@@ -670,6 +670,36 @@ class ContractWorkflowServiceTest {
 
     assertThatThrownBy(() -> service.managerFinanceHistory(customerId, 0, 20))
         .isInstanceOf(BusinessException.class);
+
+    ServiceRequestOccurrence unpaidEligibleOccurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            2,
+            Instant.parse("2027-02-02T09:00:00Z"),
+            Instant.parse("2027-02-02T10:00:00Z"));
+    unpaidEligibleOccurrence.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+    unpaidEligibleOccurrence.snapshotFinance(
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("10.00"));
+    unpaidEligibleOccurrence.markPayoutEligible();
+
+    when(occurrences.findAllPayoutTrackableForManager())
+        .thenReturn(List.of(paidOccurrence, unpaidEligibleOccurrence));
+    when(occurrences.pagePayoutTrackableForManager(pageable))
+        .thenReturn(
+            new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+                List.of(paidOccurrence, unpaidEligibleOccurrence), pageable, 2));
+
+    var payoutScopeResult = service.managerFinanceHistory(managerId, 0, 20, "PAYOUTS");
+    assertThat(payoutScopeResult.summary().transactionCount()).isEqualTo(1);
+    assertThat(payoutScopeResult.summary().totalCustomerPaid()).isEqualByComparingTo("11000000.00");
+    assertThat(payoutScopeResult.summary().pendingInspectorPayout())
+        .isEqualByComparingTo("15300000.00");
+    assertThat(payoutScopeResult.content()).hasSize(2);
+    assertThat(payoutScopeResult.content().get(1).paymentStatus()).isEqualTo("PENDING");
+    assertThat(payoutScopeResult.content().get(1).payoutStatus()).isEqualTo("ELIGIBLE");
   }
 
   @Test
@@ -697,7 +727,8 @@ class ContractWorkflowServiceTest {
             mock(
                 com.smartdroneinspection.contracts.repository.InspectorReceivableRepository
                     .class)));
-    when(occurrences.findPaidByIdForManager(occurrenceId)).thenReturn(Optional.of(paidOccurrence));
+    when(occurrences.findFinanceHistoryByIdForManager(occurrenceId))
+        .thenReturn(Optional.of(paidOccurrence));
 
     var detail = service.managerFinanceHistoryDetail(managerId, occurrenceId);
 
@@ -2270,31 +2301,33 @@ class ContractWorkflowServiceTest {
     RecordOccurrencePayoutRequest payoutReq =
         new RecordOccurrencePayoutRequest("PAYOUT-REF-999", "Transfer completed");
 
-    // Gate 1: Blocked before report acceptance
+    // Gate: Blocked before report approval
     assertThatThrownBy(
             () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
         .isInstanceOf(BusinessException.class)
-        .hasMessageContaining(
-            "Inspector payout requires both customer report acceptance and confirmed customer payment");
+        .hasMessageContaining("Inspector payout requires an approved inspection report");
 
-    // Customer accepts report
-    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    // Linked occurrence requires payout before publishing while payout != PAID
+    when(occurrences.findByInspectionId(inspectionId)).thenReturn(Optional.of(occurrence));
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isTrue();
+    assertThat(service.requiresPayoutBeforePublish(UUID.randomUUID())).isFalse();
 
-    // Gate 2: Still blocked before payment confirmation
-    assertThatThrownBy(
-            () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining(
-            "Inspector payout requires both customer report acceptance and confirmed customer payment");
+    // Manager approves report: occurrence payout immediately becomes ELIGIBLE without waiting for
+    // customer acceptance or customer payment.
+    when(occurrences.findWithLockByInspectionId(inspectionId)).thenReturn(Optional.of(occurrence));
+    service.onReportApproved(inspectionId);
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(occurrence.getPaymentStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PENDING);
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isTrue();
 
-    // Manager confirms payment
-    occurrence.confirmPayment("TXN-12345", new BigDecimal("11000000.00"), managerId);
-
-    // Both gates satisfied: payout is now explicitly recorded by the Manager.
+    // Gate satisfied: payout is now explicitly recorded by the Manager.
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
 
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isFalse();
     assertThat(occurrence.getPayoutReference()).isEqualTo("PAYOUT-REF-999");
     assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
     assertThat(occurrence.getPayoutRecordedAt()).isNotNull();

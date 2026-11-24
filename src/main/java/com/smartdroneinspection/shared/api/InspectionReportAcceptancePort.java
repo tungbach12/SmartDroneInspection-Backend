@@ -14,6 +14,24 @@ public interface InspectionReportAcceptancePort {
   /** Accepts the published report version for the occurrence associated with this inspection. */
   void acceptReport(UUID actorId, UUID inspectionId, UUID reportVersionId);
 
+  /**
+   * Returns true when a linked commercial occurrence exists whose Inspector payout is not yet
+   * settled (PAID), so report approval must pause at APPROVED until Manager pays Inspector.
+   */
+  default boolean requiresPayoutBeforePublish(UUID inspectionId) {
+    return false;
+  }
+
+  /** Marks the linked occurrence's Inspector payout eligible once Manager approves the report. */
+  default void onReportApproved(UUID inspectionId) {
+    onReportPublished(inspectionId);
+  }
+
+  /**
+   * Marks the linked occurrence's Inspector payout eligible once the Manager publishes the report.
+   */
+  default void onReportPublished(UUID inspectionId) {}
+
   /** Creates a Sepay VietQR code for the occurrence associated with this inspection. */
   SepayCheckoutDetails createSepayPaymentLink(UUID actorId, UUID inspectionId);
 

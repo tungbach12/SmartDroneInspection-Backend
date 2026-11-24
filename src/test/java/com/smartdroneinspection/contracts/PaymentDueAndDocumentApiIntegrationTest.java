@@ -495,6 +495,26 @@ class PaymentDueAndDocumentApiIntegrationTest {
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-DUE-" + occurrenceId.toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/versions/{vId}/publish", inspectionId, versionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
     return inspectionId;

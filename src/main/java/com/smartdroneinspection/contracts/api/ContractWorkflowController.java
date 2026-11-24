@@ -387,7 +387,11 @@ public class ContractWorkflowController {
   public ApiResponse<ManagerFinanceHistoryResponse> managerFinanceHistory(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(defaultValue = "ALL") String scope) {
+    if ("PAYOUTS".equalsIgnoreCase(scope) || "REVENUE".equalsIgnoreCase(scope)) {
+      return ApiResponse.success(workflow.managerFinanceHistory(actorId(jwt), page, size, scope));
+    }
     return ApiResponse.success(workflow.managerFinanceHistory(actorId(jwt), page, size));
   }
 

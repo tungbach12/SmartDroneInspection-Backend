@@ -83,6 +83,42 @@ public interface ServiceRequestOccurrenceRepository
       @Param("occurrenceId") UUID occurrenceId);
 
   @Query(
+      value =
+          "select occurrence from ServiceRequestOccurrence occurrence "
+              + "where occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+              + "or occurrence.payout.payoutStatus in ("
+              + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE, "
+              + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID) "
+              + "order by coalesce(occurrence.payout.payoutRecordedAt, occurrence.payment.paymentConfirmedAt, occurrence.payout.updatedAt, occurrence.updatedAt) desc, occurrence.id desc",
+      countQuery =
+          "select count(occurrence) from ServiceRequestOccurrence occurrence "
+              + "where occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+              + "or occurrence.payout.payoutStatus in ("
+              + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE, "
+              + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID)")
+  org.springframework.data.domain.Page<ServiceRequestOccurrence> pagePayoutTrackableForManager(
+      org.springframework.data.domain.Pageable pageable);
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "where occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+          + "or occurrence.payout.payoutStatus in ("
+          + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE, "
+          + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID) "
+          + "order by coalesce(occurrence.payout.payoutRecordedAt, occurrence.payment.paymentConfirmedAt, occurrence.payout.updatedAt, occurrence.updatedAt) desc, occurrence.id desc")
+  List<ServiceRequestOccurrence> findAllPayoutTrackableForManager();
+
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence "
+          + "where occurrence.id = :occurrenceId "
+          + "and (occurrence.payment.paymentStatus = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus.PAID "
+          + "or occurrence.payout.payoutStatus in ("
+          + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE, "
+          + "com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus.PAID))")
+  Optional<ServiceRequestOccurrence> findFinanceHistoryByIdForManager(
+      @Param("occurrenceId") UUID occurrenceId);
+
+  @Query(
       "select occurrence from ServiceRequestOccurrence occurrence "
           + "join ServiceRequest request on request.id = occurrence.requestId "
           + "where request.ownerCustomerId = :customerId "

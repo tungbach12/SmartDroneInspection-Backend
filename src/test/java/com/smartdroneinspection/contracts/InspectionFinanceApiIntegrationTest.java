@@ -510,7 +510,21 @@ class InspectionFinanceApiIntegrationTest {
                 .with(principal(inspectorUserId, "INSPECTOR")))
         .andExpect(status().isOk());
 
-    // Manager reviews and publishes report
+    // Manager payout recording is blocked before report is published
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("payoutReference", "PREMATURE-PAYOUT"))))
+        .andExpect(status().isConflict());
+
+    // Manager approves report -> enters APPROVED, unlocks Inspector payout (ELIGIBLE), remains
+    // hidden from Customer
     mockMvc
         .perform(
             post(
@@ -520,10 +534,87 @@ class InspectionFinanceApiIntegrationTest {
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    ServiceRequestOccurrence updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
+    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PENDING);
+
+    // Customer cannot view APPROVED report before Manager settles Inspector payout & publishes
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/versions/{vId}", inspectionId, reportVersionId)
+                .with(principal(customerUserId, "CUSTOMER")))
+        .andExpect(status().isForbidden());
+
+    // Publishing to Customer is blocked until Inspector payout is settled
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTOR_PAYOUT_REQUIRED"));
+
+    // Manager payout queue includes eligible occurrence before customer payment
+    mockMvc
+        .perform(
+            get("/api/v1/contracts/requests/finance-history/manager")
+                .param("scope", "PAYOUTS")
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.summary.transactionCount").value(0))
+        .andExpect(jsonPath("$.data.summary.pendingInspectorPayout").value(7650000.00))
+        .andExpect(jsonPath("$.data.content[0].occurrenceId").value(occurrenceId.toString()))
+        .andExpect(jsonPath("$.data.content[0].payoutStatus").value("ELIGIBLE"));
+
+    // Manager settles Inspector payout right after approving report
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("payoutReference", "PAYOUT-BANK-8888"))))
+        .andExpect(status().isOk());
+
+    updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
+    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(updatedOcc.getPayoutReference()).isEqualTo("PAYOUT-BANK-8888");
+    assertThat(updatedOcc.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerUserId);
+    assertThat(updatedOcc.getPayoutRecordedAt()).isNotNull();
+
+    // Duplicate payout recording is idempotent
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("payoutReference", "PAYOUT-BANK-8888"))))
+        .andExpect(status().isOk());
+
+    // Now that Inspector payout is PAID, Manager publishes the report to Customer
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 
     // -------------------------------------------------------------------------
-    // Phase 4: Deliverable Gating, Customer Acceptance, Payment Confirmation & Payout
+    // Phase 4: Deliverable Gating, Customer Acceptance & Payment Confirmation
     // -------------------------------------------------------------------------
 
     // 4.1 Customer can view full report data
@@ -555,7 +646,7 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(status().isOk());
 
     // Payment status is now PAYMENT_DUE (not PAID!)
-    ServiceRequestOccurrence updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
+    updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
     // 4.4 Deliverable PDF remains available for export while PAYMENT_DUE
@@ -568,20 +659,7 @@ class InspectionFinanceApiIntegrationTest {
                 .with(principal(customerUserId, "CUSTOMER")))
         .andExpect(status().isOk());
 
-    // 4.5 Manager payout recording is blocked before customer payment is confirmed
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
-                    requestId,
-                    occurrenceId)
-                .with(principal(managerUserId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(Map.of("payoutReference", "PREMATURE-PAYOUT"))))
-        .andExpect(status().isConflict());
-
-    // 4.6 Non-manager cannot confirm customer payment
+    // 4.5 Non-manager cannot confirm customer payment
     mockMvc
         .perform(
             post(
@@ -595,7 +673,7 @@ class InspectionFinanceApiIntegrationTest {
                         Map.of("paymentReference", "TXN-1", "amount", 11000000.00))))
         .andExpect(status().isForbidden());
 
-    // 4.7 Mismatched payment amount is rejected
+    // 4.6 Mismatched payment amount is rejected
     mockMvc
         .perform(
             post(
@@ -609,7 +687,7 @@ class InspectionFinanceApiIntegrationTest {
                         Map.of("paymentReference", "TXN-1", "amount", 10000000.00))))
         .andExpect(status().isBadRequest());
 
-    // 4.8 Manager confirms exact manual bank transfer (11,000,000 VND)
+    // 4.7 Manager confirms exact manual bank transfer (11,000,000 VND)
     mockMvc
         .perform(
             post(
@@ -625,13 +703,13 @@ class InspectionFinanceApiIntegrationTest {
 
     updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(updatedOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
-    assertThat(updatedOcc.getPayoutReference()).isNull();
+    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(updatedOcc.getPayoutReference()).isEqualTo("PAYOUT-BANK-8888");
     assertThat(updatedOcc.getPaymentReference()).isEqualTo("BANK-TRANSFER-5555");
     assertThat(updatedOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(updatedOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
 
-    // 4.9 Final deliverable document is now UNLOCKED for Customer!
+    // 4.8 Final deliverable document remains available for Customer!
     mockMvc
         .perform(
             get(
@@ -639,38 +717,6 @@ class InspectionFinanceApiIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .with(principal(customerUserId, "CUSTOMER")))
-        .andExpect(status().isOk());
-
-    // 4.10 Manager records Inspector payout
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
-                    requestId,
-                    occurrenceId)
-                .with(principal(managerUserId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(Map.of("payoutReference", "PAYOUT-BANK-8888"))))
-        .andExpect(status().isOk());
-
-    updatedOcc = occurrences.findById(occurrenceId).orElseThrow();
-    assertThat(updatedOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
-    assertThat(updatedOcc.getPayoutReference()).isEqualTo("PAYOUT-BANK-8888");
-    assertThat(updatedOcc.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerUserId);
-    assertThat(updatedOcc.getPayoutRecordedAt()).isNotNull();
-
-    // 4.11 Duplicate payout recording is idempotent
-    mockMvc
-        .perform(
-            post(
-                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
-                    requestId,
-                    occurrenceId)
-                .with(principal(managerUserId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(Map.of("payoutReference", "PAYOUT-BANK-8888"))))
         .andExpect(status().isOk());
 
     // -------------------------------------------------------------------------

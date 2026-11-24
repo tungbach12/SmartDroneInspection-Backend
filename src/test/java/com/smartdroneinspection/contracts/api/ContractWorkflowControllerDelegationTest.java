@@ -84,6 +84,7 @@ class ContractWorkflowControllerDelegationTest {
     when(workflow.customerFinanceHistory(ACTOR_ID, 0, 20)).thenReturn(customerPage);
     when(workflow.inspectorFinanceHistory(ACTOR_ID, 0, 20)).thenReturn(inspectorPage);
     when(workflow.managerFinanceHistory(ACTOR_ID, 0, 20)).thenReturn(managerPage);
+    when(workflow.managerFinanceHistory(ACTOR_ID, 0, 20, "PAYOUTS")).thenReturn(managerPage);
     when(workflow.customerFinanceHistoryDetail(ACTOR_ID, OCCURRENCE_ID)).thenReturn(occurrence);
     when(workflow.inspectorFinanceHistoryDetail(ACTOR_ID, OCCURRENCE_ID)).thenReturn(occurrence);
     when(workflow.managerFinanceHistoryDetail(ACTOR_ID, OCCURRENCE_ID)).thenReturn(occurrence);
@@ -97,7 +98,9 @@ class ContractWorkflowControllerDelegationTest {
         .hasSize(1);
     assertThat(controller.customerFinanceHistory(jwt, 0, 20).data()).isSameAs(customerPage);
     assertThat(controller.inspectorFinanceHistory(jwt, 0, 20).data()).isSameAs(inspectorPage);
-    assertThat(controller.managerFinanceHistory(jwt, 0, 20).data()).isSameAs(managerPage);
+    assertThat(controller.managerFinanceHistory(jwt, 0, 20, "ALL").data()).isSameAs(managerPage);
+    assertThat(controller.managerFinanceHistory(jwt, 0, 20, "PAYOUTS").data())
+        .isSameAs(managerPage);
     assertThat(controller.customerFinanceHistoryDetail(jwt, OCCURRENCE_ID).data())
         .isSameAs(occurrence);
     assertThat(controller.inspectorFinanceHistoryDetail(jwt, OCCURRENCE_ID).data())

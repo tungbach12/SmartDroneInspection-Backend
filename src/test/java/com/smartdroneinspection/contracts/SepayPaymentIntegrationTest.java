@@ -361,11 +361,12 @@ class SepayPaymentIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
 
-    // Customer payment settles; Inspector payout is only eligible, not automatically disbursed.
+    // Customer payment settles; Inspector payout remains PAID with the pre-publish settlement
+    // reference.
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
-    assertThat(settledOcc.getPayoutReference()).isNull();
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutReference()).startsWith("UNC-SEPAY-");
     assertThat(settledOcc.getPaymentReference()).isEqualTo("SEPAY-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(settledOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
@@ -696,7 +697,7 @@ class SepayPaymentIntegrationTest {
                 .with(principal(inspectorUserId, "INSPECTOR")))
         .andExpect(status().isOk());
 
-    // 11. Manager reviews and publishes report
+    // 11. Manager approves report, settles Inspector payout, and publishes report
     mockMvc
         .perform(
             post(
@@ -705,6 +706,31 @@ class SepayPaymentIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-SEPAY-" + occurrenceId.toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 

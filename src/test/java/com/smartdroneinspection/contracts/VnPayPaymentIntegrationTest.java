@@ -336,8 +336,8 @@ class VnPayPaymentIntegrationTest {
 
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
-    assertThat(settledOcc.getPayoutReference()).isNull();
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutReference()).startsWith("UNC-VNPAY-");
     assertThat(settledOcc.getPaymentMethod()).isEqualTo("VNPAY");
     assertThat(settledOcc.getPaymentReference()).isEqualTo("VNPAY-14226112");
 
@@ -587,6 +587,31 @@ class VnPayPaymentIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-VNPAY-" + occurrenceId.toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 

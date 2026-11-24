@@ -28,4 +28,21 @@ public class InspectionReportAccessAdapter implements InspectionReportAccess {
         .filter(report -> report.getStatus() == ReportStatus.PUBLISHED)
         .isPresent();
   }
+
+  @Override
+  public boolean hasPublishedReport(UUID inspectionId) {
+    if (inspectionId == null) {
+      return false;
+    }
+    return !versions.findByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED).isEmpty();
+  }
+
+  @Override
+  public boolean hasApprovedOrPublishedReport(UUID inspectionId) {
+    if (inspectionId == null) {
+      return false;
+    }
+    return !versions.findByInspectionIdAndStatus(inspectionId, ReportStatus.APPROVED).isEmpty()
+        || !versions.findByInspectionIdAndStatus(inspectionId, ReportStatus.PUBLISHED).isEmpty();
+  }
 }

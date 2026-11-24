@@ -1630,18 +1630,23 @@ public class ContractWorkflowService
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
-    if (occurrence.getReportAcceptedAt() == null
-        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAID) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "PAYOUT_NOT_ELIGIBLE",
-          "Inspector payout requires both customer report acceptance and confirmed customer payment");
-    }
     if (occurrence.isPayoutHeldForRefund()) {
       throw failure(
           HttpStatus.CONFLICT,
           "PAYOUT_HELD_FOR_REFUND",
           "Inspector payout is held while a customer refund is recorded and reconciled");
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING) {
+      if (occurrence.getInspectionId() != null
+          && reportAccess.isPresent()
+          && reportAccess.get().hasApprovedOrPublishedReport(occurrence.getInspectionId())) {
+        occurrence.markPayoutEligible();
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYOUT_NOT_ELIGIBLE",
+            "Inspector payout requires an approved inspection report");
+      }
     }
     if (occurrence.getInspectorId() == null) {
       throw failure(
@@ -1781,21 +1786,38 @@ public class ContractWorkflowService
   }
 
   /**
-   * Manager view of all platform revenue inflows and earned commissions across paid occurrences.
+   * Manager view of platform revenue inflows and earned commissions, or payout-trackable records.
    */
   @Transactional(readOnly = true)
   public ManagerFinanceHistoryResponse managerFinanceHistory(UUID actorId, int page, int size) {
+    return managerFinanceHistory(actorId, page, size, "REVENUE");
+  }
+
+  /**
+   * Manager view scoped by {@code REVENUE} (customer paid occurrences) or {@code PAYOUTS}
+   * (occurrences whose payout is eligible/settled or customer-paid).
+   */
+  @Transactional(readOnly = true)
+  public ManagerFinanceHistoryResponse managerFinanceHistory(
+      UUID actorId, int page, int size, String scope) {
     requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     if (page < 0 || size < 1 || size > 100) {
       throw failure(
           HttpStatus.BAD_REQUEST, "INVALID_PAGE", "Page must be nonnegative and size 1-100");
     }
-    List<ServiceRequestOccurrence> allPaid = occurrences.findAllPaidForManager();
+    boolean payoutsScope = "PAYOUTS".equalsIgnoreCase(scope);
+    List<ServiceRequestOccurrence> allRecords =
+        payoutsScope
+            ? occurrences.findAllPayoutTrackableForManager()
+            : occurrences.findAllPaidForManager();
     ManagerFinanceHistoryResponse.ManagerFinanceSummary summary =
-        ManagerFinanceHistoryResponse.summarize(allPaid);
+        ManagerFinanceHistoryResponse.summarize(allRecords);
 
     var pageable = org.springframework.data.domain.PageRequest.of(page, size);
-    var pageResult = occurrences.pagePaidForManager(pageable);
+    var pageResult =
+        payoutsScope
+            ? occurrences.pagePayoutTrackableForManager(pageable)
+            : occurrences.pagePaidForManager(pageable);
 
     java.util.Map<UUID, ServiceRequest> requestCache = new java.util.HashMap<>();
     java.util.Map<UUID, String> assetNameCache = new java.util.HashMap<>();
@@ -1852,13 +1874,13 @@ public class ContractWorkflowService
         summary, content, pageResult.getTotalElements(), page, size);
   }
 
-  /** Manager financial breakdown detail for a single paid occurrence. */
+  /** Manager financial breakdown detail for a single revenue-paid or payout-eligible occurrence. */
   @Transactional(readOnly = true)
   public OccurrenceFinanceResponse managerFinanceHistoryDetail(UUID actorId, UUID occurrenceId) {
     requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequestOccurrence occurrence =
         occurrences
-            .findPaidByIdForManager(occurrenceId)
+            .findFinanceHistoryByIdForManager(occurrenceId)
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment not found"));
     return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
@@ -2224,6 +2246,43 @@ public class ContractWorkflowService
                 occurrence.getReportAcceptedAt() != null
                     || occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID)
         .orElse(false);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean requiresPayoutBeforePublish(UUID inspectionId) {
+    if (inspectionId == null) {
+      return false;
+    }
+    return occurrences
+        .findByInspectionId(inspectionId)
+        .map(occ -> occ.getPayoutStatus() != ServiceRequestOccurrence.OccurrencePayoutStatus.PAID)
+        .orElse(false);
+  }
+
+  @Override
+  @Transactional
+  public void onReportApproved(UUID inspectionId) {
+    onReportPublished(inspectionId);
+  }
+
+  @Override
+  @Transactional
+  public void onReportPublished(UUID inspectionId) {
+    if (inspectionId == null) {
+      return;
+    }
+    occurrences
+        .findWithLockByInspectionId(inspectionId)
+        .ifPresent(
+            occurrence -> {
+              if (occurrence.getPayoutStatus()
+                      == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING
+                  && !occurrence.isPayoutHeldForRefund()) {
+                occurrence.markPayoutEligible();
+                occurrences.saveAndFlush(occurrence);
+              }
+            });
   }
 
   @Override

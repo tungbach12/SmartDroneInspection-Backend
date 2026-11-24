@@ -868,6 +868,18 @@ public class InspectionController {
             actorId(jwt), inspectionId, versionId, approve, reason, RequestLocale.from(request)));
   }
 
+  @PostMapping("/report/versions/{versionId}/publish")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  public ApiResponse<ReportPublishedResponse> publishVersion(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        reportService.publishVersion(
+            actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
+  }
+
   @PostMapping("/report/versions/{versionId}/accept")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<Void> acceptReport(

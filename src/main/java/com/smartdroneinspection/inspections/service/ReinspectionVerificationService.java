@@ -171,6 +171,7 @@ public class ReinspectionVerificationService {
         .ifPresent(
             report -> {
               if (report.getStatus() == ReportStatus.SUBMITTED
+                  || report.getStatus() == ReportStatus.APPROVED
                   || report.getStatus() == ReportStatus.PUBLISHED) {
                 throw new BusinessException(
                     HttpStatus.CONFLICT,
