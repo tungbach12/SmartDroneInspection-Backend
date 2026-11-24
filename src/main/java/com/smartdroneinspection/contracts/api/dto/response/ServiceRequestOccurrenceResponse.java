@@ -226,7 +226,9 @@ public record ServiceRequestOccurrenceResponse(
         acceptanceDeadlineAt,
         lastTimeoutCancelledAt,
         lastTimeoutInspectorId,
-        lastTimeoutInspectorName);
+        lastTimeoutInspectorName,
+        inspectorName,
+        droneLabel);
   }
 
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
