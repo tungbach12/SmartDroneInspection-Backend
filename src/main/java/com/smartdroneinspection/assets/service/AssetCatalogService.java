@@ -146,8 +146,20 @@ public class AssetCatalogService {
 
     boolean defaultRequired = !"POST_FLIGHT".equals(normalizedType);
     boolean isRequired = request.required() != null ? request.required() : defaultRequired;
+    boolean safetyCritical = Boolean.TRUE.equals(request.safetyCritical());
     ChecklistTemplate created =
-        new ChecklistTemplate(normalizedType, request.label(), nextOrder, true, isRequired);
+        new ChecklistTemplate(
+            normalizedType,
+            request.category(),
+            request.label(),
+            request.labelVi(),
+            request.details(),
+            request.detailsVi(),
+            request.referenceThreshold(),
+            safetyCritical,
+            nextOrder,
+            true,
+            isRequired);
     return toTemplateResponse(checklistTemplates.saveAndFlush(created));
   }
 
@@ -168,7 +180,17 @@ public class AssetCatalogService {
     ChecklistTemplate template =
         checklistTemplates.findById(templateId).orElseThrow(() -> notFound(templateId));
     requireTemplatePermission(jwt, template.getTemplateType());
-    template.update(request.label(), request.sortOrder(), request.active(), request.required());
+    template.update(
+        request.category(),
+        request.label(),
+        request.labelVi(),
+        request.details(),
+        request.detailsVi(),
+        request.referenceThreshold(),
+        request.safetyCritical(),
+        request.sortOrder(),
+        request.active(),
+        request.required());
     return toTemplateResponse(checklistTemplates.saveAndFlush(template));
   }
 
@@ -237,7 +259,13 @@ public class AssetCatalogService {
         template.getId(),
         template.getTemplateType(),
         null,
+        template.getCategory(),
         template.getLabel(),
+        template.getLabelVi(),
+        template.getDetails(),
+        template.getDetailsVi(),
+        template.getReferenceThreshold(),
+        template.isSafetyCritical(),
         template.getSortOrder(),
         template.isActive(),
         template.isRequired());

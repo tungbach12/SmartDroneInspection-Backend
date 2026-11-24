@@ -158,6 +158,8 @@ class FlightPermitPolicyTest {
 
     inspection.recordFlightPermit("permits/fp.pdf", "fp.pdf", NOW);
     Object permit = ReflectionTestUtils.getField(inspection, "flightPermit");
+    ReflectionTestUtils.setField(
+        permit, "verificationStatus", FlightPermitVerificationStatus.PENDING_REVIEW);
     assertBusinessCode(
         () -> FlightPermitPolicy.requireApprovedForFlight(inspection, null, NOW),
         "FLIGHT_PERMIT_PENDING_REVIEW");

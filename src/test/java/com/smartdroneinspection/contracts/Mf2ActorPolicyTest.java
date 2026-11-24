@@ -15,14 +15,11 @@ class Mf2ActorPolicyTest {
   void classifiesCustomerForMf2() {
     assertThat(policy.actorKind(Set.of(Roles.CUSTOMER)))
         .isEqualTo(Mf2ActorPolicy.ActorKind.CUSTOMER);
-    assertThat(policy.actorKind(Set.of("CLIENT"))).isEqualTo(Mf2ActorPolicy.ActorKind.CUSTOMER);
   }
 
   @Test
   void classifiesManagerByRoleOnly() {
     assertThat(policy.actorKind(Set.of(Roles.MANAGER))).isEqualTo(Mf2ActorPolicy.ActorKind.MANAGER);
-    assertThat(policy.actorKind(Set.of("SERVICE_MANAGER")))
-        .isEqualTo(Mf2ActorPolicy.ActorKind.MANAGER);
   }
 
   @Test

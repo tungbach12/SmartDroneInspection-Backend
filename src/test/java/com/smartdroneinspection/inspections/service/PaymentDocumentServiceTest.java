@@ -125,12 +125,11 @@ class PaymentDocumentServiceTest {
   @DisplayName("An authenticated actor without an owner scope gets not-found")
   void actorWithoutOwnerScopeGetsNotFound() {
     // Not ADMIN, MANAGER or INSPECTOR, and without CUSTOMER, so ownerCustomerId() is null.
-    UUID engineer = UUID.randomUUID();
-    when(userAccess.findActiveUser(engineer))
-        .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(engineer, Set.of("MAINTENANCE_ENGINEER"))));
+    UUID unprivileged = UUID.randomUUID();
+    when(userAccess.findActiveUser(unprivileged))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(unprivileged, Set.of())));
 
-    assertNotFound(() -> service.render(engineer, INSPECTION_ID));
+    assertNotFound(() -> service.render(unprivileged, INSPECTION_ID));
 
     verifyNoInteractions(renderer);
   }
@@ -235,12 +234,36 @@ class PaymentDocumentServiceTest {
   }
 
   @Test
-  @DisplayName("A verified payment produces a receipt with method and transaction reference")
+  @DisplayName(
+      "A verified payment produces a receipt with method, transaction reference, and confirmed timestamp")
   void paidProducesReceipt() throws Exception {
     stubRenderedPdf();
     stubOwningCustomer();
+    Instant confirmedAt = Instant.parse("2026-11-12T08:15:30Z");
     when(acceptancePort.getPaymentStatus(OWNER_CUSTOMER_ID, INSPECTION_ID))
-        .thenReturn(status(true, true, "PAID", 9901L, "VNPAY", DUE_AT));
+        .thenReturn(
+            new InspectionReportAcceptancePort.PaymentStatusDetails(
+                true,
+                true,
+                "PAID",
+                9901L,
+                1100000L,
+                null,
+                new BigDecimal("1000000.00"),
+                new BigDecimal("10.00"),
+                new BigDecimal("100000.00"),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "VNPAY",
+                DUE_AT,
+                confirmedAt));
 
     service.render(OWNER_CUSTOMER_ID, INSPECTION_ID);
 
@@ -248,7 +271,7 @@ class PaymentDocumentServiceTest {
     assertThat(details.kind()).isEqualTo(PaymentDocumentRenderer.Kind.RECEIPT);
     assertThat(details.paymentMethod()).isEqualTo("VNPAY");
     assertThat(details.paymentReference()).isEqualTo("VNPAY #9901");
-    assertThat(details.paidAt()).isNotNull();
+    assertThat(details.paidAt()).isEqualTo(confirmedAt);
   }
 
   @Test

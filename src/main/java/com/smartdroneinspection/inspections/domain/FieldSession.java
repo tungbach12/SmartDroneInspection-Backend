@@ -1,5 +1,7 @@
 package com.smartdroneinspection.inspections.domain;
 
+import com.smartdroneinspection.inspections.api.dto.FieldSessionChecklistDto.ChecklistItemSnapshot;
+import com.smartdroneinspection.inspections.api.dto.FieldSessionChecklistDto.PreFlightConditions;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,8 +12,13 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * A field session under one inspection. MF3 evidence may be attributed to the session it came from.
@@ -56,6 +63,21 @@ public class FieldSession {
   @Column(name = "pre_flight_checklist_note", length = 2000)
   private String preFlightChecklistNote;
 
+  @Column(name = "session_date")
+  private LocalDate sessionDate;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "pre_flight_checklist_snapshot", columnDefinition = "jsonb", nullable = false)
+  private List<ChecklistItemSnapshot> preFlightChecklistSnapshot = new ArrayList<>();
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "pre_flight_conditions", columnDefinition = "jsonb")
+  private PreFlightConditions preFlightConditions;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "post_flight_checklist_snapshot", columnDefinition = "jsonb", nullable = false)
+  private List<ChecklistItemSnapshot> postFlightChecklistSnapshot = new ArrayList<>();
+
   @OneToOne(
       mappedBy = "fieldSession",
       cascade = CascadeType.ALL,
@@ -96,11 +118,27 @@ public class FieldSession {
     this.preFlightChecklistNote = note.trim();
   }
 
+  public void recordPreFlightDetails(
+      LocalDate sessionDate, List<ChecklistItemSnapshot> snapshot, PreFlightConditions conditions) {
+    this.sessionDate = sessionDate != null ? sessionDate : LocalDate.now();
+    this.preFlightChecklistSnapshot =
+        snapshot == null ? new ArrayList<>() : new ArrayList<>(snapshot);
+    this.preFlightConditions = conditions;
+  }
+
+  public void recordPostFlightSnapshot(List<ChecklistItemSnapshot> snapshot) {
+    this.postFlightChecklistSnapshot =
+        snapshot == null ? new ArrayList<>() : new ArrayList<>(snapshot);
+  }
+
   public void start(Instant startedAt) {
     if (!IN_PROGRESS.equals(status) && !PLANNED.equals(status)) {
       throw new IllegalStateException("Only a planned or in-progress session can be started");
     }
     this.startedAt = Objects.requireNonNull(startedAt, "Session start time is required");
+    if (this.sessionDate == null) {
+      this.sessionDate = startedAt.atZone(java.time.ZoneOffset.UTC).toLocalDate();
+    }
     this.status = IN_PROGRESS;
     this.updatedAt = startedAt;
   }
@@ -201,6 +239,24 @@ public class FieldSession {
 
   public String getPreFlightChecklistNote() {
     return preFlightChecklistNote;
+  }
+
+  public LocalDate getSessionDate() {
+    return sessionDate;
+  }
+
+  public List<ChecklistItemSnapshot> getPreFlightChecklistSnapshot() {
+    return preFlightChecklistSnapshot == null ? List.of() : List.copyOf(preFlightChecklistSnapshot);
+  }
+
+  public PreFlightConditions getPreFlightConditions() {
+    return preFlightConditions;
+  }
+
+  public List<ChecklistItemSnapshot> getPostFlightChecklistSnapshot() {
+    return postFlightChecklistSnapshot == null
+        ? List.of()
+        : List.copyOf(postFlightChecklistSnapshot);
   }
 
   public boolean hasFlightReport() {

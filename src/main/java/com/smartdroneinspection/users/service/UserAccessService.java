@@ -105,16 +105,6 @@ public class UserAccessService implements UserAccess {
         .toList();
   }
 
-  @Override
-  @Transactional(readOnly = true)
-  public List<ActiveUser> listActivePlatformManagers() {
-    return users.findAllWithRoles().stream()
-        .filter(User::active)
-        .filter(user -> user.roleValues().contains(Roles.MANAGER))
-        .map(this::toActiveUser)
-        .toList();
-  }
-
   private boolean isOnboardingApproved(User user) {
     return inspectorProfileRepository
         .findById(user.getId())
@@ -140,6 +130,33 @@ public class UserAccessService implements UserAccess {
         .map(this::toActiveUser)
         .filter(u -> u.hasRole(Roles.ADMIN))
         .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<PayoutBankDetails> findInspectorPayoutBankDetails(UUID inspectorUserId) {
+    if (inspectorUserId == null) {
+      return Optional.empty();
+    }
+    return inspectorProfileRepository
+        .findById(inspectorUserId)
+        .filter(
+            profile ->
+                hasText(profile.getPayoutBankName())
+                    || hasText(profile.getPayoutBankAccountNumber())
+                    || hasText(profile.getPayoutBankAccountHolder())
+                    || hasText(profile.getPayoutBankBranch()))
+        .map(
+            profile ->
+                new PayoutBankDetails(
+                    profile.getPayoutBankName(),
+                    profile.getPayoutBankAccountNumber(),
+                    profile.getPayoutBankAccountHolder(),
+                    profile.getPayoutBankBranch()));
+  }
+
+  private static boolean hasText(String value) {
+    return value != null && !value.isBlank();
   }
 
   private ActiveUser toActiveUser(User user) {

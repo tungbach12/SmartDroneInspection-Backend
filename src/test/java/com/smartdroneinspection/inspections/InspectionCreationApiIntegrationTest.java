@@ -1,7 +1,9 @@
 package com.smartdroneinspection.inspections;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
@@ -442,7 +444,8 @@ class InspectionCreationApiIntegrationTest {
         "VN-UAV-12345", "CLASS_B", Instant.now().plus(365, ChronoUnit.DAYS), "license/key.pdf");
     inspectorProfiles.saveAndFlush(profile);
 
-    // Inspector uploads flight permit -> status remains SCHEDULED with permit PENDING_REVIEW
+    // Inspector uploads flight permit -> status remains SCHEDULED with permit self-attested as
+    // APPROVED
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart(
@@ -460,8 +463,145 @@ class InspectionCreationApiIntegrationTest {
         .andExpect(jsonPath("$.data.flightPermitFileName").value("permit.pdf"))
         .andExpect(jsonPath("$.data.flightPermitNumber").value("GP-2026-001"))
         .andExpect(jsonPath("$.data.flightPermitAuthority").value("Cục Tác chiến - BTTM"))
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"))
+        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"))
+        .andExpect(jsonPath("$.data.flightPermitVerifiedBy").value(customerInspectorId.toString()))
         .andExpect(jsonPath("$.data.flightPermitFileSha256").isNotEmpty());
+  }
+
+  @Test
+  void inspectionDetailExposesParticipantAvatarsAndAssetPhotosAcrossRoles() throws Exception {
+    User customer =
+        new User(
+            "avatar-customer-" + UUID.randomUUID() + "@example.test",
+            "Customer With Avatar",
+            "0901000001",
+            "data:image/png;base64,iVBORw0KGgo=",
+            null,
+            UserStatus.ACTIVE);
+    customer.addRole(UserRole.CUSTOMER);
+    UUID customerId = users.saveAndFlush(customer).getId();
+
+    User manager =
+        new User(
+            "avatar-manager-" + UUID.randomUUID() + "@example.test",
+            "Manager With Avatar",
+            "0901000002",
+            "data:image/png;base64,managerAvatar==",
+            null,
+            UserStatus.ACTIVE);
+    manager.addRole(UserRole.MANAGER);
+    UUID managerId = users.saveAndFlush(manager).getId();
+
+    User assignedInspector =
+        new User(
+            "avatar-inspector-" + UUID.randomUUID() + "@example.test",
+            "Inspector With Avatar",
+            "0901000003",
+            "data:image/png;base64,inspectorAvatar==",
+            null,
+            UserStatus.ACTIVE);
+    assignedInspector.addRole(UserRole.INSPECTOR);
+    UUID assignedInspectorId = users.saveAndFlush(assignedInspector).getId();
+
+    Asset photoAsset =
+        assets.saveAndFlush(
+            new Asset(
+                customerId,
+                categories.findAll().getFirst().getId(),
+                "BR-PHOTO-" + UUID.randomUUID(),
+                "Photo Bridge",
+                "Bridge with uploaded photo",
+                "{\"label\":\"District 1\"}",
+                null,
+                null,
+                null,
+                customerId));
+    photoAsset.markCustomerOwned(customerId);
+    photoAsset = assets.saveAndFlush(photoAsset);
+
+    byte[] pngBytes = new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3};
+    MockMultipartFile photoFile =
+        new MockMultipartFile("file", "facade.png", "image/png", pngBytes);
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart("/api/v1/assets/" + photoAsset.getId() + "/documents")
+                .file(photoFile)
+                .param("documentType", "ASSET_PHOTO")
+                .param("primaryImage", "true")
+                .with(jwtUser(customerId, "ROLE_CUSTOMER")))
+        .andExpect(status().isOk());
+    entityManager.flush();
+    entityManager.clear();
+    String photoDocId =
+        assets
+            .findDetailedById(photoAsset.getId())
+            .orElseThrow()
+            .getDocuments()
+            .getFirst()
+            .getId()
+            .toString();
+
+    Drone photoDrone =
+        drones.saveAndFlush(
+            new Drone(
+                customerId,
+                "DJI-PHOTO-" + UUID.randomUUID(),
+                "DJI M350",
+                "DJI",
+                "{\"mtowKg\":6.47}",
+                com.smartdroneinspection.assets.domain.enums.DroneServiceability.ACTIVE,
+                null,
+                "REG-PHOTO",
+                "drones/photo-reg.pdf",
+                Instant.now().plus(365, ChronoUnit.DAYS)));
+    photoDrone.markCustomerOwned(customerId);
+    photoDrone = drones.saveAndFlush(photoDrone);
+
+    Instant start = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+    Inspection inspection =
+        new Inspection(
+            customerId,
+            photoAsset.getId(),
+            assignedInspectorId,
+            photoDrone.getId(),
+            start,
+            start.plus(2, ChronoUnit.HOURS));
+    inspection.markPartnerAssignment();
+    inspection = inspections.saveAndFlush(inspection);
+    entityManager.flush();
+    entityManager.clear();
+
+    for (var rolePair :
+        List.of(
+            new String[] {assignedInspectorId.toString(), "ROLE_INSPECTOR"},
+            new String[] {customerId.toString(), "ROLE_CUSTOMER"},
+            new String[] {managerId.toString(), "ROLE_MANAGER"})) {
+      UUID actor = UUID.fromString(rolePair[0]);
+      String authority = rolePair[1];
+
+      mockMvc
+          .perform(get("/api/v1/inspections/" + inspection.getId()).with(jwtUser(actor, authority)))
+          .andExpect(status().isOk())
+          .andExpect(
+              jsonPath("$.data.ownerCustomerAvatarUrl").value("data:image/png;base64,iVBORw0KGgo="))
+          .andExpect(jsonPath("$.data.managerAvatarUrl").isNotEmpty())
+          .andExpect(
+              jsonPath("$.data.inspectorAvatarUrl")
+                  .value("data:image/png;base64,inspectorAvatar=="))
+          .andExpect(jsonPath("$.data.assetPhotoDocumentIds[0]").value(photoDocId));
+
+      mockMvc
+          .perform(
+              get("/api/v1/inspections/"
+                      + inspection.getId()
+                      + "/asset-photos/"
+                      + photoDocId
+                      + "/content")
+                  .with(jwtUser(actor, authority)))
+          .andExpect(status().isOk())
+          .andExpect(content().contentType(MediaType.IMAGE_PNG))
+          .andExpect(content().bytes(pngBytes));
+    }
   }
 
   private org.springframework.test.web.servlet.request.RequestPostProcessor jwtUser(

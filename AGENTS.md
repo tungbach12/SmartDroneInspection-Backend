@@ -13,9 +13,8 @@ Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, Post
 
 - `SmartDroneInspectionApplication` (`@Modulithic`) - entry point
 - `shared/` - `ApiResponse<T>`, `Result<T>`, `PagedResult`, `Roles`, RFC 9457 handler, and shared security configuration
-- Implemented runtime modules: `users`, `assets`, `inspectionrequests`, `inspections` (WF3), and `shared`.
-- Persistence modules with schema foundations: `maintenance` (WF4) and `notifications`; add application behavior only with an assigned, tested feature slice.
-- Scaffold-only root: `dashboard`. `infrastructure` contains the concrete MinIO evidence-storage and configured YOLO inference adapters behind the inspections-owned `spi` boundary; business modules must not import infrastructure.
+- Implemented runtime modules: `users`, `assets`, `contracts`, `inspections`, `notifications`, `dashboard`, and `shared`.
+- `infrastructure` contains the concrete MinIO evidence-storage, email/OTP, payment gateway (Sepay / VNPay), SmartDroneHub, and configured YOLO / LLM adapters behind feature-owned ports/`spi` boundaries; business modules must not import infrastructure.
 - `<feature>/api/` - controllers and request/response records
 - `<feature>/domain/` - entities and domain rules owned by the feature
 - `<feature>/domain/enums/` - domain-only enums; transport enums stay with their API DTOs
@@ -33,12 +32,7 @@ exposed with `@NamedInterface`. HTTP `api/` is transport code and must not be
 imported by another module. Use a root facade or a named `events`/`spi` interface
 for cross-module calls. Business modules never import `infrastructure`.
 
-Dependency direction: `users -> shared::api, shared::auth, shared::config, shared::exception`, `assets -> shared`,
-`inspectionrequests -> assets, shared`, `inspections -> inspectionrequests, assets, shared::api`,
-and `maintenance -> inspections, inspectionrequests, shared`.
-Do not create standalone `missions`, `reports`, `defects`, `tickets`, or `ai`
-modules; reports/findings/AI candidates belong in WF3, maintenance tickets in
-`maintenance`, and YOLO adapters in `infrastructure/ai`.
+Dependency direction: `users -> shared::api, shared::auth, shared::config, shared::exception, shared::storage`, `assets -> shared`, `contracts -> assets::domain, assets::enums, assets::repository, users, inspections::spi, shared`, `inspections -> assets::domain, assets::enums, assets::repository, assets::reportcontext, users, shared`. Do not create standalone `missions`, `reports`, `defects`, `tickets`, or `ai` modules; reports/findings/AI candidates belong in `inspections`, and adapters in `infrastructure`.
 
 Do not create a top-level `domain/` entity module. User entities belong in
 `com.smartdroneinspection.users.domain`; the domain package is internal to the `users` module.
@@ -53,7 +47,7 @@ Modulith boundaries are enforced at build time by `ModulithArchitectureTest`.
 - Successful JSON bodies use `ApiResponse<T>`; preserve `204 No Content` and binary streaming responses. Errors use RFC 9457 `ProblemDetail` via `GlobalExceptionHandler` and the shared security handlers.
 - Create or modify Flyway migrations only when the task explicitly includes schema work. Use a new forward migration and never rewrite an applied migration.
 - Auth is owned by the `users` module; shared filter-chain configuration remains under `shared/`
-- Client onboarding is the only self-registration path: it creates one active organization and its first `CLIENT` account atomically. Privileged and service-workforce accounts remain administrator-managed; do not issue tokens from registration.
+- Customer onboarding is the self-registration path: it creates a customer registration review (`PENDING` / `APPROVED` on clear airspace) for a single `CUSTOMER` account (`ownerCustomerId = user.id`, no organization hierarchy). `ADMIN`, `MANAGER`, and `INSPECTOR` accounts are managed/approved via platform governance (`ADMIN` / `MANAGER`). The four login roles are strictly `ADMIN`, `MANAGER`, `CUSTOMER`, `INSPECTOR`.
 
 ## Notes
 

@@ -243,7 +243,13 @@ public class PartnerRegistryService {
                   reliabilityByInspector.getOrDefault(
                       inspector.id(), PartnerReliabilityQuery.ReliabilityCounts.ZERO);
               return evaluated.withReliability(
-                  counts.declineCount(), counts.noShowCount(), counts.abortCount());
+                  counts.declineCount(),
+                  counts.noShowCount(),
+                  counts.abortCount(),
+                  counts.averageRating(),
+                  counts.ratingCount(),
+                  counts.customerAverageRating(),
+                  counts.managerAverageRating());
             })
         .sorted(
             java.util.Comparator.<PartnerCandidateEvaluation.Result>comparingInt(

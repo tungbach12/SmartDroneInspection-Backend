@@ -171,13 +171,13 @@ public class PilotLicenseExpiryCheckService {
     }
 
     if (tier == WarningTier.EXPIRED) {
-      notifyPlatformManagersOfExpiredLicense(inspector, licenseLabel, expiryDate, formattedDate);
+      notifyManagersOfExpiredLicense(inspector, licenseLabel, expiryDate, formattedDate);
     }
   }
 
-  private void notifyPlatformManagersOfExpiredLicense(
+  private void notifyManagersOfExpiredLicense(
       ActiveUser inspector, String licenseLabel, LocalDate expiryDate, String formattedDate) {
-    List<ActiveUser> managers = userAccess.listActivePlatformManagers();
+    List<ActiveUser> managers = userAccess.listActiveManagers();
     if (managers.isEmpty()) {
       return;
     }

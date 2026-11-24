@@ -42,6 +42,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -122,6 +123,29 @@ class SepayPaymentIntegrationTest {
                   "PENDING");
             });
 
+    when(sepayGateway.createPayoutLink(anyLong(), anyLong(), anyString(), anyString(), any()))
+        .thenAnswer(
+            invocation -> {
+              long orderCode = invocation.getArgument(0);
+              long amount = invocation.getArgument(1);
+              String acc = invocation.getArgument(2);
+              String bank = invocation.getArgument(3);
+              return new SepayGateway.SepayPaymentLink(
+                  orderCode,
+                  "https://vietqr.app/img?acc="
+                      + acc
+                      + "&bank="
+                      + bank
+                      + "&amount="
+                      + amount
+                      + "&des=SDIPAY"
+                      + orderCode,
+                  "SDIPAY" + orderCode,
+                  amount,
+                  String.valueOf(orderCode),
+                  "PENDING");
+            });
+
     when(sepayGateway.verifyWebhookApiKey(any()))
         .thenAnswer(
             invocation -> {
@@ -175,12 +199,15 @@ class SepayPaymentIntegrationTest {
             "Partner Pilot");
 
     jdbcTemplate.update(
-        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key, payout_bank_name, payout_bank_account_number, payout_bank_account_holder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         inspectorUserId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-        "licenses/pilot-cert.pdf");
+        "licenses/pilot-cert.pdf",
+        "MB Bank",
+        "0987654321",
+        "PARTNER PILOT");
 
     // Register Inspector in Partner Registry
     try {
@@ -334,8 +361,10 @@ class SepayPaymentIntegrationTest {
     assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
         .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
-    // 6. Webhook: amount mismatch is reported and does not settle
+    // 6. Webhook: amount mismatch is acknowledged (200) for manual reconciliation and does not
+    // settle
     Map<String, Object> mismatchPayload = new LinkedHashMap<>(validSepayPayload);
+    mismatchPayload.put("id", 2L);
     mismatchPayload.put("transferAmount", 1000000L); // mismatch!
     mockMvc
         .perform(
@@ -343,7 +372,11 @@ class SepayPaymentIntegrationTest {
                 .header("Authorization", "Apikey test-sepay-api-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(mismatchPayload)))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
+        .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
     // 7. Webhook: valid API key settles payment and marks occurrence PAID
     mockMvc
@@ -355,11 +388,12 @@ class SepayPaymentIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
 
-    // Customer payment settles; Inspector payout is only eligible, not automatically disbursed.
+    // Customer payment settles; Inspector payout remains PAID with the pre-publish settlement
+    // reference.
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
-    assertThat(settledOcc.getPayoutReference()).isNull();
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutReference()).startsWith("UNC-SEPAY-");
     assertThat(settledOcc.getPaymentReference()).isEqualTo("SEPAY-TXN-12345");
     assertThat(settledOcc.getPaymentConfirmedAt()).isNotNull();
     assertThat(settledOcc.getPayout().getInspectorId()).isEqualTo(inspectorUserId);
@@ -465,10 +499,93 @@ class SepayPaymentIntegrationTest {
         .andExpect(jsonPath("$.code").value("PAYMENT_NOT_DUE"));
   }
 
+  @Test
+  @DisplayName("Automatic SePay payout QR and outgoing webhook settle payout and unlock publish")
+  void testSepayAutomaticPayoutAndPublish() throws Exception {
+    PreparedInspection prepared = prepareInspectionReadyForPayment(true);
+    UUID requestId = prepared.requestId();
+    UUID occurrenceId = prepared.occurrenceId();
+    UUID inspectionId = prepared.inspectionId();
+    UUID reportVersionId = prepared.reportVersionId();
+
+    // Create SePay VietQR payout link (auto-targets inspector bank details)
+    String payoutResp =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/sepay/create-payout-link", inspectionId)
+                    .with(principal(managerUserId, "MANAGER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.orderCode").isNumber())
+            .andExpect(jsonPath("$.data.qrCode").value(Matchers.startsWith("SDIPAY")))
+            .andExpect(
+                jsonPath("$.data.checkoutUrl").value(Matchers.containsString("acc=0987654321")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    long payoutOrderCode = objectMapper.readTree(payoutResp).at("/data/orderCode").longValue();
+    long payoutAmount = objectMapper.readTree(payoutResp).at("/data/amount").longValue();
+
+    // Publishing is still blocked before outgoing SePay webhook arrives
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTOR_PAYOUT_REQUIRED"));
+
+    // Simulate SePay outgoing transfer webhook (transferType = out)
+    Map<String, Object> outgoingWebhook = new LinkedHashMap<>();
+    outgoingWebhook.put("id", 777001L);
+    outgoingWebhook.put("gateway", "TPBank");
+    outgoingWebhook.put("transactionDate", "2027-03-01 09:30:00");
+    outgoingWebhook.put("accountNumber", "07723264801");
+    outgoingWebhook.put("subAccount", "");
+    outgoingWebhook.put("code", "SEPAYOUT777");
+    outgoingWebhook.put("content", "SDIPAY" + payoutOrderCode + " chi tra inspector");
+    outgoingWebhook.put("transferType", "out");
+    outgoingWebhook.put("description", "Platform outgoing payout");
+    outgoingWebhook.put("transferAmount", payoutAmount);
+    outgoingWebhook.put("accumulated", 50000000L);
+    outgoingWebhook.put("referenceCode", "FT-SEPAY-OUT-777");
+
+    mockMvc
+        .perform(
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey test-sepay-api-key")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(outgoingWebhook)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ServiceRequestOccurrence settled = occurrences.findById(occurrenceId).orElseThrow();
+    assertThat(settled.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settled.getPayoutReference()).isEqualTo("FT-SEPAY-OUT-777");
+
+    // Publish to Customer succeeds without any manual UNC entry
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
+  }
+
   private record PreparedInspection(
       UUID requestId, UUID occurrenceId, UUID inspectionId, UUID reportVersionId) {}
 
   private PreparedInspection prepareInspectionReadyForPayment() throws Exception {
+    return prepareInspectionReadyForPayment(false);
+  }
+
+  private PreparedInspection prepareInspectionReadyForPayment(boolean stopAtApproved)
+      throws Exception {
     ZoneId utc = ZoneId.of("UTC");
     LocalDate reqDate = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
     Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
@@ -607,15 +724,6 @@ class SepayPaymentIntegrationTest {
                             "validTo",
                             Instant.now().plus(30, ChronoUnit.DAYS)))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"));
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerUserId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "APPROVED"))))
-        .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"));
 
     // 8. Start & end field session
@@ -699,7 +807,7 @@ class SepayPaymentIntegrationTest {
                 .with(principal(inspectorUserId, "INSPECTOR")))
         .andExpect(status().isOk());
 
-    // 11. Manager reviews and publishes report
+    // 11. Manager approves report, settles Inspector payout, and publishes report
     mockMvc
         .perform(
             post(
@@ -708,6 +816,35 @@ class SepayPaymentIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    if (stopAtApproved) {
+      return new PreparedInspection(requestId, occurrenceId, inspectionId, reportVersionId);
+    }
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-SEPAY-" + occurrenceId.toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 

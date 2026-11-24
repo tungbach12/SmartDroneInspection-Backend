@@ -2,10 +2,14 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
 import com.smartdroneinspection.assets.repository.AssetRepository;
+import com.smartdroneinspection.inspections.api.dto.request.CreateFieldSessionFlightRequest;
 import com.smartdroneinspection.inspections.api.dto.response.EvidenceResponse;
+import com.smartdroneinspection.inspections.api.dto.response.FieldSessionFlightResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.domain.FieldSessionFlight;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.SmartDroneHubPort;
@@ -16,6 +20,7 @@ import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +36,7 @@ public class InspectionDroneHubService {
 
   private final InspectionRepository inspections;
   private final FieldSessionRepository sessions;
+  private final FieldSessionFlightRepository flights;
   private final AssetRepository assets;
   private final UserAccess userAccess;
   private final SmartDroneHubPort hub;
@@ -43,7 +49,18 @@ public class InspectionDroneHubService {
       AssetRepository assets,
       UserAccess userAccess,
       SmartDroneHubPort hub) {
-    this(inspections, sessions, assets, userAccess, hub, null, null);
+    this(inspections, sessions, assets, userAccess, hub, null, null, null);
+  }
+
+  public InspectionDroneHubService(
+      InspectionRepository inspections,
+      FieldSessionRepository sessions,
+      AssetRepository assets,
+      UserAccess userAccess,
+      SmartDroneHubPort hub,
+      EvidenceService evidenceService,
+      FlightLogParser flightLogParser) {
+    this(inspections, sessions, assets, userAccess, hub, evidenceService, flightLogParser, null);
   }
 
   @Autowired
@@ -54,7 +71,8 @@ public class InspectionDroneHubService {
       UserAccess userAccess,
       SmartDroneHubPort hub,
       EvidenceService evidenceService,
-      FlightLogParser flightLogParser) {
+      FlightLogParser flightLogParser,
+      FieldSessionFlightRepository flights) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.assets = assets;
@@ -62,11 +80,84 @@ public class InspectionDroneHubService {
     this.hub = hub;
     this.evidenceService = evidenceService;
     this.flightLogParser = flightLogParser;
+    this.flights = flights;
+  }
+
+  @Transactional(readOnly = true)
+  public List<FieldSessionFlightResponse> listFlightsForInspection(
+      UUID actorId, UUID inspectionId) {
+    requireReadableInspection(actorId, inspectionId);
+    if (flights == null) {
+      return List.of();
+    }
+    return flights
+        .findByInspectionIdOrderByFlightDateAscStartedAtAscFlightNumberAsc(inspectionId)
+        .stream()
+        .map(InspectionDroneHubService::toFlightResponse)
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<FieldSessionFlightResponse> listFlightsForSession(
+      UUID actorId, UUID inspectionId, UUID sessionId) {
+    requireReadableSession(actorId, inspectionId, sessionId);
+    if (flights == null) {
+      return List.of();
+    }
+    return flights.findByFieldSessionIdOrderByFlightNumberAsc(sessionId).stream()
+        .map(InspectionDroneHubService::toFlightResponse)
+        .toList();
+  }
+
+  @Transactional
+  public FieldSessionFlightResponse createFlight(
+      UUID actorId, UUID inspectionId, UUID sessionId, CreateFieldSessionFlightRequest request) {
+    Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
+    requireEditableFlightLogSession(scope);
+    if (flights == null) {
+      throw failure(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "FLIGHTS_UNAVAILABLE",
+          "Flight repository is not available.");
+    }
+    int nextNumber =
+        flights
+            .findTopByFieldSessionIdOrderByFlightNumberDesc(sessionId)
+            .map(f -> f.getFlightNumber() + 1)
+            .orElse(1);
+    LocalDate date =
+        request != null && request.flightDate() != null
+            ? request.flightDate()
+            : scope.session().getSessionDate() != null
+                ? scope.session().getSessionDate()
+                : LocalDate.now();
+    String label = request != null ? request.flightLabel() : null;
+    FieldSessionFlight created =
+        new FieldSessionFlight(sessionId, inspectionId, nextNumber, date, label);
+    return toFlightResponse(flights.saveAndFlush(created));
+  }
+
+  @Transactional
+  public void deleteFlight(UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
+    Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
+    requireEditableFlightLogSession(scope);
+    if (flights == null) {
+      return;
+    }
+    FieldSessionFlight flight = requireSessionFlight(inspectionId, sessionId, flightId);
+    flights.delete(flight);
+    flights.flush();
   }
 
   @Transactional(readOnly = true)
   public SmartDroneHubPort.Mission start(
       UUID actorId, UUID inspectionId, UUID sessionId, String telemetrySource) {
+    return start(actorId, inspectionId, sessionId, telemetrySource, null);
+  }
+
+  @Transactional(readOnly = true)
+  public SmartDroneHubPort.Mission start(
+      UUID actorId, UUID inspectionId, UUID sessionId, String telemetrySource, UUID flightId) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
     FlightPermitPolicy.requireApprovedForFlight(scope.inspection(), null, Instant.now());
     if (scope.inspection().getStatus() != InspectionStatus.IN_PROGRESS
@@ -76,6 +167,9 @@ public class InspectionDroneHubService {
           "FIELD_SESSION_NOT_IN_PROGRESS",
           "The field session must be active before connecting SmartDroneHub.");
     }
+    if (flightId != null) {
+      requireSessionFlight(inspectionId, sessionId, flightId);
+    }
     Asset asset =
         assets
             .findByIdAndOwnerCustomerId(
@@ -83,10 +177,11 @@ public class InspectionDroneHubService {
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
+    UUID hubSlotId = flightId != null ? flightId : sessionId;
     SmartDroneHubPort.MissionRequest request =
         new SmartDroneHubPort.MissionRequest(
             inspectionId,
-            sessionId,
+            hubSlotId,
             asset.getName(),
             asset.getLatitude(),
             asset.getLongitude(),
@@ -98,6 +193,19 @@ public class InspectionDroneHubService {
   @Transactional
   public SmartDroneHubPort.FlightReport importFlightLog(
       UUID actorId, UUID inspectionId, UUID sessionId, String fileName, InputStream input) {
+    return importFlightLog(actorId, inspectionId, sessionId, null, fileName, input, null, null);
+  }
+
+  @Transactional
+  public SmartDroneHubPort.FlightReport importFlightLog(
+      UUID actorId,
+      UUID inspectionId,
+      UUID sessionId,
+      UUID flightId,
+      String fileName,
+      InputStream input,
+      LocalDate flightDate,
+      String flightLabel) {
     if (fileName == null || fileName.length() > 255) {
       throw failure(
           HttpStatus.BAD_REQUEST,
@@ -181,6 +289,7 @@ public class InspectionDroneHubService {
             + extension.toUpperCase(java.util.Locale.ROOT)
             + " file; unavailable telemetry fields are not inferred."
             + proximityWarning;
+    String serializedTrace = serializeTrace(trace);
     scope
         .session()
         .recordFlightReport(
@@ -192,8 +301,26 @@ public class InspectionDroneHubService {
             endBattery,
             "UNKNOWN",
             note,
-            serializeTrace(trace));
+            serializedTrace);
     sessions.saveAndFlush(scope.session());
+    if (flights != null) {
+      FieldSessionFlight target =
+          resolveOrCreateFlight(scope.session(), flightId, flightDate, flightLabel);
+      target.recordReport(
+          source,
+          firstTime != null ? firstTime : scope.session().getStartedAt(),
+          lastTime != null ? lastTime : scope.session().getEndedAt(),
+          duration,
+          distance,
+          maxAltitude,
+          startBattery,
+          endBattery,
+          "UNKNOWN",
+          note,
+          serializedTrace);
+      flights.saveAndFlush(target);
+      return toPersistedFlightReport(scope.session(), target);
+    }
     return toPersistedFlightReport(scope.session());
   }
 
@@ -206,6 +333,31 @@ public class InspectionDroneHubService {
       int durationMinutes,
       Double maxAltitudeMeters,
       String notes) {
+    return declareManualFlight(
+        actorId,
+        inspectionId,
+        sessionId,
+        null,
+        reasonCode,
+        durationMinutes,
+        maxAltitudeMeters,
+        notes,
+        null,
+        null);
+  }
+
+  @Transactional
+  public SmartDroneHubPort.FlightReport declareManualFlight(
+      UUID actorId,
+      UUID inspectionId,
+      UUID sessionId,
+      UUID flightId,
+      String reasonCode,
+      int durationMinutes,
+      Double maxAltitudeMeters,
+      String notes,
+      LocalDate flightDate,
+      String flightLabel) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
     requireEditableFlightLogSession(scope);
     if (!List.of("NO_MAVLINK_SUPPORT", "PROPRIETARY_APP", "TELEMETRY_FAILURE")
@@ -254,11 +406,38 @@ public class InspectionDroneHubService {
             note,
             "[]");
     sessions.saveAndFlush(scope.session());
+    if (flights != null) {
+      FieldSessionFlight target =
+          resolveOrCreateFlight(scope.session(), flightId, flightDate, flightLabel);
+      target.recordReport(
+          "MANUAL_DECLARATION",
+          null,
+          null,
+          durationMinutes * 60,
+          null,
+          maxAltitudeMeters,
+          null,
+          null,
+          "UNKNOWN",
+          note,
+          "[]");
+      if (flightDate != null) {
+        target.updateMetadata(flightLabel, flightDate);
+      }
+      flights.saveAndFlush(target);
+      return toPersistedFlightReport(scope.session(), target);
+    }
     return toPersistedFlightReport(scope.session());
   }
 
   @Transactional(readOnly = true)
   public SmartDroneHubPort.Telemetry telemetry(UUID actorId, UUID inspectionId, UUID sessionId) {
+    return telemetry(actorId, inspectionId, sessionId, null);
+  }
+
+  @Transactional(readOnly = true)
+  public SmartDroneHubPort.Telemetry telemetry(
+      UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
     if (!scope.session().isOpen()) {
       throw failure(
@@ -266,12 +445,19 @@ public class InspectionDroneHubService {
           "FIELD_SESSION_NOT_IN_PROGRESS",
           "Live telemetry is available only while the Inspector session is active.");
     }
-    return hub.missionTelemetry(inspectionId, sessionId);
+    UUID hubSlotId = flightId != null ? flightId : sessionId;
+    return hub.missionTelemetry(inspectionId, hubSlotId);
   }
 
   @Transactional
   public SmartDroneHubPort.FlightReport completeFlight(
       UUID actorId, UUID inspectionId, UUID sessionId) {
+    return completeFlight(actorId, inspectionId, sessionId, null);
+  }
+
+  @Transactional
+  public SmartDroneHubPort.FlightReport completeFlight(
+      UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
     FieldSession session = scope.session();
     if (!session.isOpen()) {
@@ -280,14 +466,40 @@ public class InspectionDroneHubService {
           "FIELD_SESSION_NOT_IN_PROGRESS",
           "Live telemetry can only be completed while the Inspector session is active.");
     }
-    return fetchAndPersistHubFlightReport(inspectionId, sessionId, session, Instant.now());
+    return fetchAndPersistHubFlightReport(
+        inspectionId, sessionId, flightId, session, Instant.now());
   }
 
   @Transactional
   public SmartDroneHubPort.FlightReport flightReport(
       UUID actorId, UUID inspectionId, UUID sessionId) {
+    return flightReport(actorId, inspectionId, sessionId, null);
+  }
+
+  @Transactional
+  public SmartDroneHubPort.FlightReport flightReport(
+      UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
     Scope scope = requireReadableSession(actorId, inspectionId, sessionId);
     FieldSession session = scope.session();
+    if (flightId != null && flights != null) {
+      FieldSessionFlight flight = requireSessionFlight(inspectionId, sessionId, flightId);
+      if (flight.hasPersistedReport()
+          && (session.isOpen()
+              || (flight.getTelemetrySource() != null
+                  && (flight.getTelemetrySource().startsWith("IMPORTED_LOG_")
+                      || "MANUAL_DECLARATION".equals(flight.getTelemetrySource())))
+              || (flight.getFlightTraceJson() != null
+                  && !flight.getFlightTraceJson().isBlank()
+                  && !"[]".equals(flight.getFlightTraceJson())))) {
+        return toPersistedFlightReport(session, flight);
+      }
+      return fetchAndPersistHubFlightReport(
+          inspectionId,
+          sessionId,
+          flightId,
+          session,
+          flight.getEndedAt() != null ? flight.getEndedAt() : session.getEndedAt());
+    }
     if (session.isOpen() && !session.hasPersistedFlightReport()) {
       throw failure(
           HttpStatus.CONFLICT,
@@ -303,15 +515,18 @@ public class InspectionDroneHubService {
                 && !"[]".equals(session.getFlightTraceJson())))) {
       return toPersistedFlightReport(session);
     }
-    return fetchAndPersistHubFlightReport(inspectionId, sessionId, session, session.getEndedAt());
+    return fetchAndPersistHubFlightReport(
+        inspectionId, sessionId, null, session, session.getEndedAt());
   }
 
   private SmartDroneHubPort.FlightReport fetchAndPersistHubFlightReport(
-      UUID inspectionId, UUID sessionId, FieldSession session, Instant endedAt) {
+      UUID inspectionId, UUID sessionId, UUID flightId, FieldSession session, Instant endedAt) {
+    UUID hubSlotId = flightId != null ? flightId : sessionId;
     try {
-      SmartDroneHubPort.FlightReport report = hub.flightReport(inspectionId, sessionId, endedAt);
+      SmartDroneHubPort.FlightReport report = hub.flightReport(inspectionId, hubSlotId, endedAt);
       java.util.List<SmartDroneHubPort.FlightTracePoint> trace =
           report.flightTrace() != null ? report.flightTrace() : java.util.List.of();
+      String serializedTrace = serializeTrace(trace);
       session.recordFlightReport(
           report.telemetrySource(),
           report.durationSeconds(),
@@ -321,8 +536,25 @@ public class InspectionDroneHubService {
           report.endBatteryPercent(),
           report.finalState(),
           report.note(),
-          serializeTrace(trace));
+          serializedTrace);
       sessions.saveAndFlush(session);
+      if (flights != null) {
+        FieldSessionFlight target = resolveOrCreateFlight(session, flightId, null, null);
+        target.recordReport(
+            report.telemetrySource(),
+            report.startedAt() != null ? report.startedAt() : session.getStartedAt(),
+            report.endedAt() != null ? report.endedAt() : endedAt,
+            report.durationSeconds(),
+            report.distanceFlownMeters(),
+            report.maxAltitudeMeters(),
+            report.startBatteryPercent(),
+            report.endBatteryPercent(),
+            report.finalState(),
+            report.note(),
+            serializedTrace);
+        flights.saveAndFlush(target);
+        return toPersistedFlightReport(session, target);
+      }
       return toPersistedFlightReport(session);
     } catch (RuntimeException ex) {
       Instant started = session.getStartedAt() != null ? session.getStartedAt() : Instant.now();
@@ -333,7 +565,7 @@ public class InspectionDroneHubService {
       String note = "No MAVLink flight telemetry was recorded for this field session.";
       return new SmartDroneHubPort.FlightReport(
           inspectionId,
-          sessionId,
+          hubSlotId,
           "NONE",
           started,
           resolvedEnded,
@@ -351,6 +583,12 @@ public class InspectionDroneHubService {
 
   @Transactional
   public EvidenceResponse syncFlightVideo(UUID actorId, UUID inspectionId, UUID sessionId) {
+    return syncFlightVideo(actorId, inspectionId, sessionId, null);
+  }
+
+  @Transactional
+  public EvidenceResponse syncFlightVideo(
+      UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
     Scope scope = requireInspectorSession(actorId, inspectionId, sessionId);
     FieldSession session = scope.session();
     if (evidenceService == null) {
@@ -359,17 +597,25 @@ public class InspectionDroneHubService {
           "EVIDENCE_STORAGE_UNAVAILABLE",
           "Evidence service is not available.");
     }
-    if (session.getFlightVideoEvidenceId() != null) {
-      UUID existingId = session.getFlightVideoEvidenceId();
+    FieldSessionFlight targetFlight =
+        flightId != null && flights != null
+            ? requireSessionFlight(inspectionId, sessionId, flightId)
+            : null;
+    UUID existingVideoId =
+        targetFlight != null
+            ? targetFlight.getFlightVideoEvidenceId()
+            : session.getFlightVideoEvidenceId();
+    if (existingVideoId != null) {
       var existing =
           evidenceService.list(actorId, inspectionId).stream()
-              .filter(item -> existingId.equals(item.id()) && !item.isDeleted())
+              .filter(item -> existingVideoId.equals(item.id()) && !item.isDeleted())
               .findFirst();
       if (existing.isPresent()) {
         return existing.get();
       }
     }
-    SmartDroneHubPort.CapturedMedia recording = hub.missionRecording(inspectionId, sessionId);
+    UUID hubSlotId = flightId != null ? flightId : sessionId;
+    SmartDroneHubPort.CapturedMedia recording = hub.missionRecording(inspectionId, hubSlotId);
     EvidenceResponse saved =
         evidenceService.storeCapturedMedia(
             actorId,
@@ -384,11 +630,21 @@ public class InspectionDroneHubService {
             recording.locationDescription());
     session.recordFlightVideoEvidenceId(saved.id());
     sessions.saveAndFlush(session);
+    if (targetFlight != null) {
+      targetFlight.recordVideoEvidenceId(saved.id());
+      flights.saveAndFlush(targetFlight);
+    }
     return saved;
   }
 
   @Transactional
   public EvidenceResponse captureSnapshot(UUID actorId, UUID inspectionId, UUID sessionId) {
+    return captureSnapshot(actorId, inspectionId, sessionId, null);
+  }
+
+  @Transactional
+  public EvidenceResponse captureSnapshot(
+      UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
     requireInspectorSession(actorId, inspectionId, sessionId);
     if (evidenceService == null) {
       throw failure(
@@ -396,7 +652,8 @@ public class InspectionDroneHubService {
           "EVIDENCE_STORAGE_UNAVAILABLE",
           "Evidence service is not available.");
     }
-    SmartDroneHubPort.CapturedMedia snapshot = hub.captureSnapshot(inspectionId, sessionId);
+    UUID hubSlotId = flightId != null ? flightId : sessionId;
+    SmartDroneHubPort.CapturedMedia snapshot = hub.captureSnapshot(inspectionId, hubSlotId);
     return evidenceService.storeCapturedMedia(
         actorId,
         inspectionId,
@@ -408,6 +665,120 @@ public class InspectionDroneHubService {
         snapshot.latitude(),
         snapshot.longitude(),
         snapshot.locationDescription());
+  }
+
+  private FieldSessionFlight resolveOrCreateFlight(
+      FieldSession session, UUID flightId, LocalDate flightDate, String flightLabel) {
+    if (flightId != null) {
+      FieldSessionFlight existing =
+          requireSessionFlight(session.getInspectionId(), session.getId(), flightId);
+      if (flightDate != null || (flightLabel != null && !flightLabel.isBlank())) {
+        existing.updateMetadata(flightLabel, flightDate);
+      }
+      return existing;
+    }
+    var latestOpt = flights.findTopByFieldSessionIdOrderByFlightNumberDesc(session.getId());
+    if (latestOpt.isPresent()) {
+      FieldSessionFlight latest = latestOpt.get();
+      if (flightDate != null || (flightLabel != null && !flightLabel.isBlank())) {
+        latest.updateMetadata(flightLabel, flightDate);
+      }
+      return latest;
+    }
+    LocalDate date =
+        flightDate != null
+            ? flightDate
+            : session.getSessionDate() != null ? session.getSessionDate() : LocalDate.now();
+    return flights.saveAndFlush(
+        new FieldSessionFlight(session.getId(), session.getInspectionId(), 1, date, flightLabel));
+  }
+
+  private FieldSessionFlight requireSessionFlight(
+      UUID inspectionId, UUID sessionId, UUID flightId) {
+    return flights
+        .findByIdAndFieldSessionIdAndInspectionId(flightId, sessionId, inspectionId)
+        .orElseThrow(
+            () ->
+                failure(
+                    HttpStatus.NOT_FOUND,
+                    "FLIGHT_NOT_FOUND",
+                    "Flight sortie was not found for this field session."));
+  }
+
+  public static FieldSessionFlightResponse toFlightResponse(FieldSessionFlight flight) {
+    return new FieldSessionFlightResponse(
+        flight.getId(),
+        flight.getFieldSessionId(),
+        flight.getInspectionId(),
+        flight.getFlightNumber(),
+        flight.getFlightDate(),
+        flight.getFlightLabel(),
+        flight.getTelemetrySource(),
+        flight.getStartedAt(),
+        flight.getEndedAt(),
+        flight.getFlightDurationSeconds(),
+        flight.getDistanceFlownMeters(),
+        flight.getMaxAltitudeMeters(),
+        flight.getStartBatteryPercent(),
+        flight.getEndBatteryPercent(),
+        flight.getFlightFinalState(),
+        flight.getFlightReportNote(),
+        flight.getFlightVideoEvidenceId(),
+        flight.hasPersistedReport());
+  }
+
+  private static SmartDroneHubPort.FlightReport toPersistedFlightReport(
+      FieldSession session, FieldSessionFlight flight) {
+    List<SmartDroneHubPort.FlightTracePoint> trace = deserializeTrace(flight.getFlightTraceJson());
+    return new SmartDroneHubPort.FlightReport(
+        flight.getInspectionId(),
+        flight.getId(),
+        flight.getTelemetrySource(),
+        flight.getStartedAt(),
+        flight.getEndedAt(),
+        flight.getFlightDurationSeconds(),
+        flight.getDistanceFlownMeters() != null
+            ? flight.getDistanceFlownMeters().doubleValue()
+            : null,
+        flight.getMaxAltitudeMeters() != null ? flight.getMaxAltitudeMeters().doubleValue() : null,
+        flight.getStartBatteryPercent(),
+        flight.getEndBatteryPercent(),
+        flight.getFlightFinalState() != null ? flight.getFlightFinalState() : "UNKNOWN",
+        flight.getFlightReportNote() != null ? flight.getFlightReportNote() : "",
+        trace,
+        flight.getFlightVideoEvidenceId() != null
+            ? flight.getFlightVideoEvidenceId()
+            : session.getFlightVideoEvidenceId());
+  }
+
+  private void requireReadableInspection(UUID actorId, UUID inspectionId) {
+    ActiveUser actor =
+        userAccess
+            .findActiveUser(actorId)
+            .orElseThrow(
+                () -> failure(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "User not found."));
+    boolean isReviewer =
+        actor.hasRole(Roles.MANAGER) || actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.CUSTOMER);
+    if (!isReviewer) {
+      inspections
+          .findAssignedByInspector(inspectionId, actorId)
+          .orElseThrow(
+              () -> failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
+      return;
+    }
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
+    if (actor.ownerCustomerId() != null
+        && !actor.ownerCustomerId().equals(inspection.getOwnerCustomerId())) {
+      throw failure(
+          HttpStatus.FORBIDDEN,
+          "DRONEHUB_SCOPE_DENIED",
+          "Access denied to this customer's flight report.");
+    }
   }
 
   private static SmartDroneHubPort.FlightReport toPersistedFlightReport(FieldSession session) {

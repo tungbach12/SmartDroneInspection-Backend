@@ -147,11 +147,21 @@ public class ServiceRequestOccurrence {
     updatedAt = Instant.now();
   }
 
+  public void markPayoutEligible() {
+    if (payout.isHeldForRefund()) {
+      return;
+    }
+    payout.markEligible();
+    updatedAt = Instant.now();
+  }
+
   public void confirmPayment(String reference, BigDecimal amount, UUID managerUserId) {
     validatePayment(reference, amount);
     payment.confirm(
         reference, payment.getPaymentMethod() != null ? payment.getPaymentMethod() : "MANUAL_WIRE");
-    payout.markEligible();
+    if (!payout.isHeldForRefund()) {
+      payout.markEligible();
+    }
     updatedAt = payment.getPaymentConfirmedAt();
   }
 
@@ -172,7 +182,9 @@ public class ServiceRequestOccurrence {
   public void confirmOnlinePayment(String reference, BigDecimal amount, String method) {
     validatePayment(reference, amount);
     payment.confirm(reference, method);
-    payout.markEligible();
+    if (!payout.isHeldForRefund()) {
+      payout.markEligible();
+    }
     updatedAt = payment.getPaymentConfirmedAt();
   }
 
@@ -633,13 +645,43 @@ public class ServiceRequestOccurrence {
     if (reference == null || reference.isBlank()) {
       throw new IllegalArgumentException("Payout reference is required");
     }
-    if (getReportAcceptedAt() == null || getPaymentStatus() != OccurrencePaymentStatus.PAID) {
-      throw new IllegalStateException("Payout requires both accepted report and confirmed payment");
+    if (payout.isHeldForRefund()) {
+      throw new IllegalStateException("Inspector payout is held pending refund reconciliation");
+    }
+    if (getPayoutStatus() == OccurrencePayoutStatus.PENDING) {
+      throw new IllegalStateException("Inspector payout requires an approved inspection report");
     }
     if (inspectorId == null) {
       throw new IllegalStateException("No inspector assigned to receive payout");
     }
     payout.recordPayout(reference, managerUserId, getRemainingInspectorNetPayout());
+    updatedAt = payout.getPayoutRecordedAt();
+  }
+
+  public Long getPayoutOrderCode() {
+    return payout.getPayoutOrderCode();
+  }
+
+  public void assignSepayPayoutOrder(long payoutOrderCode) {
+    payout.assignPayoutOrderCode(payoutOrderCode);
+    updatedAt = Instant.now();
+  }
+
+  public void confirmSepayPayout(String reference, UUID attributedManagerId) {
+    if (reference == null || reference.isBlank()) {
+      throw new IllegalArgumentException("Payout reference is required");
+    }
+    if (payout.isHeldForRefund()) {
+      throw new IllegalStateException("Inspector payout is held pending refund reconciliation");
+    }
+    if (getPayoutStatus() == OccurrencePayoutStatus.PENDING) {
+      throw new IllegalStateException("Inspector payout requires an approved inspection report");
+    }
+    if (inspectorId == null) {
+      throw new IllegalStateException("No inspector assigned to receive payout");
+    }
+    payout.confirmSepayWebhookPayout(
+        reference, attributedManagerId, getRemainingInspectorNetPayout());
     updatedAt = payout.getPayoutRecordedAt();
   }
 
@@ -683,6 +725,7 @@ public class ServiceRequestOccurrence {
   public boolean revertTimeoutToPendingAssignment(UUID timedOutInspectorId, Instant timedOutAt) {
     if (status != OccurrenceStatus.ASSIGNED
         || getPaymentStatus() == OccurrencePaymentStatus.PAID
+        || getPayoutStatus() != OccurrencePayoutStatus.PENDING
         || getReportAcceptedAt() != null) {
       return false;
     }
@@ -949,6 +992,10 @@ public class ServiceRequestOccurrence {
 
   public InspectorPayout getPayout() {
     return payout;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
   }
 
   public enum OccurrenceStatus {

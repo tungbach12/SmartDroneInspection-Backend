@@ -84,6 +84,15 @@ public class Drone {
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
 
+  @Column(name = "mtow_kg", precision = 6, scale = 2)
+  private BigDecimal mtowKg;
+
+  @Column(name = "max_flight_time_minutes")
+  private Integer maxFlightTimeMinutes;
+
+  @Column(name = "camera_sensor", length = 128)
+  private String cameraSensor;
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "image_file_keys", columnDefinition = "jsonb")
   private List<String> imageFileKeys = new ArrayList<>();
@@ -350,6 +359,27 @@ public class Drone {
     return opticalZoomLevel;
   }
 
+  public BigDecimal getMtowKg() {
+    return mtowKg;
+  }
+
+  public Integer getMaxFlightTimeMinutes() {
+    return maxFlightTimeMinutes;
+  }
+
+  public String getCameraSensor() {
+    return cameraSensor;
+  }
+
+  public void applyStructuredSpecs(
+      BigDecimal mtowKg, Integer maxFlightTimeMinutes, String cameraSensor) {
+    this.mtowKg = mtowKg;
+    this.maxFlightTimeMinutes = maxFlightTimeMinutes;
+    this.cameraSensor =
+        cameraSensor != null && !cameraSensor.isBlank() ? cameraSensor.trim() : null;
+    this.updatedAt = Instant.now();
+  }
+
   public boolean hasThermalCamera() {
     return getFeatures().contains("THERMAL_CAMERA");
   }
@@ -433,6 +463,13 @@ public class Drone {
    * known industrial airframe families per Decree 288/2025/ND-CP Article 4.
    */
   public Double resolveMtowKg() {
+    if (mtowKg != null && mtowKg.compareTo(BigDecimal.ZERO) > 0) {
+      return mtowKg.doubleValue();
+    }
+    return resolveMtowFromText(payloadMetadata, model, notes);
+  }
+
+  public static Double resolveMtowFromText(String payloadMetadata, String model, String notes) {
     for (String source : new String[] {payloadMetadata, model, notes}) {
       if (source == null || source.isBlank()) {
         continue;
@@ -472,6 +509,26 @@ public class Drone {
     return null;
   }
 
+  public static String classifyLegalCategory(Double mtow) {
+    if (mtow == null || mtow <= 0) {
+      return "UNKNOWN";
+    }
+    double effectiveMtow = mtow;
+    if (effectiveMtow < 0.25) {
+      return "CATEGORY_1";
+    }
+    if (effectiveMtow < 2.0) {
+      return "CATEGORY_2";
+    }
+    if (effectiveMtow < 25.0) {
+      return "CATEGORY_3";
+    }
+    if (effectiveMtow < 150.0) {
+      return "CATEGORY_4";
+    }
+    return "CATEGORY_5";
+  }
+
   /**
    * Returns true when this airframe is Category 3, 4, or 5 (MTOW >= 2.0 kg) under Decree
    * 288/2025/ND-CP Article 4 & Article 27, which requires a Class B pilot license.
@@ -498,24 +555,7 @@ public class Drone {
    * 288/2025/ND-CP (`CATEGORY_1` through `CATEGORY_5`).
    */
   public String resolveLegalCategory() {
-    Double mtow = resolveMtowKg();
-    if (mtow == null || mtow <= 0) {
-      return "UNKNOWN";
-    }
-    double effectiveMtow = mtow;
-    if (effectiveMtow < 0.25) {
-      return "CATEGORY_1";
-    }
-    if (effectiveMtow < 2.0) {
-      return "CATEGORY_2";
-    }
-    if (effectiveMtow < 25.0) {
-      return "CATEGORY_3";
-    }
-    if (effectiveMtow < 150.0) {
-      return "CATEGORY_4";
-    }
-    return "CATEGORY_5";
+    return classifyLegalCategory(resolveMtowKg());
   }
 
   public void changeServiceability(DroneServiceability target) {

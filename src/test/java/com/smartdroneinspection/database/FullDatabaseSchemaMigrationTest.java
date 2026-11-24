@@ -45,11 +45,14 @@ class FullDatabaseSchemaMigrationTest {
             "inspection_flight_permits",
             "reinspection_defect_verifications",
             "field_sessions",
+            "field_session_flights",
             "field_session_telemetry",
             "evidence",
             "evidence_upload_sessions",
             "findings",
             "inspection_reports",
+            "inspector_ratings",
+            "rating_criterion_configs",
             "audit_events",
             "notifications",
             "service_requests",
@@ -82,7 +85,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(52);
+    assertThat(expected).hasSize(55);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -162,7 +165,12 @@ class FullDatabaseSchemaMigrationTest {
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
     assertThat(versions)
         .containsExactly(
-            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69");
+            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70",
+            "71", "72", "73", "74", "75", "76", "77", "78", "79", "80");
+
+    assertColumns(
+        "drone_registration_applications", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
+    assertColumns("drones", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
 
     assertColumns(
         "inspection_flight_permits",
@@ -447,6 +455,7 @@ class FullDatabaseSchemaMigrationTest {
         "note",
         "recorded_by_user_id",
         "recorded_at");
+    assertColumns("inspector_payouts", "occurrence_id", "payout_order_code", "payout_status");
 
     List<String> quoteColumns =
         jdbcTemplate.queryForList(
@@ -560,6 +569,10 @@ class FullDatabaseSchemaMigrationTest {
             "specializations",
             "experience_summary",
             "notes",
+            "payout_bank_name",
+            "payout_bank_account_number",
+            "payout_bank_account_holder",
+            "payout_bank_branch",
             "updated_at");
     assertThat(
             jdbcTemplate.queryForObject(

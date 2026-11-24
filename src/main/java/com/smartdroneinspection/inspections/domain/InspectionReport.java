@@ -124,19 +124,40 @@ public class InspectionReport {
     returnReason = "Withdrawn by author for revision";
   }
 
-  /** Publication is the reviewer's approval decision; the result is immutable. */
-  public void publish(UUID publishingUserId, UUID reportAuthorUserId) {
+  /**
+   * Manager approval step before Customer publication: locks the report and triggers Inspector
+   * payout eligibility while keeping the deliverable hidden until {@link #publish}.
+   */
+  public void approve(UUID approvingUserId, UUID reportAuthorUserId) {
     requireStatus(ReportStatus.SUBMITTED);
+    if (approvingUserId == null) {
+      throw new IllegalArgumentException("An approving reviewer is required");
+    }
+    if (approvingUserId.equals(reportAuthorUserId)) {
+      throw new IllegalStateException("Approval requires a qualified reviewer decision");
+    }
+    reviewerUserId = approvingUserId;
+    reviewedAt = Instant.now();
+    returnReason = null;
+    status = ReportStatus.APPROVED;
+  }
+
+  /** Publication makes the approved report visible and immutable for the Customer. */
+  public void publish(UUID publishingUserId, UUID reportAuthorUserId) {
+    requireStatus(ReportStatus.APPROVED, ReportStatus.SUBMITTED);
     if (publishingUserId == null) {
       throw new IllegalArgumentException("A publishing user is required");
     }
     if (publishingUserId.equals(reportAuthorUserId)) {
       throw new IllegalStateException("Publication requires a qualified reviewer decision");
     }
+    Instant now = Instant.now();
     reviewerUserId = publishingUserId;
-    reviewedAt = Instant.now();
+    if (reviewedAt == null) {
+      reviewedAt = now;
+    }
     status = ReportStatus.PUBLISHED;
-    publishedAt = Instant.now();
+    publishedAt = now;
   }
 
   public void supersede() {
@@ -166,7 +187,9 @@ public class InspectionReport {
   }
 
   public boolean isImmutable() {
-    return status == ReportStatus.PUBLISHED || status == ReportStatus.SUPERSEDED;
+    return status == ReportStatus.APPROVED
+        || status == ReportStatus.PUBLISHED
+        || status == ReportStatus.SUPERSEDED;
   }
 
   private void requireStatus(ReportStatus... allowed) {

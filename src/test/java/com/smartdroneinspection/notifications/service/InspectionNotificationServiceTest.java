@@ -116,8 +116,7 @@ class InspectionNotificationServiceTest {
     UUID orgId = UUID.randomUUID();
     UUID userId = UUID.randomUUID();
 
-    ActiveUser user =
-        new ActiveUser(userId, Set.of("MAINTENANCE_ENGINEER"), orgId.toString(), "Engineer Test");
+    ActiveUser user = new ActiveUser(userId, Set.of("CUSTOMER"), orgId.toString(), "Customer Test");
     when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
 
     service.recordInspectionAssignment(inspectionId, orgId, userId, Instant.now());
@@ -196,8 +195,7 @@ class InspectionNotificationServiceTest {
     UUID ownerCustomerId = UUID.randomUUID();
     UUID managerId = UUID.randomUUID();
     when(userAccess.listActiveManagers())
-        .thenReturn(
-            java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager")));
+        .thenReturn(java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Manager")));
 
     service.recordFieldSessionAborted(
         inspectionId, ownerCustomerId, UUID.randomUUID(), "Heavy rain");
@@ -238,8 +236,7 @@ class InspectionNotificationServiceTest {
     UUID managerId = UUID.randomUUID();
     UUID sessionId = UUID.randomUUID();
     when(userAccess.listActiveManagers())
-        .thenReturn(
-            java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager")));
+        .thenReturn(java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Manager")));
 
     service.recordInspectionDeclined(inspectionId, inspectorId, "Bad weather");
     service.recordInspectionOverdue(inspectionId, inspectorId, Instant.now());
@@ -275,10 +272,9 @@ class InspectionNotificationServiceTest {
     UUID adminId = UUID.randomUUID();
     Instant submittedAt = Instant.parse("2026-11-19T08:00:00Z");
     when(userAccess.listActiveManagers())
-        .thenReturn(
-            java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager")));
+        .thenReturn(java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Manager")));
     when(userAccess.listActiveAdmins())
-        .thenReturn(java.util.List.of(new ActiveUser(adminId, Set.of("ADMIN"), "Platform Admin")));
+        .thenReturn(java.util.List.of(new ActiveUser(adminId, Set.of("ADMIN"), "Admin")));
 
     service.recordReportSubmitted(inspectionId, reportVersionId, 2, inspectorId, submittedAt);
 
@@ -363,8 +359,7 @@ class InspectionNotificationServiceTest {
     UUID managerId = UUID.randomUUID();
     Instant settledAt = Instant.parse("2026-11-19T10:00:00Z");
     when(userAccess.listActiveManagers())
-        .thenReturn(
-            java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager")));
+        .thenReturn(java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Manager")));
     when(userAccess.findActiveUser(inspectorId))
         .thenReturn(
             Optional.of(new ActiveUser(inspectorId, Set.of("INSPECTOR"), "Inspector Test")));

@@ -593,6 +593,7 @@ public class EvidenceService {
         reports.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId).orElse(null);
     if (report == null) return;
     if (report.getStatus() == ReportStatus.SUBMITTED
+        || report.getStatus() == ReportStatus.APPROVED
         || report.getStatus() == ReportStatus.PUBLISHED
         || report.getStatus() == ReportStatus.SUPERSEDED) {
       throw new BusinessException(

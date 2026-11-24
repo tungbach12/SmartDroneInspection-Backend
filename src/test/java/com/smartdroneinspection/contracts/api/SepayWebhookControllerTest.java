@@ -235,6 +235,62 @@ class SepayWebhookControllerTest {
     verify(workflowService).applySepayWebhookPayment(eq(123456789L), eq(500000L), anyString());
   }
 
+  @Test
+  @DisplayName("settles inspector payout automatically when outgoing transfer carries SDIPAY code")
+  void settlesOutgoingPayoutFromTransferContent() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey " + API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload("out", "SEVN999", "SDIPAY2001234567 chi tra inspector", 8345455)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    verify(workflowService)
+        .applySepayWebhookPayout(eq(2001234567L), eq(8345455L), eq("FT24012345678"));
+    verifyRecorded(Status.APPLIED);
+  }
+
+  @Test
+  @DisplayName("records AMOUNT_MISMATCH on outgoing payout webhook mismatch")
+  void recordsOutgoingPayoutAmountMismatch() throws Exception {
+    doThrow(
+            new BusinessException(
+                HttpStatus.BAD_REQUEST, "PAYOUT_AMOUNT_MISMATCH", "Amount does not match"))
+        .when(workflowService)
+        .applySepayWebhookPayout(eq(2001234567L), anyLong(), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey " + API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload("out", "SEVN999", "SDIPAY2001234567", 1000)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    verifyRecorded(Status.AMOUNT_MISMATCH);
+  }
+
+  @Test
+  @DisplayName("ignores outgoing payout webhook from a different source bank account")
+  void rejectsMismatchedOutgoingAccount() throws Exception {
+    when(sepayGateway.expectedAccountNumber()).thenReturn("07723264801");
+
+    mockMvc
+        .perform(
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey " + API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload("out", "SEVN999", "SDIPAY2001234567", 8345455)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    verify(workflowService, never()).applySepayWebhookPayout(anyLong(), anyLong(), anyString());
+    verifyRecorded(Status.REJECTED);
+  }
+
   private void verifyRecorded(Status expected) {
     verify(inbound)
         .record(eq("SEPAY"), eq("92704"), any(), any(), any(), any(), eq(expected), any());

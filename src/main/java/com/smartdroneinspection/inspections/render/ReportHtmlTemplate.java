@@ -517,7 +517,7 @@ public final class ReportHtmlTemplate {
       case "5. Confirmed findings" -> "5. Phát hiện đã xác nhận";
       case "6. Appendices" -> "6. Phụ lục";
       case "7. Approval and revisions" -> "7. Phê duyệt và các lần chỉnh sửa";
-      case "Organization" -> "Tổ chức";
+      case "Organization" -> "Khách hàng";
       case "Asset" -> "Tài sản";
       case "Asset code" -> "Mã tài sản";
       case "Asset location" -> "Vị trí tài sản";
@@ -618,7 +618,7 @@ public final class ReportHtmlTemplate {
       case "Field-session outcome" -> "Kết quả phiên hiện trường";
       case "Recorded limitations" -> "Hạn chế đã ghi nhận";
       case "Application role/organization/separation checks ran; professional qualification was not independently validated." ->
-          "Ứng dụng đã kiểm tra vai trò, tổ chức và phân tách nhiệm vụ; năng lực chuyên môn chưa được xác minh độc lập.";
+          "Ứng dụng đã kiểm tra vai trò và phân tách nhiệm vụ; năng lực chuyên môn chưa được xác minh độc lập.";
       case "Reviewer role and separation were recorded; professional credential qualification was not validated by the application." ->
           "Vai trò và tính độc lập của người đánh giá đã được ghi nhận; ứng dụng chưa xác minh năng lực chuyên môn của họ.";
       case "Completed; zero detections" -> "Đã hoàn tất; không phát hiện bất thường";

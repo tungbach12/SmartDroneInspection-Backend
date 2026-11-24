@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.assets.domain.Asset;
+import com.smartdroneinspection.assets.domain.AssetDocument;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
@@ -8,7 +9,6 @@ import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
 import com.smartdroneinspection.inspections.api.dto.request.CreateInspectionRequest;
 import com.smartdroneinspection.inspections.api.dto.request.CreateReinspectionRequest;
-import com.smartdroneinspection.inspections.api.dto.request.ReviewFlightPermitRequest;
 import com.smartdroneinspection.inspections.api.dto.response.InspectionResponse;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Finding;
@@ -18,7 +18,6 @@ import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.Eve
 import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
-import com.smartdroneinspection.inspections.events.FlightPermitReviewedEvent;
 import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
@@ -27,6 +26,7 @@ import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.repository.InspectorRatingRepository;
 import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
 import com.smartdroneinspection.shared.api.InspectionContractSyncPort;
 import com.smartdroneinspection.shared.api.InspectionReassignCandidatePort;
@@ -62,6 +62,7 @@ public class InspectionCreationService {
   private final ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider;
   private final ObjectProvider<FindingRepository> findingsProvider;
   private final ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider;
+  private final ObjectProvider<InspectorRatingRepository> ratingsProvider;
 
   public InspectionCreationService(
       InspectionRepository inspections,
@@ -77,6 +78,7 @@ public class InspectionCreationService {
         userAccess,
         objectStore,
         eventPublisher,
+        null,
         null,
         null,
         null,
@@ -108,6 +110,36 @@ public class InspectionCreationService {
         contractSyncProvider,
         reassignCandidatesProvider,
         null,
+        null,
+        null);
+  }
+
+  public InspectionCreationService(
+      InspectionRepository inspections,
+      AssetRepository assets,
+      DroneRepository drones,
+      UserAccess userAccess,
+      Optional<EvidenceObjectStore> objectStore,
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<FieldSessionRepository> sessionsProvider,
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityProvider,
+      ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
+      ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider,
+      ObjectProvider<FindingRepository> findingsProvider,
+      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider) {
+    this(
+        inspections,
+        assets,
+        drones,
+        userAccess,
+        objectStore,
+        eventPublisher,
+        sessionsProvider,
+        reliabilityProvider,
+        contractSyncProvider,
+        reassignCandidatesProvider,
+        findingsProvider,
+        reinspectionVerificationsProvider,
         null);
   }
 
@@ -124,7 +156,8 @@ public class InspectionCreationService {
       ObjectProvider<InspectionContractSyncPort> contractSyncProvider,
       ObjectProvider<InspectionReassignCandidatePort> reassignCandidatesProvider,
       ObjectProvider<FindingRepository> findingsProvider,
-      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider) {
+      ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider,
+      ObjectProvider<InspectorRatingRepository> ratingsProvider) {
     this.inspections = inspections;
     this.assets = assets;
     this.drones = drones;
@@ -137,6 +170,7 @@ public class InspectionCreationService {
     this.reassignCandidatesProvider = reassignCandidatesProvider;
     this.findingsProvider = findingsProvider;
     this.reinspectionVerificationsProvider = reinspectionVerificationsProvider;
+    this.ratingsProvider = ratingsProvider;
   }
 
   @Transactional
@@ -261,17 +295,17 @@ public class InspectionCreationService {
   public InspectionResponse createQuickReinspection(
       UUID actorId, UUID sourceInspectionId, CreateReinspectionRequest request) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    boolean isPlatformManager = actor.hasRole(Roles.MANAGER);
-    boolean isCustomer = actor.hasRole(Roles.CUSTOMER) || actor.hasRole(Roles.ORG_MANAGER);
-    if (!isPlatformManager && !isCustomer) {
+    boolean isManager = actor.hasRole(Roles.MANAGER);
+    boolean isCustomer = actor.hasRole(Roles.CUSTOMER);
+    if (!isManager && !isCustomer) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only the owning customer or a platform manager can create a re-inspection.");
+          "Only the owning customer or a manager can create a re-inspection.");
     }
 
     Inspection source =
-        isPlatformManager
+        isManager
             ? inspections
                 .findById(sourceInspectionId)
                 .orElseThrow(
@@ -323,11 +357,11 @@ public class InspectionCreationService {
 
     UUID reqInspectorId = request != null ? request.inspectorId() : null;
     UUID reqDroneId = request != null ? request.droneId() : null;
-    if ((reqInspectorId != null || reqDroneId != null) && !isPlatformManager) {
+    if ((reqInspectorId != null || reqDroneId != null) && !isManager) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN,
           "FORBIDDEN",
-          "Only platform managers can override partner inspector or drone assignment.");
+          "Only managers can override partner inspector or drone assignment.");
     }
     if ((reqInspectorId != null) != (reqDroneId != null)) {
       throw new BusinessException(
@@ -444,37 +478,73 @@ public class InspectionCreationService {
 
   @Transactional(readOnly = true)
   public InspectionResponse get(UUID actorId, UUID inspectionId) {
-    UserAccess.ActiveUser actor = requireActive(actorId);
-    Inspection inspection;
-    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
-      inspection =
-          inspections
-              .findById(inspectionId)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-    } else if (actor.isInspectorPartner() || actor.hasRole(Roles.INSPECTOR)) {
-      inspection =
-          inspections
-              .findAssignedByInspector(inspectionId, actor.id())
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-    } else {
-      UUID ownerCustomerId = actor.ownerCustomerId();
-      inspection =
-          inspections
-              .findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId)
-              .orElseThrow(
-                  () ->
-                      new BusinessException(
-                          HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-    }
-
-    Asset asset = assets.findById(inspection.getAssetId()).orElse(null);
+    Inspection inspection = findAuthorizedInspection(actorId, inspectionId);
+    Asset asset = findAssetForResponse(inspection.getAssetId());
     return toResponse(inspection, asset);
+  }
+
+  private Asset findAssetForResponse(UUID assetId) {
+    if (assetId == null) {
+      return null;
+    }
+    return assets.findDetailedById(assetId).or(() -> assets.findById(assetId)).orElse(null);
+  }
+
+  @Transactional(readOnly = true)
+  public FlightPermitContent openAssetPhoto(UUID actorId, UUID inspectionId, UUID documentId) {
+    Inspection inspection = findAuthorizedInspection(actorId, inspectionId);
+    Asset asset =
+        assets
+            .findDetailedById(inspection.getAssetId())
+            .or(() -> assets.findById(inspection.getAssetId()))
+            .orElseThrow(
+                () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset not found"));
+    AssetDocument photo =
+        asset.getDocuments().stream()
+            .filter(
+                d ->
+                    d.getId().equals(documentId)
+                        && d.getContentType() != null
+                        && d.getContentType().startsWith("image/"))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Asset photo not found"));
+    if (objectStore.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.BAD_GATEWAY, "STORAGE_UNAVAILABLE", "Object storage is not configured");
+    }
+    try (java.io.InputStream input = objectStore.get().open(photo.getObjectKey())) {
+      return new FlightPermitContent(
+          photo.getFileName(), photo.getContentType(), input.readAllBytes());
+    } catch (IOException ex) {
+      throw new BusinessException(
+          HttpStatus.NOT_FOUND, "ASSET_PHOTO_NOT_FOUND", "Asset photo file could not be loaded.");
+    }
+  }
+
+  private Inspection findAuthorizedInspection(UUID actorId, UUID inspectionId) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+      return inspections
+          .findById(inspectionId)
+          .orElseThrow(
+              () ->
+                  new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    }
+    if (actor.isInspectorPartner() || actor.hasRole(Roles.INSPECTOR)) {
+      return inspections
+          .findAssignedByInspector(inspectionId, actor.id())
+          .orElseThrow(
+              () ->
+                  new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    }
+    UUID ownerCustomerId = actor.ownerCustomerId();
+    return inspections
+        .findByIdAndOwnerCustomerId(inspectionId, ownerCustomerId)
+        .orElseThrow(
+            () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
   }
 
   @Transactional
@@ -604,113 +674,6 @@ public class InspectionCreationService {
         assets
             .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
             .orElse(null);
-    return toResponse(saved, asset);
-  }
-
-  @Transactional
-  public InspectionResponse reviewFlightPermit(
-      UUID actorId,
-      UUID inspectionId,
-      ReviewFlightPermitRequest.Decision decision,
-      String reason,
-      String notes) {
-    UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
-      throw new BusinessException(
-          HttpStatus.FORBIDDEN,
-          "FORBIDDEN",
-          "Only a Platform Manager or Admin can verify flight permits.");
-    }
-
-    Inspection inspection =
-        inspections
-            .findById(inspectionId)
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
-
-    if (inspection.isInspectedBy(actorId)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "SELF_REVIEW_FORBIDDEN",
-          "The assigned inspector cannot verify their own flight permit.");
-    }
-    if (inspection.getFlightPermitUploadedBy() != null
-        && inspection.getFlightPermitUploadedBy().equals(actorId)) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "SELF_REVIEW_FORBIDDEN",
-          "The flight permit uploader cannot verify their own permit.");
-    }
-    if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "INVALID_STATE",
-          "Flight permit can only be reviewed while the inspection is SCHEDULED.");
-    }
-    if (!inspection.hasFlightPermit()) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "FLIGHT_PERMIT_REQUIRED",
-          "No flight permit has been uploaded for this inspection.");
-    }
-
-    Instant now = Instant.now();
-    boolean approved = decision == ReviewFlightPermitRequest.Decision.APPROVED;
-    if (approved) {
-      if (inspection.getFlightPermitVerificationStatus()
-          != com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
-              .PENDING_REVIEW) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "PERMIT_NOT_PENDING_REVIEW",
-            "Only a flight permit in PENDING_REVIEW status can be approved.");
-      }
-      Drone assignedDrone = requireValidPilotAndDroneForPermit(inspection, now);
-      FlightPermitPolicy.validateMetadataAndCrossChecks(
-          inspection,
-          assignedDrone,
-          inspection.getFlightPermitNumber(),
-          inspection.getFlightPermitAuthority(),
-          inspection.getFlightPermitValidFrom(),
-          inspection.getFlightPermitValidTo(),
-          inspection.getFlightPermitDroneSerial(),
-          inspection.getFlightPermitMaxAltitudeM(),
-          now);
-      inspection.approveFlightPermit(actorId, notes, now);
-    } else {
-      if (reason == null || reason.isBlank()) {
-        throw new BusinessException(
-            HttpStatus.BAD_REQUEST,
-            "REJECTION_REASON_REQUIRED",
-            "A rejection reason is required when rejecting a flight permit.");
-      }
-      if (inspection.getFlightPermitVerificationStatus()
-              != com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
-                  .PENDING_REVIEW
-          && inspection.getFlightPermitVerificationStatus()
-              != com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus
-                  .APPROVED) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "PERMIT_NOT_REVIEWABLE",
-            "This flight permit cannot be rejected from its current state.");
-      }
-      inspection.rejectFlightPermit(actorId, reason, notes, now);
-    }
-
-    Inspection saved = inspections.saveAndFlush(inspection);
-    eventPublisher.publishEvent(
-        new FlightPermitReviewedEvent(
-            saved.getId(),
-            saved.getOwnerCustomerId(),
-            saved.getInspectorId(),
-            actorId,
-            approved,
-            saved.getFlightPermitRejectionReason(),
-            now));
-    Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
   }
 
@@ -1366,11 +1329,15 @@ public class InspectionCreationService {
 
   private InspectionResponse toResponse(Inspection inspection, Asset asset) {
     String assetName = asset == null ? null : asset.getName();
-    String inspectorName =
-        userAccess
-            .findActiveUser(inspection.getInspectorId())
-            .map(UserAccess.ActiveUser::fullName)
-            .orElse(null);
+    UserAccess.ActiveUser inspectorUser =
+        inspection.getInspectorId() != null
+            ? userAccess
+                .findActiveUser(inspection.getInspectorId())
+                .or(() -> userAccess.findUser(inspection.getInspectorId()))
+                .orElse(null)
+            : null;
+    String inspectorName = inspectorUser != null ? inspectorUser.fullName() : null;
+    String inspectorAvatarUrl = inspectorUser != null ? inspectorUser.avatarUrl() : null;
     Drone drone =
         inspection.getDroneId() != null
             ? (inspection.isPartnerAssignment()
@@ -1393,15 +1360,50 @@ public class InspectionCreationService {
     String ownerCustomerName = ownerCustomerUser != null ? ownerCustomerUser.fullName() : null;
     String ownerCustomerEmail = ownerCustomerUser != null ? ownerCustomerUser.email() : null;
     String ownerCustomerPhone = ownerCustomerUser != null ? ownerCustomerUser.phoneNumber() : null;
+    String ownerCustomerAvatarUrl =
+        ownerCustomerUser != null ? ownerCustomerUser.avatarUrl() : null;
+    List<UserAccess.ActiveUser> activeManagers = userAccess.listActiveManagers();
     UserAccess.ActiveUser managerUser =
-        (verifiedByUser != null
-                && verifiedByUser.fullName() != null
-                && !verifiedByUser.fullName().isBlank())
-            ? verifiedByUser
-            : userAccess.listActivePlatformManagers().stream().findFirst().orElse(null);
+        activeManagers.stream()
+            .filter(user -> user.avatarUrl() != null && !user.avatarUrl().isBlank())
+            .findFirst()
+            .orElse(activeManagers.stream().findFirst().orElse(null));
     String managerName = managerUser != null ? managerUser.fullName() : null;
     String managerEmail = managerUser != null ? managerUser.email() : null;
     String managerPhone = managerUser != null ? managerUser.phoneNumber() : null;
+    String managerAvatarUrl = managerUser != null ? managerUser.avatarUrl() : null;
+    List<UUID> assetPhotoDocumentIds =
+        asset == null
+            ? List.of()
+            : asset.getDocuments().stream()
+                .filter(
+                    doc ->
+                        doc.getId() != null
+                            && doc.getContentType() != null
+                            && doc.getContentType().startsWith("image/"))
+                .sorted(
+                    java.util.Comparator.comparing(
+                        doc -> !"ASSET_PHOTO".equalsIgnoreCase(doc.getDocumentType())))
+                .map(AssetDocument::getId)
+                .toList();
+
+    Double inspectorAverageRating = null;
+    long inspectorRatingCount = 0L;
+    InspectorRatingRepository ratingRepository =
+        ratingsProvider != null ? ratingsProvider.getIfAvailable() : null;
+    if (ratingRepository != null && inspection.getInspectorId() != null) {
+      long count = 0L;
+      long sum = 0L;
+      for (var row :
+          ratingRepository.summarizeByInspectorIds(List.of(inspection.getInspectorId()))) {
+        count += row.getRatingCount();
+        sum += row.getScoreSum();
+      }
+      if (count > 0) {
+        inspectorRatingCount = count;
+        inspectorAverageRating = Math.round(((double) sum / count) * 100.0) / 100.0;
+      }
+    }
 
     return new InspectionResponse(
         inspection.getId(),
@@ -1461,12 +1463,18 @@ public class InspectionCreationService {
         ownerCustomerPhone,
         managerName,
         managerEmail,
-        managerPhone);
+        managerPhone,
+        inspectorAvatarUrl,
+        ownerCustomerAvatarUrl,
+        managerAvatarUrl,
+        assetPhotoDocumentIds,
+        inspectorAverageRating,
+        inspectorRatingCount);
   }
 
   private UserAccess.ActiveUser requireOrgAdmin(UUID actorId) {
     UserAccess.ActiveUser actor = requireActive(actorId);
-    if (!actor.hasRole(Roles.ORG_MANAGER) && !actor.hasRole(Roles.CUSTOMER)) {
+    if (!actor.hasRole(Roles.CUSTOMER)) {
       throw new BusinessException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Only a customer can perform this action.");
     }

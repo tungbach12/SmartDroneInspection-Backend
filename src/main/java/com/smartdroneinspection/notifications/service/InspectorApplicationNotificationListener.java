@@ -28,7 +28,7 @@ public class InspectorApplicationNotificationListener {
     if (event == null || event.applicationId() == null) {
       return;
     }
-    List<UserAccess.ActiveUser> managers = users.listActivePlatformManagers();
+    List<UserAccess.ActiveUser> managers = users.listActiveManagers();
     for (UserAccess.ActiveUser manager : managers) {
       String key = "INSPECTOR_APPLICATION:" + event.applicationId() + ":" + manager.id();
       if (notifications.existsByDeduplicationKey(key)) {

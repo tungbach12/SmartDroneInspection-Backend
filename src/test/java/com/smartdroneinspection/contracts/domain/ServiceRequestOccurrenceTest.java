@@ -253,14 +253,15 @@ class ServiceRequestOccurrenceTest {
   }
 
   @Test
-  void payoutRequiresAcceptedPaymentAndInspector() {
+  void payoutRequiresApprovedReportAndInspector() {
     ServiceRequestOccurrence occurrence = assignedOccurrence();
     assertThatThrownBy(() -> occurrence.recordPayout("PAYOUT-1", UUID.randomUUID()))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("accepted report and confirmed payment");
+        .hasMessageContaining("approved inspection report");
 
-    occurrence.acceptReport();
-    occurrence.confirmPayment("PAID-1", TOTAL, UUID.randomUUID());
+    occurrence.markPayoutEligible();
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
     assertThatThrownBy(() -> occurrence.recordPayout(" ", UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("reference");

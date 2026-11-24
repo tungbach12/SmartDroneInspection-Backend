@@ -19,8 +19,26 @@ public class ChecklistTemplate {
   @Column(name = "template_type", nullable = false, length = 32)
   private String templateType;
 
+  @Column(nullable = false, length = 64)
+  private String category = "GENERAL";
+
   @Column(nullable = false, length = 300)
   private String label;
+
+  @Column(name = "label_vi", length = 300)
+  private String labelVi;
+
+  @Column(length = 1000)
+  private String details;
+
+  @Column(name = "details_vi", length = 1000)
+  private String detailsVi;
+
+  @Column(name = "reference_threshold", length = 120)
+  private String referenceThreshold;
+
+  @Column(name = "safety_critical", nullable = false)
+  private boolean safetyCritical;
 
   @Column(name = "sort_order", nullable = false)
   private int sortOrder;
@@ -49,8 +67,30 @@ public class ChecklistTemplate {
 
   public ChecklistTemplate(
       String templateType, String label, int sortOrder, boolean active, boolean required) {
+    this(
+        templateType, "GENERAL", label, null, null, null, null, false, sortOrder, active, required);
+  }
+
+  public ChecklistTemplate(
+      String templateType,
+      String category,
+      String label,
+      String labelVi,
+      String details,
+      String detailsVi,
+      String referenceThreshold,
+      boolean safetyCritical,
+      int sortOrder,
+      boolean active,
+      boolean required) {
     this.templateType = normalizeType(templateType);
+    this.category = normalizeCategory(category);
     this.label = label.trim();
+    this.labelVi = trimToNull(labelVi);
+    this.details = trimToNull(details);
+    this.detailsVi = trimToNull(detailsVi);
+    this.referenceThreshold = trimToNull(referenceThreshold);
+    this.safetyCritical = safetyCritical;
     this.sortOrder = sortOrder;
     this.active = active;
     this.required = required;
@@ -66,8 +106,32 @@ public class ChecklistTemplate {
     return templateType;
   }
 
+  public String getCategory() {
+    return category;
+  }
+
   public String getLabel() {
     return label;
+  }
+
+  public String getLabelVi() {
+    return labelVi;
+  }
+
+  public String getDetails() {
+    return details;
+  }
+
+  public String getDetailsVi() {
+    return detailsVi;
+  }
+
+  public String getReferenceThreshold() {
+    return referenceThreshold;
+  }
+
+  public boolean isSafetyCritical() {
+    return safetyCritical;
   }
 
   public int getSortOrder() {
@@ -96,8 +160,40 @@ public class ChecklistTemplate {
 
   public void update(
       String newLabel, Integer newSortOrder, Boolean newActive, Boolean newRequired) {
+    update(null, newLabel, null, null, null, null, null, newSortOrder, newActive, newRequired);
+  }
+
+  public void update(
+      String newCategory,
+      String newLabel,
+      String newLabelVi,
+      String newDetails,
+      String newDetailsVi,
+      String newReferenceThreshold,
+      Boolean newSafetyCritical,
+      Integer newSortOrder,
+      Boolean newActive,
+      Boolean newRequired) {
+    if (newCategory != null && !newCategory.isBlank()) {
+      this.category = normalizeCategory(newCategory);
+    }
     if (newLabel != null && !newLabel.isBlank()) {
       this.label = newLabel.trim();
+    }
+    if (newLabelVi != null) {
+      this.labelVi = trimToNull(newLabelVi);
+    }
+    if (newDetails != null) {
+      this.details = trimToNull(newDetails);
+    }
+    if (newDetailsVi != null) {
+      this.detailsVi = trimToNull(newDetailsVi);
+    }
+    if (newReferenceThreshold != null) {
+      this.referenceThreshold = trimToNull(newReferenceThreshold);
+    }
+    if (newSafetyCritical != null) {
+      this.safetyCritical = newSafetyCritical;
     }
     if (newSortOrder != null) {
       this.sortOrder = newSortOrder;
@@ -113,5 +209,20 @@ public class ChecklistTemplate {
 
   private static String normalizeType(String value) {
     return value.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private static String normalizeCategory(String value) {
+    if (value == null || value.isBlank()) {
+      return "GENERAL";
+    }
+    return value.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private static String trimToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 }

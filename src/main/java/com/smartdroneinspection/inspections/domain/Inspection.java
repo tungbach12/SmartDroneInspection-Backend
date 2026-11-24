@@ -239,37 +239,6 @@ public class Inspection {
     this.updatedAt = effectiveUploadedAt;
   }
 
-  public void approveFlightPermit(UUID reviewerId, String notes, Instant verifiedAt) {
-    if (!hasFlightPermit()) {
-      throw new IllegalStateException("Cannot approve a missing flight permit");
-    }
-    if (getFlightPermitVerificationStatus() != FlightPermitVerificationStatus.PENDING_REVIEW) {
-      throw new IllegalStateException(
-          "Flight permit can only be approved from PENDING_REVIEW status");
-    }
-    Instant now = verifiedAt != null ? verifiedAt : Instant.now();
-    this.flightPermit.approve(reviewerId, notes, now);
-    this.updatedAt = now;
-  }
-
-  public void rejectFlightPermit(UUID reviewerId, String reason, String notes, Instant verifiedAt) {
-    if (!hasFlightPermit()) {
-      throw new IllegalStateException("Cannot reject a missing flight permit");
-    }
-    FlightPermitVerificationStatus currentStatus = getFlightPermitVerificationStatus();
-    if (currentStatus != FlightPermitVerificationStatus.PENDING_REVIEW
-        && currentStatus != FlightPermitVerificationStatus.APPROVED) {
-      throw new IllegalStateException(
-          "Flight permit can only be rejected from PENDING_REVIEW or APPROVED status");
-    }
-    if (reason == null || reason.isBlank()) {
-      throw new IllegalArgumentException("Rejection reason is required");
-    }
-    Instant now = verifiedAt != null ? verifiedAt : Instant.now();
-    this.flightPermit.reject(reviewerId, reason, notes, now);
-    this.updatedAt = now;
-  }
-
   public boolean hasFlightPermit() {
     return flightPermit != null && flightPermit.hasFile();
   }
@@ -607,7 +576,7 @@ public class Inspection {
     boolean droneChanged = !Objects.equals(this.droneId, newDroneId);
     this.droneId = newDroneId;
     if (droneChanged && isFlightPermitApproved()) {
-      resetFlightPermitVerificationForReReview();
+      requireFlightPermitReupload();
     }
     Instant now = Instant.now();
     this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
@@ -654,7 +623,7 @@ public class Inspection {
     if (isFlightPermitApproved()
         && ((permitValidFrom != null && plannedStartAt.isBefore(permitValidFrom))
             || (permitValidTo != null && plannedEndAt.isAfter(permitValidTo)))) {
-      resetFlightPermitVerificationForReReview();
+      requireFlightPermitReupload();
     }
     if (this.assignmentStatus == AssignmentStatus.DECLINED) {
       this.assignmentStatus = AssignmentStatus.PENDING_ACCEPTANCE;
@@ -667,9 +636,9 @@ public class Inspection {
     this.updatedAt = Instant.now();
   }
 
-  private void resetFlightPermitVerificationForReReview() {
+  private void requireFlightPermitReupload() {
     if (this.flightPermit != null) {
-      this.flightPermit.resetVerificationForReReview();
+      this.flightPermit.requireReupload();
     }
   }
 

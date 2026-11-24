@@ -3,7 +3,6 @@ package com.smartdroneinspection.notifications.service;
 import com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionForceAbortedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionHungEvent;
-import com.smartdroneinspection.inspections.events.FlightPermitReviewedEvent;
 import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
@@ -142,13 +141,19 @@ public class InspectionNotificationListener {
   }
 
   @ApplicationModuleListener
-  public void onFlightPermitReviewed(FlightPermitReviewedEvent event) {
-    log.info("Handling FlightPermitReviewedEvent for inspection {}", event.inspectionId());
-    inspectionNotificationService.recordFlightPermitReviewed(
+  public void onInspectorRated(
+      com.smartdroneinspection.inspections.events.InspectorRatedEvent event) {
+    log.info(
+        "Handling InspectorRatedEvent for inspection {} (inspector={})",
+        event.inspectionId(),
+        event.inspectorId());
+    inspectionNotificationService.recordInspectorRated(
+        event.ratingId(),
         event.inspectionId(),
         event.inspectorId(),
-        event.approved(),
-        event.rejectionReason(),
-        event.reviewedAt());
+        event.raterRole(),
+        event.overallScore(),
+        event.updated(),
+        event.occurredAt());
   }
 }

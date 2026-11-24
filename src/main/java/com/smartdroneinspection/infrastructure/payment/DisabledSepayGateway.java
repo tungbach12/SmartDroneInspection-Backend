@@ -32,6 +32,16 @@ public class DisabledSepayGateway implements SepayGateway {
   }
 
   @Override
+  public SepayPaymentLink createPayoutLink(
+      long payoutOrderCode,
+      long amount,
+      String accountNumber,
+      String bankName,
+      String accountHolder) {
+    throw unavailable();
+  }
+
+  @Override
   public boolean verifyWebhookApiKey(String receivedApiKey) {
     return false;
   }

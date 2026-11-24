@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.shared.config.AuthProperties;
 import com.smartdroneinspection.shared.exception.AuthException;
+import com.smartdroneinspection.users.api.dto.request.UpdatePayoutBankDetailsRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateProfileRequest;
+import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
@@ -130,5 +132,36 @@ class AuthServiceProfileTest {
         .isInstanceOf(AuthException.class)
         .satisfies(
             ex -> assertThat(((AuthException) ex).status()).isEqualTo(HttpStatus.UNAUTHORIZED));
+  }
+
+  @Test
+  void updatePayoutBankDetailsPersistsTrimmedBankAccountForActiveInspector() {
+    UUID userId = UUID.randomUUID();
+    User user =
+        new User(
+            "inspector@smartdrone.test", "Pham Van Bay", null, null, "hash", UserStatus.ACTIVE);
+    user.addRole(UserRole.INSPECTOR);
+    ReflectionTestUtils.setField(user, "id", userId);
+    InspectorProfile profile = new InspectorProfile(userId);
+
+    when(users.findDetailedById(userId)).thenReturn(Optional.of(user));
+    when(inspectorProfiles.findById(userId)).thenReturn(Optional.of(profile));
+    when(inspectorProfiles.saveAndFlush(profile)).thenReturn(profile);
+
+    var response =
+        authService.updatePayoutBankDetails(
+            userId,
+            new UpdatePayoutBankDetailsRequest(
+                "  Vietcombank  ", "  0071001234567 ", "  PHAM VAN BAY  ", "  CN Sai Gon "));
+
+    assertThat(profile.getPayoutBankName()).isEqualTo("Vietcombank");
+    assertThat(profile.getPayoutBankAccountNumber()).isEqualTo("0071001234567");
+    assertThat(profile.getPayoutBankAccountHolder()).isEqualTo("PHAM VAN BAY");
+    assertThat(profile.getPayoutBankBranch()).isEqualTo("CN Sai Gon");
+    assertThat(profile.hasCompletePayoutBankDetails()).isTrue();
+    assertThat(response.payoutBankName()).isEqualTo("Vietcombank");
+    assertThat(response.payoutBankAccountNumber()).isEqualTo("0071001234567");
+    assertThat(response.payoutBankAccountHolder()).isEqualTo("PHAM VAN BAY");
+    assertThat(response.payoutBankBranch()).isEqualTo("CN Sai Gon");
   }
 }

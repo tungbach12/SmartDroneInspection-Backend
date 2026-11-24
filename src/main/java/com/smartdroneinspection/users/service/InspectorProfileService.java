@@ -159,6 +159,19 @@ public class InspectorProfileService {
         resolveOptionalText(request.specializations(), profile.getSpecializations()),
         resolveOptionalText(request.experienceSummary(), profile.getExperienceSummary()));
 
+    if (request.payoutBankName() != null
+        || request.payoutBankAccountNumber() != null
+        || request.payoutBankAccountHolder() != null
+        || request.payoutBankBranch() != null) {
+      profile.updatePayoutBankDetails(
+          resolveOptionalText(request.payoutBankName(), profile.getPayoutBankName()),
+          resolveOptionalText(
+              request.payoutBankAccountNumber(), profile.getPayoutBankAccountNumber()),
+          resolveOptionalText(
+              request.payoutBankAccountHolder(), profile.getPayoutBankAccountHolder()),
+          resolveOptionalText(request.payoutBankBranch(), profile.getPayoutBankBranch()));
+    }
+
     User saved = userRepository.save(user);
     profileRepository.save(profile);
     recordProfileAudit(
@@ -559,6 +572,10 @@ public class InspectorProfileService {
         profile.getApprovedByUserId(),
         profile.getApprovedAt(),
         profile.getRejectionReason(),
+        profile.getPayoutBankName(),
+        profile.getPayoutBankAccountNumber(),
+        profile.getPayoutBankAccountHolder(),
+        profile.getPayoutBankBranch(),
         user.getCreatedAt(),
         profile.getUpdatedAt());
   }

@@ -163,11 +163,11 @@ public class DashboardAnalyticsService {
       summaryCards.add(
           new DashboardMetricDto(
               "orgs",
-              "Tổ chức khách hàng",
+              "Khách hàng",
               String.valueOf(orgsCount),
               "+100% Active",
               true,
-              "doanh nghiệp hạ tầng",
+              "tài khoản khách hàng đang hoạt động",
               "building"));
       summaryCards.add(
           new DashboardMetricDto(

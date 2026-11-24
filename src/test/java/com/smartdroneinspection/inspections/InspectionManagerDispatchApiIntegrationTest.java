@@ -175,7 +175,6 @@ class InspectionManagerDispatchApiIntegrationTest {
     Instant end = start.plus(4, ChronoUnit.HOURS);
     Inspection inspection = new Inspection(managerId, assetId, inspectorId, droneId, start, end);
     inspection.recordFlightPermit("permits/dispatch-test.pdf", "dispatch-test.pdf", Instant.now());
-    inspection.approveFlightPermit(managerId, "Approved for dispatch test", Instant.now());
     inspectionId = inspections.saveAndFlush(inspection).getId();
   }
 

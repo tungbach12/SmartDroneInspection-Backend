@@ -97,7 +97,6 @@ public class Finding {
     this.defectLabel = defectLabel;
     this.severity = severity;
     this.technicalNotes = technicalNotes;
-    this.status = FindingStatus.PENDING;
   }
 
   /** Updates or clears the normalized defect region box without altering AI model confidence. */

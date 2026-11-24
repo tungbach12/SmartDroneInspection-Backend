@@ -1653,12 +1653,25 @@ public class ContractWorkflowService
                 "Inspector receivables are not configured"));
   }
 
-  /** Manager cancels the saved unpaid gateway order before switching gateway or retrying. */
+  /**
+   * Owning Customer or assigned Manager clears a resolvable unpaid gateway order before
+   * switching/retrying.
+   */
   @Transactional
   public ServiceRequestResponse cancelUnpaidPaymentOrder(
       UUID actorId, UUID requestId, UUID occurrenceId) {
-    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
-    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    ServiceRequest request;
+    if (actor.hasRole(Roles.MANAGER)) {
+      request = requireRequestForManagerLocked(actor, requestId);
+    } else if (actor.hasRole(Roles.CUSTOMER)) {
+      request = requireCustomerRequestLocked(actor, requestId);
+    } else {
+      throw forbidden();
+    }
     ServiceRequestOccurrence occurrence =
         occurrences
             .findWithLockById(occurrenceId)
@@ -1678,18 +1691,10 @@ public class ContractWorkflowService
           "PAYMENT_ORDER_NOT_CANCELLABLE",
           "Only an unpaid due order can be cancelled");
     }
-    if ("SEPAY".equalsIgnoreCase(method)) {
-      // Sepay has no cancel API; the unpaid order can only be cleared manually by the manager.
-      // No gateway-side confirmation is required.
-    } else if ("VNPAY".equalsIgnoreCase(method)) {
-      // VNPay has no cancel API. Only an order past its checkout lifetime is certain to be
-      // unpayable, so a live order stays blocked to avoid double settlement.
-      if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
-        throw failure(
-            HttpStatus.CONFLICT,
-            "PAYMENT_ORDER_UNRESOLVED",
-            "VNPay order is still payable; wait for it to expire or reconcile with the gateway before clearing the order");
-      }
+    if ("SEPAY".equalsIgnoreCase(method) || "VNPAY".equalsIgnoreCase(method)) {
+      // Clear any pending online gateway order immediately so customers can retry or switch
+      // payment methods smoothly. Late notifications for superseded order codes are audited in
+      // gateway_inbound_transactions.
     } else if (!"MANUAL_WIRE".equalsIgnoreCase(method)) {
       throw failure(
           HttpStatus.CONFLICT,
@@ -1714,22 +1719,35 @@ public class ContractWorkflowService
             .orElseThrow(
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
-    if (occurrence.getReportAcceptedAt() == null
-        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAID) {
-      throw failure(
-          HttpStatus.CONFLICT,
-          "PAYOUT_NOT_ELIGIBLE",
-          "Inspector payout requires both customer report acceptance and confirmed customer payment");
-    }
     if (occurrence.isPayoutHeldForRefund()) {
       throw failure(
           HttpStatus.CONFLICT,
           "PAYOUT_HELD_FOR_REFUND",
           "Inspector payout is held while a customer refund is recorded and reconciled");
     }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING) {
+      if (occurrence.getInspectionId() != null
+          && reportAccess.isPresent()
+          && reportAccess.get().hasApprovedOrPublishedReport(occurrence.getInspectionId())) {
+        occurrence.markPayoutEligible();
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYOUT_NOT_ELIGIBLE",
+            "Inspector payout requires an approved inspection report");
+      }
+    }
     if (occurrence.getInspectorId() == null) {
       throw failure(
           HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
+    }
+    UserAccess.PayoutBankDetails bankDetails =
+        users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null);
+    if (bankDetails == null || !bankDetails.isComplete()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INSPECTOR_PAYOUT_BANK_INFO_REQUIRED",
+          "Inspector must enter payout bank account details before Manager can settle payout");
     }
     try {
       occurrence.recordPayout(input.payoutReference(), manager.id());
@@ -1757,8 +1775,12 @@ public class ContractWorkflowService
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
+    UserAccess.PayoutBankDetails bankDetails =
+        occurrence.getInspectorId() != null
+            ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
+            : null;
     if (actor.hasRole(Roles.MANAGER)) {
-      return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
+      return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables(), bankDetails);
     }
     if (actor.hasRole(Roles.CUSTOMER)
         && actor.ownerCustomerId() != null
@@ -1766,7 +1788,7 @@ public class ContractWorkflowService
       return OccurrenceFinanceResponse.forCustomer(occurrence);
     }
     if (actor.hasRole(Roles.INSPECTOR) && actor.id().equals(occurrence.getInspectorId())) {
-      return OccurrenceFinanceResponse.forInspector(occurrence);
+      return OccurrenceFinanceResponse.forInspector(occurrence, bankDetails);
     }
     throw forbidden();
   }
@@ -1865,21 +1887,38 @@ public class ContractWorkflowService
   }
 
   /**
-   * Manager view of all platform revenue inflows and earned commissions across paid occurrences.
+   * Manager view of platform revenue inflows and earned commissions, or payout-trackable records.
    */
   @Transactional(readOnly = true)
   public ManagerFinanceHistoryResponse managerFinanceHistory(UUID actorId, int page, int size) {
+    return managerFinanceHistory(actorId, page, size, "REVENUE");
+  }
+
+  /**
+   * Manager view scoped by {@code REVENUE} (customer paid occurrences) or {@code PAYOUTS}
+   * (occurrences whose payout is eligible/settled or customer-paid).
+   */
+  @Transactional(readOnly = true)
+  public ManagerFinanceHistoryResponse managerFinanceHistory(
+      UUID actorId, int page, int size, String scope) {
     requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     if (page < 0 || size < 1 || size > 100) {
       throw failure(
           HttpStatus.BAD_REQUEST, "INVALID_PAGE", "Page must be nonnegative and size 1-100");
     }
-    List<ServiceRequestOccurrence> allPaid = occurrences.findAllPaidForManager();
+    boolean payoutsScope = "PAYOUTS".equalsIgnoreCase(scope);
+    List<ServiceRequestOccurrence> allRecords =
+        payoutsScope
+            ? occurrences.findAllPayoutTrackableForManager()
+            : occurrences.findAllPaidForManager();
     ManagerFinanceHistoryResponse.ManagerFinanceSummary summary =
-        ManagerFinanceHistoryResponse.summarize(allPaid);
+        ManagerFinanceHistoryResponse.summarize(allRecords);
 
     var pageable = org.springframework.data.domain.PageRequest.of(page, size);
-    var pageResult = occurrences.pagePaidForManager(pageable);
+    var pageResult =
+        payoutsScope
+            ? occurrences.pagePayoutTrackableForManager(pageable)
+            : occurrences.pagePaidForManager(pageable);
 
     java.util.Map<UUID, ServiceRequest> requestCache = new java.util.HashMap<>();
     java.util.Map<UUID, String> assetNameCache = new java.util.HashMap<>();
@@ -1936,16 +1975,20 @@ public class ContractWorkflowService
         summary, content, pageResult.getTotalElements(), page, size);
   }
 
-  /** Manager financial breakdown detail for a single paid occurrence. */
+  /** Manager financial breakdown detail for a single revenue-paid or payout-eligible occurrence. */
   @Transactional(readOnly = true)
   public OccurrenceFinanceResponse managerFinanceHistoryDetail(UUID actorId, UUID occurrenceId) {
     requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequestOccurrence occurrence =
         occurrences
-            .findPaidByIdForManager(occurrenceId)
+            .findFinanceHistoryByIdForManager(occurrenceId)
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment not found"));
-    return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
+    UserAccess.PayoutBankDetails bankDetails =
+        occurrence.getInspectorId() != null
+            ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
+            : null;
+    return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables(), bankDetails);
   }
 
   /** Customer creates a Sepay VietQR payment code for an occurrence awaiting payment. */
@@ -2001,13 +2044,19 @@ public class ContractWorkflowService
     long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     long orderCode;
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
-      if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      if ("VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+        // Customer is switching from VNPay to VietQR/Sepay; release the unpaid VNPay order
+        // immediately so switching works seamlessly without a manual reset.
+        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
+        orderCode = generateUniqueGatewayOrderCode();
+      } else if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
         throw failure(
             HttpStatus.CONFLICT,
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
+      } else {
+        orderCode = occurrence.getGatewayOrderCode();
       }
-      orderCode = occurrence.getGatewayOrderCode();
     } else {
       orderCode = generateUniqueGatewayOrderCode();
     }
@@ -2073,6 +2122,16 @@ public class ContractWorkflowService
   @Transactional
   public VnPayPaymentLinkResponse createVnPayPaymentLink(
       UUID actorId, UUID requestId, UUID occurrenceId, String clientIp) {
+    return createVnPayPaymentLink(actorId, requestId, occurrenceId, clientIp, false);
+  }
+
+  /**
+   * Customer creates a signed VNPay checkout URL, optionally routing the browser return callback to
+   * the mobile deep-link handler.
+   */
+  @Transactional
+  public VnPayPaymentLinkResponse createVnPayPaymentLink(
+      UUID actorId, UUID requestId, UUID occurrenceId, String clientIp, boolean mobileClient) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
     if (actor.hasRole(Roles.ADMIN)) {
@@ -2118,20 +2177,17 @@ public class ContractWorkflowService
     }
     long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
-      if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      String existingMethod = occurrence.getPaymentMethod();
+      if ("SEPAY".equalsIgnoreCase(existingMethod) || "VNPAY".equalsIgnoreCase(existingMethod)) {
+        // Release the prior unpaid online checkout (whether switching from Sepay or retrying VNPay)
+        // so opening a fresh VNPay checkout always works smoothly without a manual reset.
+        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), existingMethod);
+      } else {
         throw failure(
             HttpStatus.CONFLICT,
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
       }
-      if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
-        throw failure(
-            HttpStatus.CONFLICT,
-            "PAYMENT_ORDER_UNRESOLVED",
-            "The existing VNPay order is still payable; complete it or wait for it to expire before retrying.");
-      }
-      // The previous checkout can no longer be paid at VNPay: release it so the customer can retry.
-      occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
     }
     long orderCode = generateUniqueGatewayOrderCode();
 
@@ -2142,7 +2198,8 @@ public class ContractWorkflowService
             + orderCode;
     String returnUrl =
         occurrence.getInspectionId() != null
-            ? vnPayGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode)
+            ? vnPayGateway.resolveReturnUrl(
+                occurrence.getInspectionId().toString(), orderCode, mobileClient)
             : null;
 
     VnPayGateway.VnPayPaymentLink link =
@@ -2153,12 +2210,6 @@ public class ContractWorkflowService
 
     return new VnPayPaymentLinkResponse(
         link.orderCode(), link.checkoutUrl(), link.amount(), link.txnRef());
-  }
-
-  /** Checkout lifetime plus a grace period for a payment landing right at the VNPay deadline. */
-  private java.time.Duration vnPayOrderLifetime() {
-    int minutes = vnPayGateway.orderLifetimeMinutes();
-    return java.time.Duration.ofMinutes((minutes > 0 ? minutes : 15) + 5L);
   }
 
   /**
@@ -2192,7 +2243,8 @@ public class ContractWorkflowService
       long timePart = (System.currentTimeMillis() % 1_000_000L) * 1_000L;
       long randomPart = ORDER_CODE_RANDOM.nextInt(1_000);
       long candidate = 1_000_000_000L + timePart + randomPart;
-      if (occurrences.findByGatewayOrderCode(candidate).isEmpty()) {
+      if (occurrences.findByGatewayOrderCode(candidate).isEmpty()
+          && occurrences.findByPayoutOrderCode(candidate).isEmpty()) {
         return candidate;
       }
     }
@@ -2200,6 +2252,32 @@ public class ContractWorkflowService
         HttpStatus.SERVICE_UNAVAILABLE,
         "ORDER_CODE_GENERATION_FAILED",
         "Could not allocate a unique payment order code; please retry");
+  }
+
+  private long generateUniquePayoutOrderCode() {
+    for (int attempt = 0; attempt < 5; attempt++) {
+      long timePart = (System.currentTimeMillis() % 1_000_000L) * 1_000L;
+      long randomPart = ORDER_CODE_RANDOM.nextInt(1_000);
+      long candidate = 2_000_000_000L + timePart + randomPart;
+      if (occurrences.findByPayoutOrderCode(candidate).isEmpty()
+          && occurrences.findByGatewayOrderCode(candidate).isEmpty()) {
+        return candidate;
+      }
+    }
+    throw failure(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "ORDER_CODE_GENERATION_FAILED",
+        "Could not allocate a unique payout order code; please retry");
+  }
+
+  private static long toPayoutAmountVnd(java.math.BigDecimal netPayout) {
+    if (netPayout == null || netPayout.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYOUT_AMOUNT_INVALID",
+          "Inspector net payout amount must be greater than zero");
+    }
+    return netPayout.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
   }
 
   private static long toGatewayAmountVnd(java.math.BigDecimal totalPrice) {
@@ -2303,6 +2381,43 @@ public class ContractWorkflowService
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public boolean requiresPayoutBeforePublish(UUID inspectionId) {
+    if (inspectionId == null) {
+      return false;
+    }
+    return occurrences
+        .findByInspectionId(inspectionId)
+        .map(occ -> occ.getPayoutStatus() != ServiceRequestOccurrence.OccurrencePayoutStatus.PAID)
+        .orElse(false);
+  }
+
+  @Override
+  @Transactional
+  public void onReportApproved(UUID inspectionId) {
+    onReportPublished(inspectionId);
+  }
+
+  @Override
+  @Transactional
+  public void onReportPublished(UUID inspectionId) {
+    if (inspectionId == null) {
+      return;
+    }
+    occurrences
+        .findWithLockByInspectionId(inspectionId)
+        .ifPresent(
+            occurrence -> {
+              if (occurrence.getPayoutStatus()
+                      == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING
+                  && !occurrence.isPayoutHeldForRefund()) {
+                occurrence.markPayoutEligible();
+                occurrences.saveAndFlush(occurrence);
+              }
+            });
+  }
+
+  @Override
   @Transactional
   public void acceptReport(UUID actorId, UUID inspectionId, UUID reportVersionId) {
     if (actorId == null || inspectionId == null || reportVersionId == null) {
@@ -2357,10 +2472,187 @@ public class ContractWorkflowService
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
   }
 
+  /** Manager creates a Sepay VietQR payout code targeting the assigned Inspector's bank account. */
+  @Transactional
+  public SepayPaymentLinkResponse createSepayPayoutLink(
+      UUID actorId, UUID requestId, UUID occurrenceId) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (occurrence.isPayoutHeldForRefund()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYOUT_HELD_FOR_REFUND",
+          "Inspector payout is held while a customer refund is recorded and reconciled");
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PAID) {
+      long existingCode =
+          occurrence.getPayoutOrderCode() != null ? occurrence.getPayoutOrderCode() : 0L;
+      long paidAmount =
+          occurrence.getRemainingInspectorNetPayout() != null
+                  && occurrence
+                          .getRemainingInspectorNetPayout()
+                          .compareTo(java.math.BigDecimal.ZERO)
+                      > 0
+              ? toPayoutAmountVnd(occurrence.getRemainingInspectorNetPayout())
+              : 0L;
+      return new SepayPaymentLinkResponse(
+          existingCode, null, "SDIPAY" + existingCode, paidAmount, String.valueOf(existingCode));
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING) {
+      if (occurrence.getInspectionId() != null
+          && reportAccess.isPresent()
+          && reportAccess.get().hasApprovedOrPublishedReport(occurrence.getInspectionId())) {
+        occurrence.markPayoutEligible();
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYOUT_NOT_ELIGIBLE",
+            "Inspector payout requires an approved inspection report");
+      }
+    }
+    if (occurrence.getInspectorId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
+    }
+    UserAccess.PayoutBankDetails bankDetails =
+        users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null);
+    if (bankDetails == null || !bankDetails.isComplete()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INSPECTOR_PAYOUT_BANK_INFO_REQUIRED",
+          "Inspector must enter payout bank account details before Manager can settle payout");
+    }
+    if (occurrence.getCurrency() != null && !"VND".equalsIgnoreCase(occurrence.getCurrency())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "CURRENCY_UNSUPPORTED",
+          "Sepay online payout is only supported for VND contracts. Currency is "
+              + occurrence.getCurrency());
+    }
+    long amount = toPayoutAmountVnd(occurrence.getRemainingInspectorNetPayout());
+    long payoutOrderCode =
+        occurrence.getPayoutOrderCode() != null && occurrence.getPayoutOrderCode() > 0
+            ? occurrence.getPayoutOrderCode()
+            : generateUniquePayoutOrderCode();
+
+    SepayGateway.SepayPaymentLink link =
+        sepayGateway.createPayoutLink(
+            payoutOrderCode,
+            amount,
+            bankDetails.accountNumber(),
+            bankDetails.bankName(),
+            bankDetails.accountHolder());
+
+    occurrence.assignSepayPayoutOrder(payoutOrderCode);
+    occurrences.saveAndFlush(occurrence);
+    return new SepayPaymentLinkResponse(
+        payoutOrderCode, link.checkoutUrl(), link.qrCode(), amount, link.paymentLinkId());
+  }
+
+  @Override
+  @Transactional
+  public InspectionReportAcceptancePort.SepayCheckoutDetails createSepayPayoutLink(
+      UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    SepayPaymentLinkResponse resp =
+        createSepayPayoutLink(actorId, occurrence.getRequestId(), occurrence.getId());
+    return new InspectionReportAcceptancePort.SepayCheckoutDetails(
+        resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
+  }
+
+  /** Outgoing webhook settles Inspector payout automatically when transfer matches SDIPAY<code>. */
+  @Transactional
+  public void applySepayWebhookPayout(long payoutOrderCode, long amount, String reference) {
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByPayoutOrderCode(payoutOrderCode)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "Occurrence with payoutOrderCode " + payoutOrderCode + " not found"));
+
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PAID) {
+      return; // Idempotent no-op
+    }
+    if (occurrence.isPayoutHeldForRefund()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYOUT_HELD_FOR_REFUND",
+          "Inspector payout is held while a customer refund is recorded and reconciled");
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING) {
+      if (occurrence.getInspectionId() != null
+          && reportAccess.isPresent()
+          && reportAccess.get().hasApprovedOrPublishedReport(occurrence.getInspectionId())) {
+        occurrence.markPayoutEligible();
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYOUT_NOT_ELIGIBLE",
+            "Inspector payout requires an approved inspection report");
+      }
+    }
+    if (occurrence.getInspectorId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
+    }
+
+    long expectedAmount = toPayoutAmountVnd(occurrence.getRemainingInspectorNetPayout());
+    if (amount != expectedAmount) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYOUT_AMOUNT_MISMATCH",
+          "Transfer amount "
+              + amount
+              + " does not match expected inspector net payout "
+              + expectedAmount);
+    }
+
+    UUID attributedManagerId =
+        requests
+            .findById(occurrence.getRequestId())
+            .map(ServiceRequest::getAssignedManagerId)
+            .orElse(null);
+    String payoutRef =
+        (reference != null && !reference.isBlank())
+            ? reference.trim()
+            : ("SEPAY-OUT-" + payoutOrderCode);
+    occurrence.confirmSepayPayout(payoutRef, attributedManagerId);
+    occurrences.saveAndFlush(occurrence);
+  }
+
   @Override
   @Transactional
   public InspectionReportAcceptancePort.VnPayCheckoutDetails createVnPayPaymentLink(
       UUID actorId, UUID inspectionId, String clientIp) {
+    return createVnPayPaymentLink(actorId, inspectionId, clientIp, false);
+  }
+
+  @Override
+  @Transactional
+  public InspectionReportAcceptancePort.VnPayCheckoutDetails createVnPayPaymentLink(
+      UUID actorId, UUID inspectionId, String clientIp, boolean mobileClient) {
     if (actorId == null || inspectionId == null) {
       throw failure(
           HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
@@ -2381,9 +2673,29 @@ public class ContractWorkflowService
                 () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
 
     VnPayPaymentLinkResponse resp =
-        createVnPayPaymentLink(actorId, request.getId(), occurrence.getId(), clientIp);
+        createVnPayPaymentLink(
+            actorId, request.getId(), occurrence.getId(), clientIp, mobileClient);
     return new InspectionReportAcceptancePort.VnPayCheckoutDetails(
         resp.orderCode(), resp.amount(), resp.txnRef(), resp.checkoutUrl());
+  }
+
+  @Override
+  @Transactional
+  public void cancelUnpaidPaymentOrder(UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    cancelUnpaidPaymentOrder(actorId, occurrence.getRequestId(), occurrence.getId());
   }
 
   @Override
@@ -2419,7 +2731,23 @@ public class ContractWorkflowService
               null);
       checkoutUrl = link.checkoutUrl();
     }
-    return toPaymentStatusDetails(occurrence, checkoutUrl);
+    UserAccess.PayoutBankDetails bankDetails = null;
+    if (actorId != null && occurrence.getInspectorId() != null) {
+      boolean includeBankDetails =
+          users
+              .findUser(actorId)
+              .map(
+                  actor ->
+                      actor.hasRole(Roles.MANAGER)
+                          || actor.hasRole(Roles.ADMIN)
+                          || actor.hasRole(Roles.INSPECTOR))
+              .orElse(false);
+      if (includeBankDetails) {
+        bankDetails =
+            users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null);
+      }
+    }
+    return toPaymentStatusDetails(occurrence, checkoutUrl, null, bankDetails);
   }
 
   @Override
@@ -2469,6 +2797,14 @@ public class ContractWorkflowService
 
   private InspectionReportAcceptancePort.PaymentStatusDetails toPaymentStatusDetails(
       ServiceRequestOccurrence occurrence, String checkoutUrl, String requestDescription) {
+    return toPaymentStatusDetails(occurrence, checkoutUrl, requestDescription, null);
+  }
+
+  private InspectionReportAcceptancePort.PaymentStatusDetails toPaymentStatusDetails(
+      ServiceRequestOccurrence occurrence,
+      String checkoutUrl,
+      String requestDescription,
+      UserAccess.PayoutBankDetails bankDetails) {
     boolean accepted = occurrence.getReportAcceptedAt() != null;
     boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
     String status = occurrence.getPaymentStatus().name();
@@ -2528,7 +2864,12 @@ public class ContractWorkflowService
         occurrence.getPayoutReference(),
         requestDescription,
         occurrence.getPaymentMethod(),
-        occurrence.getPaymentDueAt());
+        occurrence.getPaymentDueAt(),
+        occurrence.getPaymentConfirmedAt(),
+        bankDetails != null ? bankDetails.bankName() : null,
+        bankDetails != null ? bankDetails.accountNumber() : null,
+        bankDetails != null ? bankDetails.accountHolder() : null,
+        bankDetails != null ? bankDetails.bankBranch() : null);
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
@@ -3080,7 +3421,10 @@ public class ContractWorkflowService
       Map<UUID, String> inspectorNames = new HashMap<>();
       occurrenceResponses =
           requestOccurrences.stream()
-              .map(occ -> toOccurrenceResponse(occ, request, droneLabels, inspectorNames))
+              .map(
+                  occ ->
+                      toOccurrenceResponse(
+                          occ, request, droneLabels, inspectorNames, managerActor != null))
               .toList();
     }
     return ServiceRequestResponse.from(
@@ -3158,7 +3502,8 @@ public class ContractWorkflowService
       ServiceRequestOccurrence occurrence,
       ServiceRequest request,
       Map<UUID, String> droneLabels,
-      Map<UUID, String> inspectorNames) {
+      Map<UUID, String> inspectorNames,
+      boolean includeInspectorBankDetails) {
     Mf2InspectionAssignment.AssignmentAcceptance acceptance =
         occurrence.getInspectionId() == null
             ? null
@@ -3195,7 +3540,12 @@ public class ContractWorkflowService
     }
     String droneLabel =
         occurrence.getDroneId() == null ? null : droneLabels.get(occurrence.getDroneId());
+    UserAccess.PayoutBankDetails bankDetails =
+        includeInspectorBankDetails && occurrence.getInspectorId() != null
+            ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
+            : null;
     return ServiceRequestOccurrenceResponse.from(occurrence, request)
+        .withPayoutBankDetails(bankDetails)
         .withAssignmentAcceptance(
             acceptance == null ? null : acceptance.assignmentStatus(),
             acceptance != null && acceptance.reassignmentRequired(),

@@ -282,26 +282,32 @@ public class InspectionController {
             request.maxAltitudeM()));
   }
 
-  @PostMapping("/flight-permit/review")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
-  public ApiResponse<com.smartdroneinspection.inspections.api.dto.response.InspectionResponse>
-      reviewFlightPermit(
-          @AuthenticationPrincipal Jwt jwt,
-          @PathVariable UUID inspectionId,
-          @Valid @RequestBody
-              com.smartdroneinspection.inspections.api.dto.request.ReviewFlightPermitRequest
-                  request) {
-    return ApiResponse.success(
-        creationService.reviewFlightPermit(
-            actorId(jwt), inspectionId, request.decision(), request.reason(), request.notes()));
-  }
-
   @GetMapping("/flight-permit/content")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
   public ResponseEntity<byte[]> flightPermitContent(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     InspectionCreationService.FlightPermitContent content =
         creationService.openFlightPermit(actorId(jwt), inspectionId);
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(content.contentType()))
+        .contentLength(content.bytes().length)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.inline()
+                .filename(content.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .build()
+                .toString())
+        .body(content.bytes());
+  }
+
+  @GetMapping("/asset-photos/{documentId}/content")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ResponseEntity<byte[]> assetPhotoContent(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID documentId) {
+    InspectionCreationService.FlightPermitContent content =
+        creationService.openAssetPhoto(actorId(jwt), inspectionId, documentId);
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(content.contentType()))
         .contentLength(content.bytes().length)
@@ -862,6 +868,18 @@ public class InspectionController {
             actorId(jwt), inspectionId, versionId, approve, reason, RequestLocale.from(request)));
   }
 
+  @PostMapping("/report/versions/{versionId}/publish")
+  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  public ApiResponse<ReportPublishedResponse> publishVersion(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @PathVariable UUID versionId,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        reportService.publishVersion(
+            actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
+  }
+
   @PostMapping("/report/versions/{versionId}/accept")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<Void> acceptReport(
@@ -899,11 +917,27 @@ public class InspectionController {
         reportAcceptancePort.get().createSepayPaymentLink(actorId(jwt), inspectionId));
   }
 
+  @PostMapping("/sepay/create-payout-link")
+  @PreAuthorize("hasRole('MANAGER')")
+  public ApiResponse<InspectionReportAcceptancePort.SepayCheckoutDetails> createSepayPayoutLink(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    return ApiResponse.success(
+        reportAcceptancePort.get().createSepayPayoutLink(actorId(jwt), inspectionId));
+  }
+
   @PostMapping("/vnpay/create-payment-url")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionReportAcceptancePort.VnPayCheckoutDetails> createVnPayPaymentUrl(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
+      @RequestParam(name = "client", required = false) String client,
+      @RequestHeader(name = "X-Client-Platform", required = false) String clientPlatform,
       HttpServletRequest httpRequest) {
     if (reportAcceptancePort.isEmpty()) {
       throw new BusinessException(
@@ -916,8 +950,26 @@ public class InspectionController {
         (forwarded != null && !forwarded.isBlank())
             ? forwarded.split(",")[0].trim()
             : (httpRequest.getRemoteAddr() != null ? httpRequest.getRemoteAddr() : "127.0.0.1");
+    boolean mobileClient =
+        "mobile".equalsIgnoreCase(client) || "mobile".equalsIgnoreCase(clientPlatform);
     return ApiResponse.success(
-        reportAcceptancePort.get().createVnPayPaymentLink(actorId(jwt), inspectionId, clientIp));
+        reportAcceptancePort
+            .get()
+            .createVnPayPaymentLink(actorId(jwt), inspectionId, clientIp, mobileClient));
+  }
+
+  @PostMapping("/report/cancel-unpaid-order")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<Void> cancelUnpaidPaymentOrder(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    reportAcceptancePort.get().cancelUnpaidPaymentOrder(actorId(jwt), inspectionId);
+    return ApiResponse.success(null);
   }
 
   @GetMapping("/report/payment-status")

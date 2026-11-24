@@ -94,7 +94,7 @@ public class AdminUserService {
                     throw new AuthException(
                         HttpStatus.FORBIDDEN,
                         "FORBIDDEN",
-                        "A Platform Manager may only create partner Inspector accounts.");
+                        "A Manager may only create partner Inspector accounts.");
                   }
                 }
               });

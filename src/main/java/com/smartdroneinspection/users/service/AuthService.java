@@ -562,6 +562,28 @@ public class AuthService {
     return toResponse(user, profile);
   }
 
+  @Transactional
+  public UserResponse updatePayoutBankDetails(
+      UUID userId,
+      com.smartdroneinspection.users.api.dto.request.UpdatePayoutBankDetailsRequest request) {
+    User user =
+        users
+            .findDetailedById(userId)
+            .filter(User::active)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.UNAUTHORIZED,
+                        "ACCOUNT_INACTIVE",
+                        "Authentication is required."));
+    InspectorProfile profile =
+        inspectorProfiles.findById(userId).orElseGet(() -> new InspectorProfile(userId));
+    profile.updatePayoutBankDetails(
+        request.bankName(), request.accountNumber(), request.accountHolder(), request.bankBranch());
+    inspectorProfiles.saveAndFlush(profile);
+    return toResponse(user, profile);
+  }
+
   @Transactional(readOnly = true)
   public UserResponse me(UUID userId) {
     User user =
@@ -638,7 +660,11 @@ public class AuthService {
         profile.getPilotLicenseNumber(),
         profile.getPilotLicenseClass(),
         profile.getPilotLicenseExpiresAt(),
-        profile.getPilotLicenseFileKey());
+        profile.getPilotLicenseFileKey(),
+        profile.getPayoutBankName(),
+        profile.getPayoutBankAccountNumber(),
+        profile.getPayoutBankAccountHolder(),
+        profile.getPayoutBankBranch());
   }
 
   public void revokeAllSessions(UUID userId, String reason) {

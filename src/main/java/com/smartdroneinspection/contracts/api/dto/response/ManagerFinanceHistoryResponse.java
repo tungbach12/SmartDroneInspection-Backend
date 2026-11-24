@@ -63,7 +63,8 @@ public record ManagerFinanceHistoryResponse(
       Instant paymentConfirmedAt,
       String payoutStatus,
       String payoutReference,
-      Instant payoutRecordedAt) {
+      Instant payoutRecordedAt,
+      Instant payoutUpdatedAt) {
 
     public static ManagerFinanceHistoryItem from(
         ServiceRequestOccurrence occurrence,
@@ -81,6 +82,10 @@ public record ManagerFinanceHistoryResponse(
       BigDecimal commissionReduction = completedCommissionReduction(occurrence);
       BigDecimal netCommission = grossCommission.subtract(commissionReduction).max(BigDecimal.ZERO);
       BigDecimal inspectorNet = resolveInspectorNetPayout(occurrence);
+      Instant payoutUpdatedAt =
+          occurrence.getPayout() != null
+              ? occurrence.getPayout().getUpdatedAt()
+              : occurrence.getUpdatedAt();
 
       return new ManagerFinanceHistoryItem(
           occurrence.getId(),
@@ -112,7 +117,8 @@ public record ManagerFinanceHistoryResponse(
           occurrence.getPaymentConfirmedAt(),
           occurrence.getPayoutStatus().name(),
           occurrence.getPayoutReference(),
-          occurrence.getPayoutRecordedAt());
+          occurrence.getPayoutRecordedAt(),
+          payoutUpdatedAt);
     }
   }
 
@@ -142,7 +148,8 @@ public record ManagerFinanceHistoryResponse(
     return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value;
   }
 
-  public static ManagerFinanceSummary summarize(List<ServiceRequestOccurrence> allPaid) {
+  public static ManagerFinanceSummary summarize(List<ServiceRequestOccurrence> allRecords) {
+    long paidTransactionCount = 0;
     BigDecimal totalPaid = BigDecimal.ZERO;
     BigDecimal totalRefunded = BigDecimal.ZERO;
     BigDecimal totalCommission = BigDecimal.ZERO;
@@ -152,18 +159,22 @@ public record ManagerFinanceHistoryResponse(
     BigDecimal paidInspector = BigDecimal.ZERO;
     BigDecimal pendingInspector = BigDecimal.ZERO;
 
-    for (ServiceRequestOccurrence occ : allPaid) {
-      BigDecimal paid = nonNullZero(occ.getPaymentAmount());
-      BigDecimal refunded = nonNullZero(occ.getRefundedAmount());
-      BigDecimal grossComm = nonNullZero(occ.getCommissionAmount());
-      BigDecimal netComm =
-          grossComm.subtract(completedCommissionReduction(occ)).max(BigDecimal.ZERO);
+    for (ServiceRequestOccurrence occ : allRecords) {
+      boolean customerPaid =
+          occ.getPaymentStatus() == ServiceRequestOccurrence.OccurrencePaymentStatus.PAID;
+      if (customerPaid) {
+        paidTransactionCount++;
+        BigDecimal paid = nonNullZero(occ.getPaymentAmount());
+        BigDecimal refunded = nonNullZero(occ.getRefundedAmount());
+        BigDecimal grossComm = nonNullZero(occ.getCommissionAmount());
+        BigDecimal netComm =
+            grossComm.subtract(completedCommissionReduction(occ)).max(BigDecimal.ZERO);
+        totalPaid = totalPaid.add(paid);
+        totalRefunded = totalRefunded.add(refunded);
+        totalCommission = totalCommission.add(netComm);
+        totalVat = totalVat.add(nonNullZero(occ.getVatAmount()));
+      }
       BigDecimal inspectorNet = resolveInspectorNetPayout(occ);
-
-      totalPaid = totalPaid.add(paid);
-      totalRefunded = totalRefunded.add(refunded);
-      totalCommission = totalCommission.add(netComm);
-      totalVat = totalVat.add(nonNullZero(occ.getVatAmount()));
       totalTncn = totalTncn.add(nonNullZero(occ.getTncnAmount()));
       totalInspector = totalInspector.add(inspectorNet);
       if (occ.getPayoutStatus() == OccurrencePayoutStatus.PAID) {
@@ -176,7 +187,7 @@ public record ManagerFinanceHistoryResponse(
     BigDecimal netInflow = totalPaid.subtract(totalRefunded).max(BigDecimal.ZERO);
     return new ManagerFinanceSummary(
         "VND",
-        allPaid.size(),
+        paidTransactionCount,
         totalPaid.setScale(2, RoundingMode.HALF_UP),
         totalRefunded.setScale(2, RoundingMode.HALF_UP),
         netInflow.setScale(2, RoundingMode.HALF_UP),

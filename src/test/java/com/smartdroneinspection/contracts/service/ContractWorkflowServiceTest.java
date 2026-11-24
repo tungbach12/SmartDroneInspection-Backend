@@ -159,6 +159,26 @@ class ContractWorkflowServiceTest {
                     Instant.parse("2030-01-01T00:00:00Z"),
                     "licenses/test.pdf",
                     null)));
+    when(users.findUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "Customer", "customer@example.test")));
+    when(users.findUser(managerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    managerId, Set.of(Roles.MANAGER), "Manager", "manager@example.test")));
+    when(users.findUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId, Set.of(Roles.INSPECTOR), "Inspector", "inspector@example.test")));
+    when(users.findInspectorPayoutBankDetails(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.PayoutBankDetails(
+                    "Vietcombank", "0123456789", "PHAM VAN BAY", "CN Sai Gon")));
     Asset quoteAsset = mock(Asset.class);
     when(quoteAsset.getStatus()).thenReturn(AssetStatus.ACTIVE);
     when(quoteAsset.getId()).thenReturn(assetId);
@@ -770,6 +790,36 @@ class ContractWorkflowServiceTest {
 
     assertThatThrownBy(() -> service.managerFinanceHistory(customerId, 0, 20))
         .isInstanceOf(BusinessException.class);
+
+    ServiceRequestOccurrence unpaidEligibleOccurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            2,
+            Instant.parse("2027-02-02T09:00:00Z"),
+            Instant.parse("2027-02-02T10:00:00Z"));
+    unpaidEligibleOccurrence.assign(inspectorId, droneId, UUID.randomUUID(), managerId);
+    unpaidEligibleOccurrence.snapshotFinance(
+        new BigDecimal("11000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("10.00"));
+    unpaidEligibleOccurrence.markPayoutEligible();
+
+    when(occurrences.findAllPayoutTrackableForManager())
+        .thenReturn(List.of(paidOccurrence, unpaidEligibleOccurrence));
+    when(occurrences.pagePayoutTrackableForManager(pageable))
+        .thenReturn(
+            new org.springframework.data.domain.PageImpl<ServiceRequestOccurrence>(
+                List.of(paidOccurrence, unpaidEligibleOccurrence), pageable, 2));
+
+    var payoutScopeResult = service.managerFinanceHistory(managerId, 0, 20, "PAYOUTS");
+    assertThat(payoutScopeResult.summary().transactionCount()).isEqualTo(1);
+    assertThat(payoutScopeResult.summary().totalCustomerPaid()).isEqualByComparingTo("11000000.00");
+    assertThat(payoutScopeResult.summary().pendingInspectorPayout())
+        .isEqualByComparingTo("15300000.00");
+    assertThat(payoutScopeResult.content()).hasSize(2);
+    assertThat(payoutScopeResult.content().get(1).paymentStatus()).isEqualTo("PENDING");
+    assertThat(payoutScopeResult.content().get(1).payoutStatus()).isEqualTo("ELIGIBLE");
   }
 
   @Test
@@ -797,7 +847,8 @@ class ContractWorkflowServiceTest {
             mock(
                 com.smartdroneinspection.contracts.repository.InspectorReceivableRepository
                     .class)));
-    when(occurrences.findPaidByIdForManager(occurrenceId)).thenReturn(Optional.of(paidOccurrence));
+    when(occurrences.findFinanceHistoryByIdForManager(occurrenceId))
+        .thenReturn(Optional.of(paidOccurrence));
 
     var detail = service.managerFinanceHistoryDetail(managerId, occurrenceId);
 
@@ -2405,31 +2456,59 @@ class ContractWorkflowServiceTest {
     RecordOccurrencePayoutRequest payoutReq =
         new RecordOccurrencePayoutRequest("PAYOUT-REF-999", "Transfer completed");
 
-    // Gate 1: Blocked before report acceptance
+    // Gate: Blocked before report approval
     assertThatThrownBy(
             () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
         .isInstanceOf(BusinessException.class)
-        .hasMessageContaining(
-            "Inspector payout requires both customer report acceptance and confirmed customer payment");
+        .hasMessageContaining("Inspector payout requires an approved inspection report");
 
-    // Customer accepts report
-    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    // Linked occurrence requires payout before publishing while payout != PAID
+    when(occurrences.findByInspectionId(inspectionId)).thenReturn(Optional.of(occurrence));
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isTrue();
+    assertThat(service.requiresPayoutBeforePublish(UUID.randomUUID())).isFalse();
 
-    // Gate 2: Still blocked before payment confirmation
+    // Manager approves report: occurrence payout immediately becomes ELIGIBLE without waiting for
+    // customer acceptance or customer payment.
+    when(occurrences.findWithLockByInspectionId(inspectionId)).thenReturn(Optional.of(occurrence));
+    service.onReportApproved(inspectionId);
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.ELIGIBLE);
+    assertThat(occurrence.getPaymentStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PENDING);
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isTrue();
+
+    // Bank details missing -> blocked with INSPECTOR_PAYOUT_BANK_INFO_REQUIRED
+    when(users.findInspectorPayoutBankDetails(inspectorId)).thenReturn(Optional.empty());
     assertThatThrownBy(
             () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
         .isInstanceOf(BusinessException.class)
-        .hasMessageContaining(
-            "Inspector payout requires both customer report acceptance and confirmed customer payment");
+        .satisfies(
+            ex ->
+                assertThat(((BusinessException) ex).code())
+                    .isEqualTo("INSPECTOR_PAYOUT_BANK_INFO_REQUIRED"));
 
-    // Manager confirms payment
-    occurrence.confirmPayment("TXN-12345", new BigDecimal("11000000.00"), managerId);
+    // Restore bank details: Manager & Inspector see bank details in payment status; Customer never
+    // does
+    when(users.findInspectorPayoutBankDetails(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.PayoutBankDetails(
+                    "Vietcombank", "0123456789", "PHAM VAN BAY", "CN Sai Gon")));
+    var managerPaymentStatus = service.getPaymentStatus(managerId, inspectionId);
+    assertThat(managerPaymentStatus.inspectorBankName()).isEqualTo("Vietcombank");
+    assertThat(managerPaymentStatus.inspectorBankAccountNumber()).isEqualTo("0123456789");
+    assertThat(managerPaymentStatus.inspectorBankAccountHolder()).isEqualTo("PHAM VAN BAY");
+    var customerPaymentStatus = service.getPaymentStatus(customerId, inspectionId);
+    assertThat(customerPaymentStatus.inspectorBankName()).isNull();
+    assertThat(customerPaymentStatus.inspectorBankAccountNumber()).isNull();
+    assertThat(customerPaymentStatus.inspectorBankAccountHolder()).isNull();
 
-    // Both gates satisfied: payout is now explicitly recorded by the Manager.
+    // Gate satisfied: payout is now explicitly recorded by the Manager.
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
 
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isFalse();
     assertThat(occurrence.getPayoutReference()).isEqualTo("PAYOUT-REF-999");
     assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
     assertThat(occurrence.getPayoutRecordedAt()).isNotNull();
@@ -2438,6 +2517,75 @@ class ContractWorkflowServiceTest {
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);
     assertThat(occurrence.getPayoutStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+  }
+
+  @Test
+  void sepayPayoutLinkAndOutgoingWebhookSettleRoundedNetPayoutWithoutManualUnc() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    ReflectionTestUtils.setField(occurrence, "id", occurrenceId);
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+    occurrence.snapshotFinance(
+        new BigDecimal("12000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("10.00"));
+    occurrence.markPayoutEligible();
+
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockByInspectionId(inspectionId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByPayoutOrderCode(any())).thenReturn(Optional.empty());
+    when(occurrences.findByGatewayOrderCode(any())).thenReturn(Optional.empty());
+    when(sepayGateway.createPayoutLink(
+            any(long.class), eq(8345455L), eq("0123456789"), eq("Vietcombank"), eq("PHAM VAN BAY")))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new com.smartdroneinspection.contracts.gateway.SepayGateway.SepayPaymentLink(
+                  code,
+                  "https://vietqr.app/img?acc=0123456789&bank=VCB&amount=8345455&des=SDIPAY" + code,
+                  "SDIPAY" + code,
+                  8345455L,
+                  String.valueOf(code),
+                  "PENDING");
+            });
+
+    var checkout = service.createSepayPayoutLink(managerId, inspectionId);
+    assertThat(checkout.amount()).isEqualTo(8345455L);
+    assertThat(checkout.qrCode()).isEqualTo("SDIPAY" + checkout.orderCode());
+    assertThat(occurrence.getPayoutOrderCode()).isEqualTo(checkout.orderCode());
+
+    when(occurrences.findWithLockByPayoutOrderCode(checkout.orderCode()))
+        .thenReturn(Optional.of(occurrence));
+
+    // Amount mismatch throws 400
+    assertThatThrownBy(
+            () -> service.applySepayWebhookPayout(checkout.orderCode(), 8000000L, "FT999"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            ex -> assertThat(((BusinessException) ex).code()).isEqualTo("PAYOUT_AMOUNT_MISMATCH"));
+
+    // Matching amount automatically settles payout & attributes assigned manager
+    service.applySepayWebhookPayout(checkout.orderCode(), 8345455L, "FT261124-AUTO");
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+    assertThat(occurrence.getPayoutReference()).isEqualTo("FT261124-AUTO");
+    assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isFalse();
+
+    // Idempotent duplicate webhook
+    service.applySepayWebhookPayout(checkout.orderCode(), 8345455L, "FT261124-AUTO");
   }
 
   @Test
@@ -2470,9 +2618,10 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  void vnPayOrderBlocksRetryWhileLiveAndReleasesOnceExpired() {
+  void owningCustomerCanCancelUnpaidSepayOrderAndSwitchDirectlyFromSepayToVnPay() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     ServiceRequestOccurrence occurrence =
@@ -2481,6 +2630,58 @@ class ContractWorkflowServiceTest {
             1,
             Instant.parse("2027-02-01T09:00:00Z"),
             Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+    occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), customerId);
+    occurrence.assignSepayOrder(123456L);
+
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findByIdAndOwnerCustomerId(requestId, orgId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockByIdAndOwnerCustomerId(requestId, orgId))
+        .thenReturn(Optional.of(request));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId))
+        .thenReturn(List.of(occurrence));
+    when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
+    when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
+
+    service.cancelUnpaidPaymentOrder(customerId, requestId, occurrenceId);
+    assertThat(occurrence.getGatewayOrderCode()).isNull();
+    assertThat(occurrence.getPaymentMethod()).isNull();
+
+    // Re-open Sepay order, then switch directly to VNPay without hitting PAYMENT_ORDER_ALREADY_OPEN
+    occurrence.assignSepayOrder(123457L);
+    when(vnPayGateway.resolveReturnUrl(eq(inspectionId.toString()), anyLong(), eq(true)))
+        .thenReturn("http://localhost:8080/api/v1/webhooks/vnpay/return/mobile");
+    when(vnPayGateway.createPaymentUrl(anyLong(), eq(100000L), anyString(), eq("127.0.0.1"), any()))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new VnPayGateway.VnPayPaymentLink(
+                  code, "https://sandbox.vnpayment.vn/pay?" + code, 100000L, String.valueOf(code));
+            });
+
+    var link =
+        service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1", true);
+    assertThat(link.orderCode()).isNotEqualTo(123457L);
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(link.orderCode());
+  }
+
+  @Test
+  void onlineGatewaysSwitchAndRetrySmoothlyInBothDirectionsWithoutManualReset() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
     occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
     occurrence.acceptReport(UUID.randomUUID(), customerId);
     occurrence.assignVnPayOrder(555001L);
@@ -2493,25 +2694,8 @@ class ContractWorkflowServiceTest {
         .thenReturn(List.of(occurrence));
     when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
-    when(vnPayGateway.orderLifetimeMinutes()).thenReturn(15);
-
-    // Live order cannot be retried or cancelled
-    assertThatThrownBy(
-            () -> service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1"))
-        .isInstanceOf(BusinessException.class)
-        .extracting("code")
-        .isEqualTo("PAYMENT_ORDER_UNRESOLVED");
-    assertThatThrownBy(() -> service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId))
-        .isInstanceOf(BusinessException.class)
-        .extracting("code")
-        .isEqualTo("PAYMENT_ORDER_UNRESOLVED");
-
-    // Backdate gatewayOrderCreatedAt past lifetime + grace (20 minutes)
-    ReflectionTestUtils.setField(
-        occurrence.getPayment(),
-        "gatewayOrderCreatedAt",
-        Instant.now().minus(java.time.Duration.ofMinutes(25)));
-
+    when(vnPayGateway.resolveReturnUrl(eq(inspectionId.toString()), anyLong(), eq(false)))
+        .thenReturn("http://localhost:8080/api/v1/webhooks/vnpay/return");
     when(vnPayGateway.createPaymentUrl(anyLong(), eq(100000L), anyString(), eq("127.0.0.1"), any()))
         .thenAnswer(
             inv -> {
@@ -2519,16 +2703,39 @@ class ContractWorkflowServiceTest {
               return new VnPayGateway.VnPayPaymentLink(
                   code, "https://sandbox.vnpayment.vn/pay?" + code, 100000L, String.valueOf(code));
             });
+    when(sepayGateway.createPaymentLink(anyLong(), eq(100000L), anyString(), any(), any(), any()))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new com.smartdroneinspection.contracts.gateway.SepayGateway.SepayPaymentLink(
+                  code,
+                  "https://qr.sepay.vn/img?des=SDI" + code,
+                  "https://qr.sepay.vn/img?des=SDI" + code,
+                  100000L,
+                  "PENDING",
+                  "sp-" + code);
+            });
 
-    var link = service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
-    assertThat(link.orderCode()).isNotEqualTo(555001L);
-    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(link.orderCode());
+    // Retrying VNPay while an earlier VNPay order is open automatically releases the stale order.
+    var retriedVnPay =
+        service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
+    assertThat(retriedVnPay.orderCode()).isNotEqualTo(555001L);
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(retriedVnPay.orderCode());
 
-    // Backdate the new order and verify manager can clear it once expired
-    ReflectionTestUtils.setField(
-        occurrence.getPayment(),
-        "gatewayOrderCreatedAt",
-        Instant.now().minus(java.time.Duration.ofMinutes(25)));
+    // Switching directly from VNPay -> Sepay automatically clears the open VNPay order.
+    var switchedToSepay = service.createSepayPaymentLink(customerId, requestId, occurrenceId);
+    assertThat(switchedToSepay.orderCode()).isNotEqualTo(retriedVnPay.orderCode());
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("SEPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(switchedToSepay.orderCode());
+
+    // Switching back Sepay -> VNPay works seamlessly too.
+    var switchedBackToVnPay =
+        service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
+    assertThat(switchedBackToVnPay.orderCode()).isNotEqualTo(switchedToSepay.orderCode());
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
+
+    // Explicit manager cancel clears active VNPay order without waiting for expiry.
     service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId);
     assertThat(occurrence.getGatewayOrderCode()).isNull();
     assertThat(occurrence.getPaymentMethod()).isNull();

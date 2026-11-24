@@ -55,6 +55,95 @@ public class SepayPaymentGateway implements SepayGateway {
   }
 
   @Override
+  public SepayPaymentLink createPayoutLink(
+      long payoutOrderCode,
+      long amount,
+      String accountNumber,
+      String bankName,
+      String accountHolder) {
+    String acc = firstNonBlank(accountNumber);
+    String bankCode = normalizeVietQrBankCode(firstNonBlank(bankName));
+    String holder = firstNonBlank(accountHolder);
+    if (!StringUtils.hasText(acc) || !StringUtils.hasText(bankCode)) {
+      throw new IllegalStateException(
+          "Inspector bank account number and bank name are required to build a VietQR payout code.");
+    }
+    String transferContent = "SDIPAY" + payoutOrderCode;
+    String qrUrl =
+        properties.qrBaseUrl()
+            + "/img?acc="
+            + url(acc)
+            + "&bank="
+            + url(bankCode)
+            + "&amount="
+            + amount
+            + "&des="
+            + url(transferContent)
+            + "&template=compact"
+            + (StringUtils.hasText(holder) ? "&holder=" + url(holder) : "");
+    return new SepayPaymentLink(
+        payoutOrderCode,
+        qrUrl,
+        transferContent,
+        amount,
+        String.valueOf(payoutOrderCode),
+        "PENDING");
+  }
+
+  static String normalizeVietQrBankCode(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return null;
+    }
+    String normalized = raw.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("[\\s_-]+", "");
+    return switch (normalized) {
+      case "vietcombank", "vcb" -> "VCB";
+      case "vietinbank", "ctg", "icb" -> "ICB";
+      case "bidv" -> "BIDV";
+      case "agribank", "vba" -> "VBA";
+      case "techcombank", "tcb" -> "TCB";
+      case "mbbank", "mb", "militarybank" -> "MB";
+      case "acb" -> "ACB";
+      case "vpbank", "vpb" -> "VPB";
+      case "tpbank", "tpb", "tienphongbank" -> "TPB";
+      case "sacombank", "stb" -> "STB";
+      case "vib" -> "VIB";
+      case "hdbank", "hdb" -> "HDB";
+      case "shb" -> "SHB";
+      case "ocb" -> "OCB";
+      case "msb", "maritimebank" -> "MSB";
+      case "eximbank", "eib" -> "EIB";
+      case "lpbank", "lpb", "lienvietpostbank" -> "LPB";
+      case "seabank", "seab" -> "SEAB";
+      case "namabank", "nab" -> "NAB";
+      case "abbank", "abb" -> "ABB";
+      case "bacabank", "bab" -> "BAB";
+      case "vietabank", "vab" -> "VAB";
+      case "pgbank", "pgb" -> "PGB";
+      case "kienlongbank", "klb" -> "KLB";
+      case "baovietbank", "bvb" -> "BVB";
+      case "saigonbank", "sgb" -> "SGB";
+      case "ncb" -> "NCB";
+      case "vietbank" -> "VIETBANK";
+      case "pvcombank", "pvcb" -> "PVCB";
+      case "bvbank", "vietcapitalbank", "vccb", "timoplus" -> "VCCB";
+      case "shinhan", "shinhanbank", "shbvn" -> "SHBVN";
+      case "woori", "wooribank", "wvn" -> "WVN";
+      case "cimb" -> "CIMB";
+      case "uob" -> "UOB";
+      case "hsbc" -> "HSBC";
+      case "cake" -> "CAKE";
+      case "ubank" -> "UBANK";
+      case "timo" -> "TIMO";
+      case "publicbank", "pbvn" -> "PBVN";
+      case "indovina", "ivb" -> "IVB";
+      case "vrb" -> "VRB";
+      case "oceanbank", "mbv" -> "OCEANBANK";
+      case "gpbank", "gpb" -> "GPB";
+      default -> raw.trim();
+    };
+  }
+
+  @Override
   public String expectedAccountNumber() {
     return properties.accountNumber();
   }
