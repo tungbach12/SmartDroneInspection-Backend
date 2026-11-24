@@ -1652,6 +1652,14 @@ public class ContractWorkflowService
       throw failure(
           HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
     }
+    UserAccess.PayoutBankDetails bankDetails =
+        users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null);
+    if (bankDetails == null || !bankDetails.isComplete()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INSPECTOR_PAYOUT_BANK_INFO_REQUIRED",
+          "Inspector must enter payout bank account details before Manager can settle payout");
+    }
     try {
       occurrence.recordPayout(input.payoutReference(), manager.id());
     } catch (IllegalStateException ex) {
@@ -1678,8 +1686,12 @@ public class ContractWorkflowService
                 () ->
                     failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
 
+    UserAccess.PayoutBankDetails bankDetails =
+        occurrence.getInspectorId() != null
+            ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
+            : null;
     if (actor.hasRole(Roles.MANAGER)) {
-      return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
+      return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables(), bankDetails);
     }
     if (actor.hasRole(Roles.CUSTOMER)
         && actor.ownerCustomerId() != null
@@ -1687,7 +1699,7 @@ public class ContractWorkflowService
       return OccurrenceFinanceResponse.forCustomer(occurrence);
     }
     if (actor.hasRole(Roles.INSPECTOR) && actor.id().equals(occurrence.getInspectorId())) {
-      return OccurrenceFinanceResponse.forInspector(occurrence);
+      return OccurrenceFinanceResponse.forInspector(occurrence, bankDetails);
     }
     throw forbidden();
   }
@@ -1883,7 +1895,11 @@ public class ContractWorkflowService
             .findFinanceHistoryByIdForManager(occurrenceId)
             .orElseThrow(
                 () -> failure(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment not found"));
-    return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables());
+    UserAccess.PayoutBankDetails bankDetails =
+        occurrence.getInspectorId() != null
+            ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
+            : null;
+    return OccurrenceFinanceResponse.forManager(occurrence, requireReceivables(), bankDetails);
   }
 
   /** Customer creates a Sepay VietQR payment code for an occurrence awaiting payment. */
@@ -2429,7 +2445,23 @@ public class ContractWorkflowService
               null);
       checkoutUrl = link.checkoutUrl();
     }
-    return toPaymentStatusDetails(occurrence, checkoutUrl);
+    UserAccess.PayoutBankDetails bankDetails = null;
+    if (actorId != null && occurrence.getInspectorId() != null) {
+      boolean includeBankDetails =
+          users
+              .findUser(actorId)
+              .map(
+                  actor ->
+                      actor.hasRole(Roles.MANAGER)
+                          || actor.hasRole(Roles.ADMIN)
+                          || actor.hasRole(Roles.INSPECTOR))
+              .orElse(false);
+      if (includeBankDetails) {
+        bankDetails =
+            users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null);
+      }
+    }
+    return toPaymentStatusDetails(occurrence, checkoutUrl, null, bankDetails);
   }
 
   @Override
@@ -2479,6 +2511,14 @@ public class ContractWorkflowService
 
   private InspectionReportAcceptancePort.PaymentStatusDetails toPaymentStatusDetails(
       ServiceRequestOccurrence occurrence, String checkoutUrl, String requestDescription) {
+    return toPaymentStatusDetails(occurrence, checkoutUrl, requestDescription, null);
+  }
+
+  private InspectionReportAcceptancePort.PaymentStatusDetails toPaymentStatusDetails(
+      ServiceRequestOccurrence occurrence,
+      String checkoutUrl,
+      String requestDescription,
+      UserAccess.PayoutBankDetails bankDetails) {
     boolean accepted = occurrence.getReportAcceptedAt() != null;
     boolean isPaid = occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID;
     String status = occurrence.getPaymentStatus().name();
@@ -2539,7 +2579,11 @@ public class ContractWorkflowService
         requestDescription,
         occurrence.getPaymentMethod(),
         occurrence.getPaymentDueAt(),
-        occurrence.getPaymentConfirmedAt());
+        occurrence.getPaymentConfirmedAt(),
+        bankDetails != null ? bankDetails.bankName() : null,
+        bankDetails != null ? bankDetails.accountNumber() : null,
+        bankDetails != null ? bankDetails.accountHolder() : null,
+        bankDetails != null ? bankDetails.bankBranch() : null);
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
@@ -2987,7 +3031,7 @@ public class ContractWorkflowService
         managerHasNotClaimed
             ? List.of()
             : occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
-                .map(occ -> toOccurrenceResponse(occ, request))
+                .map(occ -> toOccurrenceResponse(occ, request, managerActor != null))
                 .toList(),
         managerActor != null && (managerHasNotClaimed || !includeManagerMessages)
             ? List.of()
@@ -3002,7 +3046,9 @@ public class ContractWorkflowService
    * "reassignment required" instead of assuming every dispatch is confirmed.
    */
   private ServiceRequestOccurrenceResponse toOccurrenceResponse(
-      ServiceRequestOccurrence occurrence, ServiceRequest request) {
+      ServiceRequestOccurrence occurrence,
+      ServiceRequest request,
+      boolean includeInspectorBankDetails) {
     Mf2InspectionAssignment.AssignmentAcceptance acceptance =
         occurrence.getInspectionId() == null
             ? null
@@ -3027,7 +3073,12 @@ public class ContractWorkflowService
                 .findActiveUser(occurrence.getLastTimeoutInspectorId())
                 .map(UserAccess.ActiveUser::fullName)
                 .orElse(null);
+    UserAccess.PayoutBankDetails bankDetails =
+        includeInspectorBankDetails && occurrence.getInspectorId() != null
+            ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
+            : null;
     return ServiceRequestOccurrenceResponse.from(occurrence, request)
+        .withPayoutBankDetails(bankDetails)
         .withAssignmentAcceptance(
             acceptance == null ? null : acceptance.assignmentStatus(),
             acceptance != null && acceptance.reassignmentRequired(),

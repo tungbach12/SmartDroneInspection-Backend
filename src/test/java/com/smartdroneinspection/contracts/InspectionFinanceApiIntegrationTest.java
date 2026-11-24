@@ -570,6 +570,58 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(jsonPath("$.data.content[0].occurrenceId").value(occurrenceId.toString()))
         .andExpect(jsonPath("$.data.content[0].payoutStatus").value("ELIGIBLE"));
 
+    // Manager payout recording is blocked if Inspector hasn't configured payout bank details yet
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("payoutReference", "PAYOUT-BANK-8888"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTOR_PAYOUT_BANK_INFO_REQUIRED"));
+
+    // Inspector sets payout bank account details
+    mockMvc
+        .perform(
+            put("/api/v1/users/me/payout-bank-details")
+                .with(principal(inspectorUserId, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "bankName",
+                            "Vietcombank",
+                            "accountNumber",
+                            "0071001234567",
+                            "accountHolder",
+                            "PARTNER PILOT",
+                            "bankBranch",
+                            "Ho Chi Minh"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.payoutBankName").value("Vietcombank"))
+        .andExpect(jsonPath("$.data.payoutBankAccountNumber").value("0071001234567"));
+
+    // Payment status exposes Inspector bank details to Manager, masked from Customer
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/payment-status", inspectionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectorBankName").value("Vietcombank"))
+        .andExpect(jsonPath("$.data.inspectorBankAccountNumber").value("0071001234567"))
+        .andExpect(jsonPath("$.data.inspectorBankAccountHolder").value("PARTNER PILOT"));
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/payment-status", inspectionId)
+                .with(principal(customerUserId, "CUSTOMER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.inspectorBankName").doesNotExist())
+        .andExpect(jsonPath("$.data.inspectorBankAccountNumber").doesNotExist());
+
     // Manager settles Inspector payout right after approving report
     mockMvc
         .perform(
@@ -795,7 +847,9 @@ class InspectionFinanceApiIntegrationTest {
         .andExpect(jsonPath("$.data.payment.method").value("MANUAL_WIRE"))
         .andExpect(jsonPath("$.data.payment.reference").value("BANK-TRANSFER-5555"))
         .andExpect(jsonPath("$.data.payout.inspectorId").value(inspectorUserId.toString()))
-        .andExpect(jsonPath("$.data.payout.reference").value("PAYOUT-BANK-8888"));
+        .andExpect(jsonPath("$.data.payout.reference").value("PAYOUT-BANK-8888"))
+        .andExpect(jsonPath("$.data.payout.bankName").value("Vietcombank"))
+        .andExpect(jsonPath("$.data.payout.bankAccountNumber").value("0071001234567"));
 
     // 5.4 Snapshot immutability: Admin updates settlement rates for future work
     mockMvc

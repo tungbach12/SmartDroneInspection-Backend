@@ -2,6 +2,7 @@ package com.smartdroneinspection.users.api;
 
 import com.smartdroneinspection.shared.api.ApiResponse;
 import com.smartdroneinspection.users.api.dto.request.UpdateAiFallbackPreferenceRequest;
+import com.smartdroneinspection.users.api.dto.request.UpdatePayoutBankDetailsRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateProfileRequest;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
@@ -69,5 +70,16 @@ public class UserProfileController {
             ApiResponse.success(
                 authService.updateVisionFallbackPreference(
                     UUID.fromString(jwt.getSubject()), body.visionFallbackEnabled())));
+  }
+
+  @PutMapping("/payout-bank-details")
+  @PreAuthorize("hasRole('INSPECTOR')")
+  public ResponseEntity<ApiResponse<UserResponse>> updatePayoutBankDetails(
+      @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody UpdatePayoutBankDetailsRequest body) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(
+            ApiResponse.success(
+                authService.updatePayoutBankDetails(UUID.fromString(jwt.getSubject()), body)));
   }
 }

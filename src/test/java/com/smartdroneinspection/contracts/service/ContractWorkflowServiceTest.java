@@ -158,6 +158,26 @@ class ContractWorkflowServiceTest {
                     Instant.parse("2030-01-01T00:00:00Z"),
                     "licenses/test.pdf",
                     null)));
+    when(users.findUser(customerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    customerId, Set.of(Roles.CUSTOMER), "Customer", "customer@example.test")));
+    when(users.findUser(managerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    managerId, Set.of(Roles.MANAGER), "Manager", "manager@example.test")));
+    when(users.findUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId, Set.of(Roles.INSPECTOR), "Inspector", "inspector@example.test")));
+    when(users.findInspectorPayoutBankDetails(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.PayoutBankDetails(
+                    "Vietcombank", "0123456789", "PHAM VAN BAY", "CN Sai Gon")));
     Asset quoteAsset = mock(Asset.class);
     when(quoteAsset.getStatus()).thenReturn(AssetStatus.ACTIVE);
     when(quoteAsset.getId()).thenReturn(assetId);
@@ -2321,6 +2341,32 @@ class ContractWorkflowServiceTest {
     assertThat(occurrence.getPaymentStatus())
         .isEqualTo(ServiceRequestOccurrence.OccurrencePaymentStatus.PENDING);
     assertThat(service.requiresPayoutBeforePublish(inspectionId)).isTrue();
+
+    // Bank details missing -> blocked with INSPECTOR_PAYOUT_BANK_INFO_REQUIRED
+    when(users.findInspectorPayoutBankDetails(inspectorId)).thenReturn(Optional.empty());
+    assertThatThrownBy(
+            () -> service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            ex ->
+                assertThat(((BusinessException) ex).code())
+                    .isEqualTo("INSPECTOR_PAYOUT_BANK_INFO_REQUIRED"));
+
+    // Restore bank details: Manager & Inspector see bank details in payment status; Customer never
+    // does
+    when(users.findInspectorPayoutBankDetails(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.PayoutBankDetails(
+                    "Vietcombank", "0123456789", "PHAM VAN BAY", "CN Sai Gon")));
+    var managerPaymentStatus = service.getPaymentStatus(managerId, inspectionId);
+    assertThat(managerPaymentStatus.inspectorBankName()).isEqualTo("Vietcombank");
+    assertThat(managerPaymentStatus.inspectorBankAccountNumber()).isEqualTo("0123456789");
+    assertThat(managerPaymentStatus.inspectorBankAccountHolder()).isEqualTo("PHAM VAN BAY");
+    var customerPaymentStatus = service.getPaymentStatus(customerId, inspectionId);
+    assertThat(customerPaymentStatus.inspectorBankName()).isNull();
+    assertThat(customerPaymentStatus.inspectorBankAccountNumber()).isNull();
+    assertThat(customerPaymentStatus.inspectorBankAccountHolder()).isNull();
 
     // Gate satisfied: payout is now explicitly recorded by the Manager.
     service.recordOccurrencePayout(managerId, requestId, occurrenceId, payoutReq);

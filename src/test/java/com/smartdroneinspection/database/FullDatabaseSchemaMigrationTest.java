@@ -161,7 +161,7 @@ class FullDatabaseSchemaMigrationTest {
     assertThat(versions)
         .containsExactly(
             "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "75",
-            "76");
+            "76", "77");
 
     assertColumns(
         "drone_registration_applications", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
@@ -542,6 +542,10 @@ class FullDatabaseSchemaMigrationTest {
             "specializations",
             "experience_summary",
             "notes",
+            "payout_bank_name",
+            "payout_bank_account_number",
+            "payout_bank_account_holder",
+            "payout_bank_branch",
             "updated_at");
     assertThat(
             jdbcTemplate.queryForObject(

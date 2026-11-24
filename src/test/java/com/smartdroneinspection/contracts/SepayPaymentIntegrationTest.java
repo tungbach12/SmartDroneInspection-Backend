@@ -175,12 +175,15 @@ class SepayPaymentIntegrationTest {
             "Partner Pilot");
 
     jdbcTemplate.update(
-        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key, payout_bank_name, payout_bank_account_number, payout_bank_account_holder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         inspectorUserId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-        "licenses/pilot-cert.pdf");
+        "licenses/pilot-cert.pdf",
+        "MB Bank",
+        "0987654321",
+        "PARTNER PILOT");
 
     // Register Inspector in Partner Registry
     try {

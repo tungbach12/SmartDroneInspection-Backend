@@ -82,7 +82,34 @@ public record OccurrenceFinanceResponse(
       Instant recordedAt,
       UUID recordedByUserId,
       boolean heldForRefund,
-      BigDecimal finalPayoutAmount) {}
+      BigDecimal finalPayoutAmount,
+      String bankName,
+      String bankAccountNumber,
+      String bankAccountHolder,
+      String bankBranch) {
+
+    public InspectorPayoutSummary(
+        UUID inspectorId,
+        OccurrencePayoutStatus status,
+        String reference,
+        Instant recordedAt,
+        UUID recordedByUserId,
+        boolean heldForRefund,
+        BigDecimal finalPayoutAmount) {
+      this(
+          inspectorId,
+          status,
+          reference,
+          recordedAt,
+          recordedByUserId,
+          heldForRefund,
+          finalPayoutAmount,
+          null,
+          null,
+          null,
+          null);
+    }
+  }
 
   public record RefundSummary(
       java.util.UUID id,
@@ -273,7 +300,9 @@ public record OccurrenceFinanceResponse(
         occurrence.getPaymentConfirmedAt());
   }
 
-  private static InspectorPayoutSummary payoutSummary(ServiceRequestOccurrence occurrence) {
+  private static InspectorPayoutSummary payoutSummary(
+      ServiceRequestOccurrence occurrence,
+      com.smartdroneinspection.users.UserAccess.PayoutBankDetails bankDetails) {
     return new InspectorPayoutSummary(
         occurrence.getPayout().getInspectorId(),
         occurrence.getPayoutStatus(),
@@ -281,13 +310,25 @@ public record OccurrenceFinanceResponse(
         occurrence.getPayoutRecordedAt(),
         occurrence.getPayout().getPayoutRecordedByUserId(),
         occurrence.isPayoutHeldForRefund(),
-        occurrence.getPayout().getFinalPayoutAmount());
+        occurrence.getPayout().getFinalPayoutAmount(),
+        bankDetails != null ? bankDetails.bankName() : null,
+        bankDetails != null ? bankDetails.accountNumber() : null,
+        bankDetails != null ? bankDetails.accountHolder() : null,
+        bankDetails != null ? bankDetails.bankBranch() : null);
   }
 
   /** Full financial view for Managers and Admins. */
   public static OccurrenceFinanceResponse forManager(
       ServiceRequestOccurrence occurrence,
       com.smartdroneinspection.contracts.repository.InspectorReceivableRepository receivables) {
+    return forManager(occurrence, receivables, null);
+  }
+
+  /** Full financial view for Managers and Admins with Inspector bank details. */
+  public static OccurrenceFinanceResponse forManager(
+      ServiceRequestOccurrence occurrence,
+      com.smartdroneinspection.contracts.repository.InspectorReceivableRepository receivables,
+      com.smartdroneinspection.users.UserAccess.PayoutBankDetails bankDetails) {
     return new OccurrenceFinanceResponse(
         occurrence.getId(),
         occurrence.getRequestId(),
@@ -322,7 +363,7 @@ public record OccurrenceFinanceResponse(
         MVP_DISCLAIMER,
         invoiceSummary(occurrence),
         paymentSummary(occurrence),
-        payoutSummary(occurrence));
+        payoutSummary(occurrence, bankDetails));
   }
 
   /**
@@ -383,6 +424,12 @@ public record OccurrenceFinanceResponse(
    * Inspector gross compensation, TNCN withholding, net payout, and attributable payout status.
    */
   public static OccurrenceFinanceResponse forInspector(ServiceRequestOccurrence occurrence) {
+    return forInspector(occurrence, null);
+  }
+
+  public static OccurrenceFinanceResponse forInspector(
+      ServiceRequestOccurrence occurrence,
+      com.smartdroneinspection.users.UserAccess.PayoutBankDetails bankDetails) {
     return new OccurrenceFinanceResponse(
         occurrence.getId(),
         occurrence.getRequestId(),
@@ -422,6 +469,6 @@ public record OccurrenceFinanceResponse(
             occurrence.getPaymentMethod(),
             null,
             occurrence.getPaymentConfirmedAt()),
-        payoutSummary(occurrence));
+        payoutSummary(occurrence, bankDetails));
   }
 }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smartdroneinspection.users.api.dto.request.UpdateAiFallbackPreferenceRequest;
+import com.smartdroneinspection.users.api.dto.request.UpdatePayoutBankDetailsRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdatePilotLicenseRequest;
 import com.smartdroneinspection.users.api.dto.request.UpdateProfileRequest;
 import com.smartdroneinspection.users.api.dto.response.UserResponse;
@@ -135,5 +136,44 @@ class UserProfileControllerTest {
     assertThat(result.getBody().data().fullName()).isEqualTo("Updated Name");
     assertThat(result.getBody().data().phoneNumber()).isEqualTo("+84 909 111 222");
     verify(authService).updateProfile(userId, request);
+  }
+
+  @Test
+  void updatePayoutBankDetailsInvokesAuthService() {
+    UUID userId = UUID.randomUUID();
+    Jwt jwt = mock(Jwt.class);
+    when(jwt.getSubject()).thenReturn(userId.toString());
+
+    UpdatePayoutBankDetailsRequest request =
+        new UpdatePayoutBankDetailsRequest(
+            "Vietcombank", "0071001234567", "PHAM VAN BAY", "CN Sai Gon");
+    UserResponse response =
+        new UserResponse(
+            userId,
+            "inspector@example.test",
+            "Inspector Test",
+            null,
+            null,
+            List.of("INSPECTOR"),
+            true,
+            null,
+            null,
+            null,
+            null,
+            "Vietcombank",
+            "0071001234567",
+            "PHAM VAN BAY",
+            "CN Sai Gon");
+
+    when(authService.updatePayoutBankDetails(eq(userId), any(UpdatePayoutBankDetailsRequest.class)))
+        .thenReturn(response);
+
+    var result = controller.updatePayoutBankDetails(jwt, request);
+
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(result.getBody()).isNotNull();
+    assertThat(result.getBody().data().payoutBankName()).isEqualTo("Vietcombank");
+    assertThat(result.getBody().data().payoutBankAccountNumber()).isEqualTo("0071001234567");
+    verify(authService).updatePayoutBankDetails(userId, request);
   }
 }

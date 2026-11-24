@@ -116,12 +116,15 @@ class ConnectedMainFlowE2eIntegrationTest {
             "inspector." + UUID.randomUUID() + "@skyview.test",
             "David Inspector");
     jdbcTemplate.update(
-        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key, payout_bank_name, payout_bank_account_number, payout_bank_account_holder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         inspectorId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-        "licenses/pilot-cert.pdf");
+        "licenses/pilot-cert.pdf",
+        "Vietcombank",
+        "0071001122334",
+        "DAVID INSPECTOR");
 
     // =========================================================================
     // STEP 1: MF1 - Resource Setup, Inspection Creation & Dispatch
