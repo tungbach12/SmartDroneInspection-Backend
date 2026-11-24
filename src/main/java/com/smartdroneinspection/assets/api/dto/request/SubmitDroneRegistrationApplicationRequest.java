@@ -2,6 +2,8 @@ package com.smartdroneinspection.assets.api.dto.request;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -27,7 +29,11 @@ public record SubmitDroneRegistrationApplicationRequest(
     Boolean hasRtk,
     Map<String, String> documentFiles,
     List<String> imageFileKeys,
-    List<String> features) {
+    List<String> features,
+    @DecimalMin(value = "0.01", inclusive = true) @Digits(integer = 4, fraction = 2)
+        BigDecimal mtowKg,
+    @Min(1) @Max(600) Integer maxFlightTimeMinutes,
+    @Size(max = 128) String cameraSensor) {
 
   public SubmitDroneRegistrationApplicationRequest(
       String serialNumber,
@@ -52,6 +58,9 @@ public record SubmitDroneRegistrationApplicationRequest(
         null,
         false,
         false,
+        null,
+        null,
+        null,
         null,
         null,
         null);
@@ -88,6 +97,48 @@ public record SubmitDroneRegistrationApplicationRequest(
         hasRtk,
         documentFiles,
         imageFileKeys,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  public SubmitDroneRegistrationApplicationRequest(
+      String serialNumber,
+      String model,
+      String manufacturer,
+      String registrationNumber,
+      String registrationFileKey,
+      Instant registrationExpiresAt,
+      String ownershipFileKey,
+      String inspectionFileKey,
+      BigDecimal maxWindResistanceMps,
+      BigDecimal maxAltitudeMeters,
+      String opticalZoomLevel,
+      Boolean hasThermalCamera,
+      Boolean hasRtk,
+      Map<String, String> documentFiles,
+      List<String> imageFileKeys,
+      List<String> features) {
+    this(
+        serialNumber,
+        model,
+        manufacturer,
+        registrationNumber,
+        registrationFileKey,
+        registrationExpiresAt,
+        ownershipFileKey,
+        inspectionFileKey,
+        maxWindResistanceMps,
+        maxAltitudeMeters,
+        opticalZoomLevel,
+        hasThermalCamera,
+        hasRtk,
+        documentFiles,
+        imageFileKeys,
+        features,
+        null,
+        null,
         null);
   }
 }

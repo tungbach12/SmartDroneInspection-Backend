@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -102,5 +103,20 @@ class DroneTest {
     assertThat(m3t.resolveMtowKg()).isEqualTo(1.05);
     assertThat(m3t.requiresClassBLicense()).isFalse();
     assertThat(m3t.resolveLegalCategory()).isEqualTo("CATEGORY_2");
+
+    Drone cleanModel =
+        Drone.createInspectorOwned(
+            UUID.randomUUID(),
+            "DJI-M350-CLEAN",
+            "DJI Matrice 350 RTK",
+            "DJI",
+            "REG-003",
+            "drones/reg3.pdf",
+            java.time.Instant.now().plusSeconds(3600));
+    cleanModel.applyStructuredSpecs(new BigDecimal("6.47"), 55, "20 MP");
+    assertThat(cleanModel.resolveMtowKg()).isEqualTo(6.47);
+    assertThat(cleanModel.getMaxFlightTimeMinutes()).isEqualTo(55);
+    assertThat(cleanModel.getCameraSensor()).isEqualTo("20 MP");
+    assertThat(cleanModel.resolveLegalCategory()).isEqualTo("CATEGORY_3");
   }
 }

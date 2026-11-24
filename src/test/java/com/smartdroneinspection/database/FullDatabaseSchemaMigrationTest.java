@@ -160,7 +160,11 @@ class FullDatabaseSchemaMigrationTest {
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
     assertThat(versions)
         .containsExactly(
-            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69");
+            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "75");
+
+    assertColumns(
+        "drone_registration_applications", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
+    assertColumns("drones", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
 
     assertColumns(
         "inspection_flight_permits",

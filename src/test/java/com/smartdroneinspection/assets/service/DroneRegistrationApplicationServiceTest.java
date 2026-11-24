@@ -564,6 +564,97 @@ class DroneRegistrationApplicationServiceTest {
         .hasMessageContaining("Retired drones cannot renew registration");
   }
 
+  @Test
+  void submitAndApprovePersistStructuredSpecsSeparatelyFromCleanModel() {
+    when(applications.existsBySerialNumberIgnoreCaseAndStatus("SN-CLEAN", "PENDING"))
+        .thenReturn(false);
+    when(drones.findBySerialNumberIgnoreCase("SN-CLEAN")).thenReturn(Optional.empty());
+    when(drones.existsBySerialNumberIgnoreCase("SN-CLEAN")).thenReturn(false);
+    when(applications.saveAndFlush(any(DroneRegistrationApplication.class)))
+        .thenAnswer(
+            inv -> {
+              DroneRegistrationApplication saved = inv.getArgument(0);
+              ReflectionTestUtils.setField(saved, "id", applicationId);
+              return saved;
+            });
+    when(drones.saveAndFlush(any(Drone.class)))
+        .thenAnswer(
+            inv -> {
+              Drone saved = inv.getArgument(0);
+              ReflectionTestUtils.setField(saved, "id", droneId);
+              return saved;
+            });
+
+    SubmitDroneRegistrationApplicationRequest request =
+        new SubmitDroneRegistrationApplicationRequest(
+            "SN-CLEAN",
+            "DJI Matrice 350 RTK",
+            "DJI",
+            "REG-CLEAN",
+            "reg-file",
+            Instant.now().plusSeconds(86400),
+            "owner-file",
+            null,
+            new java.math.BigDecimal("12.0"),
+            new java.math.BigDecimal("120.0"),
+            "1x",
+            false,
+            false,
+            null,
+            List.of("drone-img-key"),
+            List.of("RTK_POSITIONING"),
+            new java.math.BigDecimal("6.47"),
+            55,
+            "20 MP");
+
+    var submitted = service.submit(inspectorId, request, "127.0.0.1", "agent", "corr-clean-1");
+    assertThat(submitted.model()).isEqualTo("DJI Matrice 350 RTK");
+    assertThat(submitted.mtowKg()).isEqualByComparingTo("6.47");
+    assertThat(submitted.maxFlightTimeMinutes()).isEqualTo(55);
+    assertThat(submitted.cameraSensor()).isEqualTo("20 MP");
+    assertThat(submitted.legalCategory()).isEqualTo("CATEGORY_3");
+
+    DroneRegistrationApplication storedApp =
+        new DroneRegistrationApplication(
+            inspectorId,
+            "SN-CLEAN",
+            "DJI Matrice 350 RTK",
+            "DJI",
+            "REG-CLEAN",
+            "reg-file",
+            Instant.now().plusSeconds(86400),
+            "owner-file",
+            null,
+            null,
+            new java.math.BigDecimal("12.0"),
+            new java.math.BigDecimal("120.0"),
+            "1x",
+            false,
+            false,
+            List.of("drone-img-key"),
+            List.of("RTK_POSITIONING"));
+    storedApp.applyStructuredSpecs(new java.math.BigDecimal("6.47"), 55, "20 MP");
+    ReflectionTestUtils.setField(storedApp, "id", applicationId);
+
+    when(applications.findByIdAndStatus(applicationId, "PENDING"))
+        .thenReturn(Optional.of(storedApp));
+
+    var approved = service.approve(adminId, applicationId, "127.0.0.1", "agent", "corr-clean-2");
+    assertThat(approved.droneId()).isEqualTo(droneId);
+    assertThat(approved.mtowKg()).isEqualByComparingTo("6.47");
+    assertThat(approved.maxFlightTimeMinutes()).isEqualTo(55);
+    assertThat(approved.cameraSensor()).isEqualTo("20 MP");
+
+    var droneCaptor = org.mockito.ArgumentCaptor.forClass(Drone.class);
+    verify(drones).saveAndFlush(droneCaptor.capture());
+    Drone persistedDrone = droneCaptor.getValue();
+    assertThat(persistedDrone.getModel()).isEqualTo("DJI Matrice 350 RTK");
+    assertThat(persistedDrone.getMtowKg()).isEqualByComparingTo("6.47");
+    assertThat(persistedDrone.getMaxFlightTimeMinutes()).isEqualTo(55);
+    assertThat(persistedDrone.getCameraSensor()).isEqualTo("20 MP");
+    assertThat(persistedDrone.resolveLegalCategory()).isEqualTo("CATEGORY_3");
+  }
+
   private DroneRegistrationApplication sampleApplication() {
     DroneRegistrationApplication app =
         new DroneRegistrationApplication(
