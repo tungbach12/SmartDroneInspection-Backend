@@ -105,16 +105,6 @@ public class UserAccessService implements UserAccess {
         .toList();
   }
 
-  @Override
-  @Transactional(readOnly = true)
-  public List<ActiveUser> listActivePlatformManagers() {
-    return users.findAllWithRoles().stream()
-        .filter(User::active)
-        .filter(user -> user.roleValues().contains(Roles.MANAGER))
-        .map(this::toActiveUser)
-        .toList();
-  }
-
   private boolean isOnboardingApproved(User user) {
     return inspectorProfileRepository
         .findById(user.getId())

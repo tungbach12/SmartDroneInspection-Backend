@@ -125,12 +125,11 @@ class PaymentDocumentServiceTest {
   @DisplayName("An authenticated actor without an owner scope gets not-found")
   void actorWithoutOwnerScopeGetsNotFound() {
     // Not ADMIN, MANAGER or INSPECTOR, and without CUSTOMER, so ownerCustomerId() is null.
-    UUID engineer = UUID.randomUUID();
-    when(userAccess.findActiveUser(engineer))
-        .thenReturn(
-            Optional.of(new UserAccess.ActiveUser(engineer, Set.of("MAINTENANCE_ENGINEER"))));
+    UUID unprivileged = UUID.randomUUID();
+    when(userAccess.findActiveUser(unprivileged))
+        .thenReturn(Optional.of(new UserAccess.ActiveUser(unprivileged, Set.of())));
 
-    assertNotFound(() -> service.render(engineer, INSPECTION_ID));
+    assertNotFound(() -> service.render(unprivileged, INSPECTION_ID));
 
     verifyNoInteractions(renderer);
   }

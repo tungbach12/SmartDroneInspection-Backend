@@ -242,12 +242,12 @@ public class InspectorPartnerLicenseDocumentService {
           <p><strong>3.1. Scope of Services:</strong> Party B agrees to perform on-site infrastructure drone inspection missions dispatched by Party A, capture checkpoint evidence, verify AI-detected defects, and submit technical inspection report drafts.</p>
           <p><strong>3.2. Airspace &amp; Flight Permit Gate:</strong> Party B must maintain a valid UAV Pilot License, use only approved drones with valid Registration, Ownership, and Technical Inspection certificates, and comply strictly with Flight Permit and No-Fly Zone regulations.</p>
           <p><strong>3.3. Revenue Settlement &amp; Payout:</strong> For each completed and customer-accepted inspection occurrence, Party B receives <strong>85%% Net Payout</strong> of the settled service fee (after 15%% platform commission).</p>
-          <p><strong>3.4. Data Confidentiality &amp; Integrity:</strong> All infrastructure imagery, telemetry logs, and inspection reports belong to the platform and client organization. Once signed by both parties, the scanned contract is uploaded to MinIO storage and locked with a cryptographic <strong>SHA-256 checksum</strong>.</p>
+          <p><strong>3.4. Data Confidentiality &amp; Integrity:</strong> All infrastructure imagery, telemetry logs, and inspection reports belong to the platform and owning customer. Once signed by both parties, the scanned contract is uploaded to MinIO storage and locked with a cryptographic <strong>SHA-256 checksum</strong>.</p>
 
           <table class="sig">
             <tr>
               <td>
-                <strong>FOR PARTY A (PLATFORM MANAGER)</strong><br/>
+                <strong>FOR PARTY A (MANAGER)</strong><br/>
                 <em>(Signature, Full Name &amp; Official Seal)</em>
               </td>
               <td>
@@ -259,7 +259,7 @@ public class InspectorPartnerLicenseDocumentService {
           </table>
 
           <div class="footer-note">
-            <strong>Hybrid Onboarding Verification:</strong> Please sign this agreement (via physical signature or legally recognized CA digital signature) and upload the signed PDF/Image scan to the SmartDroneInspection Portal. Your account will be activated for mission dispatch once both your Pilot License Scan and Signed Partner Contract are verified by the Platform Manager.
+            <strong>Hybrid Onboarding Verification:</strong> Please sign this agreement (via physical signature or legally recognized CA digital signature) and upload the signed PDF/Image scan to the SmartDroneInspection Portal. Your account will be activated for mission dispatch once both your Pilot License Scan and Signed Partner Contract are verified by the Manager.
           </div>
         </body>
         </html>

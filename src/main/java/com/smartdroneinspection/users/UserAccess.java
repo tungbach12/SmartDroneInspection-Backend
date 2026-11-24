@@ -32,10 +32,6 @@ public interface UserAccess {
     return listActiveInspectorPartners();
   }
 
-  default List<ActiveUser> listActivePlatformManagers() {
-    return List.of();
-  }
-
   default List<ActiveUser> listActiveManagers() {
     return List.of();
   }
@@ -185,16 +181,7 @@ public interface UserAccess {
     }
 
     public boolean hasRole(String role) {
-      if (roles.contains(role)) {
-        return true;
-      }
-      if ("ORG_MANAGER".equals(role) || "ORG_ADMIN".equals(role)) {
-        return roles.contains("CUSTOMER");
-      }
-      if ("PLATFORM_MANAGER".equals(role)) {
-        return roles.contains("MANAGER");
-      }
-      return false;
+      return roles.contains(role);
     }
 
     public boolean hasValidPilotLicense(java.time.Instant at) {

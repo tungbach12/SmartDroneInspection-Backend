@@ -88,7 +88,7 @@ class PilotLicenseExpiryCheckServiceTest {
     assertThat(saved.getBody()).contains("DC-2026-0001234").contains("20 ngày");
 
     verify(mailSender, times(1)).send(any(SimpleMailMessage.class));
-    verify(userAccess, never()).listActivePlatformManagers();
+    verify(userAccess, never()).listActiveManagers();
   }
 
   @Test
@@ -134,11 +134,10 @@ class PilotLicenseExpiryCheckServiceTest {
             "Hạng B",
             expiredYesterday,
             "licenses/scan.pdf");
-    ActiveUser manager =
-        new ActiveUser(managerId, Set.of("MANAGER"), "Platform Manager", "mgr@example.com");
+    ActiveUser manager = new ActiveUser(managerId, Set.of("MANAGER"), "Manager", "mgr@example.com");
 
     when(userAccess.listActiveInspectors()).thenReturn(List.of(inspector));
-    when(userAccess.listActivePlatformManagers()).thenReturn(List.of(manager));
+    when(userAccess.listActiveManagers()).thenReturn(List.of(manager));
     when(notificationRepository.existsByDeduplicationKey(any())).thenReturn(false);
 
     service.checkAllInspectorLicenses();

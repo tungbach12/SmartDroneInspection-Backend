@@ -129,7 +129,7 @@ class PlatformUserListApiIntegrationTest {
     User manager =
         new User(
             "manager-" + unique + "@example.test",
-            "Platform Manager",
+            "Manager",
             "{argon2}encoded-password",
             UserStatus.ACTIVE);
     manager.addRole(UserRole.MANAGER);
@@ -147,7 +147,7 @@ class PlatformUserListApiIntegrationTest {
     User customer =
         new User(
             "customer-" + unique + "@example.test",
-            "Customer Manager",
+            "Customer",
             "{argon2}encoded-password",
             UserStatus.ACTIVE);
     customer.addRole(UserRole.CUSTOMER);

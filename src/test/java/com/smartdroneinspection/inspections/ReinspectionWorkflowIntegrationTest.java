@@ -123,7 +123,6 @@ class ReinspectionWorkflowIntegrationTest {
     Inspection source = new Inspection(customerId, assetId, inspectorId, droneId, start, end);
     source.markPartnerAssignment();
     source.recordFlightPermit("permits/source.pdf", "source.pdf", Instant.now());
-    source.approveFlightPermit(managerId, "Approved", Instant.now());
     source.moveTo(InspectionStatus.IN_PROGRESS);
     source.completeFieldSession();
     source.confirmFindings();

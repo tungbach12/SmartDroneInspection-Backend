@@ -128,7 +128,7 @@ final class FlightPermitPolicy {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FLIGHT_PERMIT_REQUIRED",
-          "A flight permit must be uploaded before starting the field session.");
+          "The assigned inspector must upload a valid flight permit before starting the field session.");
     }
     FlightPermitVerificationStatus verificationStatus =
         inspection.getFlightPermitVerificationStatus();
@@ -136,19 +136,19 @@ final class FlightPermitPolicy {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FLIGHT_PERMIT_PENDING_REVIEW",
-          "Flight permit is awaiting Manager verification before field work can start.");
+          "The flight permit no longer matches the assigned drone or schedule. The assigned inspector must upload an updated permit.");
     }
     if (verificationStatus == FlightPermitVerificationStatus.REJECTED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FLIGHT_PERMIT_REJECTED",
-          "Flight permit was rejected by Manager. Upload a corrected permit and wait for approval.");
+          "The flight permit is no longer valid. The assigned inspector must upload a corrected permit.");
     }
     if (verificationStatus != FlightPermitVerificationStatus.APPROVED) {
       throw new BusinessException(
           HttpStatus.CONFLICT,
           "FLIGHT_PERMIT_NOT_APPROVED",
-          "Flight permit must be verified and approved by a Manager before field work can start.");
+          "A valid flight permit uploaded by the assigned inspector is required before field work can start.");
     }
     if (inspection.getFlightPermitValidTo() != null
         && !inspection.getFlightPermitValidTo().isAfter(now)) {

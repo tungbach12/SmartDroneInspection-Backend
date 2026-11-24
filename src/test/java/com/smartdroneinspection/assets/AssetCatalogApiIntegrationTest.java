@@ -119,7 +119,7 @@ class AssetCatalogApiIntegrationTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data[0].templateType").value("PRE_FLIGHT"))
         .andExpect(jsonPath("$.data[0].required").value(true))
-        .andExpect(jsonPath("$.data[4].required").value(false));
+        .andExpect(jsonPath("$.data[6].required").value(false));
 
     mockMvc
         .perform(
@@ -128,7 +128,8 @@ class AssetCatalogApiIntegrationTest {
                 .with(client(fixture.clientId())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].templateType").value("POST_FLIGHT"))
-        .andExpect(jsonPath("$.data[0].required").value(false));
+        .andExpect(jsonPath("$.data[0].required").value(true))
+        .andExpect(jsonPath("$.data[3].required").value(false));
 
     String preFlightOptionalBody =
         mockMvc

@@ -45,11 +45,14 @@ class FullDatabaseSchemaMigrationTest {
             "inspection_flight_permits",
             "reinspection_defect_verifications",
             "field_sessions",
+            "field_session_flights",
             "field_session_telemetry",
             "evidence",
             "evidence_upload_sessions",
             "findings",
             "inspection_reports",
+            "inspector_ratings",
+            "rating_criterion_configs",
             "audit_events",
             "notifications",
             "service_requests",
@@ -80,7 +83,7 @@ class FullDatabaseSchemaMigrationTest {
             "event_publication",
             "flyway_schema_history");
 
-    assertThat(expected).hasSize(50);
+    assertThat(expected).hasSize(53);
     assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
     assertThat(actual)
         .doesNotContain(
@@ -160,7 +163,8 @@ class FullDatabaseSchemaMigrationTest {
             "SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class);
     assertThat(versions)
         .containsExactly(
-            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69");
+            "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70",
+            "71", "72", "73", "74");
 
     assertColumns(
         "inspection_flight_permits",

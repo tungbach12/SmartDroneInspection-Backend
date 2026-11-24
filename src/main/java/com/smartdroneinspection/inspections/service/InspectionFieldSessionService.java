@@ -3,7 +3,10 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.inspections.api.dto.FieldSessionChecklistDto.ChecklistItemSnapshot;
+import com.smartdroneinspection.inspections.api.dto.FieldSessionChecklistDto.PreFlightConditions;
 import com.smartdroneinspection.inspections.domain.FieldSession;
+import com.smartdroneinspection.inspections.domain.FieldSessionFlight;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent;
 import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
@@ -13,6 +16,7 @@ import com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionCompletedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionForceAbortedEvent;
 import com.smartdroneinspection.inspections.reportcontext.ReportContextAccess;
+import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
@@ -24,6 +28,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
@@ -44,6 +49,7 @@ public class InspectionFieldSessionService {
   private final ApplicationEventPublisher eventPublisher;
   private final ObjectProvider<DroneRepository> dronesProvider;
   private final ObjectProvider<InspectorReliabilityEventRepository> reliabilityEventsProvider;
+  private final ObjectProvider<FieldSessionFlightRepository> flightsProvider;
 
   private static final String SESSION_SCOPE_DENIED = "SESSION_SCOPE_DENIED";
   private static final String SESSION_NOT_FOUND = "SESSION_NOT_FOUND";
@@ -55,7 +61,7 @@ public class InspectionFieldSessionService {
       FieldSessionRepository sessions,
       UserAccess userAccess,
       EntityManager entityManager) {
-    this(inspections, sessions, userAccess, entityManager, null, null, null, null);
+    this(inspections, sessions, userAccess, entityManager, null, null, null, null, null);
   }
 
   public InspectionFieldSessionService(
@@ -72,6 +78,7 @@ public class InspectionFieldSessionService {
         entityManager,
         reportContextAccessProvider,
         eventPublisher,
+        null,
         null,
         null);
   }
@@ -92,6 +99,28 @@ public class InspectionFieldSessionService {
         reportContextAccessProvider,
         eventPublisher,
         dronesProvider,
+        null,
+        null);
+  }
+
+  public InspectionFieldSessionService(
+      InspectionRepository inspections,
+      FieldSessionRepository sessions,
+      UserAccess userAccess,
+      EntityManager entityManager,
+      ObjectProvider<ReportContextAccess> reportContextAccessProvider,
+      ApplicationEventPublisher eventPublisher,
+      ObjectProvider<DroneRepository> dronesProvider,
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityEventsProvider) {
+    this(
+        inspections,
+        sessions,
+        userAccess,
+        entityManager,
+        reportContextAccessProvider,
+        eventPublisher,
+        dronesProvider,
+        reliabilityEventsProvider,
         null);
   }
 
@@ -104,7 +133,8 @@ public class InspectionFieldSessionService {
       ObjectProvider<ReportContextAccess> reportContextAccessProvider,
       ApplicationEventPublisher eventPublisher,
       ObjectProvider<DroneRepository> dronesProvider,
-      ObjectProvider<InspectorReliabilityEventRepository> reliabilityEventsProvider) {
+      ObjectProvider<InspectorReliabilityEventRepository> reliabilityEventsProvider,
+      ObjectProvider<FieldSessionFlightRepository> flightsProvider) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.userAccess = userAccess;
@@ -113,16 +143,29 @@ public class InspectionFieldSessionService {
     this.eventPublisher = eventPublisher;
     this.dronesProvider = dronesProvider;
     this.reliabilityEventsProvider = reliabilityEventsProvider;
+    this.flightsProvider = flightsProvider;
   }
 
   @Transactional
   public FieldSession start(UUID inspectorId, UUID inspectionId, String preFlightChecklistNote) {
-    return start(inspectorId, inspectionId, preFlightChecklistNote, false);
+    return start(inspectorId, inspectionId, preFlightChecklistNote, false, null, null, null);
   }
 
   @Transactional
   public FieldSession start(
       UUID inspectorId, UUID inspectionId, String preFlightChecklistNote, boolean startNow) {
+    return start(inspectorId, inspectionId, preFlightChecklistNote, startNow, null, null, null);
+  }
+
+  @Transactional
+  public FieldSession start(
+      UUID inspectorId,
+      UUID inspectionId,
+      String preFlightChecklistNote,
+      boolean startNow,
+      LocalDate sessionDate,
+      List<ChecklistItemSnapshot> preFlightChecklistSnapshot,
+      PreFlightConditions preFlightConditions) {
     requireInspector(inspectorId);
     if (preFlightChecklistNote == null || preFlightChecklistNote.isBlank()) {
       throw sessionFailure(
@@ -231,10 +274,20 @@ public class InspectionFieldSessionService {
           "INSPECTION_NOT_READY_FOR_FLIGHT",
           "The inspection is not ready for flight, so no session may start.");
     }
+    if (inspection.getFindingsConfirmedAt() != null) {
+      throw sessionFailure(
+          "FINDINGS_ALREADY_CONFIRMED",
+          "Reopen confirmed findings before starting an additional field session.");
+    }
     FlightPermitPolicy.requireApprovedForFlight(inspection, assignedDrone, checkAt);
 
     FieldSession session = FieldSession.opening(inspectionId);
     session.recordPreFlightChecklistNote(preFlightChecklistNote);
+    if (sessionDate != null
+        || (preFlightChecklistSnapshot != null && !preFlightChecklistSnapshot.isEmpty())
+        || preFlightConditions != null) {
+      session.recordPreFlightDetails(sessionDate, preFlightChecklistSnapshot, preFlightConditions);
+    }
     session.start(Instant.now());
 
     inspection.moveTo(InspectionStatus.IN_PROGRESS);
@@ -383,6 +436,16 @@ public class InspectionFieldSessionService {
   @Transactional
   public FieldSession complete(
       UUID inspectorId, UUID inspectionId, UUID sessionId, String outcomeNotes) {
+    return complete(inspectorId, inspectionId, sessionId, outcomeNotes, null);
+  }
+
+  @Transactional
+  public FieldSession complete(
+      UUID inspectorId,
+      UUID inspectionId,
+      UUID sessionId,
+      String outcomeNotes,
+      List<ChecklistItemSnapshot> postFlightChecklistSnapshot) {
     if (outcomeNotes == null || outcomeNotes.isBlank()) {
       throw sessionFailure(
           "SESSION_OUTCOME_REQUIRED", "Record the completed field-session outcome.");
@@ -404,6 +467,9 @@ public class InspectionFieldSessionService {
     }
     try {
       session.complete(outcomeNotes);
+      if (postFlightChecklistSnapshot != null && !postFlightChecklistSnapshot.isEmpty()) {
+        session.recordPostFlightSnapshot(postFlightChecklistSnapshot);
+      }
       inspection.completeFieldSession();
     } catch (IllegalArgumentException exception) {
       throw sessionFailure("SESSION_OUTCOME_REQUIRED", exception.getMessage());
@@ -464,30 +530,67 @@ public class InspectionFieldSessionService {
             ? inspection.getInspectionType().name()
             : assetCategory;
 
-    String flightCode =
+    String baseFlightCode =
         "FL-INSP-"
             + inspection.getId().toString().substring(0, 8).toUpperCase()
             + (session.getId() != null
                 ? "-" + session.getId().toString().substring(0, 4).toUpperCase()
                 : "");
-    java.time.LocalDate flightDate =
-        session.getStartedAt() != null
-            ? session.getStartedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()
-            : java.time.LocalDate.now();
+    java.time.LocalDate fallbackFlightDate =
+        session.getSessionDate() != null
+            ? session.getSessionDate()
+            : session.getStartedAt() != null
+                ? session.getStartedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                : java.time.LocalDate.now();
 
     if (userAccess != null && inspection.getInspectorId() != null) {
       try {
-        userAccess.recordInspectorFlightLog(
-            inspection.getInspectorId(),
-            flightCode,
-            flightDate,
-            missionTitle,
-            droneModel,
-            droneSerialNumber,
-            location,
-            (int) durationMinutes,
-            inspectionType,
-            outcomeNotes);
+        FieldSessionFlightRepository flightRepo =
+            flightsProvider != null ? flightsProvider.getIfAvailable() : null;
+        List<FieldSessionFlight> completedFlights =
+            flightRepo != null && session.getId() != null
+                ? flightRepo.findByFieldSessionIdOrderByFlightNumberAsc(session.getId()).stream()
+                    .filter(FieldSessionFlight::hasPersistedReport)
+                    .toList()
+                : List.of();
+        if (!completedFlights.isEmpty()) {
+          for (FieldSessionFlight flight : completedFlights) {
+            int mins =
+                flight.getFlightDurationSeconds() != null && flight.getFlightDurationSeconds() > 0
+                    ? Math.max(1, (int) Math.round(flight.getFlightDurationSeconds() / 60.0))
+                    : (int) durationMinutes;
+            String perFlightCode = baseFlightCode + "-F" + flight.getFlightNumber();
+            String labelSuffix =
+                flight.getFlightLabel() != null && !flight.getFlightLabel().isBlank()
+                    ? " · " + flight.getFlightLabel()
+                    : "";
+            userAccess.recordInspectorFlightLog(
+                inspection.getInspectorId(),
+                perFlightCode,
+                flight.getFlightDate() != null ? flight.getFlightDate() : fallbackFlightDate,
+                missionTitle + labelSuffix,
+                droneModel,
+                droneSerialNumber,
+                location,
+                mins,
+                inspectionType,
+                flight.getFlightReportNote() != null && !flight.getFlightReportNote().isBlank()
+                    ? flight.getFlightReportNote()
+                    : outcomeNotes);
+          }
+        } else {
+          userAccess.recordInspectorFlightLog(
+              inspection.getInspectorId(),
+              baseFlightCode,
+              fallbackFlightDate,
+              missionTitle,
+              droneModel,
+              droneSerialNumber,
+              location,
+              (int) durationMinutes,
+              inspectionType,
+              outcomeNotes);
+        }
       } catch (Exception ex) {
         // Do not fail session completion if profile flight log recording encounters an issue
       }

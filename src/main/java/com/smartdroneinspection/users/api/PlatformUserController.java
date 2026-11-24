@@ -63,7 +63,7 @@ public class PlatformUserController {
         throw new com.smartdroneinspection.shared.exception.AuthException(
             org.springframework.http.HttpStatus.FORBIDDEN,
             "FORBIDDEN",
-            "Platform Manager may only create partner Inspector accounts.");
+            "Manager may only create partner Inspector accounts.");
       }
     }
     return ResponseEntity.status(201)

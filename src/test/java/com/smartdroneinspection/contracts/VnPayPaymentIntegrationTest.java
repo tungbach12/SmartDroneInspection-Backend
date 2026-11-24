@@ -502,15 +502,6 @@ class VnPayPaymentIntegrationTest {
                             "validTo",
                             Instant.now().plus(30, ChronoUnit.DAYS)))))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("PENDING_REVIEW"));
-
-    mockMvc
-        .perform(
-            post("/api/v1/inspections/{id}/flight-permit/review", inspectionId)
-                .with(principal(managerUserId, "MANAGER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("decision", "APPROVED"))))
-        .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"));
 
     String sessionResp =

@@ -427,7 +427,6 @@ class InspectionRecoveryFlowIntegrationTest {
       inspection.markPartnerAssignment();
     }
     inspection.recordFlightPermit("permits/permit.pdf", "permit.pdf", Instant.now());
-    inspection.approveFlightPermit(managerId, "Approved for recovery test", Instant.now());
     return inspections.saveAndFlush(inspection).getId();
   }
 

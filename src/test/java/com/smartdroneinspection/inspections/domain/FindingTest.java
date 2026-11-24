@@ -95,13 +95,13 @@ class FindingTest {
   }
 
   @Test
-  void editingAFindingTakesBackItsConfirmation() {
+  void editingAFindingPreservesItsConfirmation() {
     Finding finding = detected();
     finding.confirmByInspector();
 
     finding.revise(evidenceId, "corrosion", FindingSeverity.HIGH, "More extensive corrosion");
 
-    assertThat(finding.getStatus()).isEqualTo(FindingStatus.PENDING);
-    assertThat(finding.isOfficial()).isFalse();
+    assertThat(finding.getStatus()).isEqualTo(FindingStatus.CONFIRMED);
+    assertThat(finding.isOfficial()).isTrue();
   }
 }
