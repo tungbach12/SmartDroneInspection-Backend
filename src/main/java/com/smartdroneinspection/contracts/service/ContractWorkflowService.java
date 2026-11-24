@@ -2154,7 +2154,8 @@ public class ContractWorkflowService
       long timePart = (System.currentTimeMillis() % 1_000_000L) * 1_000L;
       long randomPart = ORDER_CODE_RANDOM.nextInt(1_000);
       long candidate = 1_000_000_000L + timePart + randomPart;
-      if (occurrences.findByGatewayOrderCode(candidate).isEmpty()) {
+      if (occurrences.findByGatewayOrderCode(candidate).isEmpty()
+          && occurrences.findByPayoutOrderCode(candidate).isEmpty()) {
         return candidate;
       }
     }
@@ -2162,6 +2163,32 @@ public class ContractWorkflowService
         HttpStatus.SERVICE_UNAVAILABLE,
         "ORDER_CODE_GENERATION_FAILED",
         "Could not allocate a unique payment order code; please retry");
+  }
+
+  private long generateUniquePayoutOrderCode() {
+    for (int attempt = 0; attempt < 5; attempt++) {
+      long timePart = (System.currentTimeMillis() % 1_000_000L) * 1_000L;
+      long randomPart = ORDER_CODE_RANDOM.nextInt(1_000);
+      long candidate = 2_000_000_000L + timePart + randomPart;
+      if (occurrences.findByPayoutOrderCode(candidate).isEmpty()
+          && occurrences.findByGatewayOrderCode(candidate).isEmpty()) {
+        return candidate;
+      }
+    }
+    throw failure(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "ORDER_CODE_GENERATION_FAILED",
+        "Could not allocate a unique payout order code; please retry");
+  }
+
+  private static long toPayoutAmountVnd(java.math.BigDecimal netPayout) {
+    if (netPayout == null || netPayout.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYOUT_AMOUNT_INVALID",
+          "Inspector net payout amount must be greater than zero");
+    }
+    return netPayout.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
   }
 
   private static long toGatewayAmountVnd(java.math.BigDecimal totalPrice) {
@@ -2354,6 +2381,176 @@ public class ContractWorkflowService
         createSepayPaymentLink(actorId, request.getId(), occurrence.getId());
     return new InspectionReportAcceptancePort.SepayCheckoutDetails(
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
+  }
+
+  /** Manager creates a Sepay VietQR payout code targeting the assigned Inspector's bank account. */
+  @Transactional
+  public SepayPaymentLinkResponse createSepayPayoutLink(
+      UUID actorId, UUID requestId, UUID occurrenceId) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    requireRequestForManagerLocked(manager, requestId);
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockById(occurrenceId)
+            .filter(value -> requestId.equals(value.getRequestId()))
+            .orElseThrow(
+                () ->
+                    failure(HttpStatus.NOT_FOUND, "OCCURRENCE_NOT_FOUND", "Occurrence not found"));
+    if (occurrence.isPayoutHeldForRefund()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYOUT_HELD_FOR_REFUND",
+          "Inspector payout is held while a customer refund is recorded and reconciled");
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PAID) {
+      long existingCode =
+          occurrence.getPayoutOrderCode() != null ? occurrence.getPayoutOrderCode() : 0L;
+      long paidAmount =
+          occurrence.getRemainingInspectorNetPayout() != null
+                  && occurrence
+                          .getRemainingInspectorNetPayout()
+                          .compareTo(java.math.BigDecimal.ZERO)
+                      > 0
+              ? toPayoutAmountVnd(occurrence.getRemainingInspectorNetPayout())
+              : 0L;
+      return new SepayPaymentLinkResponse(
+          existingCode, null, "SDIPAY" + existingCode, paidAmount, String.valueOf(existingCode));
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING) {
+      if (occurrence.getInspectionId() != null
+          && reportAccess.isPresent()
+          && reportAccess.get().hasApprovedOrPublishedReport(occurrence.getInspectionId())) {
+        occurrence.markPayoutEligible();
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYOUT_NOT_ELIGIBLE",
+            "Inspector payout requires an approved inspection report");
+      }
+    }
+    if (occurrence.getInspectorId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
+    }
+    UserAccess.PayoutBankDetails bankDetails =
+        users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null);
+    if (bankDetails == null || !bankDetails.isComplete()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INSPECTOR_PAYOUT_BANK_INFO_REQUIRED",
+          "Inspector must enter payout bank account details before Manager can settle payout");
+    }
+    if (occurrence.getCurrency() != null && !"VND".equalsIgnoreCase(occurrence.getCurrency())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "CURRENCY_UNSUPPORTED",
+          "Sepay online payout is only supported for VND contracts. Currency is "
+              + occurrence.getCurrency());
+    }
+    long amount = toPayoutAmountVnd(occurrence.getRemainingInspectorNetPayout());
+    long payoutOrderCode =
+        occurrence.getPayoutOrderCode() != null && occurrence.getPayoutOrderCode() > 0
+            ? occurrence.getPayoutOrderCode()
+            : generateUniquePayoutOrderCode();
+
+    SepayGateway.SepayPaymentLink link =
+        sepayGateway.createPayoutLink(
+            payoutOrderCode,
+            amount,
+            bankDetails.accountNumber(),
+            bankDetails.bankName(),
+            bankDetails.accountHolder());
+
+    occurrence.assignSepayPayoutOrder(payoutOrderCode);
+    occurrences.saveAndFlush(occurrence);
+    return new SepayPaymentLinkResponse(
+        payoutOrderCode, link.checkoutUrl(), link.qrCode(), amount, link.paymentLinkId());
+  }
+
+  @Override
+  @Transactional
+  public InspectionReportAcceptancePort.SepayCheckoutDetails createSepayPayoutLink(
+      UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    SepayPaymentLinkResponse resp =
+        createSepayPayoutLink(actorId, occurrence.getRequestId(), occurrence.getId());
+    return new InspectionReportAcceptancePort.SepayCheckoutDetails(
+        resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
+  }
+
+  /** Outgoing webhook settles Inspector payout automatically when transfer matches SDIPAY<code>. */
+  @Transactional
+  public void applySepayWebhookPayout(long payoutOrderCode, long amount, String reference) {
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByPayoutOrderCode(payoutOrderCode)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "Occurrence with payoutOrderCode " + payoutOrderCode + " not found"));
+
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PAID) {
+      return; // Idempotent no-op
+    }
+    if (occurrence.isPayoutHeldForRefund()) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "PAYOUT_HELD_FOR_REFUND",
+          "Inspector payout is held while a customer refund is recorded and reconciled");
+    }
+    if (occurrence.getPayoutStatus() == ServiceRequestOccurrence.OccurrencePayoutStatus.PENDING) {
+      if (occurrence.getInspectionId() != null
+          && reportAccess.isPresent()
+          && reportAccess.get().hasApprovedOrPublishedReport(occurrence.getInspectionId())) {
+        occurrence.markPayoutEligible();
+      } else {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "PAYOUT_NOT_ELIGIBLE",
+            "Inspector payout requires an approved inspection report");
+      }
+    }
+    if (occurrence.getInspectorId() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "INSPECTOR_NOT_ASSIGNED", "No inspector assigned to receive payout");
+    }
+
+    long expectedAmount = toPayoutAmountVnd(occurrence.getRemainingInspectorNetPayout());
+    if (amount != expectedAmount) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYOUT_AMOUNT_MISMATCH",
+          "Transfer amount "
+              + amount
+              + " does not match expected inspector net payout "
+              + expectedAmount);
+    }
+
+    UUID attributedManagerId =
+        requests
+            .findById(occurrence.getRequestId())
+            .map(ServiceRequest::getAssignedManagerId)
+            .orElse(null);
+    String payoutRef =
+        (reference != null && !reference.isBlank())
+            ? reference.trim()
+            : ("SEPAY-OUT-" + payoutOrderCode);
+    occurrence.confirmSepayPayout(payoutRef, attributedManagerId);
+    occurrences.saveAndFlush(occurrence);
   }
 
   @Override

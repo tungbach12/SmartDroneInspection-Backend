@@ -917,6 +917,20 @@ public class InspectionController {
         reportAcceptancePort.get().createSepayPaymentLink(actorId(jwt), inspectionId));
   }
 
+  @PostMapping("/sepay/create-payout-link")
+  @PreAuthorize("hasRole('MANAGER')")
+  public ApiResponse<InspectionReportAcceptancePort.SepayCheckoutDetails> createSepayPayoutLink(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    return ApiResponse.success(
+        reportAcceptancePort.get().createSepayPayoutLink(actorId(jwt), inspectionId));
+  }
+
   @PostMapping("/vnpay/create-payment-url")
   @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
   public ApiResponse<InspectionReportAcceptancePort.VnPayCheckoutDetails> createVnPayPaymentUrl(

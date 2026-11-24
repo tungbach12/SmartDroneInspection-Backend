@@ -161,7 +161,7 @@ class FullDatabaseSchemaMigrationTest {
     assertThat(versions)
         .containsExactly(
             "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "75",
-            "76", "77");
+            "76", "77", "78");
 
     assertColumns(
         "drone_registration_applications", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
@@ -450,6 +450,7 @@ class FullDatabaseSchemaMigrationTest {
         "note",
         "recorded_by_user_id",
         "recorded_at");
+    assertColumns("inspector_payouts", "occurrence_id", "payout_order_code", "payout_status");
 
     List<String> quoteColumns =
         jdbcTemplate.queryForList(

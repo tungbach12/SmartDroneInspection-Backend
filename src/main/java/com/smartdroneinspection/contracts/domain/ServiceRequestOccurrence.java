@@ -658,6 +658,33 @@ public class ServiceRequestOccurrence {
     updatedAt = payout.getPayoutRecordedAt();
   }
 
+  public Long getPayoutOrderCode() {
+    return payout.getPayoutOrderCode();
+  }
+
+  public void assignSepayPayoutOrder(long payoutOrderCode) {
+    payout.assignPayoutOrderCode(payoutOrderCode);
+    updatedAt = Instant.now();
+  }
+
+  public void confirmSepayPayout(String reference, UUID attributedManagerId) {
+    if (reference == null || reference.isBlank()) {
+      throw new IllegalArgumentException("Payout reference is required");
+    }
+    if (payout.isHeldForRefund()) {
+      throw new IllegalStateException("Inspector payout is held pending refund reconciliation");
+    }
+    if (getPayoutStatus() == OccurrencePayoutStatus.PENDING) {
+      throw new IllegalStateException("Inspector payout requires an approved inspection report");
+    }
+    if (inspectorId == null) {
+      throw new IllegalStateException("No inspector assigned to receive payout");
+    }
+    payout.confirmSepayWebhookPayout(
+        reference, attributedManagerId, getRemainingInspectorNetPayout());
+    updatedAt = payout.getPayoutRecordedAt();
+  }
+
   public void assign(UUID inspectorId, UUID droneId, UUID inspectionId, UUID assignedByUserId) {
     assign(
         inspectorId,

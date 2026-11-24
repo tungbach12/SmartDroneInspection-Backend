@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SepayWebhookController {
 
   private static final Pattern ORDER_CODE_PATTERN = Pattern.compile("(?i)SDI\\s*(\\d+)");
+  private static final Pattern PAYOUT_ORDER_CODE_PATTERN = Pattern.compile("(?i)SDIPAY\\s*(\\d+)");
   private static final Logger log = LoggerFactory.getLogger(SepayWebhookController.class);
 
   private static final String GATEWAY = "SEPAY";
@@ -62,7 +63,9 @@ public class SepayWebhookController {
 
     String transferType = payload.transferType();
     if (transferType != null && !"in".equalsIgnoreCase(transferType.trim())) {
-      // Outgoing transfers are not payments; acknowledge and ignore.
+      if ("out".equalsIgnoreCase(transferType.trim())) {
+        return handleOutgoingPayoutWebhook(payload);
+      }
       return ResponseEntity.ok(Map.of("success", true));
     }
 
@@ -140,6 +143,84 @@ public class SepayWebhookController {
     return ResponseEntity.ok(Map.of("success", true));
   }
 
+  private ResponseEntity<Map<String, Object>> handleOutgoingPayoutWebhook(
+      SepayWebhookPayload payload) {
+    long payoutOrderCode = resolvePatternCode(payload, PAYOUT_ORDER_CODE_PATTERN);
+    if (payoutOrderCode <= 0) {
+      // Outgoing transfer unrelated to SDIPAY<code...> payout; acknowledge and ignore.
+      return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    String externalId = payload.id() != null ? String.valueOf(payload.id()) : null;
+    long amount = payload.transferAmount() != null ? payload.transferAmount() : 0L;
+    if (inbound.isAlreadyHandled(GATEWAY, externalId)) {
+      return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    String expectedAccount = sepayGateway.expectedAccountNumber();
+    if (expectedAccount != null && !expectedAccount.isBlank()) {
+      String actualAccount = payload.accountNumber() != null ? payload.accountNumber().trim() : "";
+      if (!expectedAccount.trim().equalsIgnoreCase(actualAccount)) {
+        log.warn(
+            "Ignoring Sepay payout webhook {}: accountNumber '{}' does not match configured outgoing account",
+            externalId,
+            actualAccount);
+        record(
+            payload,
+            externalId,
+            payoutOrderCode,
+            amount,
+            Status.REJECTED,
+            "ACCOUNT_MISMATCH: received " + actualAccount);
+        return ResponseEntity.ok(Map.of("success", true));
+      }
+    }
+
+    String reference =
+        payload.referenceCode() != null && !payload.referenceCode().isBlank()
+            ? payload.referenceCode().trim()
+            : ("SEPAY-OUT-" + payload.id());
+
+    try {
+      contractWorkflowService.applySepayWebhookPayout(payoutOrderCode, amount, reference);
+      record(payload, externalId, payoutOrderCode, amount, Status.APPLIED, null);
+    } catch (BusinessException ex) {
+      log.warn(
+          "Rejected Sepay payout webhook for payoutOrderCode {}: {} - {}",
+          payoutOrderCode,
+          ex.code(),
+          ex.getMessage());
+      Status status =
+          switch (ex.code()) {
+            case "PAYOUT_AMOUNT_MISMATCH" -> Status.AMOUNT_MISMATCH;
+            case "OCCURRENCE_NOT_FOUND" -> Status.ORDER_NOT_FOUND;
+            default -> Status.REJECTED;
+          };
+      record(
+          payload, externalId, payoutOrderCode, amount, status, ex.code() + ": " + ex.getMessage());
+      if (status == Status.REJECTED) {
+        return ResponseEntity.status(ex.status())
+            .body(Map.of("success", false, "message", ex.code()));
+      }
+      return ResponseEntity.ok(Map.of("success", true));
+    } catch (RuntimeException ex) {
+      log.error(
+          "Unexpected error applying Sepay payout webhook for payoutOrderCode {}",
+          payoutOrderCode,
+          ex);
+      record(
+          payload,
+          externalId,
+          payoutOrderCode,
+          amount,
+          Status.ERROR,
+          ex.getClass().getSimpleName());
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body(Map.of("success", false, "message", "INTERNAL_ERROR"));
+    }
+    return ResponseEntity.ok(Map.of("success", true));
+  }
+
   private void record(
       SepayWebhookPayload payload,
       String externalId,
@@ -174,16 +255,19 @@ public class SepayWebhookController {
   }
 
   private static long resolveOrderCode(SepayWebhookPayload payload) {
+    return resolvePatternCode(payload, ORDER_CODE_PATTERN);
+  }
+
+  private static long resolvePatternCode(SepayWebhookPayload payload, Pattern pattern) {
     // Sepay's `code` field is its own payment code (for example SEVN63DC8E5C), not the occurrence
     // order code. The order code only exists inside the transfer description we generate as
-    // SDI<orderCode>, so every candidate is matched against that pattern instead of being parsed
-    // as a bare number.
+    // SDI<orderCode> / SDIPAY<orderCode>.
     for (String candidate :
         new String[] {payload.content(), payload.description(), payload.code()}) {
       if (candidate == null) {
         continue;
       }
-      Matcher matcher = ORDER_CODE_PATTERN.matcher(candidate);
+      Matcher matcher = pattern.matcher(candidate);
       if (matcher.find()) {
         try {
           return Long.parseLong(matcher.group(1));

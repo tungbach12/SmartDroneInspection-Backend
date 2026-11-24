@@ -50,6 +50,9 @@ public class InspectorPayout {
   @Column(name = "final_payout_amount", precision = 15, scale = 2)
   private java.math.BigDecimal finalPayoutAmount;
 
+  @Column(name = "payout_order_code")
+  private Long payoutOrderCode;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt = Instant.now();
 
@@ -120,6 +123,34 @@ public class InspectorPayout {
     updatedAt = payoutRecordedAt;
   }
 
+  void assignPayoutOrderCode(long orderCode) {
+    if (orderCode <= 0) {
+      throw new IllegalArgumentException("Payout order code must be positive");
+    }
+    this.payoutOrderCode = orderCode;
+    updatedAt = Instant.now();
+  }
+
+  void confirmSepayWebhookPayout(
+      String reference, UUID attributedManagerId, java.math.BigDecimal originalNetAmount) {
+    if (heldForRefund) {
+      throw new IllegalStateException("Inspector payout is held pending refund reconciliation");
+    }
+    if (payoutStatus == OccurrencePayoutStatus.PAID) {
+      if (reference.trim().equals(payoutReference)) {
+        return;
+      }
+      throw new IllegalStateException(
+          "Payout was already recorded with reference " + payoutReference);
+    }
+    payoutStatus = OccurrencePayoutStatus.PAID;
+    finalPayoutAmount = originalNetAmount;
+    payoutReference = reference.trim();
+    payoutRecordedByUserId = attributedManagerId;
+    payoutRecordedAt = Instant.now();
+    updatedAt = payoutRecordedAt;
+  }
+
   boolean isHeldForRefund() {
     return heldForRefund;
   }
@@ -154,6 +185,10 @@ public class InspectorPayout {
 
   public UUID getPayoutRecordedByUserId() {
     return payoutRecordedByUserId;
+  }
+
+  public Long getPayoutOrderCode() {
+    return payoutOrderCode;
   }
 
   public Instant getCreatedAt() {

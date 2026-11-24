@@ -42,6 +42,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -117,6 +118,29 @@ class SepayPaymentIntegrationTest {
                       + "&des=SDI"
                       + orderCode,
                   "SDI" + orderCode,
+                  amount,
+                  String.valueOf(orderCode),
+                  "PENDING");
+            });
+
+    when(sepayGateway.createPayoutLink(anyLong(), anyLong(), anyString(), anyString(), any()))
+        .thenAnswer(
+            invocation -> {
+              long orderCode = invocation.getArgument(0);
+              long amount = invocation.getArgument(1);
+              String acc = invocation.getArgument(2);
+              String bank = invocation.getArgument(3);
+              return new SepayGateway.SepayPaymentLink(
+                  orderCode,
+                  "https://vietqr.app/img?acc="
+                      + acc
+                      + "&bank="
+                      + bank
+                      + "&amount="
+                      + amount
+                      + "&des=SDIPAY"
+                      + orderCode,
+                  "SDIPAY" + orderCode,
                   amount,
                   String.valueOf(orderCode),
                   "PENDING");
@@ -475,10 +499,93 @@ class SepayPaymentIntegrationTest {
         .andExpect(jsonPath("$.code").value("PAYMENT_NOT_DUE"));
   }
 
+  @Test
+  @DisplayName("Automatic SePay payout QR and outgoing webhook settle payout and unlock publish")
+  void testSepayAutomaticPayoutAndPublish() throws Exception {
+    PreparedInspection prepared = prepareInspectionReadyForPayment(true);
+    UUID requestId = prepared.requestId();
+    UUID occurrenceId = prepared.occurrenceId();
+    UUID inspectionId = prepared.inspectionId();
+    UUID reportVersionId = prepared.reportVersionId();
+
+    // Create SePay VietQR payout link (auto-targets inspector bank details)
+    String payoutResp =
+        mockMvc
+            .perform(
+                post("/api/v1/inspections/{inspectionId}/sepay/create-payout-link", inspectionId)
+                    .with(principal(managerUserId, "MANAGER")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.orderCode").isNumber())
+            .andExpect(jsonPath("$.data.qrCode").value(Matchers.startsWith("SDIPAY")))
+            .andExpect(
+                jsonPath("$.data.checkoutUrl").value(Matchers.containsString("acc=0987654321")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    long payoutOrderCode = objectMapper.readTree(payoutResp).at("/data/orderCode").longValue();
+    long payoutAmount = objectMapper.readTree(payoutResp).at("/data/amount").longValue();
+
+    // Publishing is still blocked before outgoing SePay webhook arrives
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("INSPECTOR_PAYOUT_REQUIRED"));
+
+    // Simulate SePay outgoing transfer webhook (transferType = out)
+    Map<String, Object> outgoingWebhook = new LinkedHashMap<>();
+    outgoingWebhook.put("id", 777001L);
+    outgoingWebhook.put("gateway", "TPBank");
+    outgoingWebhook.put("transactionDate", "2027-03-01 09:30:00");
+    outgoingWebhook.put("accountNumber", "07723264801");
+    outgoingWebhook.put("subAccount", "");
+    outgoingWebhook.put("code", "SEPAYOUT777");
+    outgoingWebhook.put("content", "SDIPAY" + payoutOrderCode + " chi tra inspector");
+    outgoingWebhook.put("transferType", "out");
+    outgoingWebhook.put("description", "Platform outgoing payout");
+    outgoingWebhook.put("transferAmount", payoutAmount);
+    outgoingWebhook.put("accumulated", 50000000L);
+    outgoingWebhook.put("referenceCode", "FT-SEPAY-OUT-777");
+
+    mockMvc
+        .perform(
+            post("/api/v1/webhooks/sepay")
+                .header("Authorization", "Apikey test-sepay-api-key")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(outgoingWebhook)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ServiceRequestOccurrence settled = occurrences.findById(occurrenceId).orElseThrow();
+    assertThat(settled.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settled.getPayoutReference()).isEqualTo("FT-SEPAY-OUT-777");
+
+    // Publish to Customer succeeds without any manual UNC entry
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
+  }
+
   private record PreparedInspection(
       UUID requestId, UUID occurrenceId, UUID inspectionId, UUID reportVersionId) {}
 
   private PreparedInspection prepareInspectionReadyForPayment() throws Exception {
+    return prepareInspectionReadyForPayment(false);
+  }
+
+  private PreparedInspection prepareInspectionReadyForPayment(boolean stopAtApproved)
+      throws Exception {
     ZoneId utc = ZoneId.of("UTC");
     LocalDate reqDate = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(20);
     Instant start = reqDate.atTime(9, 0).atZone(utc).toInstant();
@@ -711,6 +818,10 @@ class SepayPaymentIntegrationTest {
                 .param("approve", "true"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    if (stopAtApproved) {
+      return new PreparedInspection(requestId, occurrenceId, inspectionId, reportVersionId);
+    }
 
     mockMvc
         .perform(

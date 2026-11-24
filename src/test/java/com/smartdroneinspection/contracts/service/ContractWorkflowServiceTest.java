@@ -2385,6 +2385,75 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void sepayPayoutLinkAndOutgoingWebhookSettleRoundedNetPayoutWithoutManualUnc() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    ServiceRequest request =
+        requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(
+            requestId,
+            1,
+            Instant.parse("2027-02-01T09:00:00Z"),
+            Instant.parse("2027-02-01T10:00:00Z"));
+    ReflectionTestUtils.setField(occurrence, "id", occurrenceId);
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
+    occurrence.snapshotFinance(
+        new BigDecimal("12000000.00"),
+        new BigDecimal("10.00"),
+        new BigDecimal("15.00"),
+        new BigDecimal("10.00"));
+    occurrence.markPayoutEligible();
+
+    when(requests.findById(requestId)).thenReturn(Optional.of(request));
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+    when(occurrences.findWithLockByInspectionId(inspectionId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findWithLockById(occurrenceId)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByPayoutOrderCode(any())).thenReturn(Optional.empty());
+    when(occurrences.findByGatewayOrderCode(any())).thenReturn(Optional.empty());
+    when(sepayGateway.createPayoutLink(
+            any(long.class), eq(8345455L), eq("0123456789"), eq("Vietcombank"), eq("PHAM VAN BAY")))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new com.smartdroneinspection.contracts.gateway.SepayGateway.SepayPaymentLink(
+                  code,
+                  "https://vietqr.app/img?acc=0123456789&bank=VCB&amount=8345455&des=SDIPAY" + code,
+                  "SDIPAY" + code,
+                  8345455L,
+                  String.valueOf(code),
+                  "PENDING");
+            });
+
+    var checkout = service.createSepayPayoutLink(managerId, inspectionId);
+    assertThat(checkout.amount()).isEqualTo(8345455L);
+    assertThat(checkout.qrCode()).isEqualTo("SDIPAY" + checkout.orderCode());
+    assertThat(occurrence.getPayoutOrderCode()).isEqualTo(checkout.orderCode());
+
+    when(occurrences.findWithLockByPayoutOrderCode(checkout.orderCode()))
+        .thenReturn(Optional.of(occurrence));
+
+    // Amount mismatch throws 400
+    assertThatThrownBy(
+            () -> service.applySepayWebhookPayout(checkout.orderCode(), 8000000L, "FT999"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            ex -> assertThat(((BusinessException) ex).code()).isEqualTo("PAYOUT_AMOUNT_MISMATCH"));
+
+    // Matching amount automatically settles payout & attributes assigned manager
+    service.applySepayWebhookPayout(checkout.orderCode(), 8345455L, "FT261124-AUTO");
+    assertThat(occurrence.getPayoutStatus())
+        .isEqualTo(ServiceRequestOccurrence.OccurrencePayoutStatus.PAID);
+    assertThat(occurrence.getPayoutReference()).isEqualTo("FT261124-AUTO");
+    assertThat(occurrence.getPayout().getPayoutRecordedByUserId()).isEqualTo(managerId);
+    assertThat(service.requiresPayoutBeforePublish(inspectionId)).isFalse();
+
+    // Idempotent duplicate webhook
+    service.applySepayWebhookPayout(checkout.orderCode(), 8345455L, "FT261124-AUTO");
+  }
+
+  @Test
   void unpaidSepayPaymentOrderCanBeClearedWithoutGatewayConfirmation() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();

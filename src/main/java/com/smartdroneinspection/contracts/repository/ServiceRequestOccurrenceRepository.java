@@ -161,6 +161,17 @@ public interface ServiceRequestOccurrenceRepository
       @Param("orderCode") Long orderCode);
 
   @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payout payout where payout.payoutOrderCode = :payoutOrderCode")
+  Optional<ServiceRequestOccurrence> findByPayoutOrderCode(
+      @Param("payoutOrderCode") Long payoutOrderCode);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "select occurrence from ServiceRequestOccurrence occurrence join occurrence.payout payout where payout.payoutOrderCode = :payoutOrderCode")
+  Optional<ServiceRequestOccurrence> findWithLockByPayoutOrderCode(
+      @Param("payoutOrderCode") Long payoutOrderCode);
+
+  @Query(
       "select count(occurrence) > 0 from ServiceRequestOccurrence occurrence "
           + "where (occurrence.inspectorId = :inspectorId or occurrence.droneId = :droneId) "
           + "and occurrence.status = com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrenceStatus.ASSIGNED "

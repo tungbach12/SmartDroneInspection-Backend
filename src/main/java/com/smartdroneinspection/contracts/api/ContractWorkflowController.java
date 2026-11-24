@@ -419,6 +419,15 @@ public class ContractWorkflowController {
         workflow.createSepayPaymentLink(actorId(jwt), requestId, occurrenceId));
   }
 
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/sepay/create-payout-link")
+  public ApiResponse<SepayPaymentLinkResponse> createSepayPayoutLink(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId) {
+    return ApiResponse.success(
+        workflow.createSepayPayoutLink(actorId(jwt), requestId, occurrenceId));
+  }
+
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/vnpay/create-payment-url")
   public ApiResponse<VnPayPaymentLinkResponse> createVnPayPaymentUrl(
       @AuthenticationPrincipal Jwt jwt,

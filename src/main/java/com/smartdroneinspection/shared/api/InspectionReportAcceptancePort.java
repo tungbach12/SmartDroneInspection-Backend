@@ -35,6 +35,11 @@ public interface InspectionReportAcceptancePort {
   /** Creates a Sepay VietQR code for the occurrence associated with this inspection. */
   SepayCheckoutDetails createSepayPaymentLink(UUID actorId, UUID inspectionId);
 
+  /** Creates a Sepay VietQR payout code targeting the assigned Inspector's bank account. */
+  default SepayCheckoutDetails createSepayPayoutLink(UUID actorId, UUID inspectionId) {
+    throw new UnsupportedOperationException("Sepay payout link creation is not supported");
+  }
+
   /** Creates a VNPay checkout link for the occurrence associated with this inspection. */
   default VnPayCheckoutDetails createVnPayPaymentLink(
       UUID actorId, UUID inspectionId, String clientIp) {

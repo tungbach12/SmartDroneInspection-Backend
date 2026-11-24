@@ -22,6 +22,22 @@ public interface SepayGateway {
       String bankName,
       String accountHolder);
 
+  /** Builds a VietQR image URL targeting the Inspector's receiving bank account for payout. */
+  default SepayPaymentLink createPayoutLink(
+      long payoutOrderCode,
+      long amount,
+      String accountNumber,
+      String bankName,
+      String accountHolder) {
+    return createPaymentLink(
+        payoutOrderCode,
+        amount,
+        "SDIPAY" + payoutOrderCode,
+        accountNumber,
+        bankName,
+        accountHolder);
+  }
+
   /**
    * Verifies authenticity of an incoming Sepay webhook request.
    *
