@@ -2386,9 +2386,10 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
-  void vnPayOrderBlocksRetryWhileLiveAndReleasesOnceExpired() {
+  void onlineGatewaysSwitchAndRetrySmoothlyInBothDirectionsWithoutManualReset() {
     UUID requestId = UUID.randomUUID();
     UUID occurrenceId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
     ServiceRequest request =
         requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 10));
     ServiceRequestOccurrence occurrence =
@@ -2397,6 +2398,7 @@ class ContractWorkflowServiceTest {
             1,
             Instant.parse("2027-02-01T09:00:00Z"),
             Instant.parse("2027-02-01T10:00:00Z"));
+    occurrence.assign(inspectorId, droneId, inspectionId, managerId);
     occurrence.snapshotFinance(new BigDecimal("100000.00"), null, null, null);
     occurrence.acceptReport(UUID.randomUUID(), customerId);
     occurrence.assignVnPayOrder(555001L);
@@ -2409,25 +2411,8 @@ class ContractWorkflowServiceTest {
         .thenReturn(List.of(occurrence));
     when(quotes.findByRequestId(requestId)).thenReturn(Optional.empty());
     when(messages.findByRequestIdOrderByCreatedAtAscIdAsc(requestId)).thenReturn(List.of());
-    when(vnPayGateway.orderLifetimeMinutes()).thenReturn(15);
-
-    // Live order cannot be retried or cancelled
-    assertThatThrownBy(
-            () -> service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1"))
-        .isInstanceOf(BusinessException.class)
-        .extracting("code")
-        .isEqualTo("PAYMENT_ORDER_UNRESOLVED");
-    assertThatThrownBy(() -> service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId))
-        .isInstanceOf(BusinessException.class)
-        .extracting("code")
-        .isEqualTo("PAYMENT_ORDER_UNRESOLVED");
-
-    // Backdate gatewayOrderCreatedAt past lifetime + grace (20 minutes)
-    ReflectionTestUtils.setField(
-        occurrence.getPayment(),
-        "gatewayOrderCreatedAt",
-        Instant.now().minus(java.time.Duration.ofMinutes(25)));
-
+    when(vnPayGateway.resolveReturnUrl(eq(inspectionId.toString()), anyLong(), eq(false)))
+        .thenReturn("http://localhost:8080/api/v1/webhooks/vnpay/return");
     when(vnPayGateway.createPaymentUrl(anyLong(), eq(100000L), anyString(), eq("127.0.0.1"), any()))
         .thenAnswer(
             inv -> {
@@ -2435,16 +2420,39 @@ class ContractWorkflowServiceTest {
               return new VnPayGateway.VnPayPaymentLink(
                   code, "https://sandbox.vnpayment.vn/pay?" + code, 100000L, String.valueOf(code));
             });
+    when(sepayGateway.createPaymentLink(anyLong(), eq(100000L), anyString(), any(), any(), any()))
+        .thenAnswer(
+            inv -> {
+              long code = inv.getArgument(0);
+              return new com.smartdroneinspection.contracts.gateway.SepayGateway.SepayPaymentLink(
+                  code,
+                  "https://qr.sepay.vn/img?des=SDI" + code,
+                  "https://qr.sepay.vn/img?des=SDI" + code,
+                  100000L,
+                  "PENDING",
+                  "sp-" + code);
+            });
 
-    var link = service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
-    assertThat(link.orderCode()).isNotEqualTo(555001L);
-    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(link.orderCode());
+    // Retrying VNPay while an earlier VNPay order is open automatically releases the stale order.
+    var retriedVnPay =
+        service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
+    assertThat(retriedVnPay.orderCode()).isNotEqualTo(555001L);
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(retriedVnPay.orderCode());
 
-    // Backdate the new order and verify manager can clear it once expired
-    ReflectionTestUtils.setField(
-        occurrence.getPayment(),
-        "gatewayOrderCreatedAt",
-        Instant.now().minus(java.time.Duration.ofMinutes(25)));
+    // Switching directly from VNPay -> Sepay automatically clears the open VNPay order.
+    var switchedToSepay = service.createSepayPaymentLink(customerId, requestId, occurrenceId);
+    assertThat(switchedToSepay.orderCode()).isNotEqualTo(retriedVnPay.orderCode());
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("SEPAY");
+    assertThat(occurrence.getGatewayOrderCode()).isEqualTo(switchedToSepay.orderCode());
+
+    // Switching back Sepay -> VNPay works seamlessly too.
+    var switchedBackToVnPay =
+        service.createVnPayPaymentLink(customerId, requestId, occurrenceId, "127.0.0.1");
+    assertThat(switchedBackToVnPay.orderCode()).isNotEqualTo(switchedToSepay.orderCode());
+    assertThat(occurrence.getPaymentMethod()).isEqualTo("VNPAY");
+
+    // Explicit manager cancel clears active VNPay order without waiting for expiry.
     service.cancelUnpaidPaymentOrder(managerId, requestId, occurrenceId);
     assertThat(occurrence.getGatewayOrderCode()).isNull();
     assertThat(occurrence.getPaymentMethod()).isNull();

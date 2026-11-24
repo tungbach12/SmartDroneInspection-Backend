@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smartdroneinspection.contracts.api.VnPayWebhookController;
+import com.smartdroneinspection.contracts.domain.GatewayInboundTransaction;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePayoutStatus;
@@ -365,5 +366,52 @@ class VnPayWebhookAndGatewayTest {
                         + inspectionId
                         + "/settlement?tab=2&payment=success&gateway=vnpay&orderCode="
                         + orderCode));
+  }
+
+  @Test
+  void supersededVnPayOrderIpnIsRecordedInGatewayInboundTransactions() throws Exception {
+    GatewayInboundTransactionService inboundService = mock(GatewayInboundTransactionService.class);
+    MockMvc auditMvc =
+        MockMvcBuilders.standaloneSetup(
+                new VnPayWebhookController(vnPayGateway, workflowService, inboundService))
+            .build();
+
+    long staleOrderCode = 999888L;
+    long agreedVnd = 5000000L;
+    when(occurrences.findWithLockByGatewayOrderCode(staleOrderCode)).thenReturn(Optional.empty());
+
+    Map<String, String> vnpParams = new LinkedHashMap<>();
+    vnpParams.put("vnp_TxnRef", String.valueOf(staleOrderCode));
+    vnpParams.put("vnp_Amount", String.valueOf(agreedVnd * 100L));
+    vnpParams.put("vnp_BankCode", "NCB");
+    vnpParams.put("vnp_ResponseCode", "00");
+    vnpParams.put("vnp_TransactionStatus", "00");
+    vnpParams.put("vnp_TransactionNo", "15001122");
+    String query = VnPayCrypto.buildSignedQueryString(vnpParams, TEST_SECRET);
+    String validHash = query.substring(query.indexOf("&vnp_SecureHash=") + 16);
+
+    auditMvc
+        .perform(
+            get("/api/v1/webhooks/vnpay/ipn")
+                .param("vnp_TxnRef", String.valueOf(staleOrderCode))
+                .param("vnp_Amount", String.valueOf(agreedVnd * 100L))
+                .param("vnp_BankCode", "NCB")
+                .param("vnp_ResponseCode", "00")
+                .param("vnp_TransactionStatus", "00")
+                .param("vnp_TransactionNo", "15001122")
+                .param("vnp_SecureHash", validHash))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.RspCode").value("01"));
+
+    verify(inboundService)
+        .record(
+            org.mockito.ArgumentMatchers.eq("VNPAY"),
+            org.mockito.ArgumentMatchers.eq("15001122"),
+            org.mockito.ArgumentMatchers.eq(staleOrderCode),
+            org.mockito.ArgumentMatchers.eq(agreedVnd),
+            org.mockito.ArgumentMatchers.eq("NCB"),
+            any(),
+            org.mockito.ArgumentMatchers.eq(GatewayInboundTransaction.Status.ORDER_NOT_FOUND),
+            any());
   }
 }

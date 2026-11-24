@@ -1602,19 +1602,10 @@ public class ContractWorkflowService
           "PAYMENT_ORDER_NOT_CANCELLABLE",
           "Only an unpaid due order can be cancelled");
     }
-    if ("SEPAY".equalsIgnoreCase(method)) {
-      // Sepay has no cancel API; the unpaid order can be cleared directly to switch gateways.
-      // Late transfers matching the cleared order code are captured in
+    if ("SEPAY".equalsIgnoreCase(method) || "VNPAY".equalsIgnoreCase(method)) {
+      // Clear any pending online gateway order immediately so customers can retry or switch
+      // payment methods smoothly. Late notifications for superseded order codes are audited in
       // gateway_inbound_transactions.
-    } else if ("VNPAY".equalsIgnoreCase(method)) {
-      // VNPay has no cancel API. Only an order past its checkout lifetime is certain to be
-      // unpayable, so a live order stays blocked to avoid double settlement.
-      if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
-        throw failure(
-            HttpStatus.CONFLICT,
-            "PAYMENT_ORDER_UNRESOLVED",
-            "VNPay order is still payable; wait for it to expire or reconcile with the gateway before clearing the order");
-      }
     } else if (!"MANUAL_WIRE".equalsIgnoreCase(method)) {
       throw failure(
           HttpStatus.CONFLICT,
@@ -1927,12 +1918,8 @@ public class ContractWorkflowService
     long orderCode;
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
       if ("VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
-        if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
-          throw failure(
-              HttpStatus.CONFLICT,
-              "PAYMENT_ORDER_UNRESOLVED",
-              "The existing VNPay order is still payable; complete it or wait for it to expire before switching to Sepay.");
-        }
+        // Customer is switching from VNPay to VietQR/Sepay; release the unpaid VNPay order
+        // immediately so switching works seamlessly without a manual reset.
         occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
         orderCode = generateUniqueGatewayOrderCode();
       } else if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
@@ -2063,24 +2050,16 @@ public class ContractWorkflowService
     }
     long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
-      if ("SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
-        // Sepay has no hosted checkout lock, so switching directly to VNPay clears the VietQR code.
-        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "SEPAY");
-      } else if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      String existingMethod = occurrence.getPaymentMethod();
+      if ("SEPAY".equalsIgnoreCase(existingMethod) || "VNPAY".equalsIgnoreCase(existingMethod)) {
+        // Release the prior unpaid online checkout (whether switching from Sepay or retrying VNPay)
+        // so opening a fresh VNPay checkout always works smoothly without a manual reset.
+        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), existingMethod);
+      } else {
         throw failure(
             HttpStatus.CONFLICT,
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
-      } else {
-        if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
-          throw failure(
-              HttpStatus.CONFLICT,
-              "PAYMENT_ORDER_UNRESOLVED",
-              "The existing VNPay order is still payable; complete it or wait for it to expire before retrying.");
-        }
-        // The previous checkout can no longer be paid at VNPay: release it so the customer can
-        // retry.
-        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
       }
     }
     long orderCode = generateUniqueGatewayOrderCode();
@@ -2104,12 +2083,6 @@ public class ContractWorkflowService
 
     return new VnPayPaymentLinkResponse(
         link.orderCode(), link.checkoutUrl(), link.amount(), link.txnRef());
-  }
-
-  /** Checkout lifetime plus a grace period for a payment landing right at the VNPay deadline. */
-  private java.time.Duration vnPayOrderLifetime() {
-    int minutes = vnPayGateway.orderLifetimeMinutes();
-    return java.time.Duration.ofMinutes((minutes > 0 ? minutes : 15) + 5L);
   }
 
   /**
