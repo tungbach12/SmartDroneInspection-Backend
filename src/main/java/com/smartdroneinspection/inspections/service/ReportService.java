@@ -719,19 +719,8 @@ public class ReportService {
           "Only published reports can be downloaded");
     }
 
-    boolean paymentDue = paymentGate.map(gate -> gate.isPaymentDue(inspectionId)).orElse(false);
-    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
-    boolean isCustomer =
-        actor != null
-            && actor.hasRole(Roles.CUSTOMER)
-            && !actor.hasRole(Roles.ADMIN)
-            && !actor.hasRole(Roles.MANAGER);
-
-    if (isCustomer && paymentDue) {
-      byte[] previewContent = renderArtefact(inspectionId, version, true, Locale.ENGLISH);
-      return pdfResponse(
-          previewContent, "attachment", documentReference(version) + "-unpaid-preview.pdf");
-    }
+    // Payment status never gates access to the published report. Every in-scope actor receives
+    // the official artefact; payment produces the receipt and payout eligibility only.
 
     String objectKey = reportObjectKey(version.getId());
     byte[] content = null;

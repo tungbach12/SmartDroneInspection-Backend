@@ -53,6 +53,7 @@ class ReportServiceReviewerScopeTest {
   @Mock private UserAccess userAccess;
   @Mock private ApplicationEventPublisher events;
   @Mock private EvidenceObjectStore objectStore;
+  @Mock private com.smartdroneinspection.shared.api.InspectionPaymentGate paymentGate;
 
   @Mock
   private com.smartdroneinspection.assets.reportcontext.ReportContextAccess reportContextAccess;
@@ -253,6 +254,70 @@ class ReportServiceReviewerScopeTest {
             org.mockito.ArgumentMatchers.eq("application/pdf"),
             org.mockito.ArgumentMatchers.eq(3L),
             org.mockito.ArgumentMatchers.any());
+  }
+
+  @Test
+  @DisplayName(
+      "Published report downloads the official PDF for an owning Customer while payment is due")
+  void customerDownloadsOfficialPdfWhilePaymentIsDue() throws java.io.IOException {
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+
+    InspectionReport version = new InspectionReport(inspectionId, 1, "{}");
+    ReflectionTestUtils.setField(version, "id", versionId);
+    ReflectionTestUtils.setField(version, "status", ReportStatus.PUBLISHED);
+
+    UserAccess.ActiveUser customer =
+        new UserAccess.ActiveUser(
+            customerId,
+            Set.of(Roles.CUSTOMER),
+            "CUSTOMER",
+            "Customer",
+            "customer@test.test",
+            null,
+            null,
+            null,
+            null);
+
+    when(userAccess.findActiveUser(org.mockito.ArgumentMatchers.any()))
+        .thenAnswer(
+            invocation ->
+                customerId.equals(invocation.getArgument(0))
+                    ? Optional.of(customer)
+                    : Optional.empty());
+    when(evidenceService.requireInspectionInScope(customerId, inspectionId)).thenReturn(inspection);
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(versions.findById(versionId)).thenReturn(Optional.of(version));
+    when(objectStore.open("reports/" + versionId + ".pdf"))
+        .thenThrow(new java.io.FileNotFoundException());
+    when(renderPort.render(org.mockito.ArgumentMatchers.any())).thenReturn(new byte[] {4, 5, 6});
+
+    ReportService serviceWithGate =
+        new ReportService(
+            inspections,
+            reportContextAccess,
+            jdbcTemplate,
+            evidence,
+            findings,
+            fieldSessions,
+            versions,
+            evidenceService,
+            Optional.of(draftPort),
+            renderPort,
+            Optional.of(objectStore),
+            userAccess,
+            events,
+            objectMapper,
+            Optional.of(paymentGate));
+
+    org.springframework.http.ResponseEntity<byte[]> response =
+        serviceWithGate.downloadArtefact(customerId, inspectionId, versionId);
+
+    assertThat(response.getBody()).isEqualTo(new byte[] {4, 5, 6});
+    assertThat(response.getHeaders().getContentDisposition().getFilename())
+        .doesNotContain("preview");
+    verifyNoInteractions(paymentGate);
   }
 
   @Test
