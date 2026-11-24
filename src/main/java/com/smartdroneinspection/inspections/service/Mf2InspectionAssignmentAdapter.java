@@ -17,6 +17,7 @@ import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -180,6 +181,30 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
       Instant plannedEndAt,
       UUID assignedByUserId,
       UUID sourceInspectionId) {
+    return assign(
+        ownerCustomerId,
+        assetId,
+        inspectorId,
+        droneId,
+        plannedStartAt,
+        plannedEndAt,
+        assignedByUserId,
+        sourceInspectionId,
+        null);
+  }
+
+  @Override
+  @Transactional
+  public UUID assign(
+      UUID ownerCustomerId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID assignedByUserId,
+      UUID sourceInspectionId,
+      List<String> inspectionItems) {
     users
         .findActiveUser(assignedByUserId)
         .filter(user -> user.hasRole(Roles.MANAGER))
@@ -272,6 +297,11 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
     inspection.markPartnerAssignment();
     inspection.markPendingAcceptance();
     inspection.markCustomerOwned(effectiveOwnerCustomerId);
+    List<String> resolvedItems =
+        inspectionItems != null && !inspectionItems.isEmpty()
+            ? inspectionItems
+            : asset.getInspectionItems();
+    inspection.setInspectionItems(resolvedItems);
     Inspection saved = inspections.saveAndFlush(inspection);
     if (sourceInspectionId != null) {
       reinspectionVerifications.ifPresent(

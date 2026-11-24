@@ -13,6 +13,7 @@ import com.smartdroneinspection.contracts.api.dto.request.IssueServiceQuoteReque
 import com.smartdroneinspection.contracts.api.dto.request.ReconcileRefundAllocationRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordInspectorReceivableRecoveryRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RecordOccurrencePayoutRequest;
+import com.smartdroneinspection.contracts.api.dto.request.UpdateServiceRequestInspectionItemsRequest;
 import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
@@ -157,6 +158,15 @@ public class ContractWorkflowController {
       @Valid @RequestBody EvaluatePartnerCandidatesRequest request) {
     return ApiResponse.success(
         workflow.evaluatePartnerCandidates(actorId(jwt), requestId, request));
+  }
+
+  @PutMapping("/{requestId}/inspection-items")
+  public ApiResponse<ServiceRequestResponse> updateInspectionItems(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody UpdateServiceRequestInspectionItemsRequest request) {
+    return ApiResponse.success(
+        workflow.updateInspectionItems(actorId(jwt), requestId, request.inspectionItems()));
   }
 
   @PutMapping("/{requestId}/quote")

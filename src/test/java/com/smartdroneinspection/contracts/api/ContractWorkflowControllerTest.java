@@ -249,4 +249,23 @@ class ContractWorkflowControllerTest {
                     "$.data[0].capabilityFit")
                 .value("MATCH"));
   }
+
+  @Test
+  void updatesInspectionItemsForServiceRequest() throws Exception {
+    mockMvc
+        .perform(
+            put("/api/v1/contracts/requests/{requestId}/inspection-items", requestId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "inspectionItems": ["Roof membrane", "Anchor bolts"]
+                    }
+                    """))
+        .andExpect(status().isOk());
+
+    verify(workflow)
+        .updateInspectionItems(
+            managerId, requestId, java.util.List.of("Roof membrane", "Anchor bolts"));
+  }
 }

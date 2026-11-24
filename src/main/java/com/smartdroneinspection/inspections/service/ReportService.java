@@ -1512,7 +1512,8 @@ public class ReportService {
 
     return new ReportDraftPort.DraftContext(
         new InspectionSummary(
-            reportIdentity == null ? List.of() : reportIdentity.inspectionItems(),
+            Inspection.resolveInspectionItems(
+                inspection, reportIdentity == null ? List.of() : reportIdentity.inspectionItems()),
             inspection.getFlightPermitFileName(),
             inspection.getPlannedStartAt() == null
                 ? null
@@ -1750,11 +1751,12 @@ public class ReportService {
           .append(inspection.getFlightPermitFileName())
           .append('\n');
     }
-    if (identity != null
-        && identity.inspectionItems() != null
-        && !identity.inspectionItems().isEmpty()) {
+    List<String> items =
+        Inspection.resolveInspectionItems(
+            inspection, identity == null ? List.of() : identity.inspectionItems());
+    if (!items.isEmpty()) {
       content.append(ReportHtmlTemplate.localized(locale, "Included components")).append(":\n");
-      for (String item : identity.inspectionItems()) {
+      for (String item : items) {
         content.append(" - ").append(item).append('\n');
       }
     }
@@ -1834,7 +1836,8 @@ public class ReportService {
         drone == null ? null : drone.manufacturer(),
         drone == null ? null : drone.model(),
         inspection.getFlightPermitFileName(),
-        identity == null ? List.of() : identity.inspectionItems(),
+        Inspection.resolveInspectionItems(
+            inspection, identity == null ? List.of() : identity.inspectionItems()),
         sessions.stream().map(session -> fieldSessionSummary(session, drone, locale)).toList(),
         ReportHtmlTemplate.localized(
             locale,

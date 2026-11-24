@@ -13,7 +13,11 @@ import java.util.UUID;
 public record ServiceRequestResponse(
     UUID id,
     UUID ownerCustomerId,
+    String ownerCustomerName,
     UUID assetId,
+    String assetName,
+    String assetCode,
+    String assetLocationText,
     String description,
     LocalDate requestedFrom,
     LocalDate requestedUntil,
@@ -43,13 +47,18 @@ public record ServiceRequestResponse(
     List<ServiceRequestOccurrenceResponse> occurrences,
     List<ServiceRequestMessageResponse> messages,
     UUID sourceInspectionId,
+    List<String> inspectionItems,
     boolean canClaim) {
 
   public static ServiceRequestResponse forAssignmentRegistry(ServiceRequest request) {
     return new ServiceRequestResponse(
         request.getId(),
         null,
+        null,
         request.getAssetId(),
+        null,
+        null,
+        null,
         request.getDescription(),
         request.getRequestedFrom(),
         request.getRequestedUntil(),
@@ -79,11 +88,37 @@ public record ServiceRequestResponse(
         List.of(),
         List.of(),
         request.getSourceInspectionId(),
+        List.of(),
         false);
   }
 
   public static ServiceRequestResponse from(
       ServiceRequest request,
+      String ownerCustomerName,
+      ServiceRequestQuoteResponse currentQuote,
+      ServiceManagerContactResponse serviceManager,
+      List<ServiceRequestOccurrenceResponse> occurrences,
+      List<ServiceRequestMessageResponse> messages,
+      boolean canClaim) {
+    return from(
+        request,
+        ownerCustomerName,
+        null,
+        null,
+        null,
+        currentQuote,
+        serviceManager,
+        occurrences,
+        messages,
+        canClaim);
+  }
+
+  public static ServiceRequestResponse from(
+      ServiceRequest request,
+      String ownerCustomerName,
+      String assetName,
+      String assetCode,
+      String assetLocationText,
       ServiceRequestQuoteResponse currentQuote,
       ServiceManagerContactResponse serviceManager,
       List<ServiceRequestOccurrenceResponse> occurrences,
@@ -92,7 +127,11 @@ public record ServiceRequestResponse(
     return new ServiceRequestResponse(
         request.getId(),
         request.getOwnerCustomerId(),
+        ownerCustomerName,
         request.getAssetId(),
+        assetName,
+        assetCode,
+        assetLocationText,
         request.getDescription(),
         request.getRequestedFrom(),
         request.getRequestedUntil(),
@@ -122,6 +161,7 @@ public record ServiceRequestResponse(
         List.copyOf(occurrences),
         List.copyOf(messages),
         request.getSourceInspectionId(),
+        List.copyOf(request.getInspectionItems()),
         canClaim);
   }
 }

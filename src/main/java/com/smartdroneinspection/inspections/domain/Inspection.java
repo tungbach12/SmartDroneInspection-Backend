@@ -15,8 +15,14 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "inspections")
@@ -60,6 +66,10 @@ public class Inspection {
 
   @Column(name = "source_inspection_id")
   private UUID sourceInspectionId;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "inspection_items", columnDefinition = "jsonb", nullable = false)
+  private List<String> inspectionItems = new ArrayList<>();
 
   @Column(name = "findings_confirmed_at")
   private Instant findingsConfirmedAt;
@@ -678,5 +688,37 @@ public class Inspection {
     }
     this.status = nextStatus;
     this.updatedAt = Instant.now();
+  }
+
+  public List<String> getInspectionItems() {
+    return inspectionItems == null ? List.of() : Collections.unmodifiableList(inspectionItems);
+  }
+
+  public void setInspectionItems(List<String> items) {
+    if (items == null || items.isEmpty()) {
+      this.inspectionItems = new ArrayList<>();
+    } else {
+      LinkedHashSet<String> cleaned = new LinkedHashSet<>();
+      for (String item : items) {
+        if (item == null) continue;
+        String trimmed = item.trim();
+        if (!trimmed.isEmpty()) {
+          cleaned.add(trimmed);
+        }
+      }
+      this.inspectionItems = new ArrayList<>(cleaned);
+    }
+    this.updatedAt = Instant.now();
+  }
+
+  public static List<String> resolveInspectionItems(
+      Inspection inspection, List<String> assetFallback) {
+    if (inspection != null) {
+      List<String> own = inspection.getInspectionItems();
+      if (own != null && !own.isEmpty()) {
+        return own;
+      }
+    }
+    return assetFallback == null ? List.of() : List.copyOf(assetFallback);
   }
 }

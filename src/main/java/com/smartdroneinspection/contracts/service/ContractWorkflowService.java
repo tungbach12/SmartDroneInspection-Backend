@@ -37,6 +37,7 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
 import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
+import com.smartdroneinspection.contracts.events.ServiceRequestCreatedEvent;
 import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
@@ -66,6 +67,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -460,15 +464,29 @@ public class ContractWorkflowService
       throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", exception.getMessage());
     }
     request.markCustomerOwned(actor.id());
-    return toResponse(requests.saveAndFlush(request));
+    ServiceRequest saved = requests.saveAndFlush(request);
+    if (events != null) {
+      events.publishEvent(
+          new ServiceRequestCreatedEvent(
+              saved.getId(),
+              saved.getOwnerCustomerId(),
+              saved.getDescription(),
+              saved.getRequestedFrom()));
+    }
+    return toResponse(saved);
   }
 
   @Transactional(readOnly = true)
   public List<ServiceRequestResponse> list(UUID actorId) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.CUSTOMER) {
-      return requests.findByOwnerCustomerIdOrderByCreatedAtDesc(actor.ownerCustomerId()).stream()
-          .map(request -> toResponse(request, true, null, true))
+      List<ServiceRequest> customerRequests =
+          requests.findByOwnerCustomerIdOrderByCreatedAtDesc(actor.ownerCustomerId());
+      Map<UUID, Asset> assetById = loadAssetMap(customerRequests);
+      return customerRequests.stream()
+          .map(
+              request ->
+                  toResponse(request, true, null, true, null, assetById.get(request.getAssetId())))
           .toList();
     }
     if (actor.hasRole(Roles.ADMIN)) {
@@ -477,7 +495,10 @@ public class ContractWorkflowService
           .toList();
     }
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
-      return requests.findManagerQueue(actor.id()).stream()
+      List<ServiceRequest> queue = requests.findManagerQueue(actor.id());
+      Map<UUID, Asset> assetById = loadAssetMap(queue);
+      Map<UUID, String> customerNameById = loadCustomerNameMap(queue);
+      return queue.stream()
           .map(
               request ->
                   withAssignmentOptions(
@@ -487,7 +508,9 @@ public class ContractWorkflowService
                           false,
                           actor,
                           request.getAssignedManagerId() != null
-                              && request.getAssignedManagerId().equals(actor.id()))))
+                              && request.getAssignedManagerId().equals(actor.id()),
+                          customerNameById.get(request.getOwnerCustomerId()),
+                          assetById.get(request.getAssetId()))))
           .toList();
     }
     throw forbidden();
@@ -507,12 +530,22 @@ public class ContractWorkflowService
     boolean isManager = actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER;
     boolean includeManagerProfile = includeManagerContact && request.getAssignedManagerId() != null;
     boolean managerOwnsRequest = isManager && request.getAssignedManagerId() != null;
+    // Only the Manager detail needs the customer label for its persistent asset overview, so the
+    // lookup stays off the list path and does not turn it into an N+1 query.
+    String ownerCustomerName =
+        isManager
+            ? users
+                .findActiveUser(request.getOwnerCustomerId())
+                .map(UserAccess.ActiveUser::fullName)
+                .orElse(null)
+            : null;
     ServiceRequestResponse response =
         toResponse(
             request,
             includeManagerProfile,
             isManager ? actor : null,
-            !isManager || managerOwnsRequest);
+            !isManager || managerOwnsRequest,
+            ownerCustomerName);
     return isManager ? withAssignmentOptions(actor, response) : response;
   }
 
@@ -881,7 +914,7 @@ public class ContractWorkflowService
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManager(manager, requestId);
     requireAssignedManager(request, manager);
-    requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
+    requireQuoteFirstOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.plannedStartAt());
     }
@@ -925,7 +958,7 @@ public class ContractWorkflowService
       throw failure(
           HttpStatus.CONFLICT, "QUOTE_STATE_INVALID", "Request quote state is inconsistent");
     }
-    requireRequestedOccurrenceWindow(
+    requireQuoteFirstOccurrenceWindow(
         request, input.firstOccurrenceStartAt(), input.firstOccurrenceEndAt());
     if (request.getRequestType() == RequestType.RECURRING) {
       validateRecurringQuoteSchedule(request, input.firstOccurrenceStartAt());
@@ -965,8 +998,34 @@ public class ContractWorkflowService
     } catch (IllegalArgumentException | IllegalStateException | ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "QUOTE_INVALID", exception.getMessage());
     }
+    if (input.inspectionItems() != null) {
+      request.setInspectionItems(input.inspectionItems());
+    }
     requests.saveAndFlush(request);
     recordQuoteAudit(manager, request, quote, previousPrice, previousStatus);
+    return toResponse(request);
+  }
+
+  /** Replaces the per-request inspection checkpoints managed by the assigned Service Manager. */
+  @Transactional
+  public ServiceRequestResponse updateInspectionItems(
+      UUID actorId, UUID requestId, List<String> inspectionItems) {
+    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
+    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    requireAssignedManager(request, manager);
+    boolean anyDispatched =
+        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId).stream()
+            .anyMatch(occ -> occ.getInspectionId() != null);
+    if (anyDispatched
+        || request.getStatus() == ServiceRequest.ServiceRequestStatus.ASSIGNED
+        || request.getStatus() == ServiceRequest.ServiceRequestStatus.CANCELLED) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "CHECKPOINTS_LOCKED",
+          "Inspection checkpoints cannot be modified after dispatch has started");
+    }
+    request.setInspectionItems(inspectionItems);
+    requests.saveAndFlush(request);
     return toResponse(request);
   }
 
@@ -1179,7 +1238,6 @@ public class ContractWorkflowService
           "Service request must have a signed contract attached before assignment");
     }
 
-    requireRequestedOccurrenceWindow(request, input.plannedStartAt(), input.plannedEndAt());
     Map<String, Object> acceptedSnapshot = request.getAcceptedTermsSnapshot();
     if (acceptedSnapshot == null) {
       throw failure(
@@ -1187,6 +1245,20 @@ public class ContractWorkflowService
           "ACCEPTED_TERMS_MISSING",
           "The accepted quote snapshot is required before dispatch");
     }
+    ServiceRequestQuote acceptedQuote =
+        quotes
+            .findByRequestId(requestId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.CONFLICT,
+                        "QUOTE_NOT_FOUND",
+                        "The accepted quote is required before dispatch"));
+    requireQuotedOccurrenceWindow(
+        request,
+        acceptedQuote.getFirstOccurrenceStartAt(),
+        input.plannedStartAt(),
+        input.plannedEndAt());
     List<String> acceptedFeatures = stringList(acceptedSnapshot.get("requiredDroneFeatureCodes"));
     partners.validateRequiredDroneFeatureCodes(acceptedFeatures);
     Asset dispatchAsset =
@@ -1245,25 +1317,42 @@ public class ContractWorkflowService
             dispatchAsset,
             acceptedFeatures);
     requireCandidateEligible(lockedCandidate, HttpStatus.CONFLICT);
-    UUID inspectionId =
-        request.getSourceInspectionId() != null
-            ? assignment.assign(
-                request.getOwnerCustomerId(),
-                request.getAssetId(),
-                input.inspectorId(),
-                input.droneId(),
-                input.plannedStartAt(),
-                input.plannedEndAt(),
-                manager.id(),
-                request.getSourceInspectionId())
-            : assignment.assign(
-                request.getOwnerCustomerId(),
-                request.getAssetId(),
-                input.inspectorId(),
-                input.droneId(),
-                input.plannedStartAt(),
-                input.plannedEndAt(),
-                manager.id());
+    List<String> requestItems = request.getInspectionItems();
+    UUID inspectionId;
+    if (!requestItems.isEmpty()) {
+      inspectionId =
+          assignment.assign(
+              request.getOwnerCustomerId(),
+              request.getAssetId(),
+              input.inspectorId(),
+              input.droneId(),
+              input.plannedStartAt(),
+              input.plannedEndAt(),
+              manager.id(),
+              request.getSourceInspectionId(),
+              requestItems);
+    } else if (request.getSourceInspectionId() != null) {
+      inspectionId =
+          assignment.assign(
+              request.getOwnerCustomerId(),
+              request.getAssetId(),
+              input.inspectorId(),
+              input.droneId(),
+              input.plannedStartAt(),
+              input.plannedEndAt(),
+              manager.id(),
+              request.getSourceInspectionId());
+    } else {
+      inspectionId =
+          assignment.assign(
+              request.getOwnerCustomerId(),
+              request.getAssetId(),
+              input.inspectorId(),
+              input.droneId(),
+              input.plannedStartAt(),
+              input.plannedEndAt(),
+              manager.id());
+    }
     occurrence.assign(
         input.inspectorId(),
         input.droneId(),
@@ -2818,9 +2907,15 @@ public class ContractWorkflowService
 
     for (int index = 0; index < count; index++) {
       LocalDate date = index == 0 ? firstDate : recurrenceDate(request, firstDate, index);
-      if (date.isAfter(request.getRequestedUntil())
-          || (request.getRecurrenceEndDate() != null
-              && date.isAfter(request.getRecurrenceEndDate()))) {
+      // An end-date recurring term stays on the customer-selected end date. A one-time quote may
+      // move later and a count-based term shifts with its first date, so only the end-date case is
+      // bounded by the original requested window.
+      boolean boundedByCustomerEndDate =
+          request.getRequestType() == RequestType.RECURRING && request.getOccurrenceCount() == null;
+      if (boundedByCustomerEndDate
+          && (date.isAfter(request.getRequestedUntil())
+              || (request.getRecurrenceEndDate() != null
+                  && date.isAfter(request.getRecurrenceEndDate())))) {
         throw failure(
             HttpStatus.BAD_REQUEST,
             "RECURRENCE_INVALID",
@@ -2859,53 +2954,49 @@ public class ContractWorkflowService
   private void validateRecurringQuoteSchedule(ServiceRequest request, Instant firstStartAt) {
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = firstStartAt.atZone(zone).toLocalDate();
-    if ("MONTH".equals(request.getRecurrenceUnit())
-        && !firstDate.equals(request.getRequestedFrom())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "The first quoted occurrence must match the customer-requested start date");
-    }
     if (firstDate.isBefore(request.getRequestedFrom())) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "RECURRENCE_INVALID",
           "The first quoted occurrence cannot be earlier than the requested start date");
     }
-    LocalDate lastDate =
-        request.getOccurrenceCount() != null
-            ? recurrenceDate(request, request.getRequestedFrom(), request.getOccurrenceCount() - 1)
-            : request.getRecurrenceEndDate();
-    if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "The recurring schedule contract term has changed; create a new request with a valid end date");
-    }
-    LocalDate occurrenceEnd = lastDate;
-    if (request.getOccurrenceCount() == null) {
-      occurrenceEnd =
-          firstDate.isAfter(request.getRecurrenceEndDate())
-              ? firstDate
-              : request.getRecurrenceEndDate();
+    LocalDate occurrenceEnd;
+    if (request.getOccurrenceCount() != null) {
+      // The customer bought a fixed number of visits. Moving the first date shifts the whole term.
+      occurrenceEnd = recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1);
+    } else {
+      // The customer chose an end date. It stays fixed; a later start must still fit two visits.
+      occurrenceEnd = request.getRecurrenceEndDate();
+      if (occurrenceEnd == null || occurrenceEnd.isAfter(request.getRequestedUntil())) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The recurring schedule contract term has changed; create a new request with a valid end date");
+      }
+      if (firstDate.isAfter(occurrenceEnd)) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The first quoted occurrence must be on or before the customer-selected end date");
+      }
     }
     int count = 0;
     for (int index = 0; index <= 100; index++) {
       LocalDate date = recurrenceDate(request, firstDate, index);
       if (date.isAfter(occurrenceEnd)) break;
       count++;
-      if (count > 100) {
-        throw failure(
-            HttpStatus.BAD_REQUEST,
-            "RECURRENCE_INVALID",
-            "The recurring request cannot contain more than 100 inspection occurrences");
-      }
     }
     if (count < 2) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "RECURRENCE_INVALID",
-          "The recurring request must contain at least two inspection occurrences");
+          "The revised schedule must keep at least two inspection occurrences");
+    }
+    if (count > 100) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "RECURRENCE_INVALID",
+          "The recurring request cannot contain more than 100 inspection occurrences");
     }
   }
 
@@ -2941,15 +3032,25 @@ public class ContractWorkflowService
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate firstDate = quotedStart.atZone(zone).toLocalDate();
     LocalTime firstTime = quotedStart.atZone(zone).toLocalTime();
-    LocalDate lastDate =
-        request.getOccurrenceCount() != null
-            ? recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1)
-            : request.getRecurrenceEndDate();
-    if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "RECURRENCE_INVALID",
-          "The recurring schedule contract term has changed; create a new request with a valid end date");
+    LocalDate lastDate;
+    if (request.getOccurrenceCount() != null) {
+      // A count-based term shifts with the proposed first date.
+      lastDate = recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1);
+    } else {
+      // An end-date term stays fixed on the customer-selected end date.
+      lastDate = request.getRecurrenceEndDate();
+      if (lastDate == null || lastDate.isAfter(request.getRequestedUntil())) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The recurring schedule contract term has changed; create a new request with a valid end date");
+      }
+      if (firstDate.isAfter(lastDate)) {
+        throw failure(
+            HttpStatus.BAD_REQUEST,
+            "RECURRENCE_INVALID",
+            "The first quoted occurrence must be on or before the customer-selected end date");
+      }
     }
 
     List<Instant> starts = new java.util.ArrayList<>();
@@ -3044,7 +3145,12 @@ public class ContractWorkflowService
     }
   }
 
-  private void requireRequestedOccurrenceWindow(
+  /**
+   * The Manager may move the first inspection later than the customer's requested date. The quote
+   * still has to use the customer's daily time window, and an end-date recurring quote may not run
+   * past the customer-selected end date.
+   */
+  private void requireQuoteFirstOccurrenceWindow(
       ServiceRequest request, Instant start, Instant end) {
     if (start == null || end == null || !end.isAfter(start)) {
       throw failure(HttpStatus.BAD_REQUEST, "INVALID_DATES", "Occurrence end must be after start");
@@ -3052,14 +3158,71 @@ public class ContractWorkflowService
     ZoneId zone = ZoneId.of(request.getTimezone());
     LocalDate date = start.atZone(zone).toLocalDate();
     LocalDate endDate = end.minusNanos(1).atZone(zone).toLocalDate();
-    if (date.isBefore(request.getRequestedFrom())
-        || date.isAfter(request.getRequestedUntil())
-        || endDate.isAfter(request.getRequestedUntil())) {
+    if (!date.equals(endDate)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "OUTSIDE_REQUESTED_WINDOW",
-          "Occurrence must fit the requested date range");
+          "The first occurrence must start and end on the same day");
     }
+    if (date.isBefore(request.getRequestedFrom())) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "The first occurrence cannot be earlier than the customer-requested date");
+    }
+    if (request.getRequestType() == RequestType.RECURRING
+        && request.getOccurrenceCount() == null
+        && (request.getRecurrenceEndDate() == null
+            || date.isAfter(request.getRecurrenceEndDate()))) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "The first occurrence must be on or before the customer-selected end date");
+    }
+    requireDailyTimeWindow(request, start, end, zone);
+  }
+
+  /**
+   * Dispatch may adjust the time inside an accepted occurrence but not move it outside the term the
+   * Customer accepted. A count-based recurring term shifts with the quoted first date.
+   */
+  private void requireQuotedOccurrenceWindow(
+      ServiceRequest request, Instant acceptedFirstStartAt, Instant start, Instant end) {
+    if (start == null || end == null || !end.isAfter(start)) {
+      throw failure(HttpStatus.BAD_REQUEST, "INVALID_DATES", "Occurrence end must be after start");
+    }
+    ZoneId zone = ZoneId.of(request.getTimezone());
+    LocalDate date = start.atZone(zone).toLocalDate();
+    LocalDate endDate = end.minusNanos(1).atZone(zone).toLocalDate();
+    if (!date.equals(endDate)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "An occurrence must start and end on the same day");
+    }
+    LocalDate firstDate = acceptedFirstStartAt.atZone(zone).toLocalDate();
+    LocalDate lastDate;
+    if (request.getRequestType() == RequestType.ONE_TIME) {
+      lastDate = firstDate;
+    } else if (request.getOccurrenceCount() != null) {
+      lastDate = recurrenceDate(request, firstDate, request.getOccurrenceCount() - 1);
+    } else {
+      lastDate =
+          request.getRecurrenceEndDate() != null
+              ? request.getRecurrenceEndDate()
+              : request.getRequestedUntil();
+    }
+    if (date.isBefore(firstDate) || date.isAfter(lastDate)) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "OUTSIDE_REQUESTED_WINDOW",
+          "Occurrence must stay inside the accepted quote schedule");
+    }
+    requireDailyTimeWindow(request, start, end, zone);
+  }
+
+  private void requireDailyTimeWindow(
+      ServiceRequest request, Instant start, Instant end, ZoneId zone) {
     LocalTime localStart = start.atZone(zone).toLocalTime();
     LocalTime localEnd = end.atZone(zone).toLocalTime();
     if (localStart.isBefore(request.getWindowStart()) || localEnd.isAfter(request.getWindowEnd())) {
@@ -3193,7 +3356,7 @@ public class ContractWorkflowService
   }
 
   private ServiceRequestResponse toResponse(ServiceRequest request) {
-    return toResponse(request, false, null, false);
+    return toResponse(request, false, null, false, null);
   }
 
   private ServiceRequestResponse toResponse(
@@ -3201,6 +3364,35 @@ public class ContractWorkflowService
       boolean includeManagerContact,
       UserAccess.ActiveUser managerActor,
       boolean includeManagerMessages) {
+    return toResponse(request, includeManagerContact, managerActor, includeManagerMessages, null);
+  }
+
+  private ServiceRequestResponse toResponse(
+      ServiceRequest request,
+      boolean includeManagerContact,
+      UserAccess.ActiveUser managerActor,
+      boolean includeManagerMessages,
+      String ownerCustomerName) {
+    Asset asset =
+        assets != null && request.getAssetId() != null
+            ? assets.findById(request.getAssetId()).orElse(null)
+            : null;
+    return toResponse(
+        request,
+        includeManagerContact,
+        managerActor,
+        includeManagerMessages,
+        ownerCustomerName,
+        asset);
+  }
+
+  private ServiceRequestResponse toResponse(
+      ServiceRequest request,
+      boolean includeManagerContact,
+      UserAccess.ActiveUser managerActor,
+      boolean includeManagerMessages,
+      String ownerCustomerName,
+      Asset asset) {
     boolean managerHasNotClaimed = managerActor != null && request.getAssignedManagerId() == null;
     ServiceRequestQuoteResponse quote =
         managerHasNotClaimed
@@ -3221,21 +3413,85 @@ public class ContractWorkflowService
         managerActor != null
             && !managerActor.hasRole(Roles.ADMIN)
             && request.getAssignedManagerId() == null;
+    List<ServiceRequestOccurrenceResponse> occurrenceResponses = List.of();
+    if (!managerHasNotClaimed) {
+      List<ServiceRequestOccurrence> requestOccurrences =
+          occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId());
+      Map<UUID, String> droneLabels = loadDroneLabels(requestOccurrences);
+      Map<UUID, String> inspectorNames = new HashMap<>();
+      occurrenceResponses =
+          requestOccurrences.stream()
+              .map(
+                  occ ->
+                      toOccurrenceResponse(
+                          occ, request, droneLabels, inspectorNames, managerActor != null))
+              .toList();
+    }
     return ServiceRequestResponse.from(
         request,
+        ownerCustomerName,
+        asset != null ? asset.getName() : null,
+        asset != null ? asset.getCode() : null,
+        asset != null ? asset.getLocationText() : null,
         quote,
         managerContact,
-        managerHasNotClaimed
-            ? List.of()
-            : occurrences.findByRequestIdOrderByOccurrenceIndexAsc(request.getId()).stream()
-                .map(occ -> toOccurrenceResponse(occ, request, managerActor != null))
-                .toList(),
+        occurrenceResponses,
         managerActor != null && (managerHasNotClaimed || !includeManagerMessages)
             ? List.of()
             : messages.findByRequestIdOrderByCreatedAtAscIdAsc(request.getId()).stream()
                 .map(this::toMessageResponse)
                 .toList(),
         canClaim);
+  }
+
+  private Map<UUID, Asset> loadAssetMap(Collection<ServiceRequest> requestList) {
+    if (assets == null || requestList == null || requestList.isEmpty()) {
+      return Map.of();
+    }
+    Set<UUID> assetIds = new HashSet<>();
+    for (ServiceRequest req : requestList) {
+      if (req.getAssetId() != null) {
+        assetIds.add(req.getAssetId());
+      }
+    }
+    if (assetIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, Asset> map = new HashMap<>();
+    for (Asset asset : assets.findAllById(assetIds)) {
+      map.put(asset.getId(), asset);
+    }
+    return map;
+  }
+
+  private Map<UUID, String> loadCustomerNameMap(Collection<ServiceRequest> requestList) {
+    if (users == null || requestList == null || requestList.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, String> names = new HashMap<>();
+    for (ServiceRequest req : requestList) {
+      UUID customerId = req.getOwnerCustomerId();
+      if (customerId != null && !names.containsKey(customerId)) {
+        String fullName =
+            users.findActiveUser(customerId).map(UserAccess.ActiveUser::fullName).orElse(null);
+        names.put(customerId, fullName);
+      }
+    }
+    return names;
+  }
+
+  private Map<UUID, String> loadDroneLabels(List<ServiceRequestOccurrence> requestOccurrences) {
+    if (partners == null || requestOccurrences == null || requestOccurrences.isEmpty()) {
+      return Map.of();
+    }
+    Set<UUID> droneIds = new HashSet<>();
+    for (ServiceRequestOccurrence occ : requestOccurrences) {
+      if (occ.getDroneId() != null) {
+        droneIds.add(occ.getDroneId());
+      }
+    }
+    Map<UUID, String> labels = droneIds.isEmpty() ? Map.of() : partners.findDroneLabels(droneIds);
+    return labels == null ? Map.of() : labels;
   }
 
   /**
@@ -3245,6 +3501,8 @@ public class ContractWorkflowService
   private ServiceRequestOccurrenceResponse toOccurrenceResponse(
       ServiceRequestOccurrence occurrence,
       ServiceRequest request,
+      Map<UUID, String> droneLabels,
+      Map<UUID, String> inspectorNames,
       boolean includeInspectorBankDetails) {
     Mf2InspectionAssignment.AssignmentAcceptance acceptance =
         occurrence.getInspectionId() == null
@@ -3270,6 +3528,18 @@ public class ContractWorkflowService
                 .findActiveUser(occurrence.getLastTimeoutInspectorId())
                 .map(UserAccess.ActiveUser::fullName)
                 .orElse(null);
+    String inspectorName = null;
+    if (occurrence.getInspectorId() != null && users != null) {
+      UUID inspectorId = occurrence.getInspectorId();
+      if (!inspectorNames.containsKey(inspectorId)) {
+        inspectorNames.put(
+            inspectorId,
+            users.findActiveUser(inspectorId).map(UserAccess.ActiveUser::fullName).orElse(null));
+      }
+      inspectorName = inspectorNames.get(inspectorId);
+    }
+    String droneLabel =
+        occurrence.getDroneId() == null ? null : droneLabels.get(occurrence.getDroneId());
     UserAccess.PayoutBankDetails bankDetails =
         includeInspectorBankDetails && occurrence.getInspectorId() != null
             ? users.findInspectorPayoutBankDetails(occurrence.getInspectorId()).orElse(null)
@@ -3281,7 +3551,8 @@ public class ContractWorkflowService
             acceptance != null && acceptance.reassignmentRequired(),
             acceptance == null ? null : acceptance.declineReason(),
             deadlineAt,
-            lastTimeoutInspectorName);
+            lastTimeoutInspectorName)
+        .withAssignedPartnerSummary(inspectorName, droneLabel);
   }
 
   private ServiceRequestMessageResponse toMessageResponse(ServiceRequestMessage message) {
@@ -3395,7 +3666,11 @@ public class ContractWorkflowService
     return new ServiceRequestResponse(
         response.id(),
         response.ownerCustomerId(),
+        response.ownerCustomerName(),
         response.assetId(),
+        response.assetName(),
+        response.assetCode(),
+        response.assetLocationText(),
         response.description(),
         response.requestedFrom(),
         response.requestedUntil(),
@@ -3425,6 +3700,7 @@ public class ContractWorkflowService
         response.occurrences(),
         response.messages(),
         response.sourceInspectionId(),
+        response.inspectionItems(),
         response.canClaim());
   }
 

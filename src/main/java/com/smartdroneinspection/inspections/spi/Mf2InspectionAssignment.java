@@ -1,6 +1,7 @@
 package com.smartdroneinspection.inspections.spi;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -69,5 +70,35 @@ public interface Mf2InspectionAssignment {
         plannedStartAt,
         plannedEndAt,
         assignedByUserId);
+  }
+
+  default UUID assign(
+      UUID ownerCustomerId,
+      UUID assetId,
+      UUID inspectorId,
+      UUID droneId,
+      Instant plannedStartAt,
+      Instant plannedEndAt,
+      UUID assignedByUserId,
+      UUID sourceInspectionId,
+      List<String> inspectionItems) {
+    return sourceInspectionId != null
+        ? assign(
+            ownerCustomerId,
+            assetId,
+            inspectorId,
+            droneId,
+            plannedStartAt,
+            plannedEndAt,
+            assignedByUserId,
+            sourceInspectionId)
+        : assign(
+            ownerCustomerId,
+            assetId,
+            inspectorId,
+            droneId,
+            plannedStartAt,
+            plannedEndAt,
+            assignedByUserId);
   }
 }

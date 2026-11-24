@@ -10,6 +10,8 @@ import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -518,6 +520,29 @@ public class PartnerRegistryService {
     if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
       throw forbidden();
     }
+  }
+
+  Map<UUID, String> findDroneLabels(Collection<UUID> droneIds) {
+    if (drones == null || droneIds == null || droneIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<UUID, String> labels = new HashMap<>();
+    for (Drone drone : drones.findAllById(droneIds)) {
+      String model = drone.getModel() == null ? "" : drone.getModel().trim();
+      String serial = drone.getSerialNumber() == null ? "" : drone.getSerialNumber().trim();
+      String label;
+      if (!model.isEmpty() && !serial.isEmpty()) {
+        label = model + " · " + serial;
+      } else if (!model.isEmpty()) {
+        label = model;
+      } else {
+        label = serial.isEmpty() ? null : serial;
+      }
+      if (label != null) {
+        labels.put(drone.getId(), label);
+      }
+    }
+    return labels;
   }
 
   private BusinessException forbidden() {
