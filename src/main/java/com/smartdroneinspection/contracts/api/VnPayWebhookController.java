@@ -95,6 +95,16 @@ public class VnPayWebhookController {
    */
   @GetMapping("/return")
   public ResponseEntity<Void> handleReturn(@RequestParam Map<String, String> params) {
+    return handleReturnInternal(params, false);
+  }
+
+  @GetMapping("/return/mobile")
+  public ResponseEntity<Void> handleMobileReturn(@RequestParam Map<String, String> params) {
+    return handleReturnInternal(params, true);
+  }
+
+  private ResponseEntity<Void> handleReturnInternal(
+      Map<String, String> params, boolean mobileClient) {
     String secureHash = params != null ? params.get("vnp_SecureHash") : null;
     Long orderCode = params != null ? parseLongOrNull(params.get("vnp_TxnRef")) : null;
     Long rawAmount = params != null ? parseLongOrNull(params.get("vnp_Amount")) : null;
@@ -129,15 +139,11 @@ public class VnPayWebhookController {
               || result.status() == VnPayApplyStatus.ALREADY_CONFIRMED;
       String redirectUrl =
           vnPayGateway.resolveFrontendReturnUrl(
-              inspectionId, resolvedOrderCode, appliedOk, responseCode);
+              inspectionId, resolvedOrderCode, appliedOk, responseCode, mobileClient);
       if (redirectUrl == null || redirectUrl.isBlank()) {
         redirectUrl =
-            "http://localhost:3000/client/inspections/"
-                + inspectionId
-                + "/settlement?payment="
-                + (appliedOk ? "success" : "cancelled")
-                + "&gateway=vnpay&orderCode="
-                + resolvedOrderCode;
+            fallbackRedirectUrl(
+                inspectionId, resolvedOrderCode, appliedOk, responseCode, mobileClient);
       }
       return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
     }
@@ -145,20 +151,39 @@ public class VnPayWebhookController {
     if (validSignature && orderCode != null) {
       releaseOnTerminalFailure(orderCode, responseCode);
     }
+    String failureCode = validSignature ? responseCode : "invalid_signature";
     String redirectUrl =
         vnPayGateway.resolveFrontendReturnUrl(
-            inspectionId,
-            resolvedOrderCode,
-            false,
-            validSignature ? responseCode : "invalid_signature");
+            inspectionId, resolvedOrderCode, false, failureCode, mobileClient);
     if (redirectUrl == null || redirectUrl.isBlank()) {
       redirectUrl =
-          "http://localhost:3000/client/inspections/"
-              + inspectionId
-              + "/settlement?payment=cancelled&gateway=vnpay&orderCode="
-              + resolvedOrderCode;
+          fallbackRedirectUrl(inspectionId, resolvedOrderCode, false, failureCode, mobileClient);
     }
     return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(redirectUrl)).build();
+  }
+
+  private static String fallbackRedirectUrl(
+      String inspectionId,
+      long orderCode,
+      boolean success,
+      String responseCode,
+      boolean mobileClient) {
+    String status = success ? "success" : "cancelled";
+    if (mobileClient) {
+      return "smartdrone://inspections/"
+          + inspectionId
+          + "/settlement?tab=2&payment="
+          + status
+          + "&gateway=vnpay&orderCode="
+          + orderCode
+          + (!success && responseCode != null ? "&code=" + responseCode : "");
+    }
+    return "http://localhost:3000/client/inspections/"
+        + inspectionId
+        + "/settlement?payment="
+        + status
+        + "&gateway=vnpay&orderCode="
+        + orderCode;
   }
 
   /**

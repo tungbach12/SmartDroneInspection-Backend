@@ -910,6 +910,8 @@ public class InspectionController {
   public ApiResponse<InspectionReportAcceptancePort.VnPayCheckoutDetails> createVnPayPaymentUrl(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
+      @RequestParam(name = "client", required = false) String client,
+      @RequestHeader(name = "X-Client-Platform", required = false) String clientPlatform,
       HttpServletRequest httpRequest) {
     if (reportAcceptancePort.isEmpty()) {
       throw new BusinessException(
@@ -922,8 +924,26 @@ public class InspectionController {
         (forwarded != null && !forwarded.isBlank())
             ? forwarded.split(",")[0].trim()
             : (httpRequest.getRemoteAddr() != null ? httpRequest.getRemoteAddr() : "127.0.0.1");
+    boolean mobileClient =
+        "mobile".equalsIgnoreCase(client) || "mobile".equalsIgnoreCase(clientPlatform);
     return ApiResponse.success(
-        reportAcceptancePort.get().createVnPayPaymentLink(actorId(jwt), inspectionId, clientIp));
+        reportAcceptancePort
+            .get()
+            .createVnPayPaymentLink(actorId(jwt), inspectionId, clientIp, mobileClient));
+  }
+
+  @PostMapping("/report/cancel-unpaid-order")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  public ApiResponse<Void> cancelUnpaidPaymentOrder(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    reportAcceptancePort.get().cancelUnpaidPaymentOrder(actorId(jwt), inspectionId);
+    return ApiResponse.success(null);
   }
 
   @GetMapping("/report/payment-status")

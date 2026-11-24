@@ -23,6 +23,17 @@ public interface InspectionReportAcceptancePort {
     throw new UnsupportedOperationException("VNPay payment link creation is not supported");
   }
 
+  /** Creates a VNPay checkout link with optional mobile deep-link return routing. */
+  default VnPayCheckoutDetails createVnPayPaymentLink(
+      UUID actorId, UUID inspectionId, String clientIp, boolean mobileClient) {
+    return createVnPayPaymentLink(actorId, inspectionId, clientIp);
+  }
+
+  /** Clears an unpaid, resolvable gateway order on the occurrence so another method can be used. */
+  default void cancelUnpaidPaymentOrder(UUID actorId, UUID inspectionId) {
+    throw new UnsupportedOperationException("Cancelling unpaid payment order is not supported");
+  }
+
   /** Retrieves commercial payment, commission, and payout status for the occurrence. */
   default PaymentStatusDetails getPaymentStatus(UUID actorId, UUID inspectionId) {
     return new PaymentStatusDetails(false, false, "NOT_APPLICABLE", null, null, null);
@@ -60,7 +71,53 @@ public interface InspectionReportAcceptancePort {
       String payoutReference,
       String requestDescription,
       String paymentMethod,
-      java.time.Instant paymentDueAt) {
+      java.time.Instant paymentDueAt,
+      java.time.Instant paymentConfirmedAt) {
+
+    public PaymentStatusDetails(
+        boolean reportAccepted,
+        boolean paid,
+        String paymentStatus,
+        Long orderCode,
+        Long amount,
+        String checkoutUrl,
+        BigDecimal serviceBaseAmount,
+        BigDecimal vatRate,
+        BigDecimal vatAmount,
+        BigDecimal commissionRate,
+        BigDecimal commissionAmount,
+        BigDecimal inspectorGrossPayout,
+        BigDecimal tncnRate,
+        BigDecimal tncnAmount,
+        BigDecimal inspectorNetPayout,
+        String payoutStatus,
+        String payoutReference,
+        String requestDescription,
+        String paymentMethod,
+        java.time.Instant paymentDueAt) {
+      this(
+          reportAccepted,
+          paid,
+          paymentStatus,
+          orderCode,
+          amount,
+          checkoutUrl,
+          serviceBaseAmount,
+          vatRate,
+          vatAmount,
+          commissionRate,
+          commissionAmount,
+          inspectorGrossPayout,
+          tncnRate,
+          tncnAmount,
+          inspectorNetPayout,
+          payoutStatus,
+          payoutReference,
+          requestDescription,
+          paymentMethod,
+          paymentDueAt,
+          null);
+    }
 
     public PaymentStatusDetails(
         boolean reportAccepted,
@@ -76,6 +133,7 @@ public interface InspectionReportAcceptancePort {
           orderCode,
           amount,
           checkoutUrl,
+          null,
           null,
           null,
           null,

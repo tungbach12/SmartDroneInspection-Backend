@@ -334,8 +334,10 @@ class SepayPaymentIntegrationTest {
     assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
         .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
-    // 6. Webhook: amount mismatch is reported and does not settle
+    // 6. Webhook: amount mismatch is acknowledged (200) for manual reconciliation and does not
+    // settle
     Map<String, Object> mismatchPayload = new LinkedHashMap<>(validSepayPayload);
+    mismatchPayload.put("id", 2L);
     mismatchPayload.put("transferAmount", 1000000L); // mismatch!
     mockMvc
         .perform(
@@ -343,7 +345,11 @@ class SepayPaymentIntegrationTest {
                 .header("Authorization", "Apikey test-sepay-api-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(mismatchPayload)))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
+        .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
     // 7. Webhook: valid API key settles payment and marks occurrence PAID
     mockMvc

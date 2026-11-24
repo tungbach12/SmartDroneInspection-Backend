@@ -103,7 +103,11 @@ public class PaymentDocumentService {
             status.paymentStatus(),
             status.paymentMethod(),
             kind == PaymentDocumentRenderer.Kind.RECEIPT ? paymentReference(status) : null,
-            kind == PaymentDocumentRenderer.Kind.RECEIPT ? java.time.Instant.now() : null,
+            kind == PaymentDocumentRenderer.Kind.RECEIPT
+                ? (status.paymentConfirmedAt() != null
+                    ? status.paymentConfirmedAt()
+                    : java.time.Instant.now())
+                : null,
             null,
             status.paymentDueAt(),
             status.paymentDueAt() != null

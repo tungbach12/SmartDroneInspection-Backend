@@ -1564,12 +1564,25 @@ public class ContractWorkflowService
                 "Inspector receivables are not configured"));
   }
 
-  /** Manager cancels the saved unpaid gateway order before switching gateway or retrying. */
+  /**
+   * Owning Customer or assigned Manager clears a resolvable unpaid gateway order before
+   * switching/retrying.
+   */
   @Transactional
   public ServiceRequestResponse cancelUnpaidPaymentOrder(
       UUID actorId, UUID requestId, UUID occurrenceId) {
-    UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
-    ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    ServiceRequest request;
+    if (actor.hasRole(Roles.MANAGER)) {
+      request = requireRequestForManagerLocked(actor, requestId);
+    } else if (actor.hasRole(Roles.CUSTOMER)) {
+      request = requireCustomerRequestLocked(actor, requestId);
+    } else {
+      throw forbidden();
+    }
     ServiceRequestOccurrence occurrence =
         occurrences
             .findWithLockById(occurrenceId)
@@ -1590,8 +1603,9 @@ public class ContractWorkflowService
           "Only an unpaid due order can be cancelled");
     }
     if ("SEPAY".equalsIgnoreCase(method)) {
-      // Sepay has no cancel API; the unpaid order can only be cleared manually by the manager.
-      // No gateway-side confirmation is required.
+      // Sepay has no cancel API; the unpaid order can be cleared directly to switch gateways.
+      // Late transfers matching the cleared order code are captured in
+      // gateway_inbound_transactions.
     } else if ("VNPAY".equalsIgnoreCase(method)) {
       // VNPay has no cancel API. Only an order past its checkout lifetime is certain to be
       // unpayable, so a live order stays blocked to avoid double settlement.
@@ -1912,13 +1926,23 @@ public class ContractWorkflowService
     long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     long orderCode;
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
-      if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      if ("VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+        if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
+          throw failure(
+              HttpStatus.CONFLICT,
+              "PAYMENT_ORDER_UNRESOLVED",
+              "The existing VNPay order is still payable; complete it or wait for it to expire before switching to Sepay.");
+        }
+        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
+        orderCode = generateUniqueGatewayOrderCode();
+      } else if (!"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
         throw failure(
             HttpStatus.CONFLICT,
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
+      } else {
+        orderCode = occurrence.getGatewayOrderCode();
       }
-      orderCode = occurrence.getGatewayOrderCode();
     } else {
       orderCode = generateUniqueGatewayOrderCode();
     }
@@ -1984,6 +2008,16 @@ public class ContractWorkflowService
   @Transactional
   public VnPayPaymentLinkResponse createVnPayPaymentLink(
       UUID actorId, UUID requestId, UUID occurrenceId, String clientIp) {
+    return createVnPayPaymentLink(actorId, requestId, occurrenceId, clientIp, false);
+  }
+
+  /**
+   * Customer creates a signed VNPay checkout URL, optionally routing the browser return callback to
+   * the mobile deep-link handler.
+   */
+  @Transactional
+  public VnPayPaymentLinkResponse createVnPayPaymentLink(
+      UUID actorId, UUID requestId, UUID occurrenceId, String clientIp, boolean mobileClient) {
     UserAccess.ActiveUser actor = requireActor(actorId, null);
     ServiceRequest request = requireRequestForActor(actor, requestId);
     if (actor.hasRole(Roles.ADMIN)) {
@@ -2029,20 +2063,25 @@ public class ContractWorkflowService
     }
     long amount = toGatewayAmountVnd(occurrence.getTotalPrice());
     if (occurrence.getGatewayOrderCode() != null && occurrence.getGatewayOrderCode() > 0) {
-      if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+      if ("SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
+        // Sepay has no hosted checkout lock, so switching directly to VNPay clears the VietQR code.
+        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "SEPAY");
+      } else if (!"VNPAY".equalsIgnoreCase(occurrence.getPaymentMethod())) {
         throw failure(
             HttpStatus.CONFLICT,
             "PAYMENT_ORDER_ALREADY_OPEN",
             "An unpaid order exists with another gateway. Resolve it before switching payment methods.");
+      } else {
+        if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
+          throw failure(
+              HttpStatus.CONFLICT,
+              "PAYMENT_ORDER_UNRESOLVED",
+              "The existing VNPay order is still payable; complete it or wait for it to expire before retrying.");
+        }
+        // The previous checkout can no longer be paid at VNPay: release it so the customer can
+        // retry.
+        occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
       }
-      if (!occurrence.isGatewayOrderExpired(Instant.now(), vnPayOrderLifetime())) {
-        throw failure(
-            HttpStatus.CONFLICT,
-            "PAYMENT_ORDER_UNRESOLVED",
-            "The existing VNPay order is still payable; complete it or wait for it to expire before retrying.");
-      }
-      // The previous checkout can no longer be paid at VNPay: release it so the customer can retry.
-      occurrence.clearUnpaidPaymentOrder(occurrence.getGatewayOrderCode(), "VNPAY");
     }
     long orderCode = generateUniqueGatewayOrderCode();
 
@@ -2053,7 +2092,8 @@ public class ContractWorkflowService
             + orderCode;
     String returnUrl =
         occurrence.getInspectionId() != null
-            ? vnPayGateway.resolveReturnUrl(occurrence.getInspectionId().toString(), orderCode)
+            ? vnPayGateway.resolveReturnUrl(
+                occurrence.getInspectionId().toString(), orderCode, mobileClient)
             : null;
 
     VnPayGateway.VnPayPaymentLink link =
@@ -2272,6 +2312,13 @@ public class ContractWorkflowService
   @Transactional
   public InspectionReportAcceptancePort.VnPayCheckoutDetails createVnPayPaymentLink(
       UUID actorId, UUID inspectionId, String clientIp) {
+    return createVnPayPaymentLink(actorId, inspectionId, clientIp, false);
+  }
+
+  @Override
+  @Transactional
+  public InspectionReportAcceptancePort.VnPayCheckoutDetails createVnPayPaymentLink(
+      UUID actorId, UUID inspectionId, String clientIp, boolean mobileClient) {
     if (actorId == null || inspectionId == null) {
       throw failure(
           HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
@@ -2292,9 +2339,29 @@ public class ContractWorkflowService
                 () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
 
     VnPayPaymentLinkResponse resp =
-        createVnPayPaymentLink(actorId, request.getId(), occurrence.getId(), clientIp);
+        createVnPayPaymentLink(
+            actorId, request.getId(), occurrence.getId(), clientIp, mobileClient);
     return new InspectionReportAcceptancePort.VnPayCheckoutDetails(
         resp.orderCode(), resp.amount(), resp.txnRef(), resp.checkoutUrl());
+  }
+
+  @Override
+  @Transactional
+  public void cancelUnpaidPaymentOrder(UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    cancelUnpaidPaymentOrder(actorId, occurrence.getRequestId(), occurrence.getId());
   }
 
   @Override
@@ -2439,7 +2506,8 @@ public class ContractWorkflowService
         occurrence.getPayoutReference(),
         requestDescription,
         occurrence.getPaymentMethod(),
-        occurrence.getPaymentDueAt());
+        occurrence.getPaymentDueAt(),
+        occurrence.getPaymentConfirmedAt());
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {

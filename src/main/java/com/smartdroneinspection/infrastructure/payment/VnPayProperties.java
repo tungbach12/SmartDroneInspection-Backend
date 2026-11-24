@@ -1,6 +1,7 @@
 package com.smartdroneinspection.infrastructure.payment;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
@@ -18,6 +19,7 @@ public record VnPayProperties(
     @DefaultValue("http://localhost:8080/api/v1/webhooks/vnpay/return") String returnUrl,
     @DefaultValue("http://localhost:3000/client/inspections/{inspectionId}/settlement")
         String frontendReturnUrl,
+    @DefaultValue("smartdrone://inspections/{inspectionId}/settlement") String mobileReturnUrl,
     @DefaultValue("2.1.0") String version,
     @DefaultValue("pay") String command,
     @DefaultValue("other") String orderType,
@@ -25,6 +27,7 @@ public record VnPayProperties(
     @DefaultValue("vn") String locale,
     @DefaultValue("15") int expireMinutes) {
 
+  @ConstructorBinding
   public VnPayProperties {
     if (payUrl == null || payUrl.isBlank()) {
       payUrl = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
@@ -34,6 +37,9 @@ public record VnPayProperties(
     }
     if (frontendReturnUrl == null || frontendReturnUrl.isBlank()) {
       frontendReturnUrl = "http://localhost:3000/client/inspections/{inspectionId}/settlement";
+    }
+    if (mobileReturnUrl == null || mobileReturnUrl.isBlank()) {
+      mobileReturnUrl = "smartdrone://inspections/{inspectionId}/settlement";
     }
     if (version == null || version.isBlank()) {
       version = "2.1.0";
@@ -53,5 +59,34 @@ public record VnPayProperties(
     if (expireMinutes <= 0) {
       expireMinutes = 15;
     }
+  }
+
+  public VnPayProperties(
+      boolean enabled,
+      String payUrl,
+      String tmnCode,
+      String hashSecret,
+      String returnUrl,
+      String frontendReturnUrl,
+      String version,
+      String command,
+      String orderType,
+      String currCode,
+      String locale,
+      int expireMinutes) {
+    this(
+        enabled,
+        payUrl,
+        tmnCode,
+        hashSecret,
+        returnUrl,
+        frontendReturnUrl,
+        "smartdrone://inspections/{inspectionId}/settlement",
+        version,
+        command,
+        orderType,
+        currCode,
+        locale,
+        expireMinutes);
   }
 }

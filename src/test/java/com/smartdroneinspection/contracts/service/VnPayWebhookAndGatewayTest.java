@@ -313,4 +313,57 @@ class VnPayWebhookAndGatewayTest {
 
     assertThat(occurrence.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
   }
+
+  @Test
+  void mobileReturnRedirectsToSmartDroneDeepLinkWithSettlementTab() throws Exception {
+    UUID requestId = UUID.randomUUID();
+    UUID inspectionId = UUID.randomUUID();
+    long orderCode = 100012L;
+    long agreedVnd = 5000000L;
+
+    String mobileReturnUrl =
+        vnPayGateway.resolveReturnUrl(inspectionId.toString(), orderCode, true);
+    assertThat(mobileReturnUrl)
+        .isEqualTo("http://localhost:8080/api/v1/webhooks/vnpay/return/mobile");
+
+    Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
+    ServiceRequestOccurrence occurrence =
+        new ServiceRequestOccurrence(requestId, 1, start, start.plus(2, ChronoUnit.HOURS));
+    ReflectionTestUtils.setField(occurrence, "id", UUID.randomUUID());
+    occurrence.assign(UUID.randomUUID(), UUID.randomUUID(), inspectionId, UUID.randomUUID());
+    occurrence.snapshotFinance(BigDecimal.valueOf(agreedVnd), null, null, null);
+    occurrence.acceptReport(UUID.randomUUID(), UUID.randomUUID());
+    occurrence.assignVnPayOrder(orderCode);
+
+    when(occurrences.findWithLockByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+    when(occurrences.findByGatewayOrderCode(orderCode)).thenReturn(Optional.of(occurrence));
+
+    Map<String, String> vnpParams = new LinkedHashMap<>();
+    vnpParams.put("vnp_TxnRef", String.valueOf(orderCode));
+    vnpParams.put("vnp_Amount", String.valueOf(agreedVnd * 100L));
+    vnpParams.put("vnp_ResponseCode", "00");
+    vnpParams.put("vnp_TransactionStatus", "00");
+    vnpParams.put("vnp_TransactionNo", "14999900");
+    String query = VnPayCrypto.buildSignedQueryString(vnpParams, TEST_SECRET);
+    String validHash = query.substring(query.indexOf("&vnp_SecureHash=") + 16);
+
+    mockMvc
+        .perform(
+            get("/api/v1/webhooks/vnpay/return/mobile")
+                .param("vnp_TxnRef", String.valueOf(orderCode))
+                .param("vnp_Amount", String.valueOf(agreedVnd * 100L))
+                .param("vnp_ResponseCode", "00")
+                .param("vnp_TransactionStatus", "00")
+                .param("vnp_TransactionNo", "14999900")
+                .param("vnp_SecureHash", validHash))
+        .andExpect(status().isFound())
+        .andExpect(
+            header()
+                .string(
+                    "Location",
+                    "smartdrone://inspections/"
+                        + inspectionId
+                        + "/settlement?tab=2&payment=success&gateway=vnpay&orderCode="
+                        + orderCode));
+  }
 }
