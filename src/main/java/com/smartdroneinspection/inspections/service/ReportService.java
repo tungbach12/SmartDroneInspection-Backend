@@ -22,6 +22,7 @@ import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
 import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
+import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionReportRepository;
@@ -91,6 +92,7 @@ public class ReportService {
   private final Optional<HistoricalCaseService> historicalCaseService;
   private final Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
       reportAcceptancePort;
+  private final Optional<FieldSessionFlightRepository> fieldSessionFlights;
 
   public ReportService(
       InspectionRepository inspections,
@@ -257,7 +259,8 @@ public class ReportService {
       Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo,
       Optional<HistoricalCaseService> historicalCaseService,
       Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
-          reportAcceptancePort) {
+          reportAcceptancePort,
+      Optional<FieldSessionFlightRepository> fieldSessionFlights) {
     this.inspections = inspections;
     this.reportContextAccess = reportContextAccess;
     this.jdbcTemplate = jdbcTemplate;
@@ -279,6 +282,7 @@ public class ReportService {
         historicalCaseService != null ? historicalCaseService : Optional.empty();
     this.reportAcceptancePort =
         reportAcceptancePort != null ? reportAcceptancePort : Optional.empty();
+    this.fieldSessionFlights = fieldSessionFlights != null ? fieldSessionFlights : Optional.empty();
   }
 
   /**
@@ -1770,6 +1774,17 @@ public class ReportService {
 
   private InspectionReportContextResponse buildReportContextResponse(
       Inspection inspection, Identity identity, DroneContext drone, List<FieldSession> sessions) {
+    var flights =
+        fieldSessionFlights
+            .map(
+                repo ->
+                    repo
+                        .findByInspectionIdOrderByFlightDateAscStartedAtAscFlightNumberAsc(
+                            inspection.getId())
+                        .stream()
+                        .map(InspectionDroneHubService::toFlightResponse)
+                        .toList())
+            .orElse(List.of());
     return new InspectionReportContextResponse(
         identity == null ? null : identity.organizationName(),
         identity == null ? null : identity.assetCode(),
@@ -1791,10 +1806,15 @@ public class ReportService {
                         session.getOutcomeNotes(),
                         drone == null ? null : drone.serialNumber(),
                         drone == null ? null : drone.manufacturer(),
-                        drone == null ? null : drone.model()))
+                        drone == null ? null : drone.model(),
+                        session.getSessionDate(),
+                        session.getPreFlightChecklistSnapshot(),
+                        session.getPreFlightConditions(),
+                        session.getPostFlightChecklistSnapshot()))
             .toList(),
         "Application role/organization/separation checks ran; professional qualification was not independently validated.",
-        inspection.getFindingsConfirmedAt());
+        inspection.getFindingsConfirmedAt(),
+        flights);
   }
 
   private ReportRenderPort.ReportContext buildRenderReportContext(

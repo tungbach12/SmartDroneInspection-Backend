@@ -9,7 +9,19 @@ public interface PartnerReliabilityQuery {
 
   Map<UUID, ReliabilityCounts> countsByInspectorIds(Collection<UUID> inspectorIds);
 
-  record ReliabilityCounts(long declineCount, long noShowCount, long abortCount) {
-    public static final ReliabilityCounts ZERO = new ReliabilityCounts(0L, 0L, 0L);
+  record ReliabilityCounts(
+      long declineCount,
+      long noShowCount,
+      long abortCount,
+      Double averageRating,
+      long ratingCount,
+      Double customerAverageRating,
+      Double managerAverageRating) {
+    public static final ReliabilityCounts ZERO =
+        new ReliabilityCounts(0L, 0L, 0L, null, 0L, null, null);
+
+    public ReliabilityCounts(long declineCount, long noShowCount, long abortCount) {
+      this(declineCount, noShowCount, abortCount, null, 0L, null, null);
+    }
   }
 }

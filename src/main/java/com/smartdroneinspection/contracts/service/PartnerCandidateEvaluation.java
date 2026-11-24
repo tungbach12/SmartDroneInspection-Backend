@@ -306,11 +306,61 @@ public final class PartnerCandidateEvaluation {
       String disclaimer,
       long declineCount,
       long noShowCount,
-      long abortCount) {
+      long abortCount,
+      Double averageRating,
+      long ratingCount,
+      Double customerAverageRating,
+      Double managerAverageRating) {
     public Result {
       droneFeatureCodes = List.copyOf(droneFeatureCodes);
       hardGates = List.copyOf(hardGates);
       capabilityChecks = List.copyOf(capabilityChecks);
+    }
+
+    public Result(
+        UUID inspectorId,
+        UUID droneId,
+        String inspectorName,
+        String inspectorAvatarUrl,
+        String droneSerialNumber,
+        String droneModel,
+        boolean droneHasImage,
+        List<String> droneFeatureCodes,
+        Status eligibility,
+        Status capabilityFit,
+        BigDecimal droneMaxAltitudeMeters,
+        BigDecimal structureHeightMeters,
+        BigDecimal footprintAreaSquareMeters,
+        List<Check> hardGates,
+        List<Check> capabilityChecks,
+        String disclaimer,
+        long declineCount,
+        long noShowCount,
+        long abortCount) {
+      this(
+          inspectorId,
+          droneId,
+          inspectorName,
+          inspectorAvatarUrl,
+          droneSerialNumber,
+          droneModel,
+          droneHasImage,
+          droneFeatureCodes,
+          eligibility,
+          capabilityFit,
+          droneMaxAltitudeMeters,
+          structureHeightMeters,
+          footprintAreaSquareMeters,
+          hardGates,
+          capabilityChecks,
+          disclaimer,
+          declineCount,
+          noShowCount,
+          abortCount,
+          null,
+          0L,
+          null,
+          null);
     }
 
     public Result(
@@ -349,10 +399,25 @@ public final class PartnerCandidateEvaluation {
           disclaimer,
           0L,
           0L,
-          0L);
+          0L,
+          null,
+          0L,
+          null,
+          null);
     }
 
     public Result withReliability(long declineCount, long noShowCount, long abortCount) {
+      return withReliability(declineCount, noShowCount, abortCount, null, 0L, null, null);
+    }
+
+    public Result withReliability(
+        long declineCount,
+        long noShowCount,
+        long abortCount,
+        Double averageRating,
+        long ratingCount,
+        Double customerAverageRating,
+        Double managerAverageRating) {
       return new Result(
           inspectorId,
           droneId,
@@ -372,7 +437,11 @@ public final class PartnerCandidateEvaluation {
           disclaimer,
           declineCount,
           noShowCount,
-          abortCount);
+          abortCount,
+          averageRating,
+          ratingCount,
+          customerAverageRating,
+          managerAverageRating);
     }
   }
 }

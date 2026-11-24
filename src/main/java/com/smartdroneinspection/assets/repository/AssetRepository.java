@@ -2,6 +2,8 @@ package com.smartdroneinspection.assets.repository;
 
 import com.smartdroneinspection.assets.domain.Asset;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -15,6 +17,9 @@ import org.springframework.data.repository.query.Param;
 public interface AssetRepository extends JpaRepository<Asset, UUID> {
   @EntityGraph(attributePaths = "documents")
   Optional<Asset> findDetailedById(UUID id);
+
+  @EntityGraph(attributePaths = "documents")
+  List<Asset> findDetailedByIdIn(Collection<UUID> ids);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select asset from Asset asset where asset.id = :id")

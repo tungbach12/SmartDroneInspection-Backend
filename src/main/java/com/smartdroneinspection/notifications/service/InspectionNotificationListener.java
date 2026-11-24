@@ -139,4 +139,21 @@ public class InspectionNotificationListener {
     inspectionNotificationService.recordFlightPermitSubmitted(
         event.inspectionId(), event.permitNumber(), event.issuingAuthority(), event.submittedAt());
   }
+
+  @ApplicationModuleListener
+  public void onInspectorRated(
+      com.smartdroneinspection.inspections.events.InspectorRatedEvent event) {
+    log.info(
+        "Handling InspectorRatedEvent for inspection {} (inspector={})",
+        event.inspectionId(),
+        event.inspectorId());
+    inspectionNotificationService.recordInspectorRated(
+        event.ratingId(),
+        event.inspectionId(),
+        event.inspectorId(),
+        event.raterRole(),
+        event.overallScore(),
+        event.updated(),
+        event.occurredAt());
+  }
 }
