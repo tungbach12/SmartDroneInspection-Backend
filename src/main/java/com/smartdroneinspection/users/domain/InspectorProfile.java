@@ -80,6 +80,18 @@ public class InspectorProfile {
   @Column(name = "rejection_reason", columnDefinition = "text")
   private String rejectionReason;
 
+  @Column(name = "payout_bank_name", length = 120)
+  private String payoutBankName;
+
+  @Column(name = "payout_bank_account_number", length = 64)
+  private String payoutBankAccountNumber;
+
+  @Column(name = "payout_bank_account_holder", length = 200)
+  private String payoutBankAccountHolder;
+
+  @Column(name = "payout_bank_branch", length = 200)
+  private String payoutBankBranch;
+
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt = Instant.now();
 
@@ -181,6 +193,46 @@ public class InspectorProfile {
 
   public String getRejectionReason() {
     return rejectionReason;
+  }
+
+  public String getPayoutBankName() {
+    return payoutBankName;
+  }
+
+  public String getPayoutBankAccountNumber() {
+    return payoutBankAccountNumber;
+  }
+
+  public String getPayoutBankAccountHolder() {
+    return payoutBankAccountHolder;
+  }
+
+  public String getPayoutBankBranch() {
+    return payoutBankBranch;
+  }
+
+  public boolean hasCompletePayoutBankDetails() {
+    return payoutBankName != null
+        && !payoutBankName.isBlank()
+        && payoutBankAccountNumber != null
+        && !payoutBankAccountNumber.isBlank()
+        && payoutBankAccountHolder != null
+        && !payoutBankAccountHolder.isBlank();
+  }
+
+  public void updatePayoutBankDetails(
+      String bankName, String accountNumber, String accountHolder, String bankBranch) {
+    this.payoutBankName = trimToNull(bankName);
+    this.payoutBankAccountNumber = trimToNull(accountNumber);
+    this.payoutBankAccountHolder = trimToNull(accountHolder);
+    this.payoutBankBranch = trimToNull(bankBranch);
+    touch();
+  }
+
+  private static String trimToNull(String value) {
+    if (value == null) return null;
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   public void recordSignedPartnerContract(String fileKey, String sha256Hex) {

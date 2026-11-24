@@ -180,6 +180,8 @@ public class DroneRegistrationApplicationService {
             Boolean.TRUE.equals(request.hasRtk()),
             request.imageFileKeys(),
             request.features());
+    application.applyStructuredSpecs(
+        request.mtowKg(), request.maxFlightTimeMinutes(), request.cameraSensor());
     if (existingDroneId != null) {
       application.linkExistingDrone(existingDroneId);
     }
@@ -270,6 +272,8 @@ public class DroneRegistrationApplicationService {
           Boolean.TRUE.equals(request.hasRtk()),
           finalImageKeys,
           request.features());
+      application.applyStructuredSpecs(
+          request.mtowKg(), request.maxFlightTimeMinutes(), request.cameraSensor());
     } catch (IllegalStateException ex) {
       throw new AuthException(HttpStatus.CONFLICT, "RESUBMIT_INVALID", ex.getMessage());
     }
@@ -507,6 +511,10 @@ public class DroneRegistrationApplicationService {
             application.getDocumentFiles(),
             application.getImageFileKeys(),
             application.getFeatures());
+        drone.applyStructuredSpecs(
+            application.getMtowKg(),
+            application.getMaxFlightTimeMinutes(),
+            application.getCameraSensor());
         drone = drones.saveAndFlush(drone);
       } else {
         drone =
@@ -527,6 +535,10 @@ public class DroneRegistrationApplicationService {
             application.getDocumentFiles(),
             application.getImageFileKeys(),
             application.getFeatures());
+        drone.applyStructuredSpecs(
+            application.getMtowKg(),
+            application.getMaxFlightTimeMinutes(),
+            application.getCameraSensor());
         drone = drones.saveAndFlush(drone);
       }
     } else {
@@ -552,6 +564,10 @@ public class DroneRegistrationApplicationService {
           application.getDocumentFiles(),
           application.getImageFileKeys(),
           application.getFeatures());
+      drone.applyStructuredSpecs(
+          application.getMtowKg(),
+          application.getMaxFlightTimeMinutes(),
+          application.getCameraSensor());
       drone = drones.saveAndFlush(drone);
     }
     application.approve(reviewerId, drone.getId());

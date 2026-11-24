@@ -28,10 +28,25 @@ public interface VnPayGateway {
     return null;
   }
 
+  /** Resolves the return URL, routing mobile checkouts to the mobile callback path. */
+  default String resolveReturnUrl(String inspectionId, long orderCode, boolean mobileClient) {
+    return resolveReturnUrl(inspectionId, orderCode);
+  }
+
   /** Resolves the frontend redirect URL after VNPay return callback verification. */
   default String resolveFrontendReturnUrl(
       String inspectionId, long orderCode, boolean success, String responseCode) {
     return null;
+  }
+
+  /** Resolves the web or mobile deep-link redirect URL after VNPay return verification. */
+  default String resolveFrontendReturnUrl(
+      String inspectionId,
+      long orderCode,
+      boolean success,
+      String responseCode,
+      boolean mobileClient) {
+    return resolveFrontendReturnUrl(inspectionId, orderCode, success, responseCode);
   }
 
   /**

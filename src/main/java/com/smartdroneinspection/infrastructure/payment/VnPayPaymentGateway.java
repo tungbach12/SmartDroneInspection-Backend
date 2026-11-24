@@ -32,30 +32,60 @@ public class VnPayPaymentGateway implements VnPayGateway {
 
   @Override
   public String resolveReturnUrl(String inspectionId, long orderCode) {
+    return resolveReturnUrl(inspectionId, orderCode, false);
+  }
+
+  @Override
+  public String resolveReturnUrl(String inspectionId, long orderCode, boolean mobileClient) {
     String base = properties.returnUrl();
     if (base == null || base.isBlank()) {
       base = "http://localhost:8080/api/v1/webhooks/vnpay/return";
     }
-    return base.replace("{inspectionId}", inspectionId != null ? inspectionId : "");
+    String resolved = base.replace("{inspectionId}", inspectionId != null ? inspectionId : "");
+    if (!mobileClient) {
+      return resolved;
+    }
+    int queryIdx = resolved.indexOf('?');
+    String pathPart = queryIdx >= 0 ? resolved.substring(0, queryIdx) : resolved;
+    String queryPart = queryIdx >= 0 ? resolved.substring(queryIdx) : "";
+    if (!pathPart.endsWith("/mobile")) {
+      pathPart = pathPart.endsWith("/") ? pathPart + "mobile" : pathPart + "/mobile";
+    }
+    return pathPart + queryPart;
   }
 
   @Override
   public String resolveFrontendReturnUrl(
       String inspectionId, long orderCode, boolean success, String responseCode) {
-    String base = properties.frontendReturnUrl();
+    return resolveFrontendReturnUrl(inspectionId, orderCode, success, responseCode, false);
+  }
+
+  @Override
+  public String resolveFrontendReturnUrl(
+      String inspectionId,
+      long orderCode,
+      boolean success,
+      String responseCode,
+      boolean mobileClient) {
+    String base = mobileClient ? properties.mobileReturnUrl() : properties.frontendReturnUrl();
     if (base == null || base.isBlank()) {
-      base = "http://localhost:3000/client/inspections/{inspectionId}/settlement";
+      base =
+          mobileClient
+              ? "smartdrone://inspections/{inspectionId}/settlement"
+              : "http://localhost:3000/client/inspections/{inspectionId}/settlement";
     }
     String resolved =
         base.replace(
             "{inspectionId}",
             (inspectionId != null && !inspectionId.isBlank()) ? inspectionId : "");
     String sep = resolved.contains("?") ? "&" : "?";
+    String tabPrefix = mobileClient ? "tab=2&" : "";
     if (success) {
-      return resolved + sep + "payment=success&gateway=vnpay&orderCode=" + orderCode;
+      return resolved + sep + tabPrefix + "payment=success&gateway=vnpay&orderCode=" + orderCode;
     }
     return resolved
         + sep
+        + tabPrefix
         + "payment=cancelled&gateway=vnpay&orderCode="
         + orderCode
         + (responseCode != null ? "&code=" + responseCode : "");

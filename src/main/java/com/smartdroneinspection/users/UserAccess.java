@@ -40,6 +40,22 @@ public interface UserAccess {
     return List.of();
   }
 
+  record PayoutBankDetails(
+      String bankName, String accountNumber, String accountHolder, String bankBranch) {
+    public boolean isComplete() {
+      return bankName != null
+          && !bankName.isBlank()
+          && accountNumber != null
+          && !accountNumber.isBlank()
+          && accountHolder != null
+          && !accountHolder.isBlank();
+    }
+  }
+
+  default Optional<PayoutBankDetails> findInspectorPayoutBankDetails(UUID inspectorUserId) {
+    return Optional.empty();
+  }
+
   boolean isVisionFallbackEnabled(UUID userId);
 
   ProvisionedWorkforceMember provisionWorkforceUser(

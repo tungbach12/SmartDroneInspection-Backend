@@ -67,6 +67,7 @@ app:
       hash-secret: ${VNPAY_HASH_SECRET:}
       return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/v1/webhooks/vnpay/return}
       frontend-return-url: ${VNPAY_FRONTEND_RETURN_URL:http://localhost:3000/client/inspections/{inspectionId}/settlement}
+      mobile-return-url: ${VNPAY_MOBILE_RETURN_URL:smartdrone://inspections/{inspectionId}/settlement}
       version: ${VNPAY_VERSION:2.1.0}
       command: ${VNPAY_COMMAND:pay}
       order-type: ${VNPAY_ORDER_TYPE:other}

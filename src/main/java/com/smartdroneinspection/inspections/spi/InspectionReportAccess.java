@@ -10,4 +10,10 @@ public interface InspectionReportAccess {
    * published.
    */
   boolean isReportPublished(UUID inspectionId, UUID reportVersionId);
+
+  /** Returns true if the inspection has at least one currently published report version. */
+  boolean hasPublishedReport(UUID inspectionId);
+
+  /** Returns true if the inspection has a currently approved or published report version. */
+  boolean hasApprovedOrPublishedReport(UUID inspectionId);
 }

@@ -116,12 +116,15 @@ class ConnectedMainFlowE2eIntegrationTest {
             "inspector." + UUID.randomUUID() + "@skyview.test",
             "David Inspector");
     jdbcTemplate.update(
-        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key, payout_bank_name, payout_bank_account_number, payout_bank_account_holder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         inspectorId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-        "licenses/pilot-cert.pdf");
+        "licenses/pilot-cert.pdf",
+        "Vietcombank",
+        "0071001122334",
+        "DAVID INSPECTOR");
 
     // =========================================================================
     // STEP 1: MF1 - Resource Setup, Inspection Creation & Dispatch
@@ -474,7 +477,7 @@ class ConnectedMainFlowE2eIntegrationTest {
         .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
 
     log.info(
-        "[MF3] Step 3.6: Independent Reviewer approves and publishes Report -> REPORT_PUBLISHED...");
+        "[MF3] Step 3.6: Independent Reviewer approves Report -> APPROVED -> Settles Payout -> PUBLISHES...");
     mockMvc
         .perform(
             post(
@@ -482,6 +485,31 @@ class ConnectedMainFlowE2eIntegrationTest {
                     inspectionId,
                     reportVersionId)
                 .param("approve", "true")
+                .with(principal(platformAdminId, "MANAGER")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrence.getId())
+                .with(principal(platformAdminId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-E2E-" + occurrence.getId().toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
                 .with(principal(platformAdminId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));

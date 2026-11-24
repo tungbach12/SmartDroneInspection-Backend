@@ -63,6 +63,15 @@ public class DroneRegistrationApplication {
   @Column(name = "optical_zoom_level", length = 32)
   private String opticalZoomLevel;
 
+  @Column(name = "mtow_kg", precision = 6, scale = 2)
+  private BigDecimal mtowKg;
+
+  @Column(name = "max_flight_time_minutes")
+  private Integer maxFlightTimeMinutes;
+
+  @Column(name = "camera_sensor", length = 128)
+  private String cameraSensor;
+
   @Column(nullable = false, length = 24)
   private String status;
 
@@ -437,6 +446,37 @@ public class DroneRegistrationApplication {
 
   public List<String> getFeatures() {
     return features != null ? features : List.of();
+  }
+
+  public void applyStructuredSpecs(
+      BigDecimal mtowKg, Integer maxFlightTimeMinutes, String cameraSensor) {
+    this.mtowKg = mtowKg;
+    this.maxFlightTimeMinutes = maxFlightTimeMinutes;
+    this.cameraSensor =
+        cameraSensor != null && !cameraSensor.isBlank() ? cameraSensor.trim() : null;
+  }
+
+  public BigDecimal getMtowKg() {
+    return mtowKg;
+  }
+
+  public Integer getMaxFlightTimeMinutes() {
+    return maxFlightTimeMinutes;
+  }
+
+  public String getCameraSensor() {
+    return cameraSensor;
+  }
+
+  public Double resolveMtowKg() {
+    if (mtowKg != null && mtowKg.compareTo(BigDecimal.ZERO) > 0) {
+      return mtowKg.doubleValue();
+    }
+    return Drone.resolveMtowFromText(null, model, null);
+  }
+
+  public String resolveLegalCategory() {
+    return Drone.classifyLegalCategory(resolveMtowKg());
   }
 
   public BigDecimal getMaxWindResistanceMps() {

@@ -90,6 +90,8 @@ public class ReportService {
   private final Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate;
   private final Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo;
   private final Optional<HistoricalCaseService> historicalCaseService;
+  private final Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+      reportAcceptancePort;
   private final Optional<FieldSessionFlightRepository> fieldSessionFlights;
 
   public ReportService(
@@ -234,6 +236,7 @@ public class ReportService {
         paymentGate,
         defectVerificationsRepo,
         historicalCaseService,
+        Optional.empty(),
         Optional.empty());
   }
 
@@ -256,6 +259,8 @@ public class ReportService {
       Optional<com.smartdroneinspection.shared.api.InspectionPaymentGate> paymentGate,
       Optional<ReinspectionDefectVerificationRepository> defectVerificationsRepo,
       Optional<HistoricalCaseService> historicalCaseService,
+      Optional<com.smartdroneinspection.shared.api.InspectionReportAcceptancePort>
+          reportAcceptancePort,
       Optional<FieldSessionFlightRepository> fieldSessionFlights) {
     this.inspections = inspections;
     this.reportContextAccess = reportContextAccess;
@@ -276,6 +281,8 @@ public class ReportService {
         defectVerificationsRepo != null ? defectVerificationsRepo : Optional.empty();
     this.historicalCaseService =
         historicalCaseService != null ? historicalCaseService : Optional.empty();
+    this.reportAcceptancePort =
+        reportAcceptancePort != null ? reportAcceptancePort : Optional.empty();
     this.fieldSessionFlights = fieldSessionFlights != null ? fieldSessionFlights : Optional.empty();
   }
 
@@ -308,7 +315,9 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
-    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.SUBMITTED) {
+    if (latestExisting != null
+        && (latestExisting.getStatus() == ReportStatus.SUBMITTED
+            || latestExisting.getStatus() == ReportStatus.APPROVED)) {
       return toResponse(latestExisting, inspection.getInspectorId());
     }
 
@@ -342,7 +351,9 @@ public class ReportService {
           "Only the assigned Inspector authors this report");
     }
 
-    if (latestExisting != null && latestExisting.getStatus() == ReportStatus.SUBMITTED) {
+    if (latestExisting != null
+        && (latestExisting.getStatus() == ReportStatus.SUBMITTED
+            || latestExisting.getStatus() == ReportStatus.APPROVED)) {
       return toResponse(latestExisting, inspection.getInspectorId());
     }
 
@@ -507,6 +518,13 @@ public class ReportService {
       }
     } else if (Boolean.TRUE.equals(approve)
         || (approve == null && (reason == null || reason.isBlank()))) {
+      boolean requiresPayoutBeforePublish =
+          reportAcceptancePort
+              .map(port -> port.requiresPayoutBeforePublish(inspectionId))
+              .orElse(false);
+      if (requiresPayoutBeforePublish) {
+        return approve(actorId, inspectionId, versionId);
+      }
       return publish(actorId, inspectionId, versionId, locale);
     }
 
@@ -650,6 +668,52 @@ public class ReportService {
     return toResponse(version, inspection.getInspectorId());
   }
 
+  /**
+   * Two-step gate (part 1): Manager approves the submitted report, unlocking Inspector payout
+   * eligibility while keeping the deliverable hidden until payout is settled and published.
+   */
+  private ReportPublishedResponse approve(UUID actorId, UUID inspectionId, UUID versionId) {
+    UserAccess.ActiveUser reviewer = requireQualifiedReviewer(actorId, inspectionId);
+    Inspection inspection = evidenceService.requireInspectionInScope(actorId, inspectionId);
+    InspectionReport version = requireVersion(inspectionId, versionId);
+    requireFreshEvidenceSnapshot(inspectionId, version);
+    requireFreshFindingsSnapshot(inspectionId, version);
+    requireReinspectionVerificationsEvaluated(inspection);
+    try {
+      version.approve(reviewer.id(), inspection.getInspectorId());
+    } catch (IllegalStateException | IllegalArgumentException ex) {
+      throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
+    }
+    versions.saveAndFlush(version);
+    reportAcceptancePort.ifPresent(port -> port.onReportApproved(inspectionId));
+    return new ReportPublishedResponse(
+        version.getId(),
+        version.getVersionNo(),
+        version.getStatus().name(),
+        null,
+        null,
+        List.of(),
+        inspection.getStatus());
+  }
+
+  /**
+   * Two-step gate (part 2): Manager publishes an approved report to Customer once any linked
+   * commercial occurrence's Inspector payout has been settled.
+   */
+  @Transactional
+  public ReportPublishedResponse publishVersion(
+      UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
+    if (reportAcceptancePort
+        .map(port -> port.requiresPayoutBeforePublish(inspectionId))
+        .orElse(false)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INSPECTOR_PAYOUT_REQUIRED",
+          "Inspector payout must be settled before publishing the report to the customer");
+    }
+    return publish(actorId, inspectionId, versionId, locale);
+  }
+
   /** MF3-09/11/12: approve and publish the reviewed report. */
   @Transactional
   private ReportPublishedResponse publish(
@@ -696,6 +760,8 @@ public class ReportService {
     // its own tenant. Indexing shares the publication transaction and degrades to a no-op when the
     // advisory capability is not wired.
     historicalCaseService.ifPresent(service -> service.indexPublishedFindings(inspectionId));
+
+    reportAcceptancePort.ifPresent(port -> port.onReportPublished(inspectionId));
 
     events.publishEvent(
         new ReportPublishedEvent(
@@ -762,19 +828,8 @@ public class ReportService {
           "Only published reports can be downloaded");
     }
 
-    boolean paymentDue = paymentGate.map(gate -> gate.isPaymentDue(inspectionId)).orElse(false);
-    UserAccess.ActiveUser actor = userAccess.findActiveUser(actorId).orElse(null);
-    boolean isCustomer =
-        actor != null
-            && actor.hasRole(Roles.CUSTOMER)
-            && !actor.hasRole(Roles.ADMIN)
-            && !actor.hasRole(Roles.MANAGER);
-
-    if (isCustomer && paymentDue) {
-      byte[] previewContent = renderArtefact(inspectionId, version, true, Locale.ENGLISH);
-      return pdfResponse(
-          previewContent, "attachment", documentReference(version) + "-unpaid-preview.pdf");
-    }
+    // Payment status never gates access to the published report. Every in-scope actor receives
+    // the official artefact; payment produces the receipt and payout eligibility only.
 
     String objectKey = reportObjectKey(version.getId());
     byte[] content = null;

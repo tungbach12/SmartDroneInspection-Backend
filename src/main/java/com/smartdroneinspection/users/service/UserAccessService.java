@@ -132,6 +132,33 @@ public class UserAccessService implements UserAccess {
         .toList();
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<PayoutBankDetails> findInspectorPayoutBankDetails(UUID inspectorUserId) {
+    if (inspectorUserId == null) {
+      return Optional.empty();
+    }
+    return inspectorProfileRepository
+        .findById(inspectorUserId)
+        .filter(
+            profile ->
+                hasText(profile.getPayoutBankName())
+                    || hasText(profile.getPayoutBankAccountNumber())
+                    || hasText(profile.getPayoutBankAccountHolder())
+                    || hasText(profile.getPayoutBankBranch()))
+        .map(
+            profile ->
+                new PayoutBankDetails(
+                    profile.getPayoutBankName(),
+                    profile.getPayoutBankAccountNumber(),
+                    profile.getPayoutBankAccountHolder(),
+                    profile.getPayoutBankBranch()));
+  }
+
+  private static boolean hasText(String value) {
+    return value != null && !value.isBlank();
+  }
+
   private ActiveUser toActiveUser(User user) {
     InspectorProfile profile = inspectorProfileRepository.findById(user.getId()).orElse(null);
     boolean onboardingApproved =

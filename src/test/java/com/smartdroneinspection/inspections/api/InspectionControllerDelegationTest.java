@@ -190,6 +190,8 @@ class InspectionControllerDelegationTest {
     when(reportService.reviewVersion(
             eq(ACTOR_ID), eq(INSPECTION_ID), eq(VERSION_ID), eq(true), eq("reason"), any()))
         .thenReturn(published);
+    when(reportService.publishVersion(eq(ACTOR_ID), eq(INSPECTION_ID), eq(VERSION_ID), any()))
+        .thenReturn(published);
     when(reportService.requestCustomerClarification(ACTOR_ID, INSPECTION_ID, VERSION_ID, "reason"))
         .thenReturn(published);
     when(withdraw.reason()).thenReturn("reason");
@@ -209,6 +211,8 @@ class InspectionControllerDelegationTest {
             controller
                 .reviewVersion(jwt, INSPECTION_ID, VERSION_ID, true, "reason", request)
                 .data())
+        .isSameAs(published);
+    assertThat(controller.publishVersion(jwt, INSPECTION_ID, VERSION_ID, request).data())
         .isSameAs(published);
     assertThat(
             controller.requestReportClarification(jwt, INSPECTION_ID, VERSION_ID, "reason").data())

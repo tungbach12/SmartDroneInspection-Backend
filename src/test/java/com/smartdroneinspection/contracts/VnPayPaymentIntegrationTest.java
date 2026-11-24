@@ -139,12 +139,15 @@ class VnPayPaymentIntegrationTest {
             "Partner Pilot");
 
     jdbcTemplate.update(
-        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key, payout_bank_name, payout_bank_account_number, payout_bank_account_holder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         inspectorUserId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-        "licenses/pilot-cert.pdf");
+        "licenses/pilot-cert.pdf",
+        "Techcombank",
+        "19031234567",
+        "PARTNER PILOT");
 
     try {
       mockMvc
@@ -336,8 +339,8 @@ class VnPayPaymentIntegrationTest {
 
     ServiceRequestOccurrence settledOcc = occurrences.findById(occurrenceId).orElseThrow();
     assertThat(settledOcc.getPaymentStatus()).isEqualTo(OccurrencePaymentStatus.PAID);
-    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.ELIGIBLE);
-    assertThat(settledOcc.getPayoutReference()).isNull();
+    assertThat(settledOcc.getPayoutStatus()).isEqualTo(OccurrencePayoutStatus.PAID);
+    assertThat(settledOcc.getPayoutReference()).startsWith("UNC-VNPAY-");
     assertThat(settledOcc.getPaymentMethod()).isEqualTo("VNPAY");
     assertThat(settledOcc.getPaymentReference()).isEqualTo("VNPAY-14226112");
 
@@ -587,6 +590,31 @@ class VnPayPaymentIntegrationTest {
                     reportVersionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-VNPAY-" + occurrenceId.toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/inspections/{id}/report/versions/{vId}/publish",
+                    inspectionId,
+                    reportVersionId)
+                .with(principal(managerUserId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 

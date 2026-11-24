@@ -387,7 +387,11 @@ public class ContractWorkflowController {
   public ApiResponse<ManagerFinanceHistoryResponse> managerFinanceHistory(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(defaultValue = "ALL") String scope) {
+    if ("PAYOUTS".equalsIgnoreCase(scope) || "REVENUE".equalsIgnoreCase(scope)) {
+      return ApiResponse.success(workflow.managerFinanceHistory(actorId(jwt), page, size, scope));
+    }
     return ApiResponse.success(workflow.managerFinanceHistory(actorId(jwt), page, size));
   }
 
@@ -413,6 +417,15 @@ public class ContractWorkflowController {
       @PathVariable UUID occurrenceId) {
     return ApiResponse.success(
         workflow.createSepayPaymentLink(actorId(jwt), requestId, occurrenceId));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/sepay/create-payout-link")
+  public ApiResponse<SepayPaymentLinkResponse> createSepayPayoutLink(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId) {
+    return ApiResponse.success(
+        workflow.createSepayPayoutLink(actorId(jwt), requestId, occurrenceId));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/vnpay/create-payment-url")

@@ -108,12 +108,15 @@ class PaymentDueAndDocumentApiIntegrationTest {
         createUser(UserRole.INSPECTOR, "i." + UUID.randomUUID() + "@partner.test", "Pilot");
 
     jdbcTemplate.update(
-        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO inspector_profiles (user_id, pilot_license_number, pilot_license_class, pilot_license_expires_at, pilot_license_file_key, payout_bank_name, payout_bank_account_number, payout_bank_account_holder) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         inspectorUserId,
         "VN-UAV-PILOT-2026",
         "CLASS_B",
         java.sql.Timestamp.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-        "licenses/pilot-cert.pdf");
+        "licenses/pilot-cert.pdf",
+        "Vietcombank",
+        "0123456789",
+        "PILOT TEST");
 
     silently(
         () ->
@@ -494,6 +497,26 @@ class PaymentDueAndDocumentApiIntegrationTest {
             post("/api/v1/inspections/{id}/report/versions/{vId}/review", inspectionId, versionId)
                 .with(principal(managerUserId, "MANAGER"))
                 .param("approve", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("APPROVED"));
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/record-payout",
+                    requestId,
+                    occurrenceId)
+                .with(principal(managerUserId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "payoutReference",
+                            "UNC-DUE-" + occurrenceId.toString().substring(0, 8)))))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/versions/{vId}/publish", inspectionId, versionId)
+                .with(principal(managerUserId, "MANAGER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
 

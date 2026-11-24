@@ -205,7 +205,7 @@ public class InspectionListService {
   private String pendingAction(Inspection inspection, InspectionReport report) {
     if (report != null) {
       ReportStatus reportStatus = report.getStatus();
-      if (reportStatus == ReportStatus.SUBMITTED) {
+      if (reportStatus == ReportStatus.SUBMITTED || reportStatus == ReportStatus.APPROVED) {
         return "REPORT_REVIEW";
       }
     }

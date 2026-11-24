@@ -115,6 +115,67 @@ public record ServiceRequestOccurrenceResponse(
         lastTimeoutInspectorName);
   }
 
+  public ServiceRequestOccurrenceResponse withPayoutBankDetails(
+      com.smartdroneinspection.users.UserAccess.PayoutBankDetails bankDetails) {
+    if (bankDetails == null || payout == null) {
+      return this;
+    }
+    return new ServiceRequestOccurrenceResponse(
+        id,
+        occurrenceIndex,
+        plannedStartAt,
+        plannedEndAt,
+        status,
+        inspectorId,
+        droneId,
+        inspectionId,
+        assignedAt,
+        contractFileName,
+        contractContentType,
+        contractSizeBytes,
+        contractUploadedAt,
+        currency,
+        totalPrice,
+        serviceBaseAmount,
+        vatRate,
+        vatAmount,
+        commissionRate,
+        commissionAmount,
+        inspectorGrossPayout,
+        tncnRate,
+        tncnAmount,
+        inspectorNetPayout,
+        remainingInspectorNetPayout,
+        paymentStatus,
+        paymentConfirmedAt,
+        refundedAmount,
+        refundStatus,
+        payoutStatus,
+        payoutRecordedAt,
+        reportAcceptedAt,
+        invoice,
+        payment,
+        new OccurrenceFinanceResponse.InspectorPayoutSummary(
+            payout.inspectorId(),
+            payout.status(),
+            payout.reference(),
+            payout.recordedAt(),
+            payout.recordedByUserId(),
+            payout.heldForRefund(),
+            payout.finalPayoutAmount(),
+            bankDetails.bankName(),
+            bankDetails.accountNumber(),
+            bankDetails.accountHolder(),
+            bankDetails.bankBranch()),
+        assignmentStatus,
+        reassignmentRequired,
+        declineReason,
+        acceptanceDeadlineAt,
+        lastTimeoutCancelledAt,
+        lastTimeoutInspectorId,
+        lastTimeoutInspectorName);
+  }
+
   public static ServiceRequestOccurrenceResponse from(ServiceRequestOccurrence occurrence) {
     return from(occurrence, null);
   }
