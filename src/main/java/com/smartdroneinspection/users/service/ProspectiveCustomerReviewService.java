@@ -9,6 +9,7 @@ import com.smartdroneinspection.users.api.dto.response.ProspectiveCustomerRespon
 import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceReviewedEvent;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.util.List;
@@ -109,6 +110,17 @@ public class ProspectiveCustomerReviewService {
         ip,
         agent,
         correlationId);
+    events.publishEvent(
+        new ProspectiveCustomerAirspaceReviewedEvent(
+            registration.getId(),
+            prospect.getId(),
+            prospect.getEmail(),
+            prospect.getFullName(),
+            registration.getOrganizationName(),
+            registration.getAssetCode(),
+            true,
+            request.reviewNote(),
+            java.time.Instant.now()));
     return ProspectiveCustomerResponse.from(registration);
   }
 
@@ -122,10 +134,12 @@ public class ProspectiveCustomerReviewService {
       String correlationId) {
     requireAdmin(adminId);
     ProspectiveCustomerRegistration registration = requirePending(registrationId);
-    users
-        .findDetailedById(registration.getUserId())
-        .ifPresent(user -> user.disable(UserStatus.DISABLED));
-    registration.reject(adminId, request.reviewNote().trim());
+    User prospect = users.findDetailedById(registration.getUserId()).orElse(null);
+    if (prospect != null) {
+      prospect.disable(UserStatus.DISABLED);
+    }
+    String note = request.reviewNote().trim();
+    registration.reject(adminId, note);
     registrations.saveAndFlush(registration);
     audit.record(
         adminId,
@@ -135,6 +149,19 @@ public class ProspectiveCustomerReviewService {
         ip,
         agent,
         correlationId);
+    if (prospect != null) {
+      events.publishEvent(
+          new ProspectiveCustomerAirspaceReviewedEvent(
+              registration.getId(),
+              prospect.getId(),
+              prospect.getEmail(),
+              prospect.getFullName(),
+              registration.getOrganizationName(),
+              registration.getAssetCode(),
+              false,
+              note,
+              java.time.Instant.now()));
+    }
     return ProspectiveCustomerResponse.from(registration);
   }
 

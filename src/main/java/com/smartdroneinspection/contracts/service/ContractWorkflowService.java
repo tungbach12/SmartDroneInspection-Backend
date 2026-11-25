@@ -29,6 +29,7 @@ import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestQuoteRe
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
 import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
+import com.smartdroneinspection.contracts.domain.ServiceRefund;
 import com.smartdroneinspection.contracts.domain.ServiceRequest;
 import com.smartdroneinspection.contracts.domain.ServiceRequest.RequestType;
 import com.smartdroneinspection.contracts.domain.ServiceRequestMessage;
@@ -36,8 +37,16 @@ import com.smartdroneinspection.contracts.domain.ServiceRequestMessageAttachment
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence;
 import com.smartdroneinspection.contracts.domain.ServiceRequestOccurrence.OccurrencePaymentStatus;
 import com.smartdroneinspection.contracts.domain.ServiceRequestQuote;
+import com.smartdroneinspection.contracts.events.CustomerReportAcceptedEvent;
+import com.smartdroneinspection.contracts.events.InspectorPayoutSettledEvent;
+import com.smartdroneinspection.contracts.events.InspectorReceivableRecoveryEvent;
+import com.smartdroneinspection.contracts.events.OccurrenceRefundEvent;
 import com.smartdroneinspection.contracts.events.PaymentSettledEvent;
+import com.smartdroneinspection.contracts.events.ServiceQuoteAcceptedEvent;
+import com.smartdroneinspection.contracts.events.ServiceQuoteSavedEvent;
 import com.smartdroneinspection.contracts.events.ServiceRequestCreatedEvent;
+import com.smartdroneinspection.contracts.events.ServiceRequestManagerChangedEvent;
+import com.smartdroneinspection.contracts.events.SignedContractUploadedEvent;
 import com.smartdroneinspection.contracts.gateway.SepayGateway;
 import com.smartdroneinspection.contracts.gateway.VnPayGateway;
 import com.smartdroneinspection.contracts.repository.InspectorReceivableRepository;
@@ -595,7 +604,8 @@ public class ContractWorkflowService
                         "MANAGER_NOT_ACTIVE",
                         "The selected assignee is not an active Manager"));
     UUID previousManagerId = request.getAssignedManagerId();
-    request.reassignManager(newManager.id(), admin.id(), Instant.now());
+    Instant now = Instant.now();
+    request.reassignManager(newManager.id(), admin.id(), now);
     requests.saveAndFlush(request);
     recordManagerAssignmentAudit(
         admin.id(),
@@ -603,6 +613,17 @@ public class ContractWorkflowService
         previousManagerId,
         newManager.id(),
         previousManagerId == null ? "ASSIGNED" : "REASSIGNED");
+    if (events != null) {
+      events.publishEvent(
+          new ServiceRequestManagerChangedEvent(
+              request.getId(),
+              request.getOwnerCustomerId(),
+              previousManagerId,
+              newManager.id(),
+              previousManagerId == null ? "ASSIGNED" : "REASSIGNED",
+              request.getDescription(),
+              now));
+    }
     return toAdminAssignmentResponse(request);
   }
 
@@ -617,9 +638,21 @@ public class ContractWorkflowService
           "REQUEST_NOT_ASSIGNED",
           "This service request has no assigned Manager");
     }
-    request.unassignManager(admin.id(), Instant.now());
+    Instant now = Instant.now();
+    request.unassignManager(admin.id(), now);
     requests.saveAndFlush(request);
     recordManagerAssignmentAudit(admin.id(), request, previousManagerId, null, "UNASSIGNED");
+    if (events != null) {
+      events.publishEvent(
+          new ServiceRequestManagerChangedEvent(
+              request.getId(),
+              request.getOwnerCustomerId(),
+              previousManagerId,
+              null,
+              "UNASSIGNED",
+              request.getDescription(),
+              now));
+    }
     return toAdminAssignmentResponse(request);
   }
 
@@ -1003,6 +1036,17 @@ public class ContractWorkflowService
     }
     requests.saveAndFlush(request);
     recordQuoteAudit(manager, request, quote, previousPrice, previousStatus);
+    if (events != null) {
+      events.publishEvent(
+          new ServiceQuoteSavedEvent(
+              request.getId(),
+              request.getOwnerCustomerId(),
+              request.getDescription(),
+              existing != null,
+              quote.getEffectivePrice(),
+              quote.getCurrency(),
+              Instant.now()));
+    }
     return toResponse(request);
   }
 
@@ -1058,6 +1102,15 @@ public class ContractWorkflowService
       throw failure(HttpStatus.CONFLICT, "QUOTE_ACCEPTANCE_INVALID", exception.getMessage());
     }
     requests.saveAndFlush(request);
+    if (events != null) {
+      events.publishEvent(
+          new ServiceQuoteAcceptedEvent(
+              request.getId(),
+              request.getOwnerCustomerId(),
+              request.getAssignedManagerId(),
+              request.getDescription(),
+              Instant.now()));
+    }
     return toResponse(request);
   }
 
@@ -1096,6 +1149,14 @@ public class ContractWorkflowService
       throw exception;
     }
 
+    if (events != null) {
+      events.publishEvent(
+          new SignedContractUploadedEvent(
+              request.getId(),
+              request.getOwnerCustomerId(),
+              request.getDescription(),
+              Instant.now()));
+    }
     return toResponse(request);
   }
 
@@ -1172,6 +1233,14 @@ public class ContractWorkflowService
       } catch (IOException ignored) {
       }
       throw exception;
+    }
+    if (events != null) {
+      events.publishEvent(
+          new SignedContractUploadedEvent(
+              request.getId(),
+              request.getOwnerCustomerId(),
+              request.getDescription(),
+              Instant.now()));
     }
     return toResponse(request);
   }
@@ -1432,6 +1501,17 @@ public class ContractWorkflowService
       throw failure(HttpStatus.CONFLICT, "REPORT_ACCEPTANCE_INVALID", ex.getMessage());
     }
     occurrences.saveAndFlush(occurrence);
+    if (events != null) {
+      events.publishEvent(
+          new CustomerReportAcceptedEvent(
+              request.getId(),
+              occurrence.getId(),
+              occurrence.getInspectionId(),
+              request.getOwnerCustomerId(),
+              request.getAssignedManagerId(),
+              occurrence.getPaymentDueAt(),
+              Instant.now()));
+    }
     return toResponse(request);
   }
 
@@ -1511,17 +1591,35 @@ public class ContractWorkflowService
           "REFUND_REQUEST_REFERENCE_DUPLICATE",
           "Refund request reference has already been used");
     }
+    ServiceRefund refund;
     try {
-      occurrence.initiateRefund(
-          input.amount(),
-          input.requestReference(),
-          input.reason(),
-          input.inspectorReceivableAmount(),
-          input.platformAbsorbedAmount(),
-          manager.id());
+      refund =
+          occurrence.initiateRefund(
+              input.amount(),
+              input.requestReference(),
+              input.reason(),
+              input.inspectorReceivableAmount(),
+              input.platformAbsorbedAmount(),
+              manager.id());
       occurrences.saveAndFlush(occurrence);
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "REFUND_INITIATION_INVALID", ex.getMessage());
+    }
+    if (events != null) {
+      events.publishEvent(
+          new OccurrenceRefundEvent(
+              refund.getId(),
+              occurrence.getId(),
+              request.getId(),
+              occurrence.getInspectionId(),
+              request.getOwnerCustomerId(),
+              occurrence.getInspectorId(),
+              request.getAssignedManagerId(),
+              "INITIATED",
+              refund.getAmount(),
+              refund.getRequestReference(),
+              refund.getReason(),
+              Instant.now()));
     }
     return toResponse(request);
   }
@@ -1558,6 +1656,22 @@ public class ContractWorkflowService
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "REFUND_COMPLETION_INVALID", ex.getMessage());
     }
+    if (events != null) {
+      events.publishEvent(
+          new OccurrenceRefundEvent(
+              refundId,
+              occurrence.getId(),
+              request.getId(),
+              occurrence.getInspectionId(),
+              request.getOwnerCustomerId(),
+              occurrence.getInspectorId(),
+              request.getAssignedManagerId(),
+              "COMPLETED",
+              null,
+              input.externalReference(),
+              null,
+              Instant.now()));
+    }
     return toResponse(request);
   }
 
@@ -1576,6 +1690,22 @@ public class ContractWorkflowService
       occurrences.saveAndFlush(occurrence);
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "REFUND_CANCELLATION_INVALID", ex.getMessage());
+    }
+    if (events != null) {
+      events.publishEvent(
+          new OccurrenceRefundEvent(
+              refundId,
+              occurrence.getId(),
+              request.getId(),
+              occurrence.getInspectionId(),
+              request.getOwnerCustomerId(),
+              occurrence.getInspectorId(),
+              request.getAssignedManagerId(),
+              "CANCELLED",
+              null,
+              null,
+              input.reason(),
+              Instant.now()));
     }
     return toResponse(request);
   }
@@ -1632,6 +1762,17 @@ public class ContractWorkflowService
       occurrences.saveAndFlush(occurrence);
     } catch (IllegalArgumentException | IllegalStateException ex) {
       throw failure(HttpStatus.CONFLICT, "RECEIVABLE_RECOVERY_INVALID", ex.getMessage());
+    }
+    if (events != null && occurrence.getInspectorId() != null) {
+      events.publishEvent(
+          new InspectorReceivableRecoveryEvent(
+              receivableId,
+              occurrence.getId(),
+              request.getId(),
+              occurrence.getInspectorId(),
+              input.amount(),
+              input.externalReference(),
+              Instant.now()));
     }
     return toResponse(request);
   }
@@ -1755,6 +1896,20 @@ public class ContractWorkflowService
       throw failure(HttpStatus.CONFLICT, "PAYOUT_RECORD_INVALID", ex.getMessage());
     }
     occurrences.saveAndFlush(occurrence);
+    if (events != null) {
+      events.publishEvent(
+          new InspectorPayoutSettledEvent(
+              occurrence.getId(),
+              request.getId(),
+              occurrence.getInspectionId(),
+              occurrence.getInspectorId(),
+              request.getAssignedManagerId(),
+              input.payoutReference(),
+              occurrence.getRemainingInspectorNetPayout(),
+              "MANUAL_WIRE",
+              false,
+              Instant.now()));
+    }
     return toResponse(request);
   }
 
@@ -2640,6 +2795,20 @@ public class ContractWorkflowService
             : ("SEPAY-OUT-" + payoutOrderCode);
     occurrence.confirmSepayPayout(payoutRef, attributedManagerId);
     occurrences.saveAndFlush(occurrence);
+    if (events != null) {
+      events.publishEvent(
+          new InspectorPayoutSettledEvent(
+              occurrence.getId(),
+              occurrence.getRequestId(),
+              occurrence.getInspectionId(),
+              occurrence.getInspectorId(),
+              attributedManagerId,
+              payoutRef,
+              occurrence.getRemainingInspectorNetPayout(),
+              "SEPAY",
+              true,
+              Instant.now()));
+    }
   }
 
   @Override

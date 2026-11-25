@@ -82,7 +82,7 @@ class PilotLicenseExpiryCheckServiceTest {
     Notification saved = notifCaptor.getValue();
     assertThat(saved.getRecipientUserId()).isEqualTo(inspectorId);
     assertThat(saved.getEventType()).isEqualTo("PILOT_LICENSE_30D");
-    assertThat(saved.getTargetPath()).isEqualTo("/partner-onboarding");
+    assertThat(saved.getTargetPath()).isEqualTo("/operations/partner-onboarding");
     assertThat(saved.getDeduplicationKey())
         .isEqualTo("PILOT_LICENSE_EXPIRY:" + inspectorId + ":2026-12-01:30D");
     assertThat(saved.getBody()).contains("DC-2026-0001234").contains("20 ngày");
@@ -154,7 +154,7 @@ class PilotLicenseExpiryCheckServiceTest {
         .satisfies(
             n -> {
               assertThat(n.getEventType()).isEqualTo("PILOT_LICENSE_EXPIRED");
-              assertThat(n.getTargetPath()).isEqualTo("/partner-onboarding");
+              assertThat(n.getTargetPath()).isEqualTo("/operations/partner-onboarding");
             });
     assertThat(saved)
         .filteredOn(n -> n.getRecipientUserId().equals(managerId))
@@ -162,7 +162,7 @@ class PilotLicenseExpiryCheckServiceTest {
         .satisfies(
             n -> {
               assertThat(n.getEventType()).isEqualTo("PILOT_LICENSE_EXPIRED_ALERT");
-              assertThat(n.getTargetPath()).isEqualTo("/onboarding-reviews");
+              assertThat(n.getTargetPath()).isEqualTo("/manager/onboarding-reviews");
             });
   }
 

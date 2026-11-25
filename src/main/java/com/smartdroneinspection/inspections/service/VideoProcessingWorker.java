@@ -2,9 +2,12 @@ package com.smartdroneinspection.inspections.service;
 
 import com.smartdroneinspection.inspections.domain.Evidence;
 import com.smartdroneinspection.inspections.domain.EvidenceUploadSession;
+import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.EvidenceProcessingStatus;
+import com.smartdroneinspection.inspections.events.VideoProcessingFinishedEvent;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.EvidenceUploadSessionRepository;
+import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.VideoTranscodePort;
 import com.smartdroneinspection.shared.storage.EvidenceObjectStore;
 import jakarta.annotation.PreDestroy;
@@ -26,7 +29,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -58,6 +63,15 @@ public class VideoProcessingWorker {
   private final Semaphore concurrencyLimit;
   private final ExecutorService executor;
   private final Set<UUID> activeIds = ConcurrentHashMap.newKeySet();
+  private InspectionRepository inspectionRepository;
+  private ApplicationEventPublisher eventPublisher;
+
+  @Autowired(required = false)
+  public void setNotificationDependencies(
+      InspectionRepository inspectionRepository, ApplicationEventPublisher eventPublisher) {
+    this.inspectionRepository = inspectionRepository;
+    this.eventPublisher = eventPublisher;
+  }
 
   public VideoProcessingWorker(
       EvidenceRepository evidenceRepository,
@@ -234,6 +248,13 @@ public class VideoProcessingWorker {
                       session.markReady(completedAt);
                       sessionRepository.saveAndFlush(session);
                     });
+            publishVideoFinishedEvent(
+                entity.getId(),
+                entity.getInspectionId(),
+                entity.getFileName(),
+                true,
+                null,
+                completedAt);
           });
 
       // Only delete raw after processed + poster are durably stored, verified, and DB committed.
@@ -287,6 +308,13 @@ public class VideoProcessingWorker {
                   entity -> {
                     entity.markProcessingFailed(finalMessage);
                     evidenceRepository.saveAndFlush(entity);
+                    publishVideoFinishedEvent(
+                        entity.getId(),
+                        entity.getInspectionId(),
+                        entity.getFileName(),
+                        false,
+                        finalMessage,
+                        now);
                   });
           Optional<EvidenceUploadSession> session = sessionRepository.findByEvidenceId(evidenceId);
           session.ifPresent(
@@ -295,6 +323,31 @@ public class VideoProcessingWorker {
                 sessionRepository.saveAndFlush(s);
               });
         });
+  }
+
+  private void publishVideoFinishedEvent(
+      UUID evidenceId,
+      UUID inspectionId,
+      String fileName,
+      boolean success,
+      String errorMessage,
+      Instant finishedAt) {
+    if (eventPublisher == null || inspectionId == null) {
+      return;
+    }
+    UUID inspectorId =
+        inspectionRepository != null
+            ? inspectionRepository
+                .findById(inspectionId)
+                .map(Inspection::getInspectorId)
+                .orElse(null)
+            : null;
+    if (inspectorId == null) {
+      return;
+    }
+    eventPublisher.publishEvent(
+        new VideoProcessingFinishedEvent(
+            evidenceId, inspectionId, inspectorId, fileName, success, errorMessage, finishedAt));
   }
 
   private static void deleteQuietly(EvidenceObjectStore store, String key) {

@@ -637,6 +637,339 @@ public class InspectionNotificationService {
         key);
   }
 
+  @Transactional
+  public void recordInspectionAccepted(
+      UUID inspectionId, UUID ownerCustomerId, UUID inspectorId, Instant acceptedAt) {
+    if (inspectionId == null) {
+      return;
+    }
+    long epoch = acceptedAt != null ? acceptedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String inspectorLabel =
+        inspectorId != null
+            ? userAccess
+                .findActiveUser(inspectorId)
+                .map(ActiveUser::fullName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse("Inspector")
+            : "Inspector";
+    String title =
+        NotificationText.bilingual(
+            "Inspector đã xác nhận nhiệm vụ bay", "Inspector accepted mission assignment");
+    String body =
+        NotificationText.bilingual(
+            inspectorLabel
+                + " đã xác nhận nhận nhiệm vụ kiểm tra "
+                + inspectionId
+                + " và sẵn sàng chuẩn bị phép bay.",
+            inspectorLabel
+                + " accepted inspection "
+                + inspectionId
+                + " and can now proceed with flight preparation.");
+    String prefix = "INSPECTION_ACCEPTED:" + inspectionId + ":" + epoch;
+    if (ownerCustomerId != null) {
+      String key = prefix + ":" + ownerCustomerId;
+      saveWithDeduplication(
+          new Notification(
+              ownerCustomerId,
+              "INSPECTION_ACCEPTED",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              "/client/inspections/" + inspectionId,
+              key),
+          key);
+    }
+    notifyActiveManagers(
+        "INSPECTION_ACCEPTED", title, body, "/manager/inspections/" + inspectionId, prefix);
+  }
+
+  @Transactional
+  public void recordInspectionCancelled(
+      UUID inspectionId,
+      UUID ownerCustomerId,
+      UUID inspectorId,
+      String reason,
+      Instant cancelledAt) {
+    if (inspectionId == null) {
+      return;
+    }
+    long epoch =
+        cancelledAt != null ? cancelledAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String reasonText = NotificationText.safeOrFallback(reason, "");
+    String title = NotificationText.bilingual("Đợt kiểm tra đã bị hủy", "Inspection cancelled");
+    String body =
+        NotificationText.bilingual(
+            "Đợt kiểm tra "
+                + inspectionId
+                + " đã bị hủy"
+                + (reasonText.isEmpty() ? "." : " với lý do: " + reasonText + "."),
+            "Inspection "
+                + inspectionId
+                + " was cancelled"
+                + (reasonText.isEmpty() ? "." : ": " + reasonText + "."));
+    String prefix = "INSPECTION_CANCELLED:" + inspectionId + ":" + epoch;
+    if (inspectorId != null) {
+      String key = prefix + ":" + inspectorId;
+      saveWithDeduplication(
+          new Notification(
+              inspectorId,
+              "INSPECTION_CANCELLED",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              "/operations/inspections",
+              key),
+          key);
+    }
+    if (ownerCustomerId != null) {
+      String key = prefix + ":" + ownerCustomerId;
+      saveWithDeduplication(
+          new Notification(
+              ownerCustomerId,
+              "INSPECTION_CANCELLED",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              "/client/inspections/" + inspectionId,
+              key),
+          key);
+    }
+  }
+
+  @Transactional
+  public void recordFieldSessionCompleted(
+      UUID inspectionId,
+      UUID sessionId,
+      UUID ownerCustomerId,
+      String missionTitle,
+      Instant endedAt) {
+    if (inspectionId == null || sessionId == null) {
+      return;
+    }
+    String label = NotificationText.safeOrFallback(missionTitle, inspectionId.toString());
+    String title =
+        NotificationText.bilingual(
+            "Phiên bay thực địa đã hoàn tất", "Field flight session completed");
+    String body =
+        NotificationText.bilingual(
+            "Phiên bay thực địa cho \""
+                + label
+                + "\" đã hoàn thành. Dữ liệu ảnh/video đang được tổng hợp để lập báo cáo.",
+            "The field flight session for \""
+                + label
+                + "\" has finished. Captured evidence is being compiled for reporting.");
+    String prefix = "FIELD_SESSION_COMPLETED:" + sessionId;
+    if (ownerCustomerId != null) {
+      String key = prefix + ":" + ownerCustomerId;
+      saveWithDeduplication(
+          new Notification(
+              ownerCustomerId,
+              "FIELD_SESSION_COMPLETED",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              "/client/inspections/" + inspectionId,
+              key),
+          key);
+    }
+    notifyActiveManagers(
+        "FIELD_SESSION_COMPLETED", title, body, "/manager/inspections/" + inspectionId, prefix);
+  }
+
+  @Transactional
+  public void recordReportApprovedForPayout(
+      UUID inspectionId,
+      UUID reportVersionId,
+      int versionNo,
+      UUID inspectorId,
+      Instant approvedAt) {
+    if (inspectionId == null || reportVersionId == null) {
+      return;
+    }
+    long epoch = approvedAt != null ? approvedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    if (inspectorId != null) {
+      String key = "REPORT_APPROVED_PAYOUT:" + reportVersionId + ":" + inspectorId;
+      saveWithDeduplication(
+          new Notification(
+              inspectorId,
+              "REPORT_APPROVED_PAYOUT_ELIGIBLE",
+              NotificationChannel.IN_APP,
+              NotificationText.bilingual(
+                  "Báo cáo đã được duyệt — đủ điều kiện chi trả",
+                  "Report approved — payout unlocked"),
+              NotificationText.bilingual(
+                  "Báo cáo phiên bản "
+                      + versionNo
+                      + " cho đợt kiểm tra "
+                      + inspectionId
+                      + " đã được phê duyệt. Khoản chi trả của bạn đang chờ Quản lý giải ngân trước khi phát hành tới khách hàng.",
+                  "Report version "
+                      + versionNo
+                      + " for inspection "
+                      + inspectionId
+                      + " was approved. Your payout is now unlocked for settlement prior to customer publication."),
+              "/operations/finance-history",
+              key),
+          key);
+    }
+    notifyActiveManagers(
+        "REPORT_APPROVED_PAYOUT_ELIGIBLE",
+        NotificationText.bilingual(
+            "Báo cáo đã duyệt — cần chi trả Inspector trước khi xuất bản",
+            "Report approved — settle inspector payout to publish"),
+        NotificationText.bilingual(
+            "Báo cáo phiên bản "
+                + versionNo
+                + " cho đợt kiểm tra "
+                + inspectionId
+                + " đã được duyệt. Vui lòng hoàn tất chi trả cho Inspector để mở khóa phát hành báo cáo.",
+            "Report version "
+                + versionNo
+                + " for inspection "
+                + inspectionId
+                + " is approved. Settle the inspector payout to unlock publishing to the customer."),
+        "/manager/inspections/" + inspectionId + "/payout",
+        "REPORT_APPROVED_PAYOUT_MGR:" + reportVersionId + ":" + epoch);
+  }
+
+  @Transactional
+  public void recordReportWithdrawn(
+      UUID inspectionId, UUID reportVersionId, int versionNo, Instant withdrawnAt) {
+    if (inspectionId == null || reportVersionId == null) {
+      return;
+    }
+    long epoch =
+        withdrawnAt != null ? withdrawnAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String prefix = "REPORT_WITHDRAWN:" + reportVersionId + ":" + epoch;
+    String title =
+        NotificationText.bilingual(
+            "Inspector đã rút lại báo cáo chờ duyệt", "Submitted report withdrawn by inspector");
+    String body =
+        NotificationText.bilingual(
+            "Báo cáo phiên bản "
+                + versionNo
+                + " của đợt kiểm tra "
+                + inspectionId
+                + " đã được kiểm định viên rút lại để chỉnh sửa trước khi thẩm định.",
+            "Report version "
+                + versionNo
+                + " for inspection "
+                + inspectionId
+                + " was withdrawn by the inspector for revision before review.");
+    for (ActiveUser reviewer : activeReviewers()) {
+      if (reviewer.id() == null) continue;
+      String targetPath =
+          reviewer.hasRole("ADMIN")
+              ? "/admin/inspections/" + inspectionId + "/review"
+              : "/manager/inspections/" + inspectionId + "/review";
+      String key = prefix + ":" + reviewer.id();
+      saveWithDeduplication(
+          new Notification(
+              reviewer.id(),
+              "REPORT_WITHDRAWN",
+              NotificationChannel.IN_APP,
+              title,
+              body,
+              targetPath,
+              key),
+          key);
+    }
+  }
+
+  @Transactional
+  public void recordReportClarificationRequested(
+      UUID inspectionId,
+      UUID reportVersionId,
+      int versionNo,
+      String reason,
+      int clarificationCount,
+      Instant requestedAt) {
+    if (inspectionId == null || reportVersionId == null) {
+      return;
+    }
+    long epoch =
+        requestedAt != null ? requestedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String reasonText = NotificationText.safeOrFallback(reason, "Clarification requested");
+    String title =
+        NotificationText.bilingual(
+            "Khách hàng yêu cầu làm rõ báo cáo", "Customer requested report clarification");
+    String body =
+        NotificationText.bilingual(
+            "Khách hàng đã gửi yêu cầu làm rõ (lần "
+                + clarificationCount
+                + "/2) cho báo cáo phiên bản "
+                + versionNo
+                + " (đợt kiểm tra "
+                + inspectionId
+                + "): "
+                + reasonText,
+            "The customer requested clarification ("
+                + clarificationCount
+                + "/2) on report version "
+                + versionNo
+                + " (inspection "
+                + inspectionId
+                + "): "
+                + reasonText);
+    notifyActiveManagers(
+        "REPORT_CLARIFICATION_REQUESTED",
+        title,
+        body,
+        "/manager/inspections/" + inspectionId + "/review",
+        "REPORT_CLARIFICATION:" + reportVersionId + ":" + epoch);
+  }
+
+  @Transactional
+  public void recordVideoProcessingFinished(
+      UUID evidenceId,
+      UUID inspectionId,
+      UUID inspectorId,
+      String fileName,
+      boolean success,
+      String errorMessage,
+      Instant finishedAt) {
+    if (evidenceId == null || inspectionId == null || inspectorId == null) {
+      return;
+    }
+    long epoch = finishedAt != null ? finishedAt.getEpochSecond() : Instant.now().getEpochSecond();
+    String safeFile = NotificationText.safeOrFallback(fileName, "video.mp4");
+    String eventType = success ? "VIDEO_PROCESSING_READY" : "VIDEO_PROCESSING_FAILED";
+    String title =
+        success
+            ? NotificationText.bilingual(
+                "Video thực địa đã xử lý xong", "Inspection video processing complete")
+            : NotificationText.bilingual(
+                "Xử lý video thực địa thất bại", "Inspection video processing failed");
+    String err = NotificationText.safeOrFallback(errorMessage, "Transcode error");
+    String body =
+        success
+            ? NotificationText.bilingual(
+                "Video \"" + safeFile + "\" đã chuyển mã 1080p xong và sẵn sàng quét AI.",
+                "Video \"" + safeFile + "\" finished 1080p transcoding and is ready for AI scan.")
+            : NotificationText.bilingual(
+                "Không thể xử lý video \""
+                    + safeFile
+                    + "\": "
+                    + err
+                    + ". Vui lòng thử lại hoặc tải lên tệp khác.",
+                "Failed to process video \""
+                    + safeFile
+                    + "\": "
+                    + err
+                    + ". Please retry or upload another file.");
+    String key = eventType + ":" + evidenceId + ":" + epoch + ":" + inspectorId;
+    saveWithDeduplication(
+        new Notification(
+            inspectorId,
+            eventType,
+            NotificationChannel.IN_APP,
+            title,
+            body,
+            "/operations/inspections/" + inspectionId + "/evidence",
+            key),
+        key);
+  }
+
   private List<ActiveUser> activeReviewers() {
     Map<UUID, ActiveUser> reviewers = new LinkedHashMap<>();
     for (ActiveUser manager : userAccess.listActiveManagers()) {

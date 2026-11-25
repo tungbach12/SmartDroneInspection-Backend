@@ -155,7 +155,7 @@ public class PilotLicenseExpiryCheckService {
       String title = buildInspectorTitle(tier);
       String body =
           buildInspectorBody(tier, licenseLabel, formattedDate, Math.max(0, remainingDays));
-      String targetPath = "/partner-onboarding";
+      String targetPath = "/operations/partner-onboarding";
 
       Notification notification =
           new Notification(
@@ -205,7 +205,7 @@ public class PilotLicenseExpiryCheckService {
                 NotificationChannel.IN_APP,
                 title,
                 body,
-                "/onboarding-reviews",
+                "/manager/onboarding-reviews",
                 managerKey);
         saveWithDeduplication(notification, managerKey);
       }

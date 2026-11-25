@@ -7,6 +7,8 @@ import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneDocumentConfig;
 import com.smartdroneinspection.assets.domain.DroneRegistrationApplication;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
+import com.smartdroneinspection.assets.events.DroneApplicationReviewedEvent;
+import com.smartdroneinspection.assets.events.DroneApplicationSubmittedEvent;
 import com.smartdroneinspection.assets.repository.DroneDocumentConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRegistrationApplicationRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
@@ -23,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +39,12 @@ public class DroneRegistrationApplicationService {
   private final Optional<EvidenceObjectStore> objectStore;
   private final DroneEvidenceUploadService evidenceUploads;
   private final DroneDocumentConfigRepository documentConfigs;
+  private ApplicationEventPublisher eventPublisher;
+
+  @Autowired(required = false)
+  public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
 
   public DroneRegistrationApplicationService(
       DroneRegistrationApplicationRepository applications,
@@ -194,6 +204,17 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new DroneApplicationSubmittedEvent(
+              application.getId(),
+              application.getDroneId(),
+              inspectorId,
+              application.getModel(),
+              application.getSerialNumber(),
+              false,
+              Instant.now()));
+    }
     var inspector = userAccess.findActiveUser(inspectorId).orElse(null);
     return DroneRegistrationApplicationResponse.from(application, inspector);
   }
@@ -286,6 +307,17 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new DroneApplicationSubmittedEvent(
+              application.getId(),
+              application.getDroneId(),
+              inspectorId,
+              application.getModel(),
+              application.getSerialNumber(),
+              true,
+              Instant.now()));
+    }
     var inspector = userAccess.findActiveUser(inspectorId).orElse(null);
     return DroneRegistrationApplicationResponse.from(application, inspector);
   }
@@ -580,6 +612,18 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new DroneApplicationReviewedEvent(
+              application.getId(),
+              drone.getId(),
+              application.getInspectorUserId(),
+              application.getModel(),
+              application.getSerialNumber(),
+              true,
+              null,
+              Instant.now()));
+    }
     var inspector = userAccess.findUser(application.getInspectorUserId()).orElse(null);
     var reviewer = userAccess.findUser(reviewerId).orElse(null);
     return DroneRegistrationApplicationResponse.from(application, inspector, reviewer);
@@ -595,7 +639,8 @@ public class DroneRegistrationApplicationService {
       String correlationId) {
     requireReviewer(reviewerId);
     DroneRegistrationApplication application = requirePending(applicationId);
-    application.reject(reviewerId, body.reviewNote().trim());
+    String trimmedNote = body.reviewNote().trim();
+    application.reject(reviewerId, trimmedNote);
     applications.saveAndFlush(application);
     userAccess.recordSecurityAudit(
         reviewerId,
@@ -605,6 +650,18 @@ public class DroneRegistrationApplicationService {
         ip,
         agent,
         correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new DroneApplicationReviewedEvent(
+              application.getId(),
+              application.getDroneId(),
+              application.getInspectorUserId(),
+              application.getModel(),
+              application.getSerialNumber(),
+              false,
+              trimmedNote,
+              Instant.now()));
+    }
     var inspector = userAccess.findUser(application.getInspectorUserId()).orElse(null);
     var reviewer = userAccess.findUser(reviewerId).orElse(null);
     return DroneRegistrationApplicationResponse.from(application, inspector, reviewer);

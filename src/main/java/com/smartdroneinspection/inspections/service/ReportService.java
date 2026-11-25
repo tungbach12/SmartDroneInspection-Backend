@@ -17,9 +17,12 @@ import com.smartdroneinspection.inspections.domain.InspectionReport;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionType;
 import com.smartdroneinspection.inspections.domain.enums.ReportStatus;
+import com.smartdroneinspection.inspections.events.ReportApprovedForPayoutEvent;
+import com.smartdroneinspection.inspections.events.ReportClarificationRequestedEvent;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
 import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
+import com.smartdroneinspection.inspections.events.ReportWithdrawnEvent;
 import com.smartdroneinspection.inspections.render.ReportHtmlTemplate;
 import com.smartdroneinspection.inspections.repository.EvidenceRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
@@ -610,6 +613,16 @@ public class ReportService {
             actorId,
             version.getReturnReason(),
             version.getReviewedAt() != null ? version.getReviewedAt() : java.time.Instant.now()));
+    events.publishEvent(
+        new ReportClarificationRequestedEvent(
+            inspectionId,
+            version.getId(),
+            version.getVersionNo(),
+            actorId,
+            inspection.getInspectorId(),
+            version.getReturnReason(),
+            inspection.getClarificationCount(),
+            version.getReviewedAt() != null ? version.getReviewedAt() : java.time.Instant.now()));
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),
@@ -665,6 +678,13 @@ public class ReportService {
     }
     inspection.reopenFindings();
     inspections.saveAndFlush(inspection);
+    events.publishEvent(
+        new ReportWithdrawnEvent(
+            inspectionId,
+            version.getId(),
+            version.getVersionNo(),
+            inspection.getInspectorId(),
+            java.time.Instant.now()));
     return toResponse(version, inspection.getInspectorId());
   }
 
@@ -686,6 +706,14 @@ public class ReportService {
     }
     versions.saveAndFlush(version);
     reportAcceptancePort.ifPresent(port -> port.onReportApproved(inspectionId));
+    events.publishEvent(
+        new ReportApprovedForPayoutEvent(
+            inspectionId,
+            version.getId(),
+            version.getVersionNo(),
+            inspection.getInspectorId(),
+            reviewer.id(),
+            java.time.Instant.now()));
     return new ReportPublishedResponse(
         version.getId(),
         version.getVersionNo(),

@@ -13,6 +13,7 @@ import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceRequestedEvent;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -224,6 +225,16 @@ public class OrganizationRegistrationService {
       }
       audit.record(
           null, prospect.getId(), auditAction, "SUCCESS", ipAddress, userAgent, correlationId);
+      if (events != null) {
+        events.publishEvent(
+            new ProspectiveCustomerAirspaceRequestedEvent(
+                registration.getId(),
+                prospect.getId(),
+                organizationName,
+                registration.getAssetCode(),
+                evaluation.status().name(),
+                java.time.Instant.now()));
+      }
       return new OrganizationRegistrationResponse(
           organizationName,
           organizationCode,

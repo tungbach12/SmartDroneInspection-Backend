@@ -1,5 +1,6 @@
 package com.smartdroneinspection.notifications.service;
 
+import com.smartdroneinspection.notifications.api.dto.response.NotificationMarkAllReadResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationPageResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationUnreadCountResponse;
@@ -8,6 +9,7 @@ import com.smartdroneinspection.notifications.repository.NotificationRepository;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -77,6 +79,14 @@ public class NotificationService {
     notification.markRead();
     Notification saved = notificationRepository.save(notification);
     return NotificationResponse.from(saved);
+  }
+
+  @Transactional
+  public NotificationMarkAllReadResponse markAllRead(UUID userId) {
+    ActiveUser actor = requireActiveUser(userId);
+    int updatedCount =
+        notificationRepository.markAllReadByRecipientUserId(actor.id(), Instant.now());
+    return new NotificationMarkAllReadResponse(updatedCount);
   }
 
   private ActiveUser requireActiveUser(UUID userId) {

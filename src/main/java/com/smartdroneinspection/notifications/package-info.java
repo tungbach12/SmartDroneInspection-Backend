@@ -4,6 +4,8 @@
       "shared",
       "shared::api",
       "shared::exception",
+      "assets",
+      "assets::events",
       "contracts::events",
       "inspections::events",
       "users",

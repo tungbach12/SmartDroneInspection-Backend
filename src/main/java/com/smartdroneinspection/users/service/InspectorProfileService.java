@@ -8,6 +8,8 @@ import com.smartdroneinspection.users.api.dto.response.InspectorProfileResponse;
 import com.smartdroneinspection.users.domain.InspectorFlightLog;
 import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
+import com.smartdroneinspection.users.events.InspectorOnboardingReviewedEvent;
+import com.smartdroneinspection.users.events.InspectorOnboardingUpdatedEvent;
 import com.smartdroneinspection.users.events.PilotLicenseUpdatedEvent;
 import com.smartdroneinspection.users.repository.InspectorFlightLogRepository;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
@@ -207,6 +209,10 @@ public class InspectorProfileService {
     profileRepository.save(profile);
     recordProfileAudit(
         actorId, inspectorUserId, "INSPECTOR_LICENSE_SCAN_UPLOADED", "Licence scan uploaded");
+    if (eventPublisher != null && actorId != null && actorId.equals(inspectorUserId)) {
+      eventPublisher.publishEvent(
+          new InspectorOnboardingUpdatedEvent(inspectorUserId, "LICENSE_SCAN", Instant.now()));
+    }
     return toProfileResponse(user, profile);
   }
 
@@ -230,6 +236,10 @@ public class InspectorProfileService {
         inspectorUserId,
         "INSPECTOR_PARTNER_CONTRACT_UPLOADED",
         "Signed partner contract uploaded");
+    if (eventPublisher != null && actorId != null && actorId.equals(inspectorUserId)) {
+      eventPublisher.publishEvent(
+          new InspectorOnboardingUpdatedEvent(inspectorUserId, "PARTNER_CONTRACT", Instant.now()));
+    }
     return toProfileResponse(user, profile);
   }
 
@@ -276,6 +286,10 @@ public class InspectorProfileService {
     profileRepository.save(profile);
     recordProfileAudit(
         reviewerId, inspectorUserId, "INSPECTOR_ONBOARDING_APPROVED", "Onboarding approved");
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new InspectorOnboardingReviewedEvent(inspectorUserId, true, null, Instant.now()));
+    }
     return toProfileResponse(user, profile);
   }
 
@@ -283,13 +297,19 @@ public class InspectorProfileService {
       UUID inspectorUserId, String reason, UUID reviewerId) {
     User user = findInspector(inspectorUserId);
     InspectorProfile profile = findOrCreateProfile(inspectorUserId);
-    profile.rejectOnboarding(reviewerId, reason != null ? reason.trim() : null);
+    String trimmedReason = reason != null ? reason.trim() : null;
+    profile.rejectOnboarding(reviewerId, trimmedReason);
     profileRepository.save(profile);
     recordProfileAudit(
         reviewerId,
         inspectorUserId,
         "INSPECTOR_ONBOARDING_REJECTED",
-        reason == null ? "Onboarding rejected" : "Onboarding rejected: " + reason.trim());
+        trimmedReason == null ? "Onboarding rejected" : "Onboarding rejected: " + trimmedReason);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new InspectorOnboardingReviewedEvent(
+              inspectorUserId, false, trimmedReason, Instant.now()));
+    }
     return toProfileResponse(user, profile);
   }
 

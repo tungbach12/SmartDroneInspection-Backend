@@ -19,8 +19,10 @@ import com.smartdroneinspection.inspections.domain.enums.AssignmentStatus;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
+import com.smartdroneinspection.inspections.events.InspectionAcceptedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
+import com.smartdroneinspection.inspections.events.InspectionCancelledEvent;
 import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
 import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
@@ -1151,6 +1153,15 @@ public class InspectionCreationService {
       throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATE", ex.getMessage());
     }
     Inspection saved = inspections.saveAndFlush(inspection);
+    eventPublisher.publishEvent(
+        new InspectionAcceptedEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            saved.getInspectorId(),
+            saved.getPlannedStartAt(),
+            saved.getAssignmentAcceptedAt() != null
+                ? saved.getAssignmentAcceptedAt()
+                : Instant.now()));
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
   }
@@ -1296,6 +1307,13 @@ public class InspectionCreationService {
     if (syncPort != null) {
       syncPort.syncCancelFromInspection(saved.getId(), reason);
     }
+    eventPublisher.publishEvent(
+        new InspectionCancelledEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            saved.getInspectorId(),
+            reason,
+            Instant.now()));
     Asset asset = assets.findById(saved.getAssetId()).orElse(null);
     return toResponse(saved, asset);
   }

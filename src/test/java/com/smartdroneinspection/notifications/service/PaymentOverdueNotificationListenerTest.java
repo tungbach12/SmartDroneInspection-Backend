@@ -92,7 +92,8 @@ class PaymentOverdueNotificationListenerTest {
             argThat(
                 n ->
                     n.getRecipientUserId().equals(CUSTOMER_ID)
-                        && n.getTargetPath().equals("/client/inspections/" + INSPECTION_ID)));
+                        && n.getTargetPath()
+                            .equals("/client/inspections/" + INSPECTION_ID + "/settlement")));
     verify(notifications, times(1))
         .saveAndFlush(
             argThat(
