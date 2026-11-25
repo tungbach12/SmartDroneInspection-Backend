@@ -61,9 +61,39 @@ class DashboardAnalyticsServiceTest {
     DashboardAnalyticsResponse response = service.getAnalytics(actorId);
 
     assertThat(response).isNotNull();
-    assertThat(response.summaryCards()).isNotEmpty();
+    assertThat(response.summaryCards()).hasSize(4);
+    assertThat(response.pipelineStages()).hasSize(6);
+    assertThat(response.summaryCards().getFirst().id()).isEqualTo("pending_quotes");
     // No query may reference the organizations table dropped by V43.
     verifyNoOrganizationsQuery();
+  }
+
+  @Test
+  @DisplayName(
+      "an admin sees platform-wide governance & AI metrics and cannot be spoofed by customers")
+  void adminAndRoleOverrideChecks() {
+    UUID adminId = UUID.randomUUID();
+    when(userAccess.findActiveUser(adminId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(adminId, Set.of("ADMIN", "MANAGER"), "Admin")));
+    when(jdbcTemplate.queryForObject(anyString(), any(Class.class), any(Object[].class)))
+        .thenReturn(0L);
+
+    DashboardAnalyticsResponse adminRes = service.getAnalytics(adminId, "ADMIN");
+    assertThat(adminRes.summaryCards()).hasSize(4);
+    assertThat(adminRes.summaryCards().getFirst().id()).isEqualTo("active_users");
+
+    DashboardAnalyticsResponse managerRes = service.getAnalytics(adminId, "MANAGER");
+    assertThat(managerRes.summaryCards()).hasSize(4);
+    assertThat(managerRes.summaryCards().getFirst().id()).isEqualTo("pending_quotes");
+
+    UUID customerId = UUID.randomUUID();
+    when(userAccess.findActiveUser(customerId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(customerId, Set.of("CUSTOMER"), "Customer")));
+    DashboardAnalyticsResponse spoofAttempt = service.getAnalytics(customerId, "ADMIN");
+    assertThat(spoofAttempt.summaryCards()).hasSize(3);
+    assertThat(spoofAttempt.summaryCards().getFirst().id()).isEqualTo("registered_assets");
   }
 
   @Test

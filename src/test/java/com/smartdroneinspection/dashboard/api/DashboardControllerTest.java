@@ -42,9 +42,9 @@ class DashboardControllerTest {
             new DashboardAnalyticsResponse.QueueTableDto(
                 "Table", "Desc", List.of(), List.of(), "/link", "View"));
 
-    when(analyticsService.getAnalytics(actorId)).thenReturn(mockResponse);
+    when(analyticsService.getAnalytics(actorId, null)).thenReturn(mockResponse);
 
-    ApiResponse<DashboardAnalyticsResponse> result = controller.getAnalytics(jwt);
+    ApiResponse<DashboardAnalyticsResponse> result = controller.getAnalytics(jwt, null);
 
     assertThat(result).isNotNull();
     assertThat(result.success()).isTrue();
