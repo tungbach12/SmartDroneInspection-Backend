@@ -394,7 +394,6 @@ public class DroneRegistrationApplicationService {
     requireInspector(inspectorId);
     var inspector = userAccess.findUser(inspectorId).orElse(null);
     return drones.findAllByInspectorOwnerId(inspectorId).stream()
-        .filter(d -> d.getServiceability() != DroneServiceability.RETIRED)
         .map(
             d ->
                 com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse.from(
@@ -416,11 +415,17 @@ public class DroneRegistrationApplicationService {
     if (!inspectorId.equals(drone.getInspectorOwnerId())) {
       throw new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not own this drone");
     }
-    if (drone.getServiceability() == DroneServiceability.RETIRED) {
+    if (drone.getServiceability() == DroneServiceability.SUSPENDED) {
       throw new BusinessException(
-          HttpStatus.CONFLICT, "INVALID_STATE", "Retired drones cannot change serviceability");
+          HttpStatus.CONFLICT, "INVALID_STATE", "Suspended drones cannot change serviceability");
     }
-    drone.changeServiceability(target);
+    if (target == DroneServiceability.SUSPENDED) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_STATE",
+          "Inspectors cannot set drone status to SUSPENDED");
+    }
+    drone.updateInspectorServiceability(target);
     Drone saved = drones.saveAndFlush(drone);
     var inspector = userAccess.findUser(inspectorId).orElse(null);
     return com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse.from(

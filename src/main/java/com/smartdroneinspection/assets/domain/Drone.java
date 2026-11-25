@@ -566,4 +566,20 @@ public class Drone {
     this.serviceability = target;
     this.updatedAt = Instant.now();
   }
+
+  /**
+   * Updates serviceability for an Inspector-owned drone, allowing retirement and reactivation while
+   * keeping admin/manager suspensions locked.
+   */
+  public void updateInspectorServiceability(DroneServiceability target) {
+    Objects.requireNonNull(target, "Drone serviceability is required");
+    if (serviceability == DroneServiceability.SUSPENDED) {
+      throw new IllegalStateException("Suspended drones cannot change serviceability");
+    }
+    if (target == DroneServiceability.SUSPENDED) {
+      throw new IllegalStateException("Inspectors cannot suspend drones");
+    }
+    this.serviceability = target;
+    this.updatedAt = Instant.now();
+  }
 }

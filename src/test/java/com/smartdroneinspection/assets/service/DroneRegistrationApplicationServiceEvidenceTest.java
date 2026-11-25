@@ -228,18 +228,20 @@ class DroneRegistrationApplicationServiceEvidenceTest {
   }
 
   @Test
-  void ownerCanChangeServiceabilityButNotAfterRetirement() {
+  void ownerCanRetireAndReactivateDroneButCannotOverrideSuspension() {
     Drone drone = drone();
     when(drones.findById(DRONE_ID)).thenReturn(Optional.of(drone));
     when(drones.saveAndFlush(drone)).thenReturn(drone);
 
-    var response =
-        service.updateMyDroneServiceability(
-            INSPECTOR_ID, DRONE_ID, DroneServiceability.MAINTENANCE);
+    var retiredResponse =
+        service.updateMyDroneServiceability(INSPECTOR_ID, DRONE_ID, DroneServiceability.RETIRED);
+    assertThat(retiredResponse.serviceability()).isEqualTo("RETIRED");
 
-    assertThat(response.serviceability()).isEqualTo("MAINTENANCE");
+    var reactivatedResponse =
+        service.updateMyDroneServiceability(INSPECTOR_ID, DRONE_ID, DroneServiceability.ACTIVE);
+    assertThat(reactivatedResponse.serviceability()).isEqualTo("ACTIVE");
 
-    drone.changeServiceability(DroneServiceability.RETIRED);
+    drone.changeServiceability(DroneServiceability.SUSPENDED);
     assertBusinessCode(
         () ->
             service.updateMyDroneServiceability(INSPECTOR_ID, DRONE_ID, DroneServiceability.ACTIVE),
@@ -264,7 +266,7 @@ class DroneRegistrationApplicationServiceEvidenceTest {
   }
 
   @Test
-  void inspectorDroneListFiltersRetiredDrones() {
+  void inspectorDroneListIncludesRetiredDronesForReactivation() {
     Drone active = drone();
     Drone retired = drone();
     retired.changeServiceability(DroneServiceability.RETIRED);
@@ -272,8 +274,11 @@ class DroneRegistrationApplicationServiceEvidenceTest {
 
     var result = service.inspectorDrones(INSPECTOR_ID);
 
-    assertThat(result).hasSize(1);
-    assertThat(result.getFirst().id()).isEqualTo(DRONE_ID);
+    assertThat(result).hasSize(2);
+    assertThat(result)
+        .extracting(
+            com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse::serviceability)
+        .containsExactly("ACTIVE", "RETIRED");
   }
 
   @Test
