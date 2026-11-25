@@ -38,6 +38,7 @@ class DroneRegistrationApplicationServiceTest {
 
   private final UUID inspectorId = UUID.randomUUID();
   private final UUID adminId = UUID.randomUUID();
+  private final UUID managerId = UUID.randomUUID();
   private final UUID applicationId = UUID.randomUUID();
   private final UUID droneId = UUID.randomUUID();
 
@@ -76,6 +77,18 @@ class DroneRegistrationApplicationServiceTest {
                     Set.of(Roles.ADMIN),
                     "Admin",
                     "admin@test.local",
+                    null,
+                    null,
+                    null,
+                    null)));
+    when(userAccess.findActiveUser(managerId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    managerId,
+                    Set.of(Roles.MANAGER),
+                    "Manager",
+                    "manager@test.local",
                     null,
                     null,
                     null,
@@ -328,19 +341,37 @@ class DroneRegistrationApplicationServiceTest {
     when(applications.saveAndFlush(any(DroneRegistrationApplication.class)))
         .thenAnswer(inv -> inv.getArgument(0));
 
-    var response = service.approve(adminId, applicationId, "ip", "agent", "corr");
+    var response = service.approve(managerId, applicationId, "ip", "agent", "corr");
     assertThat(response.status()).isEqualTo("APPROVED");
     assertThat(response.droneId()).isEqualTo(droneId);
     assertThat(response.maxAltitudeMeters()).isEqualByComparingTo("6000");
     verify(userAccess)
         .recordSecurityAudit(
-            eq(adminId),
+            eq(managerId),
             eq(applicationId),
             eq("DRONE_REGISTRATION_APPROVED"),
             eq("SUCCESS"),
             any(),
             any(),
             any());
+  }
+
+  @Test
+  void approveAndRejectRejectAdminActorsBecauseOnlyManagerReviews() {
+    assertThatThrownBy(() -> service.approve(adminId, applicationId, "ip", "agent", "corr"))
+        .isInstanceOf(AuthException.class)
+        .hasMessageContaining("Manager review access is required");
+    assertThatThrownBy(
+            () ->
+                service.reject(
+                    adminId,
+                    applicationId,
+                    new ReviewDroneRegistrationApplicationRequest("No permission"),
+                    "ip",
+                    "agent",
+                    "corr"))
+        .isInstanceOf(AuthException.class)
+        .hasMessageContaining("Manager review access is required");
   }
 
   @Test
@@ -359,7 +390,7 @@ class DroneRegistrationApplicationServiceTest {
     ReflectionTestUtils.setField(app, "id", applicationId);
     when(applications.findByIdAndStatus(applicationId, "PENDING")).thenReturn(Optional.of(app));
 
-    assertThatThrownBy(() -> service.approve(adminId, applicationId, "ip", "agent", "corr"))
+    assertThatThrownBy(() -> service.approve(managerId, applicationId, "ip", "agent", "corr"))
         .isInstanceOf(AuthException.class)
         .hasMessageContaining("expired before approval");
   }
@@ -373,7 +404,7 @@ class DroneRegistrationApplicationServiceTest {
 
     var response =
         service.reject(
-            adminId,
+            managerId,
             applicationId,
             new ReviewDroneRegistrationApplicationRequest("Invalid documentation"),
             "ip",
@@ -383,7 +414,7 @@ class DroneRegistrationApplicationServiceTest {
     assertThat(response.reviewNote()).isEqualTo("Invalid documentation");
     verify(userAccess)
         .recordSecurityAudit(
-            eq(adminId),
+            eq(managerId),
             eq(applicationId),
             eq("DRONE_REGISTRATION_REJECTED"),
             eq("SUCCESS"),
@@ -548,7 +579,7 @@ class DroneRegistrationApplicationServiceTest {
 
     service.resubmit(inspectorId, applicationId, renewRequest, "127.0.0.1", "agent", "corr-6");
     when(applications.findByIdAndStatus(applicationId, "PENDING")).thenReturn(Optional.of(app));
-    service.approve(adminId, applicationId, "127.0.0.1", "agent", "corr-7");
+    service.approve(managerId, applicationId, "127.0.0.1", "agent", "corr-7");
 
     assertThat(existingDrone.getModel()).isEqualTo("DJI Matrice 350 RTK [MTOW: 9.2 kg]");
     assertThat(existingDrone.getManufacturer()).isEqualTo("DJI Enterprise");
@@ -639,7 +670,7 @@ class DroneRegistrationApplicationServiceTest {
     when(applications.findByIdAndStatus(applicationId, "PENDING"))
         .thenReturn(Optional.of(storedApp));
 
-    var approved = service.approve(adminId, applicationId, "127.0.0.1", "agent", "corr-clean-2");
+    var approved = service.approve(managerId, applicationId, "127.0.0.1", "agent", "corr-clean-2");
     assertThat(approved.droneId()).isEqualTo(droneId);
     assertThat(approved.mtowKg()).isEqualByComparingTo("6.47");
     assertThat(approved.maxFlightTimeMinutes()).isEqualTo(55);

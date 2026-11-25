@@ -181,7 +181,7 @@ public class DroneRegistrationApplicationController {
   }
 
   @PostMapping("/{applicationId}/approve")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<DroneRegistrationApplicationResponse> approve(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,
@@ -196,7 +196,7 @@ public class DroneRegistrationApplicationController {
   }
 
   @PostMapping("/{applicationId}/reject")
-  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<DroneRegistrationApplicationResponse> reject(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID applicationId,

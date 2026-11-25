@@ -28,7 +28,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/contracts/partners")
-@PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
 public class PartnerRegistryController {
 
   private final PartnerRegistryService partners;
@@ -38,6 +37,7 @@ public class PartnerRegistryController {
   }
 
   @GetMapping("/inspectors")
+  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
   public ApiResponse<List<PartnerInspectorResponse>> listInspectors(
       @AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(
@@ -47,6 +47,7 @@ public class PartnerRegistryController {
   }
 
   @PostMapping("/inspectors")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<PartnerInspectorResponse> registerInspector(
       @AuthenticationPrincipal Jwt jwt,
@@ -57,6 +58,7 @@ public class PartnerRegistryController {
   }
 
   @PatchMapping("/inspectors/{inspectorId}")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<Void> setInspectorActive(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectorId,
@@ -66,12 +68,14 @@ public class PartnerRegistryController {
   }
 
   @GetMapping("/drones")
+  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
   public ApiResponse<List<PartnerDroneResponse>> listDrones(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(
         partners.listDrones(actorId(jwt)).stream().map(PartnerDroneResponse::from).toList());
   }
 
   @GetMapping("/drones/paged")
+  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
   public ApiResponse<PartnerDronePageResponse> listDronesPaged(
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
@@ -81,6 +85,7 @@ public class PartnerRegistryController {
   }
 
   @PostMapping("/drones")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<PartnerDroneResponse> registerDrone(
       @AuthenticationPrincipal Jwt jwt,
@@ -90,6 +95,7 @@ public class PartnerRegistryController {
   }
 
   @PatchMapping("/drones/{droneId}")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<Void> setDroneActive(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID droneId,

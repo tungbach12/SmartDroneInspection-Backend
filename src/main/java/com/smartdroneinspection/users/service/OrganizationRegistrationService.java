@@ -13,7 +13,6 @@ import com.smartdroneinspection.users.domain.ProspectiveCustomerRegistration;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceRequestedEvent;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.ProspectiveCustomerRegistrationRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -98,7 +97,6 @@ public class OrganizationRegistrationService {
     String organizationName = request.organizationName().trim();
     String organizationCode = normalizeCode(request.organizationCode());
     var firstAsset = request.firstAsset();
-    boolean requiresAirspaceReview = false;
     CustomerAirspaceEvaluation evaluation = null;
 
     if (firstAsset != null) {
@@ -117,14 +115,13 @@ public class OrganizationRegistrationService {
             "ASSET_IN_NO_FLY_ZONE",
             "Customer registration is not allowed for an asset in a no-fly zone.");
       }
-      requiresAirspaceReview = evaluation.status() != CustomerAirspaceStatus.CLEAR_ZONE;
     }
 
     User rejectedProspect = null;
-    ProspectiveCustomerRegistration rejectedRegistration = null;
     var existingUserOpt = users.findByNormalizedEmail(email);
     if (existingUserOpt.isPresent()) {
       User existingUser = existingUserOpt.get();
+      ProspectiveCustomerRegistration rejectedRegistration = null;
       if (existingUser.roleValues().contains(UserRole.CUSTOMER.value())
           && existingUser.getStatus() == UserStatus.DISABLED) {
         rejectedRegistration =
@@ -160,92 +157,11 @@ public class OrganizationRegistrationService {
       }
       registrationOtp.verify(request.otpChallengeToken(), request.otpCode(), email);
     }
-    if (!requiresAirspaceReview && firstAsset != null) {
+    if (firstAsset != null) {
       validateFirstAsset(request.firstAsset());
     }
 
     String normalizedPhone = request.phoneNumber() != null ? request.phoneNumber().trim() : null;
-    if (requiresAirspaceReview) {
-      User prospect;
-      ProspectiveCustomerRegistration registration;
-      String auditAction;
-      if (rejectedProspect != null) {
-        rejectedProspect.setFullName(fullName);
-        rejectedProspect.setPhoneNumber(normalizedPhone);
-        rejectedProspect.setPasswordHash(passwords.encode(request.password()));
-        rejectedProspect.setOtpVerified(true);
-        rejectedProspect.incrementAuthVersion();
-        prospect = users.saveAndFlush(rejectedProspect);
-        rejectedRegistration.resubmit(
-            organizationName,
-            organizationCode,
-            firstAsset.categoryId(),
-            firstAsset.code().trim().toUpperCase(Locale.ROOT),
-            firstAsset.name().trim(),
-            firstAsset.description(),
-            firstAsset.locationText().trim(),
-            firstAsset.latitude(),
-            firstAsset.longitude(),
-            firstAsset.ownershipInformation(),
-            firstAsset.structureHeightMeters(),
-            firstAsset.footprintAreaSquareMeters(),
-            evaluation.status().name());
-        registration = prospectiveRegistrations.saveAndFlush(rejectedRegistration);
-        auditAction = "CUSTOMER_AIRSPACE_REVIEW_RESUBMITTED";
-      } else {
-        prospect =
-            new User(
-                email,
-                fullName,
-                normalizedPhone,
-                null,
-                passwords.encode(request.password()),
-                UserStatus.DISABLED);
-        prospect.setOtpVerified(true);
-        prospect.addRole(UserRole.CUSTOMER);
-        prospect = users.saveAndFlush(prospect);
-        registration =
-            prospectiveRegistrations.saveAndFlush(
-                new ProspectiveCustomerRegistration(
-                    prospect.getId(),
-                    organizationName,
-                    organizationCode,
-                    firstAsset.categoryId(),
-                    firstAsset.code().trim().toUpperCase(Locale.ROOT),
-                    firstAsset.name().trim(),
-                    firstAsset.description(),
-                    firstAsset.locationText().trim(),
-                    firstAsset.latitude(),
-                    firstAsset.longitude(),
-                    firstAsset.ownershipInformation(),
-                    firstAsset.structureHeightMeters(),
-                    firstAsset.footprintAreaSquareMeters(),
-                    evaluation.status().name()));
-        auditAction = "CUSTOMER_AIRSPACE_REVIEW_REQUESTED";
-      }
-      audit.record(
-          null, prospect.getId(), auditAction, "SUCCESS", ipAddress, userAgent, correlationId);
-      if (events != null) {
-        events.publishEvent(
-            new ProspectiveCustomerAirspaceRequestedEvent(
-                registration.getId(),
-                prospect.getId(),
-                organizationName,
-                registration.getAssetCode(),
-                evaluation.status().name(),
-                java.time.Instant.now()));
-      }
-      return new OrganizationRegistrationResponse(
-          organizationName,
-          organizationCode,
-          new UserResponse(
-              prospect.getId(), prospect.getEmail(), prospect.getFullName(), prospect.roleValues()),
-          "PENDING_AIRSPACE_REVIEW",
-          registration.getId(),
-          evaluation.status().name(),
-          evaluation.message());
-    }
-
     User customer;
     if (rejectedProspect != null) {
       rejectedProspect.setFullName(fullName);
@@ -292,11 +208,18 @@ public class OrganizationRegistrationService {
         userAgent,
         correlationId);
 
+    String airspaceClassification =
+        evaluation != null ? evaluation.status().name() : CustomerAirspaceStatus.CLEAR_ZONE.name();
+    String airspaceMessage = evaluation != null ? evaluation.message() : null;
     return new OrganizationRegistrationResponse(
         organizationName,
         organizationCode,
         new UserResponse(
-            customer.getId(), customer.getEmail(), customer.getFullName(), customer.roleValues()));
+            customer.getId(), customer.getEmail(), customer.getFullName(), customer.roleValues()),
+        "ACTIVE",
+        null,
+        airspaceClassification,
+        airspaceMessage);
   }
 
   @Transactional
