@@ -435,6 +435,15 @@ class AssetApiIntegrationTest {
         .andExpect(jsonPath("$.data.totalCount").value(1))
         .andExpect(jsonPath("$.data.items[0].code").value("PAG-03"));
 
+    com.smartdroneinspection.users.domain.User platformManager =
+        new com.smartdroneinspection.users.domain.User(
+            "platform-mgr-" + UUID.randomUUID() + "@example.test",
+            "Platform Manager",
+            "{noop}password",
+            com.smartdroneinspection.users.domain.enums.UserStatus.ACTIVE);
+    platformManager.addRole(com.smartdroneinspection.users.domain.enums.UserRole.MANAGER);
+    UUID platformManagerId = users.saveAndFlush(platformManager).getId();
+
     mockMvc
         .perform(
             get("/api/v1/assets")
@@ -443,7 +452,7 @@ class AssetApiIntegrationTest {
                 .param("status", "ACTIVE")
                 .with(
                     jwt()
-                        .jwt(token -> token.subject(fixture.managerId().toString()))
+                        .jwt(token -> token.subject(platformManagerId.toString()))
                         .authorities(
                             new org.springframework.security.core.authority.SimpleGrantedAuthority(
                                 "ROLE_MANAGER"))))

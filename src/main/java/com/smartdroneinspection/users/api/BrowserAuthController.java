@@ -126,11 +126,7 @@ public class BrowserAuthController {
       @Valid @RequestBody OrganizationRegistrationRequest body, HttpServletRequest request) {
     var response =
         registration.register(body, clientIp(request), userAgent(request), correlationId(request));
-    var status =
-        "PENDING_AIRSPACE_REVIEW".equals(response.registrationStatus())
-            ? org.springframework.http.HttpStatus.ACCEPTED
-            : org.springframework.http.HttpStatus.CREATED;
-    return ResponseEntity.status(status)
+    return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
         .cacheControl(CacheControl.noStore())
         .body(ApiResponse.success(response));
   }

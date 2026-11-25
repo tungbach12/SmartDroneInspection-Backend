@@ -122,9 +122,10 @@ class OrganizationRegistrationApiIntegrationTest {
   }
 
   @Test
-  void unlistedAirspaceCreatesDisabledProspectAndNoOrganization() throws Exception {
+  void restrictedOrUnlistedAirspaceActivatesCustomerImmediatelyWithWarningAndNoPendingReview()
+      throws Exception {
     String unique = UUID.randomUUID().toString().replace("-", "");
-    String email = "pending-" + unique + "@example.test";
+    String email = "restricted-" + unique + "@example.test";
     String assetCode = "AST-" + unique.substring(0, 16);
     String code = "ORG-" + assetCode;
     var category =
@@ -137,15 +138,15 @@ class OrganizationRegistrationApiIntegrationTest {
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registrationBody(email, assetCode, category.getId(), 10.9, 106.7)))
-        .andExpect(status().isAccepted())
-        .andExpect(jsonPath("$.data.registrationStatus").value("PENDING_AIRSPACE_REVIEW"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.registrationStatus").value("ACTIVE"))
         .andExpect(jsonPath("$.data.user.roles", hasItem("CUSTOMER")));
 
-    User prospect = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
-    assertThat(prospect.getStatus().name()).isEqualTo("DISABLED");
+    User customer = users.findByNormalizedEmail(User.normalizeEmail(email)).orElseThrow();
+    assertThat(customer.getStatus().name()).isEqualTo("ACTIVE");
     assertThat(
             prospectiveRegistrations.existsByOrganizationCodeIgnoreCaseAndStatus(code, "PENDING"))
-        .isTrue();
+        .isFalse();
   }
 
   @Test

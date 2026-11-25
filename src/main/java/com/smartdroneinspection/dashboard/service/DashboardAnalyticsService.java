@@ -1150,21 +1150,6 @@ public class DashboardAnalyticsService {
                 "/admin/drone-registrations"));
       }
 
-      String custAppSql =
-          "SELECT asset_name, asset_code, airspace_classification, status FROM prospective_customer_registrations "
-              + "WHERE status = 'PENDING' ORDER BY created_at DESC LIMIT 2";
-      for (Map<String, Object> r : jdbcTemplate.queryForList(custAppSql)) {
-        items.add(
-            new ActionItemDto(
-                "MF1",
-                (String) r.get("asset_name"),
-                (String) r.get("asset_code"),
-                "Thẩm định vùng bay (" + r.get("airspace_classification") + ")",
-                "PENDING",
-                "warning",
-                "/admin/customer-airspace"));
-      }
-
       String auditSql =
           "SELECT COALESCE(u.full_name, 'SYSTEM') AS actor_name, ae.action, ae.aggregate_type, ae.after_status, ae.created_at "
               + "FROM audit_events ae LEFT JOIN users u ON ae.actor_user_id = u.id "

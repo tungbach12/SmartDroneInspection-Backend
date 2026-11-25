@@ -14,8 +14,6 @@ import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import com.smartdroneinspection.users.events.InspectorOnboardingReviewedEvent;
 import com.smartdroneinspection.users.events.InspectorOnboardingUpdatedEvent;
-import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceRequestedEvent;
-import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceReviewedEvent;
 import com.smartdroneinspection.users.events.UserSecurityAlertEvent;
 import java.time.Instant;
 import java.util.List;
@@ -39,41 +37,6 @@ class UserNotificationListenerTest {
     userAccess = mock(UserAccess.class);
     emailHelper = mock(NotificationEmailHelper.class);
     listener = new UserNotificationListener(notificationRepository, userAccess, emailHelper);
-  }
-
-  @Test
-  void airspaceRequestedAndReviewedNotifyAdminsAndCustomerWithEmail() {
-    UUID regId = UUID.randomUUID();
-    UUID customerId = UUID.randomUUID();
-    UUID adminId = UUID.randomUUID();
-    when(userAccess.listActiveAdmins())
-        .thenReturn(List.of(new ActiveUser(adminId, Set.of("ADMIN"), "Admin")));
-
-    listener.onAirspaceReviewRequested(
-        new ProspectiveCustomerAirspaceRequestedEvent(
-            regId, customerId, "Acme Grid", "AST-1", "RESTRICTED_REVIEW", Instant.now()));
-    listener.onAirspaceReviewed(
-        new ProspectiveCustomerAirspaceReviewedEvent(
-            regId,
-            customerId,
-            "cust@acme.vn",
-            "Acme Owner",
-            "Acme Grid",
-            "AST-1",
-            true,
-            "Cleared by CAAV",
-            Instant.now()));
-
-    ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-    verify(notificationRepository, times(2)).saveAndFlush(captor.capture());
-    assertThat(captor.getAllValues())
-        .extracting(Notification::getRecipientUserId, Notification::getEventType)
-        .containsExactlyInAnyOrder(
-            org.assertj.core.groups.Tuple.tuple(adminId, "CUSTOMER_AIRSPACE_REVIEW_REQUESTED"),
-            org.assertj.core.groups.Tuple.tuple(customerId, "CUSTOMER_AIRSPACE_APPROVED"));
-    verify(emailHelper)
-        .sendBilingualBestEffort(
-            eq("cust@acme.vn"), eq("Acme Owner"), anyString(), anyString(), anyString());
   }
 
   @Test

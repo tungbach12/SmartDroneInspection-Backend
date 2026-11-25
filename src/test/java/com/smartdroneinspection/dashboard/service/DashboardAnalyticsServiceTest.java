@@ -393,7 +393,9 @@ class DashboardAnalyticsServiceTest {
     assertThat(response.summaryCards()).hasSize(4);
     assertThat(response.pipelineStages()).hasSize(5);
     assertThat(response.serviceHealth()).hasSize(4);
-    assertThat(response.actionItems()).hasSize(4);
+    assertThat(response.actionItems()).hasSize(3);
+    assertThat(response.actionItems())
+        .noneMatch(item -> "/admin/customer-airspace".equals(item.link()));
     assertThat(response.queueTable().rows()).hasSize(1);
   }
 

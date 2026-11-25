@@ -77,7 +77,7 @@ class OrganizationRegistrationServiceTest {
   }
 
   @Test
-  void rejectedProspectCanReRegisterIntoPendingReviewWithCorrectedCoordinates() {
+  void rejectedProspectOrRestrictedZoneActivatesCustomerImmediatelyWithWarning() {
     String email = "prospect@company.test";
     UUID userId = UUID.randomUUID();
     UUID regId = UUID.randomUUID();
@@ -110,12 +110,11 @@ class OrganizationRegistrationServiceTest {
     when(prospectiveRegistrations.findByUserId(userId)).thenReturn(Optional.of(rejectedReg));
     when(airspace.evaluateCustomerOnboarding(BigDecimal.valueOf(10.95), BigDecimal.valueOf(106.75)))
         .thenReturn(
-            new CustomerAirspaceEvaluation(CustomerAirspaceStatus.RESTRICTED_ZONE, "Needs review"));
+            new CustomerAirspaceEvaluation(
+                CustomerAirspaceStatus.RESTRICTED_ZONE, "Restricted airspace advisory warning"));
     when(prospectiveRegistrations.existsByOrganizationCodeIgnoreCaseAndStatus("NEW_ORG", "PENDING"))
         .thenReturn(false);
     when(users.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-    when(prospectiveRegistrations.saveAndFlush(any(ProspectiveCustomerRegistration.class)))
-        .thenAnswer(inv -> inv.getArgument(0));
 
     OrganizationRegistrationRequest request =
         new OrganizationRegistrationRequest(
@@ -138,16 +137,17 @@ class OrganizationRegistrationServiceTest {
 
     var response = service.register(request, "127.0.0.1", "agent", "corr-1");
 
-    assertThat(response.registrationStatus()).isEqualTo("PENDING_AIRSPACE_REVIEW");
-    assertThat(rejectedReg.getStatus()).isEqualTo("PENDING");
-    assertThat(rejectedReg.getReviewNote()).isNull();
-    assertThat(rejectedReg.getOrganizationCode()).isEqualTo("NEW_ORG");
+    assertThat(response.registrationStatus()).isEqualTo("ACTIVE");
+    assertThat(response.airspaceClassification()).isEqualTo("RESTRICTED_ZONE");
+    assertThat(response.reviewMessage()).contains("Restricted airspace advisory warning");
+    assertThat(rejectedUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(rejectedUser.getFullName()).isEqualTo("Corrected Name");
+    verify(events).publishEvent(any(CustomerRegistrationEvent.class));
     verify(audit)
         .record(
             eq(null),
             eq(userId),
-            eq("CUSTOMER_AIRSPACE_REVIEW_RESUBMITTED"),
+            eq("ORGANIZATION_REGISTRATION"),
             eq("SUCCESS"),
             any(),
             any(),
