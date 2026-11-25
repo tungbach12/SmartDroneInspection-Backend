@@ -9,6 +9,7 @@ import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FindingStatus;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
+import com.smartdroneinspection.inspections.events.InspectionCancelledEvent;
 import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.spi.Mf2InspectionAssignment;
@@ -314,6 +315,36 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
             saved.getInspectorId(),
             saved.getPlannedStartAt()));
     return saved.getId();
+  }
+
+  @Override
+  @Transactional
+  public void cancelInspection(UUID actorId, UUID inspectionId, String reason) {
+    if (inspectionId == null) {
+      return;
+    }
+    Inspection inspection =
+        inspections
+            .findById(inspectionId)
+            .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
+    if (inspection.getStatus() == InspectionStatus.CANCELLED) {
+      return;
+    }
+    if (inspection.getStatus() != InspectionStatus.SCHEDULED) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Cannot cancel an inspection whose status is " + inspection.getStatus());
+    }
+    inspection.cancel(reason);
+    Inspection saved = inspections.saveAndFlush(inspection);
+    events.publishEvent(
+        new InspectionCancelledEvent(
+            saved.getId(),
+            saved.getOwnerCustomerId(),
+            saved.getInspectorId(),
+            reason,
+            Instant.now()));
   }
 
   private static BusinessException failure(HttpStatus status, String code, String detail) {

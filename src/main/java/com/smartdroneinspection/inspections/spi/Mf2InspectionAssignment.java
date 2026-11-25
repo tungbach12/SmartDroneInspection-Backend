@@ -101,4 +101,7 @@ public interface Mf2InspectionAssignment {
             plannedEndAt,
             assignedByUserId);
   }
+
+  /** Cancels a scheduled inspection when the Manager cancels a request or occurrence. */
+  default void cancelInspection(UUID actorId, UUID inspectionId, String reason) {}
 }

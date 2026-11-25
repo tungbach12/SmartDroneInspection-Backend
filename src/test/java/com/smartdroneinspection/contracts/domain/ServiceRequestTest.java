@@ -1,5 +1,6 @@
 package com.smartdroneinspection.contracts.domain;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
@@ -44,6 +45,22 @@ class ServiceRequestTest {
                     null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("one-time");
+  }
+
+  @Test
+  void cancelsOpenOrQuotedRequestAndRejectsPostQuoteCancellation() {
+    ServiceRequest request = recurringRequest(null, LocalDate.of(2027, 6, 1));
+    request.markQuoted();
+    request.cancelOpenOrQuoted();
+    assertThat(request.getStatus()).isEqualTo(ServiceRequest.ServiceRequestStatus.CANCELLED);
+    request.cancelOpenOrQuoted();
+
+    ServiceRequest signed = recurringRequest(null, LocalDate.of(2027, 6, 1));
+    signed.markQuoted();
+    signed.markAssigned();
+    assertThatThrownBy(signed::cancelOpenOrQuoted)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Accepted or assigned");
   }
 
   private static ServiceRequest recurringRequest(Integer count, LocalDate endDate) {

@@ -322,4 +322,31 @@ class ContractWorkflowControllerTest {
                     "$.data.unavailableCount")
                 .value(1));
   }
+
+  @Test
+  void managerCanCancelRequestAndUndispatchedOccurrence() throws Exception {
+    UUID occurrenceId = UUID.randomUUID();
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests/{requestId}/cancel", requestId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"No restricted airspace permit\"}"))
+        .andExpect(status().isOk());
+
+    verify(workflow).cancelRequest(managerId, requestId, "No restricted airspace permit");
+
+    mockMvc
+        .perform(
+            post(
+                    "/api/v1/contracts/requests/{requestId}/occurrences/{occurrenceId}/cancel",
+                    requestId,
+                    occurrenceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Inspector declined restricted permit\"}"))
+        .andExpect(status().isOk());
+
+    verify(workflow)
+        .cancelOccurrence(
+            managerId, requestId, occurrenceId, "Inspector declined restricted permit");
+  }
 }

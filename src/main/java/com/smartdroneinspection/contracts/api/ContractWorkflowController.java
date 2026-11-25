@@ -4,6 +4,7 @@ import com.smartdroneinspection.contracts.api.dto.request.AcceptServiceQuoteRequ
 import com.smartdroneinspection.contracts.api.dto.request.AssignOccurrenceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.AssignServiceRequestManagerRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CancelOccurrenceRefundRequest;
+import com.smartdroneinspection.contracts.api.dto.request.CancelServiceRequestRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CompleteOccurrenceRefundRequest;
 import com.smartdroneinspection.contracts.api.dto.request.ConfirmOccurrencePaymentRequest;
 import com.smartdroneinspection.contracts.api.dto.request.CreateServiceRequest;
@@ -295,6 +296,26 @@ public class ContractWorkflowController {
       @Valid @RequestBody AssignOccurrenceRequest request) {
     return ApiResponse.success(
         workflow.assignOccurrence(actorId(jwt), requestId, occurrenceId, request));
+  }
+
+  @PostMapping("/{requestId}/cancel")
+  public ApiResponse<ServiceRequestResponse> cancelRequest(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody(required = false) CancelServiceRequestRequest request) {
+    return ApiResponse.success(
+        workflow.cancelRequest(actorId(jwt), requestId, request != null ? request.reason() : null));
+  }
+
+  @PostMapping("/{requestId}/occurrences/{occurrenceId}/cancel")
+  public ApiResponse<ServiceRequestResponse> cancelOccurrence(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @PathVariable UUID occurrenceId,
+      @Valid @RequestBody(required = false) CancelServiceRequestRequest request) {
+    return ApiResponse.success(
+        workflow.cancelOccurrence(
+            actorId(jwt), requestId, occurrenceId, request != null ? request.reason() : null));
   }
 
   @PostMapping("/{requestId}/occurrences/{occurrenceId}/accept-report")
