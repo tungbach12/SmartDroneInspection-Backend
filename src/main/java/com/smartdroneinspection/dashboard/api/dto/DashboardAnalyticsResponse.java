@@ -7,7 +7,33 @@ public record DashboardAnalyticsResponse(
     PerformanceChartDto performanceChart,
     RadialGaugeDto radialGauge,
     StackedBarChartDto stackedBarChart,
-    QueueTableDto queueTable) {
+    QueueTableDto queueTable,
+    List<PipelineStageDto> pipelineStages,
+    PerformanceChartDto secondaryPerformanceChart,
+    List<ActionItemDto> actionItems,
+    List<ScheduleSlotDto> upcomingSchedule,
+    List<InspectorWorkloadDto> inspectorWorkloads,
+    List<ServiceHealthDto> serviceHealth) {
+
+  public DashboardAnalyticsResponse(
+      List<DashboardMetricDto> summaryCards,
+      PerformanceChartDto performanceChart,
+      RadialGaugeDto radialGauge,
+      StackedBarChartDto stackedBarChart,
+      QueueTableDto queueTable) {
+    this(
+        summaryCards,
+        performanceChart,
+        radialGauge,
+        stackedBarChart,
+        queueTable,
+        List.of(),
+        null,
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of());
+  }
 
   public record DashboardMetricDto(
       String id,
@@ -63,4 +89,27 @@ public record DashboardAnalyticsResponse(
       String col5,
       String status,
       String link) {}
+
+  public record PipelineStageDto(String label, long count, int percentage, String color) {}
+
+  public record ActionItemDto(
+      String category,
+      String title,
+      String code,
+      String subtitle,
+      String status,
+      String badgeTone,
+      String link) {}
+
+  public record ScheduleSlotDto(
+      String id, String title, String subtitle, String timeLabel, String status, String link) {}
+
+  public record InspectorWorkloadDto(
+      String inspectorName,
+      long activeMissions,
+      double averageRating,
+      long ratingCount,
+      String licenseClass) {}
+
+  public record ServiceHealthDto(String name, String status, String detail) {}
 }
