@@ -2,6 +2,7 @@ package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateDroneRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateDroneServiceabilityRequest;
+import com.smartdroneinspection.assets.api.dto.response.DronePageResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneSelectionResponse;
 import com.smartdroneinspection.assets.domain.Drone;
@@ -12,6 +13,9 @@ import com.smartdroneinspection.users.UserAccess;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,6 +80,52 @@ public class DroneService {
     return drones.findAllByOwnerCustomerId(ownerCustomerId).stream()
         .map(DroneResponse::from)
         .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public DronePageResponse listPaged(
+      UUID actorId, int page, int pageSize, String search, DroneServiceability serviceability) {
+    UserAccess.ActiveUser actor = requireActive(actorId);
+    int safePage = Math.max(page, 1);
+    int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    PageRequest pageRequest = PageRequest.of(safePage - 1, safePageSize, Sort.by("serialNumber"));
+    String trimmedSearch = search != null && !search.isBlank() ? search.trim() : null;
+
+    Page<Drone> result;
+    if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
+      if (serviceability == null) {
+        result =
+            trimmedSearch == null
+                ? drones.findAll(pageRequest)
+                : drones.searchAll(trimmedSearch, pageRequest);
+      } else {
+        result =
+            trimmedSearch == null
+                ? drones.findByServiceability(serviceability, pageRequest)
+                : drones.searchAllByServiceability(serviceability, trimmedSearch, pageRequest);
+      }
+    } else {
+      UUID ownerCustomerId = requireOwnerCustomer(actor);
+      if (serviceability == null) {
+        result =
+            trimmedSearch == null
+                ? drones.findByOwnerCustomerId(ownerCustomerId, pageRequest)
+                : drones.searchByOwnerCustomerId(ownerCustomerId, trimmedSearch, pageRequest);
+      } else {
+        result =
+            trimmedSearch == null
+                ? drones.findByOwnerCustomerIdAndServiceability(
+                    ownerCustomerId, serviceability, pageRequest)
+                : drones.searchByOwnerCustomerIdAndServiceability(
+                    ownerCustomerId, serviceability, trimmedSearch, pageRequest);
+      }
+    }
+    return new DronePageResponse(
+        result.getContent().stream().map(DroneResponse::from).toList(),
+        safePage,
+        safePageSize,
+        result.getTotalElements(),
+        result.getTotalPages());
   }
 
   @Transactional(readOnly = true)

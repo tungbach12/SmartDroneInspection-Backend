@@ -347,4 +347,52 @@ class PartnerRegistryServiceTest {
                   .isEqualTo(PartnerCandidateEvaluation.Status.MATCH);
             });
   }
+
+  @Test
+  void listDronesPagedFiltersAndSlicesPartnerDrones() {
+    UUID inspectorId = UUID.randomUUID();
+    Drone d1 = mock(Drone.class);
+    when(d1.getId()).thenReturn(UUID.randomUUID());
+    when(d1.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(d1.getSerialNumber()).thenReturn("SDI-100");
+    when(d1.getModel()).thenReturn("Matrice 300");
+    when(d1.getImageFileKeys()).thenReturn(List.of());
+    when(d1.isEligibleForAssignment(any())).thenReturn(true);
+    when(d1.hasKnownMtow()).thenReturn(true);
+
+    Drone d2 = mock(Drone.class);
+    when(d2.getId()).thenReturn(UUID.randomUUID());
+    when(d2.getInspectorOwnerId()).thenReturn(inspectorId);
+    when(d2.getSerialNumber()).thenReturn("SDI-200");
+    when(d2.getModel()).thenReturn("Mavic 3E");
+    when(d2.getImageFileKeys()).thenReturn(List.of());
+    when(d2.isEligibleForAssignment(any())).thenReturn(true);
+    when(d2.hasKnownMtow()).thenReturn(true);
+
+    when(drones.findActivePartnerDrones()).thenReturn(List.of(d1, d2));
+    UserAccess.ActiveUser inspector =
+        new UserAccess.ActiveUser(
+            inspectorId,
+            Set.of(Roles.INSPECTOR),
+            "Pilot",
+            "pilot@example.test",
+            "LIC-1",
+            "CLASS_B",
+            Instant.now().plusSeconds(86400),
+            "licenses/pilot.pdf");
+    when(users.findActiveUser(inspectorId)).thenReturn(Optional.of(inspector));
+
+    var page1 = service.listDronesPaged(managerId, 1, 1, null);
+    assertThat(page1.totalCount()).isEqualTo(2);
+    assertThat(page1.totalPages()).isEqualTo(2);
+    assertThat(page1.items())
+        .singleElement()
+        .satisfies(item -> assertThat(item.serialNumber()).isEqualTo("SDI-100"));
+
+    var filtered = service.listDronesPaged(managerId, 1, 10, "Mavic");
+    assertThat(filtered.totalCount()).isEqualTo(1);
+    assertThat(filtered.items())
+        .singleElement()
+        .satisfies(item -> assertThat(item.serialNumber()).isEqualTo("SDI-200"));
+  }
 }

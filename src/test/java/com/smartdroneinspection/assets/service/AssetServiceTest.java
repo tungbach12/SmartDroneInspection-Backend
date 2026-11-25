@@ -192,6 +192,56 @@ class AssetServiceTest {
                 assertThat(((BusinessException) ex).code()).isEqualTo("INSPECTION_HISTORY_EXISTS"));
   }
 
+  @Test
+  void listsAssetsFilteredByStatusAndSearchForCustomerAndManagerWithSummaryCounts() {
+    Asset active = ownedAsset();
+    active.setInspectionItems(List.of("Roof"));
+    when(assets.findByOwnerCustomerIdAndStatus(
+            eq(actorId),
+            eq(com.smartdroneinspection.assets.domain.enums.AssetStatus.ACTIVE),
+            any(Pageable.class)))
+        .thenReturn(new PageImpl<>(List.of(active), PageRequest.of(0, 8), 1));
+    when(assets.countByOwnerCustomerId(actorId)).thenReturn(3L);
+    when(assets.countByOwnerCustomerIdAndStatus(
+            actorId, com.smartdroneinspection.assets.domain.enums.AssetStatus.ACTIVE))
+        .thenReturn(2L);
+    when(assets.countByOwnerCustomerIdWithCheckpoints(actorId)).thenReturn(1L);
+
+    var customerPage =
+        service.list(
+            actorId, 1, 8, null, com.smartdroneinspection.assets.domain.enums.AssetStatus.ACTIVE);
+    assertThat(customerPage.totalCount()).isEqualTo(1L);
+    assertThat(customerPage.allCount()).isEqualTo(3L);
+    assertThat(customerPage.activeCount()).isEqualTo(2L);
+    assertThat(customerPage.checkpointsConfiguredCount()).isEqualTo(1L);
+
+    UUID managerId = UUID.randomUUID();
+    when(userAccess.findActiveUser(managerId))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(managerId, Set.of(Roles.MANAGER), "Mgr")));
+    when(assets.searchAllByStatus(
+            eq(com.smartdroneinspection.assets.domain.enums.AssetStatus.RETIRED),
+            eq("BR-03"),
+            any(Pageable.class)))
+        .thenReturn(new PageImpl<>(List.of(active), PageRequest.of(0, 8), 1));
+    when(assets.count()).thenReturn(5L);
+    when(assets.countByStatus(com.smartdroneinspection.assets.domain.enums.AssetStatus.ACTIVE))
+        .thenReturn(4L);
+    when(assets.countAllWithCheckpoints()).thenReturn(2L);
+
+    var managerPage =
+        service.list(
+            managerId,
+            1,
+            8,
+            " BR-03 ",
+            com.smartdroneinspection.assets.domain.enums.AssetStatus.RETIRED);
+    assertThat(managerPage.totalCount()).isEqualTo(1L);
+    assertThat(managerPage.allCount()).isEqualTo(5L);
+    assertThat(managerPage.activeCount()).isEqualTo(4L);
+    assertThat(managerPage.checkpointsConfiguredCount()).isEqualTo(2L);
+  }
+
   private Asset ownedAsset() {
     Asset asset =
         new Asset(

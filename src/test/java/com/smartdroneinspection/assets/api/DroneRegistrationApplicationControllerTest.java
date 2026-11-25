@@ -11,6 +11,7 @@ import com.smartdroneinspection.assets.api.dto.request.ReviewDroneRegistrationAp
 import com.smartdroneinspection.assets.api.dto.request.SubmitDroneRegistrationApplicationRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateDroneServiceabilityRequest;
 import com.smartdroneinspection.assets.api.dto.response.DroneEvidenceUploadResponse;
+import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationResponse;
 import com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse;
 import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
@@ -98,6 +99,13 @@ class DroneRegistrationApplicationControllerTest {
     assertThat(controller.inspectorDrones(jwt).data()).hasSize(1);
     assertThat(controller.pending(jwt).data()).hasSize(1);
     assertThat(controller.history(jwt).data()).hasSize(1);
+
+    var paged =
+        new DroneRegistrationApplicationPageResponse(List.of(application), 1, 10, 1, 1, 1, 1, 0, 0);
+    when(applications.listForReview(INSPECTOR_ID, 1, 10, "PENDING", "CLASS_A", "Mavic", "NEWEST"))
+        .thenReturn(paged);
+    assertThat(controller.listForReview(jwt, 1, 10, "PENDING", "CLASS_A", "Mavic", "NEWEST").data())
+        .isSameAs(paged);
   }
 
   @Test

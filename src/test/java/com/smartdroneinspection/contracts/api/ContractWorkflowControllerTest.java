@@ -268,4 +268,58 @@ class ContractWorkflowControllerTest {
         .updateInspectionItems(
             managerId, requestId, java.util.List.of("Roof membrane", "Anchor bolts"));
   }
+
+  @Test
+  void evaluatesPartnerCandidatesWithServerPagination() throws Exception {
+    when(workflow.evaluatePartnerCandidatesPaged(
+            org.mockito.ArgumentMatchers.eq(managerId),
+            org.mockito.ArgumentMatchers.eq(requestId),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.eq(2),
+            org.mockito.ArgumentMatchers.eq(6),
+            org.mockito.ArgumentMatchers.eq("Matrice"),
+            org.mockito.ArgumentMatchers.eq("ELIGIBLE_ONLY"),
+            org.mockito.ArgumentMatchers.eq("COVERS_STRUCTURE"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("THERMAL_CAMERA")))
+        .thenReturn(
+            new com.smartdroneinspection.contracts.api.dto.response.PartnerCandidatePageResponse(
+                java.util.List.of(), 2, 6, 8, 2, 8, 1, 9));
+
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests/{requestId}/partner-candidates/paged", requestId)
+                .param("page", "2")
+                .param("pageSize", "6")
+                .param("search", "Matrice")
+                .param("eligibility", "ELIGIBLE_ONLY")
+                .param("altitude", "COVERS_STRUCTURE")
+                .param("capabilityCode", "THERMAL_CAMERA")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "plannedStartAt": "2026-12-04T01:00:00Z",
+                      "plannedEndAt": "2026-12-04T03:00:00Z",
+                      "requiredDroneFeatureCodes": ["THERMAL_CAMERA"]
+                    }
+                    """))
+        .andExpect(status().isOk())
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data.page")
+                .value(2))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data.totalCount")
+                .value(8))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data.eligibleCount")
+                .value(8))
+        .andExpect(
+            org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                    "$.data.unavailableCount")
+                .value(1));
+  }
 }

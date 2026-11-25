@@ -134,23 +134,33 @@ public class AssetService {
 
   @Transactional(readOnly = true)
   public AssetPageResponse list(UUID actorId, int page, int pageSize, String search) {
+    return list(actorId, page, pageSize, search, null);
+  }
+
+  @Transactional(readOnly = true)
+  public AssetPageResponse list(
+      UUID actorId, int page, int pageSize, String search, AssetStatus status) {
     UserAccess.ActiveUser actor = requireActive(actorId);
     int safePage = Math.max(page, 1);
     int safePageSize = Math.min(Math.max(pageSize, 1), 100);
     PageRequest pageRequest = PageRequest.of(safePage - 1, safePageSize, Sort.by("name"));
+    String trimmedSearch = search != null && !search.isBlank() ? search.trim() : null;
 
     Page<Asset> result;
+    long allCount;
+    long activeCount;
+    long checkpointsConfiguredCount;
     if (actor.hasRole("ADMIN") || actor.hasRole("MANAGER")) {
-      result =
-          search == null || search.isBlank()
-              ? assets.findAll(pageRequest)
-              : assets.searchAll(search.trim(), pageRequest);
+      result = queryAllAssets(status, trimmedSearch, pageRequest);
+      allCount = assets.count();
+      activeCount = assets.countByStatus(AssetStatus.ACTIVE);
+      checkpointsConfiguredCount = assets.countAllWithCheckpoints();
     } else {
       UUID ownerCustomerId = requireOwnerCustomer(actor);
-      result =
-          search == null || search.isBlank()
-              ? assets.findByOwnerCustomerId(ownerCustomerId, pageRequest)
-              : assets.searchByOwnerCustomerId(ownerCustomerId, search.trim(), pageRequest);
+      result = queryCustomerAssets(ownerCustomerId, status, trimmedSearch, pageRequest);
+      allCount = assets.countByOwnerCustomerId(ownerCustomerId);
+      activeCount = assets.countByOwnerCustomerIdAndStatus(ownerCustomerId, AssetStatus.ACTIVE);
+      checkpointsConfiguredCount = assets.countByOwnerCustomerIdWithCheckpoints(ownerCustomerId);
     }
     List<Asset> pageAssets = result.getContent();
     Set<UUID> lockedAssetIds =
@@ -165,7 +175,31 @@ public class AssetService {
         safePage,
         safePageSize,
         result.getTotalElements(),
-        result.getTotalPages());
+        result.getTotalPages(),
+        allCount,
+        activeCount,
+        checkpointsConfiguredCount);
+  }
+
+  private Page<Asset> queryAllAssets(AssetStatus status, String search, PageRequest pageRequest) {
+    if (status == null) {
+      return search == null ? assets.findAll(pageRequest) : assets.searchAll(search, pageRequest);
+    }
+    return search == null
+        ? assets.findByStatus(status, pageRequest)
+        : assets.searchAllByStatus(status, search, pageRequest);
+  }
+
+  private Page<Asset> queryCustomerAssets(
+      UUID ownerCustomerId, AssetStatus status, String search, PageRequest pageRequest) {
+    if (status == null) {
+      return search == null
+          ? assets.findByOwnerCustomerId(ownerCustomerId, pageRequest)
+          : assets.searchByOwnerCustomerId(ownerCustomerId, search, pageRequest);
+    }
+    return search == null
+        ? assets.findByOwnerCustomerIdAndStatus(ownerCustomerId, status, pageRequest)
+        : assets.searchByOwnerCustomerIdAndStatus(ownerCustomerId, status, search, pageRequest);
   }
 
   @Transactional(readOnly = true)

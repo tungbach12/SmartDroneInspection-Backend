@@ -655,6 +655,103 @@ class DroneRegistrationApplicationServiceTest {
     assertThat(persistedDrone.resolveLegalCategory()).isEqualTo("CATEGORY_3");
   }
 
+  @Test
+  void listForReviewPaginatesFiltersByStatusTierSearchAndComputesCounts() {
+    DroneRegistrationApplication heavyPending =
+        new DroneRegistrationApplication(
+            inspectorId,
+            "SN-HVY",
+            "Matrice 350 RTK",
+            "DJI",
+            "REG-HVY",
+            "reg-file",
+            Instant.now().plusSeconds(86400),
+            "owner-file",
+            null);
+    heavyPending.applyStructuredSpecs(new java.math.BigDecimal("6.47"), 55, "20 MP");
+    ReflectionTestUtils.setField(heavyPending, "id", UUID.randomUUID());
+    ReflectionTestUtils.setField(heavyPending, "createdAt", Instant.parse("2026-10-02T00:00:00Z"));
+
+    DroneRegistrationApplication lightApproved =
+        new DroneRegistrationApplication(
+            inspectorId,
+            "SN-LGT",
+            "Mavic 3 Enterprise",
+            "DJI",
+            "REG-LGT",
+            "reg-file",
+            Instant.now().plusSeconds(86400),
+            "owner-file",
+            null);
+    lightApproved.applyStructuredSpecs(new java.math.BigDecimal("0.92"), 45, "20 MP");
+    lightApproved.approve(adminId, droneId);
+    ReflectionTestUtils.setField(lightApproved, "id", UUID.randomUUID());
+    ReflectionTestUtils.setField(lightApproved, "createdAt", Instant.parse("2026-10-01T00:00:00Z"));
+
+    DroneRegistrationApplication rejectedApp =
+        new DroneRegistrationApplication(
+            inspectorId,
+            "SN-REJ",
+            "Mini 4 Pro",
+            "DJI",
+            "REG-REJ",
+            "reg-file",
+            Instant.now().plusSeconds(86400),
+            "owner-file",
+            null);
+    rejectedApp.applyStructuredSpecs(new java.math.BigDecimal("0.249"), 34, "48 MP");
+    rejectedApp.reject(adminId, "Blurry scan");
+    ReflectionTestUtils.setField(rejectedApp, "id", UUID.randomUUID());
+    ReflectionTestUtils.setField(rejectedApp, "createdAt", Instant.parse("2026-10-03T00:00:00Z"));
+
+    when(applications.findAll()).thenReturn(List.of(heavyPending, lightApproved, rejectedApp));
+    when(userAccess.findUser(inspectorId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    inspectorId,
+                    Set.of(Roles.INSPECTOR),
+                    "Pilot",
+                    "pilot@test.local",
+                    "LIC-123",
+                    "CLASS_A",
+                    Instant.now().plusSeconds(86400),
+                    "file-key")));
+    when(userAccess.findUser(adminId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    adminId,
+                    Set.of(Roles.ADMIN),
+                    "Admin",
+                    "admin@test.local",
+                    null,
+                    null,
+                    null,
+                    null)));
+
+    var page1 = service.listForReview(adminId, 1, 2, "ALL", "ALL", null, "NEWEST");
+    assertThat(page1.totalAllCount()).isEqualTo(3);
+    assertThat(page1.pendingCount()).isEqualTo(1);
+    assertThat(page1.approvedCount()).isEqualTo(1);
+    assertThat(page1.rejectedCount()).isEqualTo(1);
+    assertThat(page1.totalCount()).isEqualTo(3);
+    assertThat(page1.totalPages()).isEqualTo(2);
+    assertThat(page1.items()).hasSize(2);
+    assertThat(page1.items().get(0).serialNumber()).isEqualTo("SN-REJ");
+
+    var mismatch =
+        service.listForReview(adminId, 1, 10, "PENDING", "LICENSE_MISMATCH", "350", "NEWEST");
+    assertThat(mismatch.totalCount()).isEqualTo(1);
+    assertThat(mismatch.items())
+        .singleElement()
+        .satisfies(
+            item -> {
+              assertThat(item.serialNumber()).isEqualTo("SN-HVY");
+              assertThat(item.inspectorPilotLicenseClass()).isEqualTo("CLASS_A");
+            });
+  }
+
   private DroneRegistrationApplication sampleApplication() {
     DroneRegistrationApplication app =
         new DroneRegistrationApplication(

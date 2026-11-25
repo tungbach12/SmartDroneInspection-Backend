@@ -2,8 +2,10 @@ package com.smartdroneinspection.assets.api;
 
 import com.smartdroneinspection.assets.api.dto.request.CreateDroneRequest;
 import com.smartdroneinspection.assets.api.dto.request.UpdateDroneServiceabilityRequest;
+import com.smartdroneinspection.assets.api.dto.response.DronePageResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneSelectionResponse;
+import com.smartdroneinspection.assets.domain.enums.DroneServiceability;
 import com.smartdroneinspection.assets.service.DroneService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,6 +48,18 @@ public class DroneController {
   @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
   public ApiResponse<List<DroneResponse>> list(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(drones.list(subject(jwt)));
+  }
+
+  @GetMapping("/paged")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'MANAGER')")
+  public ApiResponse<DronePageResponse> listPaged(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "20") int pageSize,
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) DroneServiceability serviceability) {
+    return ApiResponse.success(
+        drones.listPaged(subject(jwt), page, pageSize, search, serviceability));
   }
 
   /** Serviceable airframes of the caller's organization; no permit or readiness claim is made. */

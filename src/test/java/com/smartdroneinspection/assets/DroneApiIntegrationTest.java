@@ -418,6 +418,43 @@ class DroneApiIntegrationTest {
     return UUID.fromString(body.substring(start, body.indexOf('"', start)));
   }
 
+  @Test
+  void listsDronesWithServerPaginationAndServiceabilityFilter() throws Exception {
+    String s1 = "SN-AAA-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    String s2 = "SN-BBB-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    String s3 = "SN-CCC-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    createDroneId(fixture.clientId(), s1);
+    UUID secondId = createDroneId(fixture.clientId(), s2);
+    createDroneId(fixture.clientId(), s3);
+    patchServiceability(secondId, "MAINTENANCE").andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            get("/api/v1/drones/paged")
+                .param("page", "1")
+                .param("pageSize", "2")
+                .with(orgAdmin(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.page").value(1))
+        .andExpect(jsonPath("$.data.pageSize").value(2))
+        .andExpect(jsonPath("$.data.totalCount").value(3))
+        .andExpect(jsonPath("$.data.totalPages").value(2))
+        .andExpect(jsonPath("$.data.items.length()").value(2))
+        .andExpect(jsonPath("$.data.items[0].serialNumber").value(s1));
+
+    mockMvc
+        .perform(
+            get("/api/v1/drones/paged")
+                .param("page", "1")
+                .param("pageSize", "10")
+                .param("serviceability", "MAINTENANCE")
+                .param("search", s2)
+                .with(orgAdmin(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalCount").value(1))
+        .andExpect(jsonPath("$.data.items[0].serialNumber").value(s2));
+  }
+
   private org.springframework.test.web.servlet.ResultActions patchServiceability(
       UUID droneId, String serviceability) throws Exception {
     return mockMvc.perform(
