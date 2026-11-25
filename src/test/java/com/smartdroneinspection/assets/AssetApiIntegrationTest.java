@@ -391,6 +391,68 @@ class AssetApiIntegrationTest {
         .andExpect(jsonPath("$.code").value("INVALID_STATE"));
   }
 
+  @Test
+  void paginatesAndFiltersAssetsByStatusAndSearchForCustomerAndManager() throws Exception {
+    var first = ownedAsset(fixture.categoryId(), "PAG-01", "Alpha Tower", fixture.clientId());
+    first.setInspectionItems(java.util.List.of("Roof"));
+    assets.saveAndFlush(first);
+    var second = ownedAsset(fixture.categoryId(), "PAG-02", "Beta Tower", fixture.clientId());
+    assets.saveAndFlush(second);
+    var retired = ownedAsset(fixture.categoryId(), "PAG-03", "Gamma Retired", fixture.clientId());
+    retired.retire();
+    assets.saveAndFlush(retired);
+    var otherOrg =
+        ownedAsset(fixture.categoryId(), "PAG-04", "Delta Other Org", fixture.otherClientId());
+    assets.saveAndFlush(otherOrg);
+
+    mockMvc
+        .perform(
+            get("/api/v1/assets")
+                .param("page", "1")
+                .param("pageSize", "1")
+                .param("status", "ACTIVE")
+                .with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.page").value(1))
+        .andExpect(jsonPath("$.data.pageSize").value(1))
+        .andExpect(jsonPath("$.data.totalCount").value(2))
+        .andExpect(jsonPath("$.data.totalPages").value(2))
+        .andExpect(jsonPath("$.data.allCount").value(3))
+        .andExpect(jsonPath("$.data.activeCount").value(2))
+        .andExpect(jsonPath("$.data.checkpointsConfiguredCount").value(1))
+        .andExpect(jsonPath("$.data.items.length()").value(1))
+        .andExpect(jsonPath("$.data.items[0].code").value("PAG-01"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/assets")
+                .param("page", "1")
+                .param("pageSize", "10")
+                .param("status", "RETIRED")
+                .param("search", "Gamma")
+                .with(client(fixture.clientId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalCount").value(1))
+        .andExpect(jsonPath("$.data.items[0].code").value("PAG-03"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/assets")
+                .param("page", "1")
+                .param("pageSize", "2")
+                .param("status", "ACTIVE")
+                .with(
+                    jwt()
+                        .jwt(token -> token.subject(fixture.managerId().toString()))
+                        .authorities(
+                            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                                "ROLE_MANAGER"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalCount").value(3))
+        .andExpect(jsonPath("$.data.totalPages").value(2))
+        .andExpect(jsonPath("$.data.items.length()").value(2));
+  }
+
   private org.springframework.test.web.servlet.request.RequestPostProcessor client(UUID id) {
     return jwt()
         .jwt(token -> token.subject(id.toString()))

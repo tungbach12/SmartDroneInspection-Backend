@@ -3,6 +3,7 @@ package com.smartdroneinspection.assets.api;
 import com.smartdroneinspection.assets.api.dto.request.ReviewDroneRegistrationApplicationRequest;
 import com.smartdroneinspection.assets.api.dto.request.SubmitDroneRegistrationApplicationRequest;
 import com.smartdroneinspection.assets.api.dto.response.DroneEvidenceUploadResponse;
+import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationResponse;
 import com.smartdroneinspection.assets.api.dto.response.InspectorDroneResponse;
 import com.smartdroneinspection.assets.service.DroneEvidenceUploadService;
@@ -149,6 +150,20 @@ public class DroneRegistrationApplicationController {
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID droneId) {
     applications.deleteMyDrone(subject(jwt), droneId);
     return ApiResponse.success(null);
+  }
+
+  @GetMapping
+  @PreAuthorize("hasAnyRole('" + Roles.ADMIN + "', '" + Roles.MANAGER + "')")
+  public ApiResponse<DroneRegistrationApplicationPageResponse> listForReview(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "10") int pageSize,
+      @RequestParam(required = false) String status,
+      @RequestParam(required = false) String tier,
+      @RequestParam(required = false) String search,
+      @RequestParam(defaultValue = "NEWEST") String sort) {
+    return ApiResponse.success(
+        applications.listForReview(subject(jwt), page, pageSize, status, tier, search, sort));
   }
 
   @GetMapping("/pending")

@@ -3,6 +3,7 @@ package com.smartdroneinspection.contracts.api;
 import com.smartdroneinspection.contracts.api.dto.request.RegisterPartnerInspectorRequest;
 import com.smartdroneinspection.contracts.api.dto.request.RegisterPartnerResourceRequest;
 import com.smartdroneinspection.contracts.api.dto.request.SetPartnerResourceStatusRequest;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerDronePageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerDroneResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerInspectorResponse;
 import com.smartdroneinspection.contracts.service.PartnerRegistryService;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -67,6 +69,15 @@ public class PartnerRegistryController {
   public ApiResponse<List<PartnerDroneResponse>> listDrones(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(
         partners.listDrones(actorId(jwt)).stream().map(PartnerDroneResponse::from).toList());
+  }
+
+  @GetMapping("/drones/paged")
+  public ApiResponse<PartnerDronePageResponse> listDronesPaged(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "20") int pageSize,
+      @RequestParam(required = false) String search) {
+    return ApiResponse.success(partners.listDronesPaged(actorId(jwt), page, pageSize, search));
   }
 
   @PostMapping("/drones")

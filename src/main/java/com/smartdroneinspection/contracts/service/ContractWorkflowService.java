@@ -20,6 +20,7 @@ import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryItemRes
 import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidatePageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.SepayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceManagerContactResponse;
@@ -974,6 +975,115 @@ public class ContractWorkflowService
         .stream()
         .map(PartnerCandidateResponse::from)
         .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public PartnerCandidatePageResponse evaluatePartnerCandidatesPaged(
+      UUID actorId,
+      UUID requestId,
+      EvaluatePartnerCandidatesRequest input,
+      int page,
+      int pageSize,
+      String search,
+      String eligibility,
+      String altitude,
+      BigDecimal minimumCeilingMeters,
+      String capabilityCode) {
+    List<PartnerCandidateResponse> all = evaluatePartnerCandidates(actorId, requestId, input);
+    int safePage = Math.max(page, 1);
+    int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    String normalizedQuery =
+        search != null && !search.isBlank() ? search.trim().toLowerCase() : null;
+    String eligibilityMode =
+        eligibility == null || eligibility.isBlank()
+            ? "ELIGIBLE_ONLY"
+            : eligibility.trim().toUpperCase(java.util.Locale.ROOT);
+    String altitudeMode =
+        altitude == null || altitude.isBlank()
+            ? "ALL"
+            : altitude.trim().toUpperCase(java.util.Locale.ROOT);
+    String capability =
+        capabilityCode != null
+                && !capabilityCode.isBlank()
+                && !"ALL".equalsIgnoreCase(capabilityCode)
+            ? capabilityCode.trim()
+            : null;
+
+    long eligibleCount =
+        all.stream().filter(ContractWorkflowService::isSelectableCandidate).count();
+    long unavailableCount = all.size() - eligibleCount;
+
+    List<PartnerCandidateResponse> filtered =
+        all.stream()
+            .filter(
+                candidate -> {
+                  boolean selectable = isSelectableCandidate(candidate);
+                  if ("UNAVAILABLE_ONLY".equals(eligibilityMode) && selectable) {
+                    return false;
+                  }
+                  if ("ELIGIBLE_ONLY".equals(eligibilityMode) && !selectable) {
+                    return false;
+                  }
+                  if (normalizedQuery != null) {
+                    boolean matchesName =
+                        candidate.inspectorName() != null
+                            && candidate.inspectorName().toLowerCase().contains(normalizedQuery);
+                    boolean matchesModel =
+                        candidate.droneModel() != null
+                            && candidate.droneModel().toLowerCase().contains(normalizedQuery);
+                    boolean matchesSerial =
+                        candidate.droneSerialNumber() != null
+                            && candidate
+                                .droneSerialNumber()
+                                .toLowerCase()
+                                .contains(normalizedQuery);
+                    if (!matchesName && !matchesModel && !matchesSerial) {
+                      return false;
+                    }
+                  }
+                  if ("COVERS_STRUCTURE".equals(altitudeMode)) {
+                    if (candidate.droneMaxAltitudeMeters() == null
+                        || candidate.structureHeightMeters() == null
+                        || candidate
+                                .droneMaxAltitudeMeters()
+                                .compareTo(candidate.structureHeightMeters())
+                            < 0) {
+                      return false;
+                    }
+                  } else if ("MINIMUM_CEILING".equals(altitudeMode)) {
+                    if (minimumCeilingMeters == null
+                        || candidate.droneMaxAltitudeMeters() == null
+                        || candidate.droneMaxAltitudeMeters().compareTo(minimumCeilingMeters) < 0) {
+                      return false;
+                    }
+                  }
+                  if (capability != null
+                      && (candidate.droneFeatureCodes() == null
+                          || !candidate.droneFeatureCodes().contains(capability))) {
+                    return false;
+                  }
+                  return true;
+                })
+            .toList();
+
+    long totalCount = filtered.size();
+    int totalPages = totalCount == 0 ? 0 : (int) Math.ceil((double) totalCount / safePageSize);
+    int fromIndex = Math.min((safePage - 1) * safePageSize, filtered.size());
+    int toIndex = Math.min(fromIndex + safePageSize, filtered.size());
+    return new PartnerCandidatePageResponse(
+        filtered.subList(fromIndex, toIndex),
+        safePage,
+        safePageSize,
+        totalCount,
+        totalPages,
+        eligibleCount,
+        unavailableCount,
+        all.size());
+  }
+
+  private static boolean isSelectableCandidate(PartnerCandidateResponse candidate) {
+    return candidate.eligibility() == PartnerCandidateEvaluation.Status.PASS
+        && candidate.capabilityFit() == PartnerCandidateEvaluation.Status.MATCH;
   }
 
   @Transactional

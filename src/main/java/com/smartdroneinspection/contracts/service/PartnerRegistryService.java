@@ -5,6 +5,8 @@ import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneFeatureConfig;
 import com.smartdroneinspection.assets.repository.DroneFeatureConfigRepository;
 import com.smartdroneinspection.assets.repository.DroneRepository;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerDronePageResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerDroneResponse;
 import com.smartdroneinspection.inspections.spi.PartnerReliabilityQuery;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -178,6 +180,32 @@ public class PartnerRegistryService {
                     !drone.getImageFileKeys().isEmpty(),
                     drone.getMaxAltitudeMeters()))
         .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public PartnerDronePageResponse listDronesPaged(
+      UUID managerId, int page, int pageSize, String search) {
+    int safePage = Math.max(page, 1);
+    int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    String normalizedSearch =
+        search != null && !search.isBlank() ? search.trim().toLowerCase() : null;
+    List<PartnerDroneResponse> matching =
+        listDrones(managerId).stream()
+            .filter(
+                option ->
+                    normalizedSearch == null
+                        || (option.serialNumber() != null
+                            && option.serialNumber().toLowerCase().contains(normalizedSearch))
+                        || (option.model() != null
+                            && option.model().toLowerCase().contains(normalizedSearch)))
+            .map(PartnerDroneResponse::from)
+            .toList();
+    long totalCount = matching.size();
+    int totalPages = totalCount == 0 ? 0 : (int) Math.ceil((double) totalCount / safePageSize);
+    int fromIndex = Math.min((safePage - 1) * safePageSize, matching.size());
+    int toIndex = Math.min(fromIndex + safePageSize, matching.size());
+    return new PartnerDronePageResponse(
+        matching.subList(fromIndex, toIndex), safePage, safePageSize, totalCount, totalPages);
   }
 
   @Transactional(readOnly = true)

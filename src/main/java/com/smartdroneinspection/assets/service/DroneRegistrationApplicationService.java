@@ -2,6 +2,7 @@ package com.smartdroneinspection.assets.service;
 
 import com.smartdroneinspection.assets.api.dto.request.ReviewDroneRegistrationApplicationRequest;
 import com.smartdroneinspection.assets.api.dto.request.SubmitDroneRegistrationApplicationRequest;
+import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.DroneRegistrationApplicationResponse;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.assets.domain.DroneDocumentConfig;
@@ -20,8 +21,10 @@ import com.smartdroneinspection.shared.storage.EvidenceUploadValidator;
 import com.smartdroneinspection.users.UserAccess;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -511,6 +514,153 @@ public class DroneRegistrationApplicationService {
               return DroneRegistrationApplicationResponse.from(app, inspector, reviewer);
             })
         .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public DroneRegistrationApplicationPageResponse listForReview(
+      UUID reviewerId,
+      int page,
+      int pageSize,
+      String status,
+      String tier,
+      String search,
+      String sort) {
+    requireReviewer(reviewerId);
+    int safePage = Math.max(page, 1);
+    int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    String statusFilter = normalizeFilter(status, "ALL");
+    String tierFilter = normalizeFilter(tier, "ALL");
+    String sortMode = normalizeFilter(sort, "NEWEST");
+    String query =
+        search != null && !search.isBlank() ? search.trim().toLowerCase(Locale.ROOT) : null;
+
+    Map<UUID, UserAccess.ActiveUser> userCache = new HashMap<>();
+    List<DroneRegistrationApplicationResponse> allResponses =
+        applications.findAll().stream()
+            .map(
+                app -> {
+                  var inspector =
+                      app.getInspectorUserId() == null
+                          ? null
+                          : userCache.computeIfAbsent(
+                              app.getInspectorUserId(), id -> userAccess.findUser(id).orElse(null));
+                  var reviewer =
+                      app.getReviewedByUserId() == null
+                          ? null
+                          : userCache.computeIfAbsent(
+                              app.getReviewedByUserId(),
+                              id -> userAccess.findUser(id).orElse(null));
+                  return DroneRegistrationApplicationResponse.from(app, inspector, reviewer);
+                })
+            .toList();
+
+    long pendingCount =
+        allResponses.stream().filter(item -> "PENDING".equalsIgnoreCase(item.status())).count();
+    long approvedCount =
+        allResponses.stream().filter(item -> "APPROVED".equalsIgnoreCase(item.status())).count();
+    long rejectedCount =
+        allResponses.stream().filter(item -> "REJECTED".equalsIgnoreCase(item.status())).count();
+
+    Comparator<DroneRegistrationApplicationResponse> comparator =
+        switch (sortMode) {
+          case "OLDEST" ->
+              Comparator.comparing(
+                  DroneRegistrationApplicationResponse::createdAt,
+                  Comparator.nullsLast(Comparator.naturalOrder()));
+          case "NAME_ASC" ->
+              Comparator.comparing(
+                  (DroneRegistrationApplicationResponse item) ->
+                      item.model() != null ? item.model() : "",
+                  String.CASE_INSENSITIVE_ORDER);
+          default ->
+              Comparator.comparing(
+                      DroneRegistrationApplicationResponse::createdAt,
+                      Comparator.nullsFirst(Comparator.naturalOrder()))
+                  .reversed();
+        };
+
+    List<DroneRegistrationApplicationResponse> filtered =
+        allResponses.stream()
+            .filter(
+                item -> "ALL".equals(statusFilter) || statusFilter.equalsIgnoreCase(item.status()))
+            .filter(item -> matchesReviewTier(item, tierFilter))
+            .filter(item -> matchesReviewSearch(item, query))
+            .sorted(comparator)
+            .toList();
+
+    long totalCount = filtered.size();
+    int totalPages = totalCount == 0 ? 0 : (int) Math.ceil((double) totalCount / safePageSize);
+    int fromIndex = Math.min((safePage - 1) * safePageSize, filtered.size());
+    int toIndex = Math.min(fromIndex + safePageSize, filtered.size());
+    return new DroneRegistrationApplicationPageResponse(
+        filtered.subList(fromIndex, toIndex),
+        safePage,
+        safePageSize,
+        totalCount,
+        totalPages,
+        allResponses.size(),
+        pendingCount,
+        approvedCount,
+        rejectedCount);
+  }
+
+  private static String normalizeFilter(String value, String fallback) {
+    return value == null || value.isBlank() ? fallback : value.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private static boolean matchesReviewTier(
+      DroneRegistrationApplicationResponse item, String tierFilter) {
+    if ("ALL".equals(tierFilter)) {
+      return true;
+    }
+    boolean requiresClassB =
+        requiresClassBLegalCategory(item.legalCategory(), item.mtowKg(), item.model());
+    return switch (tierFilter) {
+      case "CLASS_A" -> !requiresClassB;
+      case "CLASS_B_REQUIRED" -> requiresClassB;
+      case "LICENSE_MISMATCH" ->
+          requiresClassB && "CLASS_A".equalsIgnoreCase(item.inspectorPilotLicenseClass());
+      default -> true;
+    };
+  }
+
+  private static boolean requiresClassBLegalCategory(
+      String legalCategory, java.math.BigDecimal mtowKg, String model) {
+    if (mtowKg != null && mtowKg.compareTo(java.math.BigDecimal.ZERO) > 0) {
+      return mtowKg.doubleValue() >= 2.0;
+    }
+    if ("CATEGORY_1".equals(legalCategory) || "CATEGORY_2".equals(legalCategory)) {
+      return false;
+    }
+    if ("CATEGORY_3".equals(legalCategory)
+        || "CATEGORY_4".equals(legalCategory)
+        || "CATEGORY_5".equals(legalCategory)) {
+      return true;
+    }
+    String text = model == null ? "" : model.toLowerCase(Locale.ROOT);
+    return text.contains("matrice")
+        || text.contains("m300")
+        || text.contains("m350")
+        || text.contains("m30")
+        || text.contains("inspire")
+        || text.contains("agras");
+  }
+
+  private static boolean matchesReviewSearch(
+      DroneRegistrationApplicationResponse item, String query) {
+    if (query == null) {
+      return true;
+    }
+    return containsIgnoreCase(item.model(), query)
+        || containsIgnoreCase(item.serialNumber(), query)
+        || containsIgnoreCase(item.registrationNumber(), query)
+        || containsIgnoreCase(item.manufacturer(), query)
+        || containsIgnoreCase(item.inspectorFullName(), query)
+        || containsIgnoreCase(item.inspectorEmail(), query);
+  }
+
+  private static boolean containsIgnoreCase(String value, String needle) {
+    return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
   }
 
   @Transactional

@@ -17,6 +17,7 @@ import com.smartdroneinspection.contracts.api.dto.request.UpdateServiceRequestIn
 import com.smartdroneinspection.contracts.api.dto.response.FinanceHistoryPageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ManagerFinanceHistoryResponse;
 import com.smartdroneinspection.contracts.api.dto.response.OccurrenceFinanceResponse;
+import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidatePageResponse;
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.SepayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
@@ -27,6 +28,7 @@ import com.smartdroneinspection.users.UserAccess;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
@@ -158,6 +160,32 @@ public class ContractWorkflowController {
       @Valid @RequestBody EvaluatePartnerCandidatesRequest request) {
     return ApiResponse.success(
         workflow.evaluatePartnerCandidates(actorId(jwt), requestId, request));
+  }
+
+  @PostMapping("/{requestId}/partner-candidates/paged")
+  public ApiResponse<PartnerCandidatePageResponse> evaluatePartnerCandidatesPaged(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID requestId,
+      @Valid @RequestBody EvaluatePartnerCandidatesRequest request,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "6") int pageSize,
+      @RequestParam(required = false) String search,
+      @RequestParam(defaultValue = "ELIGIBLE_ONLY") String eligibility,
+      @RequestParam(defaultValue = "ALL") String altitude,
+      @RequestParam(required = false) BigDecimal minimumCeilingMeters,
+      @RequestParam(required = false) String capabilityCode) {
+    return ApiResponse.success(
+        workflow.evaluatePartnerCandidatesPaged(
+            actorId(jwt),
+            requestId,
+            request,
+            page,
+            pageSize,
+            search,
+            eligibility,
+            altitude,
+            minimumCeilingMeters,
+            capabilityCode));
   }
 
   @PutMapping("/{requestId}/inspection-items")

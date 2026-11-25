@@ -5,6 +5,7 @@ import com.smartdroneinspection.assets.api.dto.request.UpdateAssetInspectionItem
 import com.smartdroneinspection.assets.api.dto.request.UpdateAssetRequest;
 import com.smartdroneinspection.assets.api.dto.response.AssetPageResponse;
 import com.smartdroneinspection.assets.api.dto.response.AssetResponse;
+import com.smartdroneinspection.assets.domain.enums.AssetStatus;
 import com.smartdroneinspection.assets.service.AssetService;
 import com.smartdroneinspection.shared.api.ApiResponse;
 import jakarta.validation.Valid;
@@ -48,8 +49,9 @@ public class AssetController {
       @AuthenticationPrincipal Jwt jwt,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int pageSize,
-      @RequestParam(required = false) String search) {
-    return ApiResponse.success(assets.list(subject(jwt), page, pageSize, search));
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) AssetStatus status) {
+    return ApiResponse.success(assets.list(subject(jwt), page, pageSize, search, status));
   }
 
   @GetMapping("/{assetId}")

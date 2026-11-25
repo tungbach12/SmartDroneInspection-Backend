@@ -45,6 +45,49 @@ public interface DroneRepository extends JpaRepository<Drone, UUID> {
 
   Page<Drone> findByOwnerCustomerId(UUID ownerCustomerId, Pageable pageable);
 
+  Page<Drone> findByServiceability(DroneServiceability serviceability, Pageable pageable);
+
+  Page<Drone> findByOwnerCustomerIdAndServiceability(
+      UUID ownerCustomerId, DroneServiceability serviceability, Pageable pageable);
+
+  @Query(
+      "select d from Drone d where lower(d.serialNumber) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.model, '')) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.manufacturer, '')) like lower(concat('%', :search, '%'))")
+  Page<Drone> searchAll(@Param("search") String search, Pageable pageable);
+
+  @Query(
+      "select d from Drone d where d.serviceability = :serviceability "
+          + "and (lower(d.serialNumber) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.model, '')) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.manufacturer, '')) like lower(concat('%', :search, '%')))")
+  Page<Drone> searchAllByServiceability(
+      @Param("serviceability") DroneServiceability serviceability,
+      @Param("search") String search,
+      Pageable pageable);
+
+  @Query(
+      "select d from Drone d where d.ownerCustomerId = :ownerCustomerId "
+          + "and (lower(d.serialNumber) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.model, '')) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.manufacturer, '')) like lower(concat('%', :search, '%')))")
+  Page<Drone> searchByOwnerCustomerId(
+      @Param("ownerCustomerId") UUID ownerCustomerId,
+      @Param("search") String search,
+      Pageable pageable);
+
+  @Query(
+      "select d from Drone d where d.ownerCustomerId = :ownerCustomerId "
+          + "and d.serviceability = :serviceability "
+          + "and (lower(d.serialNumber) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.model, '')) like lower(concat('%', :search, '%')) "
+          + "or lower(coalesce(d.manufacturer, '')) like lower(concat('%', :search, '%')))")
+  Page<Drone> searchByOwnerCustomerIdAndServiceability(
+      @Param("ownerCustomerId") UUID ownerCustomerId,
+      @Param("serviceability") DroneServiceability serviceability,
+      @Param("search") String search,
+      Pageable pageable);
+
   List<Drone> findAllByOwnerCustomerId(UUID ownerCustomerId);
 
   List<Drone> findByOwnerCustomerIdAndServiceabilityOrderBySerialNumberAsc(
