@@ -1,18 +1,25 @@
 package com.smartdroneinspection.notifications.service;
 
 import com.smartdroneinspection.inspections.events.FieldSessionAbortedEvent;
+import com.smartdroneinspection.inspections.events.FieldSessionCompletedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionForceAbortedEvent;
 import com.smartdroneinspection.inspections.events.FieldSessionHungEvent;
 import com.smartdroneinspection.inspections.events.FlightPermitSubmittedEvent;
+import com.smartdroneinspection.inspections.events.InspectionAcceptedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentRevokedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignmentTimedOutEvent;
+import com.smartdroneinspection.inspections.events.InspectionCancelledEvent;
 import com.smartdroneinspection.inspections.events.InspectionDeclinedEvent;
 import com.smartdroneinspection.inspections.events.InspectionOverdueEvent;
 import com.smartdroneinspection.inspections.events.InspectionRescheduledEvent;
+import com.smartdroneinspection.inspections.events.ReportApprovedForPayoutEvent;
+import com.smartdroneinspection.inspections.events.ReportClarificationRequestedEvent;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
 import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
+import com.smartdroneinspection.inspections.events.ReportWithdrawnEvent;
+import com.smartdroneinspection.inspections.events.VideoProcessingFinishedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -155,5 +162,77 @@ public class InspectionNotificationListener {
         event.overallScore(),
         event.updated(),
         event.occurredAt());
+  }
+
+  @ApplicationModuleListener
+  public void onInspectionAccepted(InspectionAcceptedEvent event) {
+    log.info("Handling InspectionAcceptedEvent for inspection {}", event.inspectionId());
+    inspectionNotificationService.recordInspectionAccepted(
+        event.inspectionId(), event.ownerCustomerId(), event.inspectorId(), event.acceptedAt());
+  }
+
+  @ApplicationModuleListener
+  public void onInspectionCancelled(InspectionCancelledEvent event) {
+    log.info("Handling InspectionCancelledEvent for inspection {}", event.inspectionId());
+    inspectionNotificationService.recordInspectionCancelled(
+        event.inspectionId(),
+        event.ownerCustomerId(),
+        event.inspectorId(),
+        event.reason(),
+        event.cancelledAt());
+  }
+
+  @ApplicationModuleListener
+  public void onFieldSessionCompleted(FieldSessionCompletedEvent event) {
+    log.info("Handling FieldSessionCompletedEvent for session {}", event.sessionId());
+    inspectionNotificationService.recordFieldSessionCompleted(
+        event.inspectionId(),
+        event.sessionId(),
+        event.ownerCustomerId(),
+        event.missionTitle(),
+        event.endedAt());
+  }
+
+  @ApplicationModuleListener
+  public void onReportApprovedForPayout(ReportApprovedForPayoutEvent event) {
+    log.info("Handling ReportApprovedForPayoutEvent for report {}", event.reportVersionId());
+    inspectionNotificationService.recordReportApprovedForPayout(
+        event.inspectionId(),
+        event.reportVersionId(),
+        event.versionNo(),
+        event.inspectorId(),
+        event.approvedAt());
+  }
+
+  @ApplicationModuleListener
+  public void onReportWithdrawn(ReportWithdrawnEvent event) {
+    log.info("Handling ReportWithdrawnEvent for report {}", event.reportVersionId());
+    inspectionNotificationService.recordReportWithdrawn(
+        event.inspectionId(), event.reportVersionId(), event.versionNo(), event.withdrawnAt());
+  }
+
+  @ApplicationModuleListener
+  public void onReportClarificationRequested(ReportClarificationRequestedEvent event) {
+    log.info("Handling ReportClarificationRequestedEvent for report {}", event.reportVersionId());
+    inspectionNotificationService.recordReportClarificationRequested(
+        event.inspectionId(),
+        event.reportVersionId(),
+        event.versionNo(),
+        event.reason(),
+        event.clarificationCount(),
+        event.requestedAt());
+  }
+
+  @ApplicationModuleListener
+  public void onVideoProcessingFinished(VideoProcessingFinishedEvent event) {
+    log.info("Handling VideoProcessingFinishedEvent for evidence {}", event.evidenceId());
+    inspectionNotificationService.recordVideoProcessingFinished(
+        event.evidenceId(),
+        event.inspectionId(),
+        event.inspectorId(),
+        event.fileName(),
+        event.success(),
+        event.errorMessage(),
+        event.finishedAt());
   }
 }

@@ -10,6 +10,7 @@ import com.smartdroneinspection.users.domain.InspectorProfile;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.ClientType;
 import com.smartdroneinspection.users.events.PilotLicenseUpdatedEvent;
+import com.smartdroneinspection.users.events.UserSecurityAlertEvent;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
 import com.smartdroneinspection.users.repository.InspectorProfileRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -473,6 +474,16 @@ public class AuthService {
     revokeAllSessions(userId, "logout-all");
     user.incrementAuthVersion();
     audit.record(userId, userId, "AUTH_LOGOUT_ALL", "SUCCESS", ipAddress, userAgent, correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new UserSecurityAlertEvent(
+              user.getId(),
+              user.getEmail(),
+              user.getFullName(),
+              "SESSIONS_REVOKED_ALL",
+              null,
+              Instant.now()));
+    }
   }
 
   @Transactional
@@ -618,6 +629,16 @@ public class AuthService {
     revokeAllSessions(userId, "password-change");
     audit.record(
         userId, userId, "AUTH_PASSWORD_CHANGED", "SUCCESS", ipAddress, userAgent, correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new UserSecurityAlertEvent(
+              user.getId(),
+              user.getEmail(),
+              user.getFullName(),
+              "PASSWORD_CHANGED",
+              null,
+              Instant.now()));
+    }
   }
 
   private AuthResult createSession(User user, ClientType clientType) {

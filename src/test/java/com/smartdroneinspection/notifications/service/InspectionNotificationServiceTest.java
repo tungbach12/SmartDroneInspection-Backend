@@ -401,4 +401,49 @@ class InspectionNotificationServiceTest {
                 .getTargetPath())
         .isEqualTo("/operations/inspections/" + inspectionId);
   }
+
+  @Test
+  void acceptedCancelledCompletedApprovedWithdrawnClarificationAndVideoNotifyCorrectRoles() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID sessionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+    UUID evidenceId = UUID.randomUUID();
+    UUID customerId = UUID.randomUUID();
+    UUID inspectorId = UUID.randomUUID();
+    UUID managerId = UUID.randomUUID();
+    UUID adminId = UUID.randomUUID();
+
+    when(userAccess.findActiveUser(inspectorId))
+        .thenReturn(Optional.of(new ActiveUser(inspectorId, Set.of("INSPECTOR"), "Pilot One")));
+    when(userAccess.listActiveManagers())
+        .thenReturn(java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Manager One")));
+    when(userAccess.listActiveAdmins())
+        .thenReturn(java.util.List.of(new ActiveUser(adminId, Set.of("ADMIN"), "Admin One")));
+
+    service.recordInspectionAccepted(inspectionId, customerId, inspectorId, Instant.now());
+    service.recordInspectionCancelled(
+        inspectionId, customerId, inspectorId, "Airspace closed", Instant.now());
+    service.recordFieldSessionCompleted(
+        inspectionId, sessionId, customerId, "Tower A", Instant.now());
+    service.recordReportApprovedForPayout(
+        inspectionId, reportVersionId, 1, inspectorId, Instant.now());
+    service.recordReportWithdrawn(inspectionId, reportVersionId, 1, Instant.now());
+    service.recordReportClarificationRequested(
+        inspectionId, reportVersionId, 1, "Zoom photo needed", 1, Instant.now());
+    service.recordVideoProcessingFinished(
+        evidenceId, inspectionId, inspectorId, "flight.mp4", true, null, Instant.now());
+
+    ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+    verify(notificationRepository, org.mockito.Mockito.times(12)).saveAndFlush(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(Notification::getEventType)
+        .contains(
+            "INSPECTION_ACCEPTED",
+            "INSPECTION_CANCELLED",
+            "FIELD_SESSION_COMPLETED",
+            "REPORT_APPROVED_PAYOUT_ELIGIBLE",
+            "REPORT_WITHDRAWN",
+            "REPORT_CLARIFICATION_REQUESTED",
+            "VIDEO_PROCESSING_READY");
+  }
 }

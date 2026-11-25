@@ -68,7 +68,7 @@ public class PaymentOverdueNotificationListener {
           event.ownerCustomerId(),
           title,
           body,
-          inspectionRoute("/client/inspections", event.inspectionId(), null),
+          inspectionRoute("/client/inspections", event.inspectionId(), "settlement"),
           "PAYMENT_OVERDUE:" + event.occurrenceId() + ":" + event.ownerCustomerId());
     }
 

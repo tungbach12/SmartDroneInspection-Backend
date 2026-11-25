@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smartdroneinspection.notifications.api.dto.response.NotificationMarkAllReadResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationPageResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationUnreadCountResponse;
@@ -233,5 +234,18 @@ class NotificationServiceTest {
     assertThat(response.isRead()).isTrue();
 
     verify(notificationRepository).save(notification);
+  }
+
+  @Test
+  void markAllReadMarksEveryUnreadNotificationForActiveUser() {
+    UUID userId = UUID.randomUUID();
+    ActiveUser user = new ActiveUser(userId, Set.of("CUSTOMER"), "Customer Test");
+    when(userAccess.findActiveUser(userId)).thenReturn(Optional.of(user));
+    when(notificationRepository.markAllReadByRecipientUserId(any(), any())).thenReturn(6);
+
+    NotificationMarkAllReadResponse response = notificationService.markAllRead(userId);
+
+    assertThat(response.updatedCount()).isEqualTo(6);
+    verify(notificationRepository).markAllReadByRecipientUserId(any(), any());
   }
 }

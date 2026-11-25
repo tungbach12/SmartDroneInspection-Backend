@@ -1,5 +1,6 @@
 package com.smartdroneinspection.notifications.api;
 
+import com.smartdroneinspection.notifications.api.dto.response.NotificationMarkAllReadResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationPageResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationUnreadCountResponse;
@@ -52,6 +53,15 @@ public class NotificationController {
   public ApiResponse<NotificationResponse> markRead(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
     return ApiResponse.success(notificationService.markRead(subject(jwt), id));
+  }
+
+  @RequestMapping(
+      value = "/read-all",
+      method = {RequestMethod.PATCH, RequestMethod.PUT, RequestMethod.POST})
+  @PreAuthorize("isAuthenticated()")
+  public ApiResponse<NotificationMarkAllReadResponse> markAllRead(
+      @AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(notificationService.markAllRead(subject(jwt)));
   }
 
   private static UUID subject(Jwt jwt) {

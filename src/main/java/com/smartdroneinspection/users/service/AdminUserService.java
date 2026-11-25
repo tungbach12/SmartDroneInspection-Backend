@@ -8,14 +8,18 @@ import com.smartdroneinspection.users.api.dto.response.UserResponse;
 import com.smartdroneinspection.users.domain.RolePolicy;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
+import com.smartdroneinspection.users.events.UserSecurityAlertEvent;
 import com.smartdroneinspection.users.repository.UserRepository;
 import com.smartdroneinspection.users.security.AuthCrypto;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -35,6 +39,12 @@ public class AdminUserService {
   private final SecurityAuditService audit;
   private final ObjectProvider<JavaMailSender> mailSender;
   private final LoginOtpProperties properties;
+  private ApplicationEventPublisher eventPublisher;
+
+  @Autowired(required = false)
+  public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
 
   public AdminUserService(
       UserRepository users,
@@ -139,6 +149,16 @@ public class AdminUserService {
     audit.record(
         actorId, userId, "USER_PASSWORD_RESET", "SUCCESS", ipAddress, userAgent, correlationId);
     sendPasswordResetEmail(user, temporaryPassword);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new UserSecurityAlertEvent(
+              user.getId(),
+              user.getEmail(),
+              user.getFullName(),
+              "PASSWORD_RESET_BY_ADMIN",
+              null,
+              Instant.now()));
+    }
     return new ProvisionedUserResponse(toResponse(user), temporaryPassword);
   }
 
@@ -159,6 +179,16 @@ public class AdminUserService {
     auth.revokeAllSessions(userId, "roles-changed");
     audit.record(
         actorId, userId, "USER_ROLES_CHANGED", "SUCCESS", ipAddress, userAgent, correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new UserSecurityAlertEvent(
+              user.getId(),
+              user.getEmail(),
+              user.getFullName(),
+              "ROLES_UPDATED",
+              String.join(", ", user.roleValues()),
+              Instant.now()));
+    }
     return toResponse(user);
   }
 
@@ -177,6 +207,16 @@ public class AdminUserService {
     auth.revokeAllSessions(userId, "account-status-changed");
     audit.record(
         actorId, userId, "USER_STATUS_CHANGED", "SUCCESS", ipAddress, userAgent, correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new UserSecurityAlertEvent(
+              user.getId(),
+              user.getEmail(),
+              user.getFullName(),
+              "STATUS_UPDATED",
+              status.name(),
+              Instant.now()));
+    }
     return toResponse(user);
   }
 

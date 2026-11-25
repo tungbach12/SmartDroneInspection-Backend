@@ -3,10 +3,17 @@ package com.smartdroneinspection.notifications.service;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import com.smartdroneinspection.inspections.events.FieldSessionCompletedEvent;
+import com.smartdroneinspection.inspections.events.InspectionAcceptedEvent;
 import com.smartdroneinspection.inspections.events.InspectionAssignedEvent;
+import com.smartdroneinspection.inspections.events.InspectionCancelledEvent;
+import com.smartdroneinspection.inspections.events.ReportApprovedForPayoutEvent;
+import com.smartdroneinspection.inspections.events.ReportClarificationRequestedEvent;
 import com.smartdroneinspection.inspections.events.ReportPublishedEvent;
 import com.smartdroneinspection.inspections.events.ReportReturnedEvent;
 import com.smartdroneinspection.inspections.events.ReportSubmittedEvent;
+import com.smartdroneinspection.inspections.events.ReportWithdrawnEvent;
+import com.smartdroneinspection.inspections.events.VideoProcessingFinishedEvent;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -117,5 +124,80 @@ class InspectionNotificationListenerTest {
 
     verify(notificationService)
         .recordReportPublished(inspectionId, reportVersionId, ownerCustomerId);
+  }
+
+  @Test
+  void onInspectionAcceptedCancelledCompletedReportAndVideoEventsDelegateToService() {
+    UUID inspectionId = UUID.randomUUID();
+    UUID ownerCustomerId = UUID.randomUUID();
+    UUID inspectorId = UUID.randomUUID();
+    UUID sessionId = UUID.randomUUID();
+    UUID reportVersionId = UUID.randomUUID();
+    UUID evidenceId = UUID.randomUUID();
+    Instant now = Instant.now();
+
+    listener.onInspectionAccepted(
+        new InspectionAcceptedEvent(inspectionId, ownerCustomerId, inspectorId, now, now));
+    verify(notificationService)
+        .recordInspectionAccepted(inspectionId, ownerCustomerId, inspectorId, now);
+
+    listener.onInspectionCancelled(
+        new InspectionCancelledEvent(
+            inspectionId, ownerCustomerId, inspectorId, "Customer cancelled", now));
+    verify(notificationService)
+        .recordInspectionCancelled(
+            inspectionId, ownerCustomerId, inspectorId, "Customer cancelled", now);
+
+    listener.onFieldSessionCompleted(
+        new FieldSessionCompletedEvent(
+            inspectionId,
+            sessionId,
+            ownerCustomerId,
+            inspectorId,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            now,
+            now,
+            30L,
+            "ROOF",
+            "Clear",
+            "Roof flight",
+            "Site A",
+            "Building",
+            "M350",
+            "SN-01"));
+    verify(notificationService)
+        .recordFieldSessionCompleted(inspectionId, sessionId, ownerCustomerId, "Roof flight", now);
+
+    listener.onReportApprovedForPayout(
+        new ReportApprovedForPayoutEvent(
+            inspectionId, reportVersionId, 2, inspectorId, UUID.randomUUID(), now));
+    verify(notificationService)
+        .recordReportApprovedForPayout(inspectionId, reportVersionId, 2, inspectorId, now);
+
+    listener.onReportWithdrawn(
+        new ReportWithdrawnEvent(inspectionId, reportVersionId, 2, inspectorId, now));
+    verify(notificationService).recordReportWithdrawn(inspectionId, reportVersionId, 2, now);
+
+    listener.onReportClarificationRequested(
+        new ReportClarificationRequestedEvent(
+            inspectionId,
+            reportVersionId,
+            2,
+            ownerCustomerId,
+            inspectorId,
+            "Need closer shot",
+            1,
+            now));
+    verify(notificationService)
+        .recordReportClarificationRequested(
+            inspectionId, reportVersionId, 2, "Need closer shot", 1, now);
+
+    listener.onVideoProcessingFinished(
+        new VideoProcessingFinishedEvent(
+            evidenceId, inspectionId, inspectorId, "flight.mp4", false, "codec error", now));
+    verify(notificationService)
+        .recordVideoProcessingFinished(
+            evidenceId, inspectionId, inspectorId, "flight.mp4", false, "codec error", now);
   }
 }

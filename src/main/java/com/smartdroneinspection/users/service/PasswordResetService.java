@@ -5,6 +5,7 @@ import com.smartdroneinspection.users.api.dto.response.SendPasswordResetOtpRespo
 import com.smartdroneinspection.users.domain.OtpChallenge;
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.OtpChallengePurpose;
+import com.smartdroneinspection.users.events.UserSecurityAlertEvent;
 import com.smartdroneinspection.users.repository.AuthSessionRepository;
 import com.smartdroneinspection.users.repository.OtpChallengeRepository;
 import com.smartdroneinspection.users.repository.UserRepository;
@@ -13,6 +14,8 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Locale;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -33,6 +36,13 @@ public class PasswordResetService {
   private final AuthSessionRepository sessions;
   private final LoginOtpProperties properties;
   private final ObjectProvider<JavaMailSender> mailSender;
+  private ApplicationEventPublisher eventPublisher;
+
+  @Autowired(required = false)
+  public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
+  }
+
   private final PasswordEncoder passwordEncoder;
   private final PasswordPolicy passwordPolicy;
   private final SecurityAuditService audit;
@@ -188,6 +198,16 @@ public class PasswordResetService {
         clientIp,
         userAgent,
         correlationId);
+    if (eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new UserSecurityAlertEvent(
+              user.getId(),
+              user.getEmail(),
+              user.getFullName(),
+              "PASSWORD_RESET_SELF",
+              null,
+              Instant.now()));
+    }
   }
 
   private void sendEmail(String toEmail, String fullName, String code) {

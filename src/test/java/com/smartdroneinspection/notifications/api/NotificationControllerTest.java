@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smartdroneinspection.notifications.api.dto.response.NotificationMarkAllReadResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationPageResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationResponse;
 import com.smartdroneinspection.notifications.api.dto.response.NotificationUnreadCountResponse;
@@ -91,6 +92,22 @@ class NotificationControllerTest {
     assertThat(response.success()).isTrue();
     assertThat(response.data()).isEqualTo(notificationResponse);
     verify(notificationService).markRead(userId, notificationId);
+  }
+
+  @Test
+  void markAllReadCallsService() {
+    UUID userId = UUID.randomUUID();
+    Jwt jwt = mock(Jwt.class);
+    when(jwt.getSubject()).thenReturn(userId.toString());
+
+    NotificationMarkAllReadResponse expected = new NotificationMarkAllReadResponse(4);
+    when(notificationService.markAllRead(userId)).thenReturn(expected);
+
+    ApiResponse<NotificationMarkAllReadResponse> response = controller.markAllRead(jwt);
+
+    assertThat(response.success()).isTrue();
+    assertThat(response.data().updatedCount()).isEqualTo(4);
+    verify(notificationService).markAllRead(userId);
   }
 
   @Test
