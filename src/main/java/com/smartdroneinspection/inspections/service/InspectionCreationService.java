@@ -30,6 +30,8 @@ import com.smartdroneinspection.inspections.repository.FindingRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.InspectorRatingRepository;
 import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
+import com.smartdroneinspection.shared.api.AirspaceZoneAdvisor;
+import com.smartdroneinspection.shared.api.AirspaceZoneInfo;
 import com.smartdroneinspection.shared.api.InspectionContractSyncPort;
 import com.smartdroneinspection.shared.api.InspectionReassignCandidatePort;
 import com.smartdroneinspection.shared.auth.Roles;
@@ -65,6 +67,7 @@ public class InspectionCreationService {
   private final ObjectProvider<FindingRepository> findingsProvider;
   private final ObjectProvider<ReinspectionVerificationService> reinspectionVerificationsProvider;
   private final ObjectProvider<InspectorRatingRepository> ratingsProvider;
+  private Optional<AirspaceZoneAdvisor> airspaceZoneAdvisor = Optional.empty();
 
   public InspectionCreationService(
       InspectionRepository inspections,
@@ -173,6 +176,11 @@ public class InspectionCreationService {
     this.findingsProvider = findingsProvider;
     this.reinspectionVerificationsProvider = reinspectionVerificationsProvider;
     this.ratingsProvider = ratingsProvider;
+  }
+
+  @Autowired(required = false)
+  void setAirspaceZoneAdvisor(AirspaceZoneAdvisor airspaceZoneAdvisor) {
+    this.airspaceZoneAdvisor = Optional.ofNullable(airspaceZoneAdvisor);
   }
 
   @Transactional
@@ -597,6 +605,17 @@ public class InspectionCreationService {
 
     Instant now = Instant.now();
     Drone assignedDrone = requireValidPilotAndDroneForPermit(inspection, now);
+    Asset asset =
+        assets
+            .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
+            .orElse(null);
+    AirspaceZoneInfo airspaceZoneInfo =
+        asset != null
+                && asset.getLatitude() != null
+                && asset.getLongitude() != null
+                && airspaceZoneAdvisor.isPresent()
+            ? airspaceZoneAdvisor.get().evaluateZone(asset.getLatitude(), asset.getLongitude())
+            : null;
     FlightPermitPolicy.validateMetadataAndCrossChecks(
         inspection,
         assignedDrone,
@@ -607,6 +626,7 @@ public class InspectionCreationService {
         droneSerial,
         maxAltitudeM,
         now);
+    FlightPermitPolicy.validateRestrictedAirspaceCeiling(maxAltitudeM, airspaceZoneInfo);
 
     String effectiveName =
         fileName != null && !fileName.isBlank() ? fileName.trim() : "flight-permit.pdf";
@@ -672,10 +692,6 @@ public class InspectionCreationService {
             saved.getFlightPermitNumber(),
             saved.getFlightPermitAuthority(),
             now));
-    Asset asset =
-        assets
-            .findByIdAndOwnerCustomerId(inspection.getAssetId(), inspection.getOwnerCustomerId())
-            .orElse(null);
     return toResponse(saved, asset);
   }
 

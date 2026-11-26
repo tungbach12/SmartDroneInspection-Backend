@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.smartdroneinspection.assets.api.dto.response.AirspaceEvaluationResponse;
 import com.smartdroneinspection.assets.api.dto.response.AirspaceZoneResponse;
 import com.smartdroneinspection.assets.service.AirspaceAdvisoryService;
+import com.smartdroneinspection.assets.service.CustomerAirspacePolicyAdapter;
+import com.smartdroneinspection.shared.api.AirspaceZoneInfo;
+import com.smartdroneinspection.shared.api.CustomerAirspaceStatus;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import java.math.BigDecimal;
 import java.util.List;
@@ -78,5 +81,40 @@ class AirspaceAdvisoryServiceTest {
             () -> service.evaluate(BigDecimal.valueOf(95.0), BigDecimal.valueOf(106.7082)))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("Latitude must be between -90 and 90");
+  }
+
+  @Test
+  void adapterExposesZoneCeilingAndAuthorityForRestrictedZone() {
+    CustomerAirspacePolicyAdapter adapter = new CustomerAirspacePolicyAdapter(service);
+
+    AirspaceZoneInfo info =
+        adapter.evaluateZone(BigDecimal.valueOf(10.7789), BigDecimal.valueOf(106.7082));
+
+    assertThat(info.status()).isEqualTo(CustomerAirspaceStatus.RESTRICTED_ZONE);
+    assertThat(info.zoneCode()).isEqualTo("VN-RES-SGN-SAIGON-RIVER");
+    assertThat(info.maxAltitudeMeters()).isEqualTo(120);
+    assertThat(info.authority()).isNotBlank();
+  }
+
+  @Test
+  void detectsFootprintPerimeterOverlapIntoAdjacentNoFlyZone() {
+    // 10.8188 + 0.0320 deg lat is ~3,558 m north of Tan Son Nhat core (radius 3,500 m -> ~58 m
+    // outside boundary).
+    BigDecimal boundaryLat = BigDecimal.valueOf(10.8508);
+    BigDecimal boundaryLon = BigDecimal.valueOf(106.6519);
+
+    assertThat(service.evaluate(boundaryLat, boundaryLon).classification())
+        .isNotEqualTo("NO_FLY_ZONE");
+    // 1,000 m^2 -> ~17.8 m radius (stays outside the 3,500 m core)
+    assertThat(
+            service.findFootprintNoFlyOverlap(boundaryLat, boundaryLon, BigDecimal.valueOf(1000)))
+        .isEmpty();
+    // 100,000 m^2 -> ~178.4 m radius (crosses ~58 m buffer into Tan Son Nhat NO_FLY_ZONE)
+    assertThat(
+            service.findFootprintNoFlyOverlap(
+                boundaryLat, boundaryLon, BigDecimal.valueOf(100_000)))
+        .isPresent()
+        .get()
+        .satisfies(zone -> assertThat(zone.code()).isEqualTo("VN-NFZ-SGN-TSN-CORE"));
   }
 }

@@ -193,6 +193,7 @@ class FlightPermitVerificationIntegrationTest {
                 .param("issuingAuthority", "Cục Tác chiến - BTTM")
                 .param("validFrom", validFrom)
                 .param("validTo", validTo)
+                .param("maxAltitudeM", "120")
                 .with(principal(inspectorId, "INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("INVALID_PERMIT_FILE"));
@@ -223,6 +224,18 @@ class FlightPermitVerificationIntegrationTest {
                 .with(principal(inspectorId, "INSPECTOR")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("PERMIT_SCHEDULE_MISMATCH"));
+
+    mockMvc
+        .perform(
+            MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
+                .file(validPdf())
+                .param("permitNumber", "GP-2026-100")
+                .param("issuingAuthority", "Cục Tác chiến - BTTM")
+                .param("validFrom", validFrom)
+                .param("validTo", validTo)
+                .with(principal(inspectorId, "INSPECTOR")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("PERMIT_ALTITUDE_REQUIRED"));
 
     // 4. A valid upload is self-attested by the assigned inspector and is immediately usable
     mockMvc

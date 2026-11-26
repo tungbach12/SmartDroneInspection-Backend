@@ -196,6 +196,48 @@ public class AirspaceAdvisoryService {
         nearby);
   }
 
+  /**
+   * Approximates a structure's outer radius around its pinned center coordinate from its footprint
+   * area ({@code sqrt(area / pi)}).
+   */
+  public static double estimateFootprintRadiusMeters(BigDecimal footprintAreaSquareMeters) {
+    if (footprintAreaSquareMeters == null || footprintAreaSquareMeters.doubleValue() <= 0) {
+      return 0d;
+    }
+    return Math.sqrt(footprintAreaSquareMeters.doubleValue() / Math.PI);
+  }
+
+  /**
+   * Returns the closest adjacent {@code NO_FLY_ZONE} that a structure's estimated footprint
+   * perimeter overlaps even when its pinned center lies outside the no-fly boundary.
+   */
+  public java.util.Optional<AirspaceZoneResponse> findFootprintNoFlyOverlap(
+      BigDecimal latitude, BigDecimal longitude, BigDecimal footprintAreaSquareMeters) {
+    validateCoordinates(latitude, longitude);
+    double footprintRadiusMeters = estimateFootprintRadiusMeters(footprintAreaSquareMeters);
+    if (footprintRadiusMeters <= 0d) {
+      return java.util.Optional.empty();
+    }
+    double lat = latitude.doubleValue();
+    double lon = longitude.doubleValue();
+    return PUBLISHED_ZONES.stream()
+        .filter(zone -> "NO_FLY_ZONE".equals(zone.zoneType()))
+        .map(
+            zone ->
+                zone.withDistanceMeters(
+                    Math.round(
+                        haversineMeters(
+                            lat,
+                            lon,
+                            zone.latitude().doubleValue(),
+                            zone.longitude().doubleValue()))))
+        .filter(
+            zone ->
+                zone.distanceMeters() > zone.radiusMeters()
+                    && (zone.distanceMeters() - zone.radiusMeters()) <= footprintRadiusMeters)
+        .min(Comparator.comparingLong(zone -> zone.distanceMeters() - zone.radiusMeters()));
+  }
+
   private static void validateCoordinates(BigDecimal latitude, BigDecimal longitude) {
     if (latitude == null || longitude == null) {
       throw new BusinessException(

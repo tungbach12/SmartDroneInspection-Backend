@@ -62,7 +62,15 @@ class MultiFlightSessionServiceTest {
     }
     service =
         new InspectionDroneHubService(
-            inspections, sessions, assets, userAccess, hub, null, new FlightLogParser(), flights);
+            inspections,
+            sessions,
+            assets,
+            userAccess,
+            hub,
+            null,
+            new FlightLogParser(),
+            flights,
+            null);
     when(userAccess.findActiveUser(actorId))
         .thenReturn(
             Optional.of(new UserAccess.ActiveUser(actorId, Set.of(Roles.INSPECTOR), "Inspector")));

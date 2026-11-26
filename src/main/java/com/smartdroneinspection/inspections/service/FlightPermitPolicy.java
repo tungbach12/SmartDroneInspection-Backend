@@ -3,6 +3,8 @@ package com.smartdroneinspection.inspections.service;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus;
+import com.smartdroneinspection.shared.api.AirspaceZoneInfo;
+import com.smartdroneinspection.shared.api.CustomerAirspaceStatus;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -105,6 +107,38 @@ final class FlightPermitPolicy {
           "Flight permit expiration must cover the scheduled inspection end time.");
     }
     validateDroneSerialMatch(droneSerial, assignedDrone);
+  }
+
+  static void validateRestrictedAirspaceCeiling(Integer maxAltitudeM, AirspaceZoneInfo zoneInfo) {
+    if (zoneInfo == null || zoneInfo.status() != CustomerAirspaceStatus.RESTRICTED_ZONE) {
+      return;
+    }
+    Integer zoneCeiling = zoneInfo.maxAltitudeMeters();
+    if (zoneCeiling == null || zoneCeiling <= 0) {
+      return;
+    }
+    if (maxAltitudeM == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PERMIT_ALTITUDE_REQUIRED",
+          "Enter the approved maximum altitude for a permit in restricted airspace.");
+    }
+    if (maxAltitudeM > zoneCeiling) {
+      String zoneLabel =
+          zoneInfo.zoneName() != null && !zoneInfo.zoneName().isBlank()
+              ? zoneInfo.zoneName()
+              : "restricted airspace";
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PERMIT_ALTITUDE_EXCEEDS_ZONE_LIMIT",
+          "Permitted max altitude ("
+              + maxAltitudeM
+              + " m) exceeds the restricted airspace ceiling ("
+              + zoneCeiling
+              + " m AGL) for "
+              + zoneLabel
+              + ".");
+    }
   }
 
   static void validateDroneSerialMatch(String permitDroneSerial, Drone assignedDrone) {

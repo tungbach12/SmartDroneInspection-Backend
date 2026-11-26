@@ -473,6 +473,27 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void rejectsCancellingAcceptedRequestBeforeContractIsSigned() {
+    UUID requestId = UUID.randomUUID();
+    UUID occurrenceId = UUID.randomUUID();
+    ServiceRequest request = mock(ServiceRequest.class);
+    when(request.getAssignedManagerId()).thenReturn(managerId);
+    when(request.getStatus()).thenReturn(ServiceRequest.ServiceRequestStatus.ACCEPTED);
+    when(requests.findWithLockById(requestId)).thenReturn(Optional.of(request));
+
+    assertThatThrownBy(() -> service.cancelRequest(managerId, requestId, "Permit unavailable"))
+        .isInstanceOfSatisfying(
+            BusinessException.class, error -> assertThat(error.code()).isEqualTo("INVALID_STATE"));
+    assertThatThrownBy(
+            () ->
+                service.cancelOccurrence(managerId, requestId, occurrenceId, "Permit unavailable"))
+        .isInstanceOfSatisfying(
+            BusinessException.class, error -> assertThat(error.code()).isEqualTo("INVALID_STATE"));
+    verify(occurrences, never()).saveAndFlush(any(ServiceRequestOccurrence.class));
+    verify(messages, never()).saveAndFlush(any(ServiceRequestMessage.class));
+  }
+
+  @Test
   void rejectsEndDateRecurringQuoteThatLeavesFewerThanTwoOccurrences() {
     UUID requestId = UUID.randomUUID();
     ServiceRequest request =

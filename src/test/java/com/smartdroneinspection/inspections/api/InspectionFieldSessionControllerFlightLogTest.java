@@ -85,12 +85,31 @@ class InspectionFieldSessionControllerFlightLogTest {
     session.recordFlightReport(
         "IMPORTED_LOG_SRT", null, 45.2, 32.0, null, null, "UNKNOWN", "Imported SRT", "[]");
     when(fieldSessions.listSessions(inspectorId, inspectionId)).thenReturn(List.of(session));
+    when(droneHub.canReadFlightData(inspectorId, inspectionId)).thenReturn(true);
 
     mockMvc
         .perform(get("/api/v1/inspections/{id}/field-sessions", inspectionId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].telemetrySource").value("IMPORTED_LOG_SRT"))
         .andExpect(jsonPath("$.data[0].hasFlightReport").value(true));
+  }
+
+  @Test
+  void showsSessionProgressWithoutFlightDataBeforePublication() throws Exception {
+    FieldSession session =
+        new FieldSession(
+            inspectionId, FieldSession.IN_PROGRESS, Instant.parse("2026-11-10T10:00:00Z"));
+    session.recordFlightReport(
+        "IMPORTED_LOG_SRT", 30, 45.2, 32.0, null, null, "UNKNOWN", "Imported SRT", "[]");
+    when(fieldSessions.listSessions(inspectorId, inspectionId)).thenReturn(List.of(session));
+
+    mockMvc
+        .perform(get("/api/v1/inspections/{id}/field-sessions", inspectionId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].status").value(FieldSession.IN_PROGRESS))
+        .andExpect(jsonPath("$.data[0].telemetrySource").doesNotExist())
+        .andExpect(jsonPath("$.data[0].hasFlightReport").value(false))
+        .andExpect(jsonPath("$.data[0].flights").isEmpty());
   }
 
   @Test

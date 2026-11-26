@@ -505,6 +505,18 @@ public class ServiceRequest {
     }
   }
 
+  public void cancelOpenOrQuoted() {
+    if (status == ServiceRequestStatus.CANCELLED) {
+      return;
+    }
+    if (status != ServiceRequestStatus.OPEN && status != ServiceRequestStatus.QUOTED) {
+      throw new IllegalStateException(
+          "Accepted or assigned requests must cancel their scheduled occurrences or inspections");
+    }
+    status = ServiceRequestStatus.CANCELLED;
+    updatedAt = Instant.now();
+  }
+
   public List<String> getInspectionItems() {
     return inspectionItems == null ? List.of() : Collections.unmodifiableList(inspectionItems);
   }
