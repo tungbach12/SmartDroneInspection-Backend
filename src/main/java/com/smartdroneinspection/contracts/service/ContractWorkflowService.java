@@ -1676,19 +1676,13 @@ public class ContractWorkflowService
     if (request.getStatus() == ServiceRequest.ServiceRequestStatus.CANCELLED) {
       return toResponse(request);
     }
-    if (request.getStatus() == ServiceRequest.ServiceRequestStatus.OPEN
-        || request.getStatus() == ServiceRequest.ServiceRequestStatus.QUOTED) {
-      request.cancelOpenOrQuoted();
-      requests.saveAndFlush(request);
-    } else {
-      List<ServiceRequestOccurrence> requestOccurrences =
-          occurrences.findByRequestIdOrderByOccurrenceIndexAsc(requestId);
-      for (ServiceRequestOccurrence occurrence : requestOccurrences) {
-        if (occurrence.getStatus() != ServiceRequestOccurrence.OccurrenceStatus.CANCELLED) {
-          cancelSingleOccurrence(manager.id(), occurrence, cleanReason);
-        }
-      }
+    if (request.getStatus() != ServiceRequest.ServiceRequestStatus.OPEN
+        && request.getStatus() != ServiceRequest.ServiceRequestStatus.QUOTED) {
+      throw failure(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Only open or quoted requests may be cancelled.");
     }
+    request.cancelOpenOrQuoted();
+    requests.saveAndFlush(request);
     String notice =
         cleanReason != null
             ? "Request cancelled by Manager: " + cleanReason
@@ -1702,7 +1696,15 @@ public class ContractWorkflowService
       UUID actorId, UUID requestId, UUID occurrenceId, String reason) {
     UserAccess.ActiveUser manager = requireActor(actorId, Mf2ActorPolicy.ActorKind.MANAGER);
     ServiceRequest request = requireRequestForManagerLocked(manager, requestId);
+    if (request.getStatus() != ServiceRequest.ServiceRequestStatus.CONTRACT_SIGNED
+        && request.getStatus() != ServiceRequest.ServiceRequestStatus.ASSIGNED) {
+      throw failure(
+          HttpStatus.CONFLICT, "INVALID_STATE", "Only contracted occurrences may be cancelled.");
+    }
     ServiceRequestOccurrence occurrence = requireOccurrenceLocked(requestId, occurrenceId);
+    if (occurrence.getStatus() == ServiceRequestOccurrence.OccurrenceStatus.CANCELLED) {
+      return toResponse(request);
+    }
     String cleanReason = reason != null && !reason.isBlank() ? reason.trim() : null;
     cancelSingleOccurrence(manager.id(), occurrence, cleanReason);
     if (cleanReason != null) {
@@ -1718,9 +1720,6 @@ public class ContractWorkflowService
 
   private void cancelSingleOccurrence(
       UUID actorId, ServiceRequestOccurrence occurrence, String cleanReason) {
-    if (occurrence.getStatus() == ServiceRequestOccurrence.OccurrenceStatus.CANCELLED) {
-      return;
-    }
     if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID
         || occurrence.getReportAcceptedAt() != null) {
       throw failure(

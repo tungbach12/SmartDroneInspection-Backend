@@ -216,9 +216,12 @@ class FlightPermitPolicyTest {
             CustomerAirspaceStatus.CLEAR_ZONE, null, null, null, null, "Outside zones");
 
     FlightPermitPolicy.validateRestrictedAirspaceCeiling(50, restricted);
-    FlightPermitPolicy.validateRestrictedAirspaceCeiling(null, restricted);
+    FlightPermitPolicy.validateRestrictedAirspaceCeiling(null, clear);
     FlightPermitPolicy.validateRestrictedAirspaceCeiling(120, clear);
 
+    assertBusinessCode(
+        () -> FlightPermitPolicy.validateRestrictedAirspaceCeiling(null, restricted),
+        "PERMIT_ALTITUDE_REQUIRED");
     assertBusinessCode(
         () -> FlightPermitPolicy.validateRestrictedAirspaceCeiling(80, restricted),
         "PERMIT_ALTITUDE_EXCEEDS_ZONE_LIMIT");

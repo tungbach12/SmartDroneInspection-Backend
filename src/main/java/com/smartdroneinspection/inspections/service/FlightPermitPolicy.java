@@ -114,10 +114,16 @@ final class FlightPermitPolicy {
       return;
     }
     Integer zoneCeiling = zoneInfo.maxAltitudeMeters();
-    if (maxAltitudeM != null
-        && zoneCeiling != null
-        && zoneCeiling > 0
-        && maxAltitudeM > zoneCeiling) {
+    if (zoneCeiling == null || zoneCeiling <= 0) {
+      return;
+    }
+    if (maxAltitudeM == null) {
+      throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "PERMIT_ALTITUDE_REQUIRED",
+          "Enter the approved maximum altitude for a permit in restricted airspace.");
+    }
+    if (maxAltitudeM > zoneCeiling) {
       String zoneLabel =
           zoneInfo.zoneName() != null && !zoneInfo.zoneName().isBlank()
               ? zoneInfo.zoneName()
