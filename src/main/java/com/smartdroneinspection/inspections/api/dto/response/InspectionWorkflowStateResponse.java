@@ -7,4 +7,5 @@ import java.time.Instant;
 public record InspectionWorkflowStateResponse(
     InspectionStatus status,
     Instant findingsConfirmedAt,
-    FlightPermitVerificationStatus flightPermitVerificationStatus) {}
+    FlightPermitVerificationStatus flightPermitVerificationStatus,
+    boolean canWithdrawAssignment) {}
