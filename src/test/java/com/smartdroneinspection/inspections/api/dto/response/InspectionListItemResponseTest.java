@@ -63,6 +63,52 @@ class InspectionListItemResponseTest {
             "SN-1");
     assertThat(withVerification.droneModel()).isEqualTo("M350");
     assertThat(withVerification.flightPermitVerificationStatus()).isEqualTo("APPROVED");
+    assertThat(withVerification.ownerCustomerAvatarUrl()).isNull();
+    assertThat(withVerification.inspectorAvatarUrl()).isNull();
+
+    var withAvatars =
+        new InspectionListItemResponse(
+            ID,
+            CUSTOMER_ID,
+            ASSET_ID,
+            INSPECTOR_ID,
+            "SCHEDULED",
+            NOW,
+            NOW,
+            NOW,
+            NOW,
+            REPORT_ID,
+            "DRAFT",
+            1,
+            "REVIEW",
+            "INITIAL",
+            "Objective",
+            "Bridge",
+            "BR-1",
+            "Hanoi",
+            true,
+            "PAID",
+            1000L,
+            BigDecimal.TEN,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            "PAID",
+            "PAYOS",
+            false,
+            NOW,
+            "ACCEPTED",
+            NOW,
+            "APPROVED",
+            null,
+            "Customer",
+            "Inspector",
+            "Manager",
+            "M350",
+            "SN-1",
+            "/api/media/customer-avatar.png",
+            "/api/media/inspector-avatar.png");
+    assertThat(withAvatars.ownerCustomerAvatarUrl()).isEqualTo("/api/media/customer-avatar.png");
+    assertThat(withAvatars.inspectorAvatarUrl()).isEqualTo("/api/media/inspector-avatar.png");
 
     var withoutSource =
         new InspectionListItemResponse(
