@@ -28,7 +28,7 @@ class InspectionResponseTest {
     assertThat(response.status()).isEqualTo("IN_PROGRESS");
     assertThat(response.inspectionType()).isEqualTo("RE_INSPECTION");
     assertThat(response.sourceInspectionId()).isNotNull();
-    assertThat(response.reassignmentRequired()).isTrue();
+    assertThat(response.reassignmentRequired()).isFalse();
     assertThat(response.declineReason()).isEqualTo("Conflict");
     assertThat(response.cancellationReason()).isEqualTo("Weather");
     assertThat(response.clarificationCount()).isEqualTo(2);
@@ -40,6 +40,9 @@ class InspectionResponseTest {
     assertThat(response.flightPermitVerifiedBy()).isNotNull();
     assertThat(response.flightPermitReviewNotes()).isNull();
     assertThat(response.inspectionItems()).isEmpty();
+
+    ReflectionTestUtils.setField(inspection, "status", InspectionStatus.SCHEDULED);
+    assertThat(InspectionResponse.from(inspection).reassignmentRequired()).isTrue();
   }
 
   @Test
