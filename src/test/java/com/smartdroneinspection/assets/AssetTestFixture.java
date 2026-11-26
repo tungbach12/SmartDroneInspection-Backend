@@ -37,10 +37,6 @@ public final class AssetTestFixture {
         client.getId(), otherClient.getId(), manager.getId(), admin.getId(), category.getId());
   }
 
-  public UUID createPlatformManager() {
-    return saveUser("platform-manager", UserStatus.ACTIVE, UserRole.MANAGER).getId();
-  }
-
   private User saveUser(String label, UserStatus status, UserRole role) {
     UUID id = UUID.randomUUID();
     String email = label + "-" + id + "@example.test";
