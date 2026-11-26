@@ -1188,7 +1188,7 @@ public class ReportService {
                     new BusinessException(HttpStatus.FORBIDDEN, "FORBIDDEN", "User is not active"));
 
     Inspection inspection;
-    if (actor.hasRole(Roles.ADMIN) || actor.hasRole(Roles.MANAGER)) {
+    if (actor.hasRole(Roles.MANAGER)) {
       inspection = inspections.findById(inspectionId).orElseThrow(this::reportNotFound);
     } else {
       throw new BusinessException(

@@ -330,7 +330,7 @@ public class DroneRegistrationApplicationService {
     DroneRegistrationApplication application =
         applications.findById(applicationId).orElseThrow(this::notFound);
     if (!callerId.equals(application.getInspectorUserId())) {
-      requireReviewer(callerId);
+      requireViewer(callerId);
     }
     String fileKey = null;
     if (type != null && type.startsWith("DRONE_IMAGE")) {
@@ -386,7 +386,7 @@ public class DroneRegistrationApplicationService {
             .orElseThrow(
                 () -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Drone not found."));
     if (drone.getInspectorOwnerId() == null || !callerId.equals(drone.getInspectorOwnerId())) {
-      requireReviewer(callerId);
+      requireViewer(callerId);
     }
     List<String> keys = drone.getImageFileKeys();
     if (keys.isEmpty() || index < 0 || index >= keys.size()) {
@@ -488,7 +488,7 @@ public class DroneRegistrationApplicationService {
 
   @Transactional(readOnly = true)
   public List<DroneRegistrationApplicationResponse> pending(UUID reviewerId) {
-    requireReviewer(reviewerId);
+    requireViewer(reviewerId);
     return applications.findAllByStatusOrderByCreatedAtAsc("PENDING").stream()
         .map(
             app -> {
@@ -500,7 +500,7 @@ public class DroneRegistrationApplicationService {
 
   @Transactional(readOnly = true)
   public List<DroneRegistrationApplicationResponse> history(UUID reviewerId) {
-    requireReviewer(reviewerId);
+    requireViewer(reviewerId);
     return applications
         .findAllByStatusInOrderByReviewedAtDesc(List.of("APPROVED", "REJECTED"))
         .stream()
@@ -525,7 +525,7 @@ public class DroneRegistrationApplicationService {
       String tier,
       String search,
       String sort) {
-    requireReviewer(reviewerId);
+    requireViewer(reviewerId);
     int safePage = Math.max(page, 1);
     int safePageSize = Math.min(Math.max(pageSize, 1), 100);
     String statusFilter = normalizeFilter(status, "ALL");
@@ -840,8 +840,24 @@ public class DroneRegistrationApplicationService {
     }
   }
 
+  private void requireViewer(UUID viewerId) {
+    UserAccess.ActiveUser actor =
+        userAccess
+            .findActiveUser(viewerId)
+            .orElseThrow(
+                () ->
+                    new AuthException(
+                        HttpStatus.FORBIDDEN,
+                        "REVIEWER_REQUIRED",
+                        "Platform Reviewer access is required."));
+    if (!actor.hasRole("ADMIN") && !actor.hasRole("MANAGER")) {
+      throw new AuthException(
+          HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
+    }
+  }
+
   private void requireReviewer(UUID reviewerId) {
-    UserAccess.ActiveUser admin =
+    UserAccess.ActiveUser manager =
         userAccess
             .findActiveUser(reviewerId)
             .orElseThrow(
@@ -849,10 +865,10 @@ public class DroneRegistrationApplicationService {
                     new AuthException(
                         HttpStatus.FORBIDDEN,
                         "REVIEWER_REQUIRED",
-                        "Platform Reviewer access is required."));
-    if (!admin.hasRole("ADMIN") && !admin.hasRole("MANAGER")) {
+                        "Manager review access is required."));
+    if (!manager.hasRole("MANAGER")) {
       throw new AuthException(
-          HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Platform Reviewer access is required.");
+          HttpStatus.FORBIDDEN, "REVIEWER_REQUIRED", "Manager review access is required.");
     }
   }
 

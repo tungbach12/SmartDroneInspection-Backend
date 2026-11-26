@@ -22,7 +22,6 @@ import com.smartdroneinspection.notifications.service.DroneRegistrationExpiryChe
 import com.smartdroneinspection.users.domain.User;
 import com.smartdroneinspection.users.domain.enums.UserRole;
 import com.smartdroneinspection.users.domain.enums.UserStatus;
-import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceReviewedEvent;
 import com.smartdroneinspection.users.events.UserSecurityAlertEvent;
 import com.smartdroneinspection.users.repository.UserRepository;
 import java.math.BigDecimal;
@@ -120,17 +119,6 @@ class NotificationWorkflowIntegrationTest {
               new DroneApplicationSubmittedEvent(
                   applicationId, null, inspectorId, "Matrice 350 RTK", "SN-01", false, now));
           eventPublisher.publishEvent(
-              new ProspectiveCustomerAirspaceReviewedEvent(
-                  registrationId,
-                  customerId,
-                  "customer@test.local",
-                  "Org Owner",
-                  "Hanoi Grid",
-                  "Asset-A",
-                  true,
-                  "Approved",
-                  now));
-          eventPublisher.publishEvent(
               new UserSecurityAlertEvent(
                   customerId, "customer@test.local", "Org Owner", "PASSWORD_CHANGED", null, now));
         });
@@ -155,7 +143,7 @@ class NotificationWorkflowIntegrationTest {
     awaitUntil(
         Duration.ofSeconds(10),
         () ->
-            notifications.countByRecipientUserIdAndReadAtIsNull(customerId) == 4
+            notifications.countByRecipientUserIdAndReadAtIsNull(customerId) == 3
                 && notifications.countByRecipientUserIdAndReadAtIsNull(managerId) == 3
                 && notifications.countByRecipientUserIdAndReadAtIsNull(inspectorId) == 2
                 && notifications.countByRecipientUserIdAndReadAtIsNull(adminId) == 1);
@@ -168,21 +156,18 @@ class NotificationWorkflowIntegrationTest {
     assertThat(customerNotifications)
         .extracting(Notification::getEventType)
         .containsExactlyInAnyOrder(
-            "QUOTE_ISSUED",
-            "INSPECTION_ACCEPTED",
-            "CUSTOMER_AIRSPACE_APPROVED",
-            "SECURITY_PASSWORD_CHANGED");
+            "QUOTE_ISSUED", "INSPECTION_ACCEPTED", "SECURITY_PASSWORD_CHANGED");
     assertThat(customerNotifications).allSatisfy(n -> assertThat(n.getTitle()).contains(" | "));
 
     mockMvc
         .perform(get("/api/v1/notifications/unread-count").with(principal(customerId, "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.unreadCount").value(4));
+        .andExpect(jsonPath("$.data.unreadCount").value(3));
 
     mockMvc
         .perform(patch("/api/v1/notifications/read-all").with(principal(customerId, "CUSTOMER")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.updatedCount").value(4));
+        .andExpect(jsonPath("$.data.updatedCount").value(3));
 
     mockMvc
         .perform(get("/api/v1/notifications/unread-count").with(principal(customerId, "CUSTOMER")))

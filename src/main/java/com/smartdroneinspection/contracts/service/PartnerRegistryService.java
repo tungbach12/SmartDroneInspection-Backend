@@ -69,7 +69,7 @@ public class PartnerRegistryService {
 
   @Transactional(readOnly = true)
   public InspectorOption getInspector(UUID managerId, UUID inspectorUserId) {
-    requireManager(managerId);
+    requireViewer(managerId);
     UserAccess.ActiveUser inspector =
         users
             .findActiveUser(inspectorUserId)
@@ -149,7 +149,7 @@ public class PartnerRegistryService {
 
   @Transactional(readOnly = true)
   public List<InspectorOption> listInspectors(UUID managerId) {
-    requireManager(managerId);
+    requireViewer(managerId);
     Instant now = Instant.now();
     return users.listActiveInspectorPartners().stream()
         .filter(UserAccess.ActiveUser::isInspectorPartner)
@@ -163,7 +163,7 @@ public class PartnerRegistryService {
 
   @Transactional(readOnly = true)
   public List<DroneOption> listDrones(UUID managerId) {
-    requireManager(managerId);
+    requireViewer(managerId);
     Instant now = Instant.now();
     return drones.findActivePartnerDrones().stream()
         .filter(drone -> drone.getInspectorOwnerId() != null)
@@ -217,7 +217,7 @@ public class PartnerRegistryService {
       List<Instant> recurringStarts,
       java.util.function.BiPredicate<UUID, UUID> contractConflict,
       java.util.function.BiPredicate<UUID, UUID> inspectionConflict) {
-    requireManager(managerId);
+    requireViewer(managerId);
     Instant now = startAt != null ? startAt : Instant.now();
     List<String> required = requiredFeatureCodes == null ? List.of() : requiredFeatureCodes;
     java.util.Map<UUID, UserAccess.ActiveUser> inspectorsById =
@@ -302,7 +302,7 @@ public class PartnerRegistryService {
       List<String> requiredFeatureCodes,
       boolean contractScheduleConflict,
       boolean inspectionScheduleConflict) {
-    requireManager(managerId);
+    requireViewer(managerId);
     UserAccess.ActiveUser inspector = users.findActiveUser(inspectorId).orElse(null);
     Drone drone = drones.findById(droneId).orElse(null);
     boolean qualifies =
@@ -543,9 +543,16 @@ public class PartnerRegistryService {
                     "User is not an active Inspector partner with a valid license"));
   }
 
+  private void requireViewer(UUID actorId) {
+    UserAccess.ActiveUser actor = users.findActiveUser(actorId).orElseThrow(this::forbidden);
+    if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+  }
+
   private void requireManager(UUID managerId) {
     UserAccess.ActiveUser actor = users.findActiveUser(managerId).orElseThrow(this::forbidden);
-    if (!actor.hasRole(Roles.MANAGER) && !actor.hasRole(Roles.ADMIN)) {
+    if (!actor.hasRole(Roles.MANAGER)) {
       throw forbidden();
     }
   }

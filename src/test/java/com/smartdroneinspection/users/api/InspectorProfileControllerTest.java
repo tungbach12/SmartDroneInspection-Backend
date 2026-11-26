@@ -31,6 +31,7 @@ class InspectorProfileControllerTest {
   private InspectorProfileService service;
   private InspectorProfileController controller;
   private Jwt adminJwt;
+  private Jwt managerJwt;
   private Jwt inspectorJwt;
 
   @BeforeEach
@@ -38,6 +39,7 @@ class InspectorProfileControllerTest {
     service = mock(InspectorProfileService.class);
     controller = new InspectorProfileController(service);
     adminJwt = jwt(UUID.randomUUID(), List.of("ADMIN"));
+    managerJwt = jwt(UUID.randomUUID(), List.of("MANAGER"));
     inspectorJwt = jwt(INSPECTOR_ID, List.of("INSPECTOR"));
   }
 
@@ -63,10 +65,21 @@ class InspectorProfileControllerTest {
     when(service.uploadLicenseScan(eq(INSPECTOR_ID), eq(file), any())).thenReturn(profile);
     when(service.uploadPartnerContract(eq(INSPECTOR_ID), eq(file), any())).thenReturn(profile);
 
-    assertThat(controller.updateProfile(adminJwt, INSPECTOR_ID, request).data()).isSameAs(profile);
-    assertThat(controller.uploadLicenseScan(adminJwt, INSPECTOR_ID, file).data()).isSameAs(profile);
-    assertThat(controller.uploadPartnerContract(adminJwt, INSPECTOR_ID, file).data())
+    assertThat(controller.updateProfile(managerJwt, INSPECTOR_ID, request).data())
         .isSameAs(profile);
+    assertThat(controller.uploadLicenseScan(managerJwt, INSPECTOR_ID, file).data())
+        .isSameAs(profile);
+    assertThat(controller.uploadPartnerContract(managerJwt, INSPECTOR_ID, file).data())
+        .isSameAs(profile);
+    assertThatThrownBy(() -> controller.updateProfile(adminJwt, INSPECTOR_ID, request))
+        .isInstanceOfSatisfying(
+            AuthException.class, error -> assertThat(error.code()).isEqualTo("FORBIDDEN"));
+    assertThatThrownBy(() -> controller.uploadLicenseScan(adminJwt, INSPECTOR_ID, file))
+        .isInstanceOfSatisfying(
+            AuthException.class, error -> assertThat(error.code()).isEqualTo("FORBIDDEN"));
+    assertThatThrownBy(() -> controller.uploadPartnerContract(adminJwt, INSPECTOR_ID, file))
+        .isInstanceOfSatisfying(
+            AuthException.class, error -> assertThat(error.code()).isEqualTo("FORBIDDEN"));
   }
 
   @Test
@@ -94,10 +107,10 @@ class InspectorProfileControllerTest {
     when(service.rejectOnboarding(eq(inspectorId), eq("reason"), any())).thenReturn(profile);
 
     var pdf = controller.downloadDraftPartnerContractPdf(adminJwt, inspectorId);
-    var approved = controller.approveOnboarding(adminJwt, inspectorId);
+    var approved = controller.approveOnboarding(managerJwt, inspectorId);
     var rejected =
         controller.rejectOnboarding(
-            adminJwt, inspectorId, new RejectInspectorOnboardingRequest("reason"));
+            managerJwt, inspectorId, new RejectInspectorOnboardingRequest("reason"));
 
     assertThat(pdf.getBody()).containsExactly(1, 2);
     assertThat(pdf.getHeaders().getContentDisposition().getFilename())
@@ -115,9 +128,9 @@ class InspectorProfileControllerTest {
 
     assertThat(controller.listFlightLogs(adminJwt, INSPECTOR_ID).data()).hasSize(1);
     assertThat(controller.getMyFlightLogs(inspectorJwt).data()).hasSize(1);
-    assertThat(controller.recordFlightLog(adminJwt, INSPECTOR_ID, request).data()).isSameAs(log);
+    assertThat(controller.recordFlightLog(managerJwt, INSPECTOR_ID, request).data()).isSameAs(log);
 
-    controller.deleteFlightLog(adminJwt, INSPECTOR_ID, UUID.randomUUID());
+    controller.deleteFlightLog(managerJwt, INSPECTOR_ID, UUID.randomUUID());
     verify(service).deleteFlightLog(eq(INSPECTOR_ID), any(), any());
   }
 

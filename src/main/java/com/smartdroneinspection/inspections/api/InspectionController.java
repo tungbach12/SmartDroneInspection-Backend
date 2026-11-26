@@ -392,7 +392,7 @@ public class InspectionController {
   }
 
   @PostMapping(path = "/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'CUSTOMER', 'MANAGER')")
   public ApiResponse<EvidenceResponse> uploadEvidence(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -727,7 +727,7 @@ public class InspectionController {
    * submitted or published report.
    */
   @PostMapping("/findings/{findingId}/draft-note")
-  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER')")
   public ApiResponse<DraftFindingNoteResponse> draftFindingNote(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -855,7 +855,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/review")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('MANAGER')")
   public ApiResponse<ReportPublishedResponse> reviewVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -869,7 +869,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/publish")
-  @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+  @PreAuthorize("hasRole('MANAGER')")
   public ApiResponse<ReportPublishedResponse> publishVersion(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -881,7 +881,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/versions/{versionId}/accept")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER')")
   public ApiResponse<Void> acceptReport(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -904,7 +904,7 @@ public class InspectionController {
   }
 
   @PostMapping("/sepay/create-payment-link")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER')")
   public ApiResponse<InspectionReportAcceptancePort.SepayCheckoutDetails> createSepayPaymentLink(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     if (reportAcceptancePort.isEmpty()) {
@@ -932,7 +932,7 @@ public class InspectionController {
   }
 
   @PostMapping("/vnpay/create-payment-url")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER')")
   public ApiResponse<InspectionReportAcceptancePort.VnPayCheckoutDetails> createVnPayPaymentUrl(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
@@ -959,7 +959,7 @@ public class InspectionController {
   }
 
   @PostMapping("/report/cancel-unpaid-order")
-  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER', 'ADMIN')")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER')")
   public ApiResponse<Void> cancelUnpaidPaymentOrder(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     if (reportAcceptancePort.isEmpty()) {

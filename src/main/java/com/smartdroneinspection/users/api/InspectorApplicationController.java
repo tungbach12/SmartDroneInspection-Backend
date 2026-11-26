@@ -83,7 +83,7 @@ public class InspectorApplicationController {
   }
 
   @PostMapping("/{id}/approve")
-  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<UserResponse> approve(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID id, HttpServletRequest servletRequest) {
     return ApiResponse.success(
@@ -103,14 +103,14 @@ public class InspectorApplicationController {
   }
 
   @PostMapping("/{id}/cleanup-rejected")
-  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<Void> retryRejectedCleanup(@PathVariable UUID id) {
     service.retryRejectionCleanup(id);
     return ApiResponse.success(null);
   }
 
   @PostMapping("/{id}/reject")
-  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<Void> reject(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID id,
@@ -138,7 +138,7 @@ public class InspectorApplicationController {
   }
 
   @PostMapping(path = "/{id}/signed-contract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  @PreAuthorize("hasAnyRole('" + Roles.MANAGER + "', '" + Roles.ADMIN + "')")
+  @PreAuthorize("hasRole('" + Roles.MANAGER + "')")
   public ApiResponse<InspectorApplicationResponse> uploadSignedContract(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID id,

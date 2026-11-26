@@ -7,8 +7,6 @@ import com.smartdroneinspection.users.UserAccess;
 import com.smartdroneinspection.users.UserAccess.ActiveUser;
 import com.smartdroneinspection.users.events.InspectorOnboardingReviewedEvent;
 import com.smartdroneinspection.users.events.InspectorOnboardingUpdatedEvent;
-import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceRequestedEvent;
-import com.smartdroneinspection.users.events.ProspectiveCustomerAirspaceReviewedEvent;
 import com.smartdroneinspection.users.events.UserSecurityAlertEvent;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -17,8 +15,8 @@ import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Records in-app and email notifications for customer airspace reviews, inspector onboarding
- * updates/decisions, and account security alerts.
+ * Records in-app and email notifications for inspector onboarding updates/decisions and account
+ * security alerts.
  */
 @Component
 public class UserNotificationListener {
@@ -36,115 +34,6 @@ public class UserNotificationListener {
     this.notificationRepository = notificationRepository;
     this.userAccess = userAccess;
     this.emailHelper = emailHelper;
-  }
-
-  @ApplicationModuleListener
-  public void onAirspaceReviewRequested(ProspectiveCustomerAirspaceRequestedEvent event) {
-    if (event == null || event.registrationId() == null) {
-      return;
-    }
-    String org = NotificationText.safeOrFallback(event.organizationName(), "Customer");
-    String assetCode = NotificationText.safeOrFallback(event.assetCode(), "ASSET");
-    String status = NotificationText.safeOrFallback(event.airspaceStatus(), "REVIEW");
-    String title =
-        NotificationText.bilingual(
-            "Hồ sơ vùng bay khách hàng chờ duyệt",
-            "Customer airspace registration awaiting review");
-    String body =
-        NotificationText.bilingual(
-            "Tổ chức "
-                + org
-                + " (tài sản "
-                + assetCode
-                + ", trạng thái vùng bay: "
-                + status
-                + ") đang chờ Admin xét duyệt.",
-            "Organization "
-                + org
-                + " (asset "
-                + assetCode
-                + ", airspace status: "
-                + status
-                + ") is awaiting Admin review.");
-    for (ActiveUser admin : userAccess.listActiveAdmins()) {
-      if (admin.id() == null) continue;
-      String key = "CUSTOMER_AIRSPACE_REQ:" + event.registrationId() + ":" + admin.id();
-      NotificationText.saveWithDeduplication(
-          notificationRepository,
-          new Notification(
-              admin.id(),
-              "CUSTOMER_AIRSPACE_REVIEW_REQUESTED",
-              NotificationChannel.IN_APP,
-              title,
-              body,
-              "/admin/customer-airspace",
-              key),
-          key,
-          log);
-    }
-  }
-
-  @ApplicationModuleListener
-  public void onAirspaceReviewed(ProspectiveCustomerAirspaceReviewedEvent event) {
-    if (event == null || event.registrationId() == null) {
-      return;
-    }
-    String org = NotificationText.safeOrFallback(event.organizationName(), "Organization");
-    String assetCode = NotificationText.safeOrFallback(event.assetCode(), "ASSET");
-    String note = NotificationText.safeOrFallback(event.reviewNote(), "");
-
-    if (event.approved()) {
-      String viTitle = "Tài khoản & vùng bay đã được phê duyệt";
-      String enTitle = "Organization & airspace registration approved";
-      String viBody =
-          "Đăng ký tổ chức "
-              + org
-              + " (tài sản "
-              + assetCode
-              + ") đã được quản trị viên phê duyệt. Bạn có thể đăng nhập và sử dụng hệ thống ngay bây giờ.";
-      String enBody =
-          "Your registration for "
-              + org
-              + " (asset "
-              + assetCode
-              + ") has been approved. You can now sign in and start creating inspection requests.";
-      if (event.userId() != null) {
-        String key = "CUSTOMER_AIRSPACE_APPROVED:" + event.registrationId() + ":" + event.userId();
-        NotificationText.saveWithDeduplication(
-            notificationRepository,
-            new Notification(
-                event.userId(),
-                "CUSTOMER_AIRSPACE_APPROVED",
-                NotificationChannel.IN_APP,
-                NotificationText.bilingual(viTitle, enTitle),
-                NotificationText.bilingual(viBody, enBody),
-                "/client/assets",
-                key),
-            key,
-            log);
-      }
-      emailHelper.sendBilingualBestEffort(
-          event.email(), event.fullName(), viTitle + " / " + enTitle, viBody, enBody);
-    } else {
-      String viTitle = "Kết quả xét duyệt đăng ký vùng bay";
-      String enTitle = "Airspace registration review outcome";
-      String viBody =
-          "Rất tiếc, hồ sơ đăng ký vùng bay cho tổ chức "
-              + org
-              + " (tài sản "
-              + assetCode
-              + ") chưa được phê duyệt"
-              + (note.isEmpty() ? "." : ". Lý do: " + note);
-      String enBody =
-          "Unfortunately, your airspace registration for "
-              + org
-              + " (asset "
-              + assetCode
-              + ") was rejected"
-              + (note.isEmpty() ? "." : ". Reason: " + note);
-      emailHelper.sendBilingualBestEffort(
-          event.email(), event.fullName(), viTitle + " / " + enTitle, viBody, enBody);
-    }
   }
 
   @ApplicationModuleListener
