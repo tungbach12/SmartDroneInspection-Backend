@@ -56,8 +56,11 @@ public class InspectionFieldSessionController {
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
     UUID actorId = subject(jwt);
     List<FieldSession> list = fieldSessions.listSessions(actorId, inspectionId);
+    boolean showFlightData = droneHub == null || droneHub.canReadFlightData(actorId, inspectionId);
     List<FieldSessionFlightResponse> allFlights =
-        droneHub != null ? droneHub.listFlightsForInspection(actorId, inspectionId) : List.of();
+        showFlightData && droneHub != null
+            ? droneHub.listFlightsForInspection(actorId, inspectionId)
+            : List.of();
     Map<UUID, List<FieldSessionFlightResponse>> flightsBySession =
         allFlights == null
             ? Map.of()
@@ -67,7 +70,10 @@ public class InspectionFieldSessionController {
         list.stream()
             .map(
                 session ->
-                    response(session, flightsBySession.getOrDefault(session.getId(), List.of())))
+                    response(
+                        session,
+                        flightsBySession.getOrDefault(session.getId(), List.of()),
+                        showFlightData))
             .toList());
   }
 
@@ -410,6 +416,11 @@ public class InspectionFieldSessionController {
 
   private static FieldSessionResponse response(
       FieldSession session, List<FieldSessionFlightResponse> flights) {
+    return response(session, flights, true);
+  }
+
+  private static FieldSessionResponse response(
+      FieldSession session, List<FieldSessionFlightResponse> flights, boolean showFlightData) {
     return new FieldSessionResponse(
         session.getId(),
         session.getInspectionId(),
@@ -420,9 +431,9 @@ public class InspectionFieldSessionController {
         session.getPostponementReason(),
         session.getAbortReason(),
         session.getOutcomeNotes(),
-        session.getFlightVideoEvidenceId(),
-        session.getTelemetrySource(),
-        session.hasFlightReport(),
+        showFlightData ? session.getFlightVideoEvidenceId() : null,
+        showFlightData ? session.getTelemetrySource() : null,
+        showFlightData && session.hasFlightReport(),
         session.getSessionDate(),
         session.getPreFlightChecklistSnapshot(),
         session.getPreFlightConditions(),

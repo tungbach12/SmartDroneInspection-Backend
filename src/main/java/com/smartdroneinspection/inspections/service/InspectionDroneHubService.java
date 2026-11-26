@@ -12,6 +12,7 @@ import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.SmartDroneHubPort;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -42,6 +43,7 @@ public class InspectionDroneHubService {
   private final SmartDroneHubPort hub;
   private final EvidenceService evidenceService;
   private final FlightLogParser flightLogParser;
+  private final InspectionReportAccess reportAccess;
 
   public InspectionDroneHubService(
       InspectionRepository inspections,
@@ -49,7 +51,7 @@ public class InspectionDroneHubService {
       AssetRepository assets,
       UserAccess userAccess,
       SmartDroneHubPort hub) {
-    this(inspections, sessions, assets, userAccess, hub, null, null, null);
+    this(inspections, sessions, assets, userAccess, hub, null, null, null, null);
   }
 
   public InspectionDroneHubService(
@@ -60,7 +62,16 @@ public class InspectionDroneHubService {
       SmartDroneHubPort hub,
       EvidenceService evidenceService,
       FlightLogParser flightLogParser) {
-    this(inspections, sessions, assets, userAccess, hub, evidenceService, flightLogParser, null);
+    this(
+        inspections,
+        sessions,
+        assets,
+        userAccess,
+        hub,
+        evidenceService,
+        flightLogParser,
+        null,
+        null);
   }
 
   @Autowired
@@ -72,7 +83,8 @@ public class InspectionDroneHubService {
       SmartDroneHubPort hub,
       EvidenceService evidenceService,
       FlightLogParser flightLogParser,
-      FieldSessionFlightRepository flights) {
+      FieldSessionFlightRepository flights,
+      InspectionReportAccess reportAccess) {
     this.inspections = inspections;
     this.sessions = sessions;
     this.assets = assets;
@@ -81,13 +93,18 @@ public class InspectionDroneHubService {
     this.evidenceService = evidenceService;
     this.flightLogParser = flightLogParser;
     this.flights = flights;
+    this.reportAccess = reportAccess;
+  }
+
+  @Transactional(readOnly = true)
+  public boolean canReadFlightData(UUID actorId, UUID inspectionId) {
+    return canReadFlightData(requireReadableInspection(actorId, inspectionId), inspectionId);
   }
 
   @Transactional(readOnly = true)
   public List<FieldSessionFlightResponse> listFlightsForInspection(
       UUID actorId, UUID inspectionId) {
-    requireReadableInspection(actorId, inspectionId);
-    if (flights == null) {
+    if (!canReadFlightData(actorId, inspectionId) || flights == null) {
       return List.of();
     }
     return flights
@@ -100,8 +117,8 @@ public class InspectionDroneHubService {
   @Transactional(readOnly = true)
   public List<FieldSessionFlightResponse> listFlightsForSession(
       UUID actorId, UUID inspectionId, UUID sessionId) {
-    requireReadableSession(actorId, inspectionId, sessionId);
-    if (flights == null) {
+    Scope scope = requireReadableSession(actorId, inspectionId, sessionId);
+    if (!canReadFlightData(scope.actor(), inspectionId) || flights == null) {
       return List.of();
     }
     return flights.findByFieldSessionIdOrderByFlightNumberAsc(sessionId).stream()
@@ -480,6 +497,12 @@ public class InspectionDroneHubService {
   public SmartDroneHubPort.FlightReport flightReport(
       UUID actorId, UUID inspectionId, UUID sessionId, UUID flightId) {
     Scope scope = requireReadableSession(actorId, inspectionId, sessionId);
+    if (!canReadFlightData(scope.actor(), inspectionId)) {
+      throw failure(
+          HttpStatus.FORBIDDEN,
+          "REPORT_NOT_PUBLISHED",
+          "Flight data is available after the inspection report is published.");
+    }
     FieldSession session = scope.session();
     if (flightId != null && flights != null) {
       FieldSessionFlight flight = requireSessionFlight(inspectionId, sessionId, flightId);
@@ -751,7 +774,7 @@ public class InspectionDroneHubService {
             : session.getFlightVideoEvidenceId());
   }
 
-  private void requireReadableInspection(UUID actorId, UUID inspectionId) {
+  private ActiveUser requireReadableInspection(UUID actorId, UUID inspectionId) {
     ActiveUser actor =
         userAccess
             .findActiveUser(actorId)
@@ -764,7 +787,7 @@ public class InspectionDroneHubService {
           .findAssignedByInspector(inspectionId, actorId)
           .orElseThrow(
               () -> failure(HttpStatus.NOT_FOUND, "INSPECTION_NOT_FOUND", "Inspection not found."));
-      return;
+      return actor;
     }
     Inspection inspection =
         inspections
@@ -779,6 +802,12 @@ public class InspectionDroneHubService {
           "DRONEHUB_SCOPE_DENIED",
           "Access denied to this customer's flight report.");
     }
+    return actor;
+  }
+
+  private boolean canReadFlightData(ActiveUser actor, UUID inspectionId) {
+    return !actor.hasRole(Roles.CUSTOMER)
+        || (reportAccess != null && reportAccess.hasPublishedReport(inspectionId));
   }
 
   private static SmartDroneHubPort.FlightReport toPersistedFlightReport(FieldSession session) {
@@ -854,7 +883,7 @@ public class InspectionDroneHubService {
                         HttpStatus.NOT_FOUND,
                         "FIELD_SESSION_NOT_FOUND",
                         "Field session not found."));
-    return new Scope(inspection, session);
+    return new Scope(inspection, session, actor);
   }
 
   private static String serializeTrace(java.util.List<SmartDroneHubPort.FlightTracePoint> trace) {
@@ -914,7 +943,7 @@ public class InspectionDroneHubService {
                         HttpStatus.NOT_FOUND,
                         "FIELD_SESSION_NOT_FOUND",
                         "Field session not found."));
-    return new Scope(inspection, session);
+    return new Scope(inspection, session, actor);
   }
 
   private static String normalizeTelemetrySource(String telemetrySource) {
@@ -989,5 +1018,5 @@ public class InspectionDroneHubService {
     return new BusinessException(status, code, detail);
   }
 
-  private record Scope(Inspection inspection, FieldSession session) {}
+  private record Scope(Inspection inspection, FieldSession session, ActiveUser actor) {}
 }

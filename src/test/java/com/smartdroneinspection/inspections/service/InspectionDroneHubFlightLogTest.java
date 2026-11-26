@@ -19,8 +19,10 @@ import com.smartdroneinspection.assets.repository.AssetRepository;
 import com.smartdroneinspection.inspections.domain.FieldSession;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
+import com.smartdroneinspection.inspections.repository.FieldSessionFlightRepository;
 import com.smartdroneinspection.inspections.repository.FieldSessionRepository;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
+import com.smartdroneinspection.inspections.spi.InspectionReportAccess;
 import com.smartdroneinspection.inspections.spi.SmartDroneHubPort;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -46,6 +48,8 @@ class InspectionDroneHubFlightLogTest {
   private final AssetRepository assets = mock(AssetRepository.class);
   private final UserAccess userAccess = mock(UserAccess.class);
   private final SmartDroneHubPort hub = mock(SmartDroneHubPort.class);
+  private final FieldSessionFlightRepository flights = mock(FieldSessionFlightRepository.class);
+  private final InspectionReportAccess reportAccess = mock(InspectionReportAccess.class);
   private final Inspection inspection = mock(Inspection.class);
   private final FieldSession session =
       new FieldSession(
@@ -83,6 +87,59 @@ class InspectionDroneHubFlightLogTest {
     when(assets.findByIdAndOwnerCustomerId(assetId, actorId)).thenReturn(Optional.empty());
     when(sessions.findByIdAndInspectionId(sessionId, inspectionId))
         .thenReturn(Optional.of(session));
+  }
+
+  @Test
+  void onlyOwningCustomerCanReadFlightDataAfterPublication() {
+    InspectionDroneHubService service =
+        new InspectionDroneHubService(
+            inspections,
+            sessions,
+            assets,
+            userAccess,
+            hub,
+            null,
+            new FlightLogParser(),
+            flights,
+            reportAccess);
+    UUID customer = UUID.randomUUID();
+    when(userAccess.findActiveUser(customer))
+        .thenReturn(
+            Optional.of(new UserAccess.ActiveUser(customer, Set.of("CUSTOMER"), "Customer")));
+    when(inspections.findById(inspectionId)).thenReturn(Optional.of(inspection));
+    when(inspection.getOwnerCustomerId()).thenReturn(customer);
+    session.recordFlightReport(
+        "IMPORTED_LOG_CSV", 12, 10.0, 25.0, null, null, "LANDED", "Saved report", "[]");
+
+    assertFalse(service.canReadFlightData(customer, inspectionId));
+    assertTrue(service.listFlightsForInspection(customer, inspectionId).isEmpty());
+    assertTrue(service.listFlightsForSession(customer, inspectionId, sessionId).isEmpty());
+    verify(flights, never())
+        .findByInspectionIdOrderByFlightDateAscStartedAtAscFlightNumberAsc(any());
+    verify(flights, never()).findByFieldSessionIdOrderByFlightNumberAsc(any());
+    assertEquals(
+        "REPORT_NOT_PUBLISHED",
+        assertThrows(
+                BusinessException.class,
+                () -> service.flightReport(customer, inspectionId, sessionId))
+            .code());
+
+    when(reportAccess.hasPublishedReport(inspectionId)).thenReturn(true);
+    assertTrue(service.canReadFlightData(customer, inspectionId));
+    assertEquals(12, service.flightReport(customer, inspectionId, sessionId).durationSeconds());
+    assertEquals(
+        "DRONEHUB_SCOPE_DENIED",
+        assertThrows(
+                BusinessException.class, () -> service.telemetry(customer, inspectionId, sessionId))
+            .code());
+
+    when(inspection.getOwnerCustomerId()).thenReturn(UUID.randomUUID());
+    assertEquals(
+        "DRONEHUB_SCOPE_DENIED",
+        assertThrows(
+                BusinessException.class,
+                () -> service.flightReport(customer, inspectionId, sessionId))
+            .code());
   }
 
   @Test
