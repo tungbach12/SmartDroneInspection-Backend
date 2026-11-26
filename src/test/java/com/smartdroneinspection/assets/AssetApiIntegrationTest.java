@@ -393,6 +393,7 @@ class AssetApiIntegrationTest {
 
   @Test
   void paginatesAndFiltersAssetsByStatusAndSearchForCustomerAndManager() throws Exception {
+    UUID platformManagerId = new AssetTestFixture(categories, assets, users).createPlatformManager();
     var first = ownedAsset(fixture.categoryId(), "PAG-01", "Alpha Tower", fixture.clientId());
     first.setInspectionItems(java.util.List.of("Roof"));
     assets.saveAndFlush(first);
@@ -443,7 +444,7 @@ class AssetApiIntegrationTest {
                 .param("status", "ACTIVE")
                 .with(
                     jwt()
-                        .jwt(token -> token.subject(fixture.managerId().toString()))
+                        .jwt(token -> token.subject(platformManagerId.toString()))
                         .authorities(
                             new org.springframework.security.core.authority.SimpleGrantedAuthority(
                                 "ROLE_MANAGER"))))
