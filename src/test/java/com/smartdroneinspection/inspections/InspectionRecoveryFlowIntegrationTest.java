@@ -3,6 +3,7 @@ package com.smartdroneinspection.inspections;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -189,6 +190,69 @@ class InspectionRecoveryFlowIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.assignmentStatus").value("ACCEPTED"))
         .andExpect(jsonPath("$.data.assignmentAcceptedAt").isNotEmpty());
+  }
+
+  @Test
+  void managerCancellationClosesWithdrawnAssignmentWithoutErasingReasons() throws Exception {
+    Instant start = Instant.now().plus(2, ChronoUnit.DAYS);
+    UUID inspectionId =
+        createInspection(inspector1Id, drone1Id, start, start.plusSeconds(3600), true);
+
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/workflow-state", inspectionId)
+                .with(principal(inspector1Id, "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.canWithdrawAssignment").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/decline", inspectionId)
+                .with(principal(inspector1Id, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("reason", "Permit unavailable"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
+        .andExpect(jsonPath("$.data.reassignmentRequired").value(true));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/cancellation", inspectionId)
+                .with(principal(managerId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("reason", "Customer cancelled"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+        .andExpect(jsonPath("$.data.reassignmentRequired").value(false))
+        .andExpect(jsonPath("$.data.declinedByInspectorId").value(inspector1Id.toString()))
+        .andExpect(jsonPath("$.data.declineReason").value("Permit unavailable"))
+        .andExpect(jsonPath("$.data.cancellationReason").value("Customer cancelled"));
+  }
+
+  @Test
+  void inspectorCannotWithdrawAfterStartedSessionWasAborted() throws Exception {
+    Instant start = Instant.now().plus(2, ChronoUnit.DAYS);
+    UUID inspectionId =
+        createInspection(inspector1Id, drone1Id, start, start.plusSeconds(3600), true);
+    FieldSession session = new FieldSession(inspectionId, FieldSession.IN_PROGRESS, Instant.now());
+    session.abort("Weather", inspector1Id);
+    sessions.saveAndFlush(session);
+
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/workflow-state", inspectionId)
+                .with(principal(inspector1Id, "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.canWithdrawAssignment").value(false));
+
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/decline", inspectionId)
+                .with(principal(inspector1Id, "INSPECTOR"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("reason", "Permit unavailable"))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ASSIGNMENT_FIELD_WORK_STARTED"));
   }
 
   @Test

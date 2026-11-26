@@ -23,4 +23,5 @@ public record FieldSessionFlightResponse(
     String flightFinalState,
     String flightReportNote,
     UUID flightVideoEvidenceId,
-    boolean hasFlightReport) {}
+    boolean hasFlightReport,
+    Instant createdAt) {}

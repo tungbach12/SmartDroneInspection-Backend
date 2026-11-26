@@ -119,7 +119,7 @@ public class InspectionListService {
     Map<UUID, Drone> droneById = dronesFor(content);
     Map<UUID, InspectionReportAcceptancePort.PaymentStatusDetails> paymentByInspection =
         paymentsFor(content);
-    Map<UUID, String> userNames = new HashMap<>();
+    Map<UUID, Optional<UserAccess.ActiveUser>> usersById = new HashMap<>();
     String defaultManagerName =
         content.isEmpty()
             ? null
@@ -131,19 +131,26 @@ public class InspectionListService {
     return new InspectionPageResponse(
         content.stream()
             .map(
-                inspection ->
-                    toItem(
-                        inspection,
-                        reportByInspection.get(inspection.getId()),
-                        pendingAction(inspection, reportByInspection.get(inspection.getId())),
-                        assetById.get(inspection.getAssetId()),
-                        inspection.getDroneId() == null
-                            ? null
-                            : droneById.get(inspection.getDroneId()),
-                        paymentByInspection.get(inspection.getId()),
-                        resolveUserName(userNames, inspection.getOwnerCustomerId()),
-                        resolveUserName(userNames, inspection.getInspectorId()),
-                        defaultManagerName))
+                inspection -> {
+                  Optional<UserAccess.ActiveUser> ownerCustomer =
+                      resolveUser(usersById, inspection.getOwnerCustomerId());
+                  Optional<UserAccess.ActiveUser> inspector =
+                      resolveUser(usersById, inspection.getInspectorId());
+                  return toItem(
+                      inspection,
+                      reportByInspection.get(inspection.getId()),
+                      pendingAction(inspection, reportByInspection.get(inspection.getId())),
+                      assetById.get(inspection.getAssetId()),
+                      inspection.getDroneId() == null
+                          ? null
+                          : droneById.get(inspection.getDroneId()),
+                      paymentByInspection.get(inspection.getId()),
+                      ownerCustomer.map(UserAccess.ActiveUser::fullName).orElse(null),
+                      inspector.map(UserAccess.ActiveUser::fullName).orElse(null),
+                      defaultManagerName,
+                      ownerCustomer.map(UserAccess.ActiveUser::avatarUrl).orElse(null),
+                      inspector.map(UserAccess.ActiveUser::avatarUrl).orElse(null));
+                })
             .toList(),
         safePage,
         safePageSize,
@@ -151,12 +158,12 @@ public class InspectionListService {
         result.getTotalPages());
   }
 
-  private String resolveUserName(Map<UUID, String> cache, UUID userId) {
+  private Optional<UserAccess.ActiveUser> resolveUser(
+      Map<UUID, Optional<UserAccess.ActiveUser>> cache, UUID userId) {
     if (userId == null) {
-      return null;
+      return Optional.empty();
     }
-    return cache.computeIfAbsent(
-        userId, id -> userAccess.findUser(id).map(UserAccess.ActiveUser::fullName).orElse(null));
+    return cache.computeIfAbsent(userId, userAccess::findUser);
   }
 
   private Map<UUID, Drone> dronesFor(List<Inspection> pageRows) {
@@ -243,7 +250,9 @@ public class InspectionListService {
       InspectionReportAcceptancePort.PaymentStatusDetails payment,
       String ownerCustomerName,
       String inspectorName,
-      String managerName) {
+      String managerName,
+      String ownerCustomerAvatarUrl,
+      String inspectorAvatarUrl) {
     String objective =
         payment != null && payment.requestDescription() != null
             ? payment.requestDescription()
@@ -287,7 +296,9 @@ public class InspectionListService {
         inspectorName,
         managerName,
         drone == null ? null : drone.getModel(),
-        drone == null ? null : drone.getSerialNumber());
+        drone == null ? null : drone.getSerialNumber(),
+        ownerCustomerAvatarUrl,
+        inspectorAvatarUrl);
   }
 
   private Scope requireScope(UUID actorId) {

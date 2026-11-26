@@ -747,7 +747,8 @@ public class InspectionDroneHubService {
         flight.getFlightFinalState(),
         flight.getFlightReportNote(),
         flight.getFlightVideoEvidenceId(),
-        flight.hasPersistedReport());
+        flight.hasPersistedReport(),
+        flight.getCreatedAt());
   }
 
   private static SmartDroneHubPort.FlightReport toPersistedFlightReport(

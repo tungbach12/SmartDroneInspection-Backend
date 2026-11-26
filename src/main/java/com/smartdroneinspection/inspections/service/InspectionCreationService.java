@@ -1206,16 +1206,22 @@ public class InspectionCreationService {
     }
     FieldSessionRepository sessionRepo =
         sessionsProvider == null ? null : sessionsProvider.getIfAvailable();
-    if (sessionRepo != null) {
-      boolean hasOpen =
-          sessionRepo.findByInspectionIdOrderByCreatedAtAsc(inspectionId).stream()
-              .anyMatch(FieldSession::isOpen);
-      if (hasOpen) {
-        throw new BusinessException(
-            HttpStatus.CONFLICT,
-            "SESSION_ALREADY_IN_PROGRESS",
-            "Cannot decline while a field session is open; abort the active session instead.");
-      }
+    List<FieldSession> sessions =
+        sessionRepo == null
+            ? List.of()
+            : sessionRepo.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+    if (sessions.stream().anyMatch(FieldSession::isOpen)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "SESSION_ALREADY_IN_PROGRESS",
+          "Cannot decline while a field session is open; abort the active session instead.");
+    }
+    if (inspection.getAssignmentStatus() == AssignmentStatus.ACCEPTED
+        && !inspection.canWithdrawAssignment(sessions)) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "ASSIGNMENT_FIELD_WORK_STARTED",
+          "Field work has already started for this assignment. Contact the Manager to change the schedule.");
     }
     try {
       inspection.decline(actorId, reason);
@@ -1288,7 +1294,7 @@ public class InspectionCreationService {
     }
     Inspection inspection =
         inspections
-            .findById(inspectionId)
+            .findWithLockById(inspectionId)
             .orElseThrow(
                 () ->
                     new BusinessException(

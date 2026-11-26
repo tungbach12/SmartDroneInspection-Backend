@@ -325,7 +325,7 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
     }
     Inspection inspection =
         inspections
-            .findById(inspectionId)
+            .findWithLockById(inspectionId)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "NOT_FOUND", "Inspection not found"));
     if (inspection.getStatus() == InspectionStatus.CANCELLED) {
       return;

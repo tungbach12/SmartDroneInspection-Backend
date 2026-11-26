@@ -469,7 +469,19 @@ public class Inspection {
   }
 
   public boolean isReassignmentRequired() {
-    return assignmentStatus == AssignmentStatus.DECLINED;
+    return status == InspectionStatus.SCHEDULED && assignmentStatus == AssignmentStatus.DECLINED;
+  }
+
+  public boolean canWithdrawAssignment(List<FieldSession> sessions) {
+    return status == InspectionStatus.SCHEDULED
+        && assignmentStatus == AssignmentStatus.ACCEPTED
+        && sessions.stream()
+            .noneMatch(
+                session ->
+                    session.isOpen()
+                        || (session.getStartedAt() != null
+                            && (assignmentAcceptedAt == null
+                                || !session.getStartedAt().isBefore(assignmentAcceptedAt))));
   }
 
   public String getDeclineReason() {

@@ -119,6 +119,7 @@ class MultiFlightSessionServiceTest {
               return arg;
             });
 
+    Instant beforeRecording = Instant.now();
     var created1 =
         service.createFlight(
             actorId,
@@ -135,6 +136,8 @@ class MultiFlightSessionServiceTest {
     assertThat(created1.flightNumber()).isEqualTo(1);
     assertThat(created2.flightNumber()).isEqualTo(2);
     assertThat(created2.flightDate()).isEqualTo(LocalDate.of(2026, 11, 24));
+    assertThat(created2.createdAt()).isBetween(beforeRecording, Instant.now());
+    assertThat(created2.startedAt()).isNull();
 
     when(flights.findByIdAndFieldSessionIdAndInspectionId(flight2Id, sessionId, inspectionId))
         .thenReturn(Optional.of(f2));
