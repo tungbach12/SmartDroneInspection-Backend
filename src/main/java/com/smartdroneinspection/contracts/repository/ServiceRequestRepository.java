@@ -17,7 +17,24 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
   List<ServiceRequest> findByAssignedManagerIdAndStatusNotOrderByCreatedAtDesc(
       UUID assignedManagerId, ServiceRequest.ServiceRequestStatus excludedStatus);
 
-  List<ServiceRequest> findByOwnerCustomerIdAndAssetId(UUID ownerCustomerId, UUID assetId);
+  @Query(
+      """
+      select count(request) > 0 from ServiceRequest request
+      where request.ownerCustomerId = :ownerCustomerId and request.assetId = :assetId
+        and (:anySource = true or request.sourceInspectionId = :sourceInspectionId)
+        and request.status <> CANCELLED
+        and (request.status not in (ASSIGNED, CONTRACT_SIGNED)
+          or not exists (select 1 from ServiceRequestOccurrence occurrence
+                         where occurrence.requestId = request.id)
+          or exists (select 1 from ServiceRequestOccurrence occurrence left join occurrence.invoice invoice
+                     where occurrence.requestId = request.id
+                       and occurrence.status <> CANCELLED and invoice.reportAcceptedAt is null))
+      """)
+  boolean existsActiveRequestForAsset(
+      @Param("ownerCustomerId") UUID ownerCustomerId,
+      @Param("assetId") UUID assetId,
+      @Param("anySource") boolean anySource,
+      @Param("sourceInspectionId") UUID sourceInspectionId);
 
   List<ServiceRequest> findAllByOrderByCreatedAtDesc();
 

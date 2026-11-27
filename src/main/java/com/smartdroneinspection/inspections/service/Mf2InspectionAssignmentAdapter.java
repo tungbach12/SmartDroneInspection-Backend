@@ -118,6 +118,12 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
           "SOURCE_INSPECTION_NOT_COMPLETED",
           "Complete and publish the source inspection before requesting a re-inspection");
     }
+    if (inspections.existsOpenReinspectionForSource(sourceInspectionId)) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_ALREADY_OPEN",
+          "An open re-inspection already exists for this source inspection");
+    }
     if (findings.isPresent()) {
       boolean hasConfirmed =
           findings.get().findByInspectionIdOrderByCreatedAtAsc(sourceInspectionId).stream()
@@ -223,15 +229,6 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
           HttpStatus.BAD_REQUEST, "INVALID_DATES", "Planned end must be after planned start");
     }
 
-    Asset asset =
-        assets
-            .findWithLockByIdAndOwnerCustomerId(assetId, ownerCustomerId)
-            .orElseThrow(
-                () -> failure(HttpStatus.NOT_FOUND, "NOT_FOUND", "Customer asset not found"));
-    if (asset.getStatus() == AssetStatus.RETIRED) {
-      throw failure(HttpStatus.CONFLICT, "INVALID_STATE", "Cannot assign a retired asset");
-    }
-
     UserAccess.ActiveUser inspector =
         users
             .findActiveUser(inspectorId)
@@ -264,16 +261,23 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
           "Assigned drone has MTOW >= 2 kg (Category 3+ under Decree 288/2025/ND-CP) and requires a Class B pilot license");
     }
 
+    Asset asset =
+        assets
+            .findWithLockByIdAndOwnerCustomerId(assetId, ownerCustomerId)
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, "NOT_FOUND", "Customer asset not found"));
+    if (asset.getStatus() == AssetStatus.RETIRED) {
+      throw failure(HttpStatus.CONFLICT, "INVALID_STATE", "Cannot assign a retired asset");
+    }
+    if (sourceInspectionId != null) {
+      validateReinspectionSource(ownerCustomerId, asset.getId(), sourceInspectionId);
+    }
     if (inspections.hasPlatformPartnerScheduleConflict(
         inspector.id(), drone.getId(), plannedStartAt, plannedEndAt)) {
       throw failure(
           HttpStatus.CONFLICT,
           "SCHEDULE_CONFLICT",
           "The partner Inspector or drone conflicts with another active inspection");
-    }
-
-    if (sourceInspectionId != null) {
-      validateReinspectionSource(ownerCustomerId, asset.getId(), sourceInspectionId);
     }
 
     UUID effectiveOwnerCustomerId =

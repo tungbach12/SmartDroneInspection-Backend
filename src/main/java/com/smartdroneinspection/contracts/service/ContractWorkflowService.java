@@ -365,24 +365,30 @@ public class ContractWorkflowService
   @Transactional
   public ServiceRequestResponse create(UUID actorId, CreateServiceRequest input) {
     UserAccess.ActiveUser actor = requireActor(actorId, Mf2ActorPolicy.ActorKind.CUSTOMER);
+    UUID sourceInspectionId = input.sourceInspectionId();
     Asset asset =
-        assets
-            .findByIdAndOwnerCustomerId(input.assetId(), actor.ownerCustomerId())
+        (sourceInspectionId == null
+                ? assets.findByIdAndOwnerCustomerId(input.assetId(), actor.ownerCustomerId())
+                : assets.findWithLockByIdAndOwnerCustomerId(
+                    input.assetId(), actor.ownerCustomerId()))
             .filter(value -> value.getStatus() != AssetStatus.RETIRED)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "Asset not found"));
-    if (input.sourceInspectionId() != null) {
+    if (sourceInspectionId != null) {
       assignment.validateReinspectionSource(
-          actor.ownerCustomerId(), asset.getId(), input.sourceInspectionId());
-    } else {
-      boolean hasActiveRequest =
-          requests.findByOwnerCustomerIdAndAssetId(actor.ownerCustomerId(), asset.getId()).stream()
-              .anyMatch(this::isActiveRequest);
-      if (hasActiveRequest) {
+          actor.ownerCustomerId(), asset.getId(), sourceInspectionId);
+    }
+    if (requests.existsActiveRequestForAsset(
+        actor.ownerCustomerId(), asset.getId(), sourceInspectionId == null, sourceInspectionId)) {
+      if (sourceInspectionId != null) {
         throw failure(
             HttpStatus.CONFLICT,
-            "DUPLICATE_ACTIVE_REQUEST",
-            "This asset already has an active service request in progress");
+            "REINSPECTION_ALREADY_OPEN",
+            "An active re-inspection request already exists for this source inspection");
       }
+      throw failure(
+          HttpStatus.CONFLICT,
+          "DUPLICATE_ACTIVE_REQUEST",
+          "This asset already has an active service request in progress");
     }
     LocalTime start = input.windowStart() == null ? LocalTime.of(8, 0) : input.windowStart();
     LocalTime end = input.windowEnd() == null ? LocalTime.of(17, 0) : input.windowEnd();
@@ -4141,27 +4147,6 @@ public class ContractWorkflowService
         && (bytes[0] & 0xff) == 0xff
         && (bytes[1] & 0xff) == 0xd8
         && (bytes[2] & 0xff) == 0xff;
-  }
-
-  private boolean isActiveRequest(ServiceRequest existing) {
-    ServiceRequest.ServiceRequestStatus status = existing.getStatus();
-    if (status == ServiceRequest.ServiceRequestStatus.CANCELLED) {
-      return false;
-    }
-    if (status != ServiceRequest.ServiceRequestStatus.ASSIGNED
-        && status != ServiceRequest.ServiceRequestStatus.CONTRACT_SIGNED) {
-      return true;
-    }
-    List<ServiceRequestOccurrence> requestOccurrences =
-        occurrences.findByRequestIdOrderByOccurrenceIndexAsc(existing.getId());
-    if (requestOccurrences.isEmpty()) {
-      return true;
-    }
-    return requestOccurrences.stream()
-        .anyMatch(
-            occurrence ->
-                occurrence.getStatus() != ServiceRequestOccurrence.OccurrenceStatus.CANCELLED
-                    && occurrence.getReportAcceptedAt() == null);
   }
 
   public record SignedContractFile(

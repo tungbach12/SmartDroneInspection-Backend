@@ -45,6 +45,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,8 +56,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
@@ -553,29 +560,20 @@ class ReinspectionWorkflowIntegrationTest {
   @Test
   void mf2ServiceRequestWithSourceInspectionDispatchesReinspectionAndSeedsVerifications()
       throws Exception {
-    LocalDate startDate = LocalDate.now().plusDays(25);
     mockMvc
-        .perform(
-            post("/api/v1/contracts/requests")
-                .with(principal(customerId, "CUSTOMER"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper.writeValueAsString(
-                        Map.of(
-                            "assetId",
-                            assetId.toString(),
-                            "description",
-                            "Post-remediation verification flight via MF2 contract",
-                            "requestedFrom",
-                            startDate.toString(),
-                            "timezone",
-                            "Asia/Ho_Chi_Minh",
-                            "requestType",
-                            "ONE_TIME",
-                            "sourceInspectionId",
-                            sourceInspectionId.toString()))))
+        .perform(mf2ReinspectionRequest())
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.sourceInspectionId").value(sourceInspectionId.toString()));
+
+    mockMvc
+        .perform(mf2ReinspectionRequest())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
+
+    mockMvc
+        .perform(quickReinspectionRequest())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
 
     Instant windowStart = Instant.now().plus(25, ChronoUnit.DAYS);
     Instant windowEnd = windowStart.plus(2, ChronoUnit.HOURS);
@@ -594,6 +592,99 @@ class ReinspectionWorkflowIntegrationTest {
     assertThat(dispatched.getInspectionType()).isEqualTo(InspectionType.RE_INSPECTION);
     assertThat(dispatched.getSourceInspectionId()).isEqualTo(sourceInspectionId);
     assertThat(verifications.findByReinspectionIdOrderByCreatedAtAsc(dispatchedId)).hasSize(2);
+
+    mockMvc
+        .perform(quickReinspectionRequest())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
+  }
+
+  @Test
+  void quickReinspectionBlocksBothCreationPathsUntilCancelled() throws Exception {
+    MvcResult created =
+        mockMvc.perform(quickReinspectionRequest()).andExpect(status().isCreated()).andReturn();
+    mockMvc
+        .perform(mf2ReinspectionRequest())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
+    mockMvc
+        .perform(quickReinspectionRequest())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
+
+    UUID inspectionId =
+        UUID.fromString(
+            objectMapper
+                .readTree(created.getResponse().getContentAsString())
+                .at("/data/id")
+                .asText());
+    mf2Assignment.cancelInspection(managerId, inspectionId, "Reschedule requested by Customer");
+    mockMvc.perform(mf2ReinspectionRequest()).andExpect(status().isCreated());
+  }
+
+  @Test
+  @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+  void concurrentMf2RequestAndQuickReinspectionProduceOneFollowUp() throws Exception {
+    // Commit the fixture so both request transactions see it. The test context is discarded
+    // afterward.
+    TestTransaction.flagForCommit();
+    TestTransaction.end();
+
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch start = new CountDownLatch(1);
+    try (var executor = Executors.newFixedThreadPool(2)) {
+      var mf2 = executor.submit(concurrentRequest(mf2ReinspectionRequest(), ready, start));
+      var quick = executor.submit(concurrentRequest(quickReinspectionRequest(), ready, start));
+      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      var responses = List.of(mf2.get(20, TimeUnit.SECONDS), quick.get(20, TimeUnit.SECONDS));
+      assertThat(responses)
+          .extracting(result -> result.getResponse().getStatus())
+          .containsExactlyInAnyOrder(201, 409);
+      MvcResult rejected =
+          responses.stream()
+              .filter(result -> result.getResponse().getStatus() == 409)
+              .findFirst()
+              .orElseThrow();
+      assertThat(
+              objectMapper
+                  .readTree(rejected.getResponse().getContentAsString())
+                  .path("code")
+                  .asText())
+          .isEqualTo("REINSPECTION_ALREADY_OPEN");
+    }
+  }
+
+  private Callable<MvcResult> concurrentRequest(
+      MockHttpServletRequestBuilder request, CountDownLatch ready, CountDownLatch start) {
+    return () -> {
+      ready.countDown();
+      if (!start.await(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Concurrent re-inspection requests did not start");
+      }
+      return mockMvc.perform(request).andReturn();
+    };
+  }
+
+  private MockHttpServletRequestBuilder mf2ReinspectionRequest() throws Exception {
+    return post("/api/v1/contracts/requests")
+        .with(principal(customerId, "CUSTOMER"))
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(
+            objectMapper.writeValueAsString(
+                Map.of(
+                    "assetId", assetId.toString(),
+                    "requestedFrom", LocalDate.now().plusDays(25).toString(),
+                    "timezone", "Asia/Ho_Chi_Minh",
+                    "requestType", "ONE_TIME",
+                    "sourceInspectionId", sourceInspectionId.toString())));
+  }
+
+  private MockHttpServletRequestBuilder quickReinspectionRequest() {
+    return post("/api/v1/inspections/{id}/reinspections", sourceInspectionId)
+        .with(principal(managerId, "MANAGER"))
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{}");
   }
 
   @Test
