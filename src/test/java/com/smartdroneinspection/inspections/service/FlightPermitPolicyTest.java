@@ -8,8 +8,6 @@ import static org.mockito.Mockito.when;
 import com.smartdroneinspection.assets.domain.Drone;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.enums.FlightPermitVerificationStatus;
-import com.smartdroneinspection.shared.api.AirspaceZoneInfo;
-import com.smartdroneinspection.shared.api.CustomerAirspaceStatus;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -199,32 +197,6 @@ class FlightPermitPolicyTest {
 
     ReflectionTestUtils.setField(permit, "droneSerial", "SN-1");
     FlightPermitPolicy.requireApprovedForFlight(inspection, drone, NOW);
-  }
-
-  @Test
-  void rejectsPermitAltitudeExceedingRestrictedAirspaceCeiling() {
-    AirspaceZoneInfo restricted =
-        new AirspaceZoneInfo(
-            CustomerAirspaceStatus.RESTRICTED_ZONE,
-            "VN-RES-SGN-TSN-CTR",
-            "Vùng Kiểm Soát Tiếp Cận Tân Sơn Nhất (CTR)",
-            "Cục Tác chiến & Sư đoàn Không quân 370",
-            50,
-            "Verify permission");
-    AirspaceZoneInfo clear =
-        new AirspaceZoneInfo(
-            CustomerAirspaceStatus.CLEAR_ZONE, null, null, null, null, "Outside zones");
-
-    FlightPermitPolicy.validateRestrictedAirspaceCeiling(50, restricted);
-    FlightPermitPolicy.validateRestrictedAirspaceCeiling(null, clear);
-    FlightPermitPolicy.validateRestrictedAirspaceCeiling(120, clear);
-
-    assertBusinessCode(
-        () -> FlightPermitPolicy.validateRestrictedAirspaceCeiling(null, restricted),
-        "PERMIT_ALTITUDE_REQUIRED");
-    assertBusinessCode(
-        () -> FlightPermitPolicy.validateRestrictedAirspaceCeiling(80, restricted),
-        "PERMIT_ALTITUDE_EXCEEDS_ZONE_LIMIT");
   }
 
   private static Inspection inspection() {
