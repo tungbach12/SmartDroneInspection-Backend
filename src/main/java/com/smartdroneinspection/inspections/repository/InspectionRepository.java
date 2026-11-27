@@ -22,6 +22,12 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
   boolean existsByAssetId(UUID assetId);
 
+  @Query(
+      "select count(i) > 0 from Inspection i where i.sourceInspectionId = :sourceInspectionId "
+          + "and i.status not in (com.smartdroneinspection.inspections.domain.enums.InspectionStatus.COMPLETED, "
+          + "com.smartdroneinspection.inspections.domain.enums.InspectionStatus.CANCELLED)")
+  boolean existsOpenReinspectionForSource(@Param("sourceInspectionId") UUID sourceInspectionId);
+
   @Query("select distinct i.assetId from Inspection i where i.assetId in :assetIds")
   List<UUID> findDistinctAssetIdsByAssetIdIn(@Param("assetIds") Collection<UUID> assetIds);
 

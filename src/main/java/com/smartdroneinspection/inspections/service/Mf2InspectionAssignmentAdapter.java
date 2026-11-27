@@ -118,6 +118,12 @@ public class Mf2InspectionAssignmentAdapter implements Mf2InspectionAssignment {
           "SOURCE_INSPECTION_NOT_COMPLETED",
           "Complete and publish the source inspection before requesting a re-inspection");
     }
+    if (inspections.existsOpenReinspectionForSource(sourceInspectionId)) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_ALREADY_OPEN",
+          "An open re-inspection already exists for this source inspection");
+    }
     if (findings.isPresent()) {
       boolean hasConfirmed =
           findings.get().findByInspectionIdOrderByCreatedAtAsc(sourceInspectionId).stream()

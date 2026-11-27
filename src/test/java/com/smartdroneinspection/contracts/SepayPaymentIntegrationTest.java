@@ -361,8 +361,8 @@ class SepayPaymentIntegrationTest {
     assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
         .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 
-    // 6. Webhook: amount mismatch is acknowledged (200) for manual reconciliation and does not
-    // settle
+    // 6. Webhook: amount mismatch is acknowledged (200) and recorded for manual reconciliation
+    // rather than triggering a Sepay redelivery, which could never change the outcome.
     Map<String, Object> mismatchPayload = new LinkedHashMap<>(validSepayPayload);
     mismatchPayload.put("id", 2L);
     mismatchPayload.put("transferAmount", 1000000L); // mismatch!
@@ -375,6 +375,13 @@ class SepayPaymentIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
 
+    // The mismatch is audited in the inbound ledger and the occurrence stays unpaid.
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "select status from gateway_inbound_transactions"
+                    + " where gateway = 'SEPAY' and external_id = '2'",
+                String.class))
+        .isEqualTo("AMOUNT_MISMATCH");
     assertThat(occurrences.findById(occurrenceId).orElseThrow().getPaymentStatus())
         .isEqualTo(OccurrencePaymentStatus.PAYMENT_DUE);
 

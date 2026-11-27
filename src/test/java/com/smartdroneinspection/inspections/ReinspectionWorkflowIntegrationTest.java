@@ -577,6 +577,30 @@ class ReinspectionWorkflowIntegrationTest {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.sourceInspectionId").value(sourceInspectionId.toString()));
 
+    // Duplicate active MF2 re-inspection request for the same source inspection is rejected
+    mockMvc
+        .perform(
+            post("/api/v1/contracts/requests")
+                .with(principal(customerId, "CUSTOMER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of(
+                            "assetId",
+                            assetId.toString(),
+                            "description",
+                            "Duplicate re-inspection request",
+                            "requestedFrom",
+                            startDate.toString(),
+                            "timezone",
+                            "Asia/Ho_Chi_Minh",
+                            "requestType",
+                            "ONE_TIME",
+                            "sourceInspectionId",
+                            sourceInspectionId.toString()))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
+
     Instant windowStart = Instant.now().plus(25, ChronoUnit.DAYS);
     Instant windowEnd = windowStart.plus(2, ChronoUnit.HOURS);
     UUID dispatchedId =
@@ -594,6 +618,16 @@ class ReinspectionWorkflowIntegrationTest {
     assertThat(dispatched.getInspectionType()).isEqualTo(InspectionType.RE_INSPECTION);
     assertThat(dispatched.getSourceInspectionId()).isEqualTo(sourceInspectionId);
     assertThat(verifications.findByReinspectionIdOrderByCreatedAtAsc(dispatchedId)).hasSize(2);
+
+    // Quick re-inspection is also blocked while an open re-inspection already exists
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/reinspections", sourceInspectionId)
+                .with(principal(managerId, "MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("REINSPECTION_ALREADY_OPEN"));
   }
 
   @Test

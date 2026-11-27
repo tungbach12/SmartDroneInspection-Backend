@@ -336,6 +336,13 @@ public class InspectionCreationService {
           "Publish the source inspection report before creating a re-inspection.");
     }
 
+    if (inspections.existsOpenReinspectionForSource(source.getId())) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_ALREADY_OPEN",
+          "An open re-inspection already exists for this source inspection.");
+    }
+
     Asset asset =
         assets
             .findById(source.getAssetId())

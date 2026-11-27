@@ -373,6 +373,16 @@ public class ContractWorkflowService
     if (input.sourceInspectionId() != null) {
       assignment.validateReinspectionSource(
           actor.ownerCustomerId(), asset.getId(), input.sourceInspectionId());
+      boolean hasActiveReinspectionRequest =
+          requests.findByOwnerCustomerIdAndAssetId(actor.ownerCustomerId(), asset.getId()).stream()
+              .filter(req -> input.sourceInspectionId().equals(req.getSourceInspectionId()))
+              .anyMatch(this::isActiveRequest);
+      if (hasActiveReinspectionRequest) {
+        throw failure(
+            HttpStatus.CONFLICT,
+            "REINSPECTION_ALREADY_OPEN",
+            "An active re-inspection request already exists for this source inspection");
+      }
     } else {
       boolean hasActiveRequest =
           requests.findByOwnerCustomerIdAndAssetId(actor.ownerCustomerId(), asset.getId()).stream()
