@@ -34,12 +34,13 @@ class PlatformOperationsSettingsServiceTest {
   }
 
   @Test
-  void defaultsToTwentyFourHoursWhenNoSettingsExist() {
+  void defaultsToTwentyFourHoursAndTwentyLeadDaysWhenNoSettingsExist() {
     assertThat(service.getAssignmentAcceptanceTimeoutHours()).isEqualTo(24);
+    assertThat(service.getServiceRequestLeadDays()).isEqualTo(20);
   }
 
   @Test
-  void adminCanConfigureCustomAssignmentAcceptanceTimeoutHours() {
+  void adminCanConfigureCustomAssignmentAcceptanceTimeoutHoursAndLeadDays() {
     UUID adminId = UUID.randomUUID();
     when(users.findActiveUser(adminId))
         .thenReturn(
@@ -59,9 +60,37 @@ class PlatformOperationsSettingsServiceTest {
     when(repository.saveAndFlush(any(PlatformOperationsSettings.class)))
         .thenAnswer(inv -> inv.getArgument(0));
 
-    PlatformOperationsSettingsResponse updated = service.updateSettings(adminId, 48);
+    PlatformOperationsSettingsResponse updated = service.updateSettings(adminId, 48, 10);
     assertThat(updated.assignmentAcceptanceTimeoutHours()).isEqualTo(48);
+    assertThat(updated.serviceRequestLeadDays()).isEqualTo(10);
     assertThat(updated.updatedByUserId()).isEqualTo(adminId);
+  }
+
+  @Test
+  void preservesExistingLeadDaysWhenOmittedInUpdate() {
+    UUID adminId = UUID.randomUUID();
+    when(users.findActiveUser(adminId))
+        .thenReturn(
+            Optional.of(
+                new ActiveUser(
+                    adminId,
+                    Set.of(Roles.ADMIN),
+                    "Admin User",
+                    "admin@smartdrone.local",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null)));
+    PlatformOperationsSettings existing = new PlatformOperationsSettings(24, 14, adminId);
+    when(repository.findFirstByOrderByUpdatedAtDesc()).thenReturn(Optional.of(existing));
+    when(repository.saveAndFlush(any(PlatformOperationsSettings.class)))
+        .thenAnswer(inv -> inv.getArgument(0));
+
+    PlatformOperationsSettingsResponse updated = service.updateSettings(adminId, 36);
+    assertThat(updated.assignmentAcceptanceTimeoutHours()).isEqualTo(36);
+    assertThat(updated.serviceRequestLeadDays()).isEqualTo(14);
   }
 
   @Test
@@ -89,10 +118,14 @@ class PlatformOperationsSettingsServiceTest {
   }
 
   @Test
-  void rejectsInvalidTimeoutHours() {
+  void rejectsInvalidTimeoutHoursAndLeadDays() {
     assertThatThrownBy(() -> new PlatformOperationsSettings(0, UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new PlatformOperationsSettings(721, UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new PlatformOperationsSettings(24, -1, UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new PlatformOperationsSettings(24, 366, UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }
