@@ -170,6 +170,14 @@ public class InspectionContractSyncAdapter
 
   @Override
   @Transactional(readOnly = true)
+  public boolean hasActiveReinspectionRequest(
+      UUID ownerCustomerId, UUID assetId, UUID sourceInspectionId) {
+    return requests.existsActiveRequestForAsset(
+        ownerCustomerId, assetId, false, sourceInspectionId);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public List<ReassignCandidate> evaluateReassignCandidates(
       UUID managerId,
       UUID inspectionId,

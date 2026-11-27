@@ -29,4 +29,6 @@ public interface InspectionContractSyncPort {
   }
 
   boolean isLinkedOccurrencePaidOrAccepted(UUID inspectionId);
+
+  boolean hasActiveReinspectionRequest(UUID ownerCustomerId, UUID assetId, UUID sourceInspectionId);
 }

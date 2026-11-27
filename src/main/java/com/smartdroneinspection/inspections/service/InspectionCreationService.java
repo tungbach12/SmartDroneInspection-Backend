@@ -336,27 +336,6 @@ public class InspectionCreationService {
           "Publish the source inspection report before creating a re-inspection.");
     }
 
-    if (inspections.existsOpenReinspectionForSource(source.getId())) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "REINSPECTION_ALREADY_OPEN",
-          "An open re-inspection already exists for this source inspection.");
-    }
-
-    Asset asset =
-        assets
-            .findById(source.getAssetId())
-            .orElseThrow(
-                () ->
-                    new BusinessException(
-                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Source asset not found."));
-    if (asset.getStatus() == AssetStatus.RETIRED) {
-      throw new BusinessException(
-          HttpStatus.CONFLICT,
-          "INVALID_STATE",
-          "Cannot schedule a re-inspection for a retired asset.");
-    }
-
     FindingRepository findingRepo =
         findingsProvider != null ? findingsProvider.getIfAvailable() : null;
     if (findingRepo != null) {
@@ -418,8 +397,8 @@ public class InspectionCreationService {
                           "Assigned inspector must be active with a valid pilot license."));
     }
 
+    boolean usePartnerPool = reqDroneId != null || source.isPartnerAssignment();
     if (targetDroneId != null) {
-      boolean usePartnerPool = reqDroneId != null || source.isPartnerAssignment();
       Drone drone =
           (usePartnerPool
                   ? drones.findWithLockById(targetDroneId)
@@ -446,6 +425,35 @@ public class InspectionCreationService {
             "PILOT_LICENSE_CLASS_INSUFFICIENT",
             "Assigned inspector pilot license class does not qualify for drone MTOW.");
       }
+    }
+
+    // MF2 request creation and dispatch also hold this asset lock through their writes.
+    Asset asset =
+        assets
+            .findWithLockById(source.getAssetId())
+            .orElseThrow(
+                () ->
+                    new BusinessException(
+                        HttpStatus.NOT_FOUND, "NOT_FOUND", "Source asset not found."));
+    if (asset.getStatus() == AssetStatus.RETIRED) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "INVALID_STATE",
+          "Cannot schedule a re-inspection for a retired asset.");
+    }
+    InspectionContractSyncPort syncPort =
+        contractSyncProvider == null ? null : contractSyncProvider.getIfAvailable();
+    if (inspections.existsOpenReinspectionForSource(source.getId())
+        || (syncPort != null
+            && syncPort.hasActiveReinspectionRequest(
+                source.getOwnerCustomerId(), asset.getId(), source.getId()))) {
+      throw new BusinessException(
+          HttpStatus.CONFLICT,
+          "REINSPECTION_ALREADY_OPEN",
+          "An active re-inspection already exists for this source inspection.");
+    }
+
+    if (targetDroneId != null) {
       boolean conflict =
           usePartnerPool
               ? inspections.hasPlatformPartnerScheduleConflict(

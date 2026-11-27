@@ -744,11 +744,7 @@ class ContractWorkflowServiceTest {
     when(asset.getId()).thenReturn(assetId);
     when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
     when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
-    ServiceRequest existingOpen =
-        unassignedRequestWithId(
-            UUID.randomUUID(), LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1));
-    when(requests.findByOwnerCustomerIdAndAssetId(orgId, assetId))
-        .thenReturn(List.of(existingOpen));
+    when(requests.existsActiveRequestForAsset(orgId, assetId, true, null)).thenReturn(true);
 
     CreateServiceRequest input =
         new CreateServiceRequest(
