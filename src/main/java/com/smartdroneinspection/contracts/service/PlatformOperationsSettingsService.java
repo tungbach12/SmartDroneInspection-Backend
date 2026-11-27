@@ -12,7 +12,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Service managing Admin-configurable Step 4 assignment acceptance policies. */
+/**
+ * Service managing Admin-configurable operational policies (dispatch timeout and scheduling lead
+ * days).
+ */
 @Service
 public class PlatformOperationsSettingsService implements PlatformOperationsPolicyPort {
 
@@ -34,6 +37,15 @@ public class PlatformOperationsSettingsService implements PlatformOperationsPoli
         .orElse(DEFAULT_ASSIGNMENT_ACCEPTANCE_TIMEOUT_HOURS);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public int getServiceRequestLeadDays() {
+    return repository
+        .findFirstByOrderByUpdatedAtDesc()
+        .map(PlatformOperationsSettings::getServiceRequestLeadDays)
+        .orElse(DEFAULT_SERVICE_REQUEST_LEAD_DAYS);
+  }
+
   @Transactional(readOnly = true)
   public PlatformOperationsSettingsResponse getSettings(UUID actorId) {
     requireAdmin(actorId);
@@ -46,12 +58,26 @@ public class PlatformOperationsSettingsService implements PlatformOperationsPoli
   @Transactional
   public PlatformOperationsSettingsResponse updateSettings(
       UUID actorId, int assignmentAcceptanceTimeoutHours) {
+    return updateSettings(actorId, assignmentAcceptanceTimeoutHours, null);
+  }
+
+  @Transactional
+  public PlatformOperationsSettingsResponse updateSettings(
+      UUID actorId, int assignmentAcceptanceTimeoutHours, Integer serviceRequestLeadDays) {
     requireAdmin(actorId);
     PlatformOperationsSettings settings = repository.findFirstByOrderByUpdatedAtDesc().orElse(null);
+    int resolvedLeadDays =
+        serviceRequestLeadDays != null
+            ? serviceRequestLeadDays
+            : settings != null
+                ? settings.getServiceRequestLeadDays()
+                : DEFAULT_SERVICE_REQUEST_LEAD_DAYS;
     if (settings == null) {
-      settings = new PlatformOperationsSettings(assignmentAcceptanceTimeoutHours, actorId);
+      settings =
+          new PlatformOperationsSettings(
+              assignmentAcceptanceTimeoutHours, resolvedLeadDays, actorId);
     } else {
-      settings.updateTimeoutHours(assignmentAcceptanceTimeoutHours, actorId);
+      settings.updateSettings(assignmentAcceptanceTimeoutHours, resolvedLeadDays, actorId);
     }
     return PlatformOperationsSettingsResponse.from(repository.saveAndFlush(settings));
   }

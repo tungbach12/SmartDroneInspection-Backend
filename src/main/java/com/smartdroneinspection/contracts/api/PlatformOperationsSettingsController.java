@@ -40,7 +40,9 @@ public class PlatformOperationsSettingsController {
       @Valid @RequestBody UpdatePlatformOperationsSettingsRequest request) {
     return ApiResponse.success(
         operationsSettings.updateSettings(
-            actorId(jwt), request.assignmentAcceptanceTimeoutHours()));
+            actorId(jwt),
+            request.assignmentAcceptanceTimeoutHours(),
+            request.serviceRequestLeadDays()));
   }
 
   private static UUID actorId(Jwt jwt) {

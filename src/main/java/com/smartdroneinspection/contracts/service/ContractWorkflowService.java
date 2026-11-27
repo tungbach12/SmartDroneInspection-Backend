@@ -28,6 +28,7 @@ import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestMessage
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestOccurrenceResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestQuoteResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
+import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestSchedulingPolicyResponse;
 import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.domain.InspectionFinanceSettings;
 import com.smartdroneinspection.contracts.domain.ServiceRefund;
@@ -399,12 +400,15 @@ public class ContractWorkflowService
       throw failure(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", "Customer timezone is invalid");
     }
     LocalDate customerToday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
-    LocalDate minimumStartDate = customerToday.plusDays(20);
+    int leadDays = resolveServiceRequestLeadDays();
+    LocalDate minimumStartDate = customerToday.plusDays(leadDays);
     if (input.requestedFrom() == null || input.requestedFrom().isBefore(minimumStartDate)) {
       throw failure(
           HttpStatus.BAD_REQUEST,
           "REQUEST_TOO_SOON",
-          "The first inspection date must be at least 20 days from today to allow contract and flight-permit processing");
+          "The first inspection date must be at least "
+              + leadDays
+              + " days from today to allow contract and flight-permit processing");
     }
 
     LocalDate requestedUntil;
@@ -490,6 +494,18 @@ public class ContractWorkflowService
               saved.getRequestedFrom()));
     }
     return toResponse(saved);
+  }
+
+  @Transactional(readOnly = true)
+  public ServiceRequestSchedulingPolicyResponse getSchedulingPolicy(UUID actorId) {
+    requireActor(actorId, null);
+    return new ServiceRequestSchedulingPolicyResponse(resolveServiceRequestLeadDays());
+  }
+
+  private int resolveServiceRequestLeadDays() {
+    return operationsSettings
+        .map(PlatformOperationsPolicyPort::getServiceRequestLeadDays)
+        .orElse(PlatformOperationsPolicyPort.DEFAULT_SERVICE_REQUEST_LEAD_DAYS);
   }
 
   @Transactional(readOnly = true)

@@ -22,6 +22,7 @@ import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidatePageR
 import com.smartdroneinspection.contracts.api.dto.response.PartnerCandidateResponse;
 import com.smartdroneinspection.contracts.api.dto.response.SepayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestResponse;
+import com.smartdroneinspection.contracts.api.dto.response.ServiceRequestSchedulingPolicyResponse;
 import com.smartdroneinspection.contracts.api.dto.response.VnPayPaymentLinkResponse;
 import com.smartdroneinspection.contracts.service.ContractWorkflowService;
 import com.smartdroneinspection.shared.api.ApiResponse;
@@ -76,6 +77,12 @@ public class ContractWorkflowController {
               com.smartdroneinspection.contracts.service.PartnerRegistryService.DroneFeatureOption>>
       listPartnerCapabilities(@AuthenticationPrincipal Jwt jwt) {
     return ApiResponse.success(workflow.listPartnerCapabilities(actorId(jwt)));
+  }
+
+  @GetMapping("/scheduling-policy")
+  public ApiResponse<ServiceRequestSchedulingPolicyResponse> getSchedulingPolicy(
+      @AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.success(workflow.getSchedulingPolicy(actorId(jwt)));
   }
 
   @GetMapping
