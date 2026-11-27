@@ -12,12 +12,14 @@ import com.smartdroneinspection.inspections.api.dto.response.RatingCriterionConf
 import com.smartdroneinspection.inspections.api.dto.response.RatingCriterionDefinitionResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectorRating;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
 import com.smartdroneinspection.inspections.domain.RatingCriterionConfig;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.RaterRole;
 import com.smartdroneinspection.inspections.events.InspectorRatedEvent;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.InspectorRatingRepository;
+import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
 import com.smartdroneinspection.inspections.repository.RatingCriterionConfigRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
@@ -51,6 +53,7 @@ public class InspectionRatingService {
   private final ApplicationEventPublisher eventPublisher;
   private final Clock clock;
   private final RatingCriterionConfigRepository criteriaConfigs;
+  private final InspectorReliabilityEventRepository reliabilityEvents;
 
   public InspectionRatingService(
       InspectorRatingRepository ratings,
@@ -58,7 +61,7 @@ public class InspectionRatingService {
       AssetRepository assets,
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher) {
-    this(ratings, inspections, assets, userAccess, eventPublisher, Clock.systemUTC(), null);
+    this(ratings, inspections, assets, userAccess, eventPublisher, Clock.systemUTC(), null, null);
   }
 
   public InspectionRatingService(
@@ -68,7 +71,7 @@ public class InspectionRatingService {
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher,
       Clock clock) {
-    this(ratings, inspections, assets, userAccess, eventPublisher, clock, null);
+    this(ratings, inspections, assets, userAccess, eventPublisher, clock, null, null);
   }
 
   @Autowired
@@ -78,7 +81,8 @@ public class InspectionRatingService {
       AssetRepository assets,
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher,
-      RatingCriterionConfigRepository criteriaConfigs) {
+      RatingCriterionConfigRepository criteriaConfigs,
+      InspectorReliabilityEventRepository reliabilityEvents) {
     this(
         ratings,
         inspections,
@@ -86,7 +90,8 @@ public class InspectionRatingService {
         userAccess,
         eventPublisher,
         Clock.systemUTC(),
-        criteriaConfigs);
+        criteriaConfigs,
+        reliabilityEvents);
   }
 
   public InspectionRatingService(
@@ -96,7 +101,8 @@ public class InspectionRatingService {
       UserAccess userAccess,
       ApplicationEventPublisher eventPublisher,
       Clock clock,
-      RatingCriterionConfigRepository criteriaConfigs) {
+      RatingCriterionConfigRepository criteriaConfigs,
+      InspectorReliabilityEventRepository reliabilityEvents) {
     this.ratings = ratings;
     this.inspections = inspections;
     this.assets = assets;
@@ -104,6 +110,7 @@ public class InspectionRatingService {
     this.eventPublisher = eventPublisher;
     this.clock = clock != null ? clock : Clock.systemUTC();
     this.criteriaConfigs = criteriaConfigs;
+    this.reliabilityEvents = reliabilityEvents;
   }
 
   @Transactional
@@ -214,7 +221,7 @@ public class InspectionRatingService {
 
     if (!historyVisible) {
       return new InspectorRatingProfileResponse(
-          summary, List.of(), safePage, safeSize, 0L, 0, false);
+          summary, List.of(), safePage, safeSize, 0L, 0, false, null);
     }
 
     Page<InspectorRating> page =
@@ -238,6 +245,10 @@ public class InspectionRatingService {
                 })
             .toList();
 
+    Long noShowCount =
+        actor.hasRole(Roles.MANAGER) && reliabilityEvents != null
+            ? reliabilityEvents.countByInspectorIdAndEventType(inspectorId, EventType.NO_SHOW)
+            : null;
     return new InspectorRatingProfileResponse(
         summary,
         items,
@@ -245,7 +256,8 @@ public class InspectionRatingService {
         page.getSize(),
         page.getTotalElements(),
         page.getTotalPages(),
-        true);
+        true,
+        noShowCount);
   }
 
   private InspectionRatingBundleResponse buildInspectionBundle(

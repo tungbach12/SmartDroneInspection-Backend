@@ -12,11 +12,13 @@ import com.smartdroneinspection.inspections.api.dto.response.InspectionRatingBun
 import com.smartdroneinspection.inspections.api.dto.response.InspectorRatingProfileResponse;
 import com.smartdroneinspection.inspections.domain.Inspection;
 import com.smartdroneinspection.inspections.domain.InspectorRating;
+import com.smartdroneinspection.inspections.domain.InspectorReliabilityEvent.EventType;
 import com.smartdroneinspection.inspections.domain.enums.InspectionStatus;
 import com.smartdroneinspection.inspections.domain.enums.RaterRole;
 import com.smartdroneinspection.inspections.events.InspectorRatedEvent;
 import com.smartdroneinspection.inspections.repository.InspectionRepository;
 import com.smartdroneinspection.inspections.repository.InspectorRatingRepository;
+import com.smartdroneinspection.inspections.repository.InspectorReliabilityEventRepository;
 import com.smartdroneinspection.shared.auth.Roles;
 import com.smartdroneinspection.shared.exception.BusinessException;
 import com.smartdroneinspection.users.UserAccess;
@@ -43,6 +45,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class InspectionRatingServiceTest {
 
   @Mock private InspectorRatingRepository ratings;
+  @Mock private InspectorReliabilityEventRepository reliabilityEvents;
   @Mock private InspectionRepository inspections;
   @Mock private AssetRepository assets;
   @Mock private UserAccess userAccess;
@@ -67,7 +70,9 @@ class InspectionRatingServiceTest {
             assets,
             userAccess,
             events,
-            Clock.fixed(fixedNow, ZoneOffset.UTC));
+            Clock.fixed(fixedNow, ZoneOffset.UTC),
+            null,
+            reliabilityEvents);
   }
 
   @Test
@@ -212,6 +217,7 @@ class InspectionRatingServiceTest {
     assertThat(customerView.ratings()).isEmpty();
     assertThat(customerView.summary().averageRating()).isEqualTo(4.5);
     assertThat(customerView.summary().ratingCount()).isEqualTo(2);
+    assertThat(customerView.noShowCount()).isNull();
 
     when(userAccess.findActiveUser(managerId))
         .thenReturn(
@@ -219,12 +225,15 @@ class InspectionRatingServiceTest {
     when(ratings.findByInspectorIdOrderByCreatedAtDesc(inspectorId, PageRequest.of(0, 10)))
         .thenReturn(new PageImpl<>(List.of(mgrRating, custRating)));
     when(inspections.findAllById(any())).thenReturn(List.of());
+    when(reliabilityEvents.countByInspectorIdAndEventType(inspectorId, EventType.NO_SHOW))
+        .thenReturn(1L);
     InspectorRatingProfileResponse managerView =
         service.getInspectorSummaryAndHistory(managerId, inspectorId, PageRequest.of(0, 10));
     assertThat(managerView.historyVisible()).isTrue();
     assertThat(managerView.ratings()).hasSize(2);
     assertThat(managerView.summary().customerAverageRating()).isEqualTo(4.0);
     assertThat(managerView.summary().managerAverageRating()).isEqualTo(5.0);
+    assertThat(managerView.noShowCount()).isEqualTo(1L);
   }
 
   private Inspection completedInspection() {

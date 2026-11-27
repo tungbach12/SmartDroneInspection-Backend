@@ -9,7 +9,8 @@ public record InspectorRatingProfileResponse(
     int size,
     long totalElements,
     int totalPages,
-    boolean historyVisible) {
+    boolean historyVisible,
+    Long noShowCount) {
   public InspectorRatingProfileResponse {
     ratings = ratings == null ? List.of() : List.copyOf(ratings);
   }

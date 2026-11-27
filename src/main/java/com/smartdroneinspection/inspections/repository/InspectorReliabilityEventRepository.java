@@ -15,6 +15,8 @@ public interface InspectorReliabilityEventRepository
   boolean existsByInspectionIdAndInspectorIdAndEventType(
       UUID inspectionId, UUID inspectorId, EventType eventType);
 
+  long countByInspectorIdAndEventType(UUID inspectorId, EventType eventType);
+
   @Query(
       "select e.inspectorId as inspectorId, e.eventType as eventType, count(e) as total "
           + "from InspectorReliabilityEvent e "
