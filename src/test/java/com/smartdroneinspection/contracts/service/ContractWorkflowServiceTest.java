@@ -850,6 +850,19 @@ class ContractWorkflowServiceTest {
         .thenReturn(
             Optional.of(
                 requestWithId(requestId, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 2, 1))));
+    when(users.findActiveUser(orgId))
+        .thenReturn(
+            Optional.of(
+                new UserAccess.ActiveUser(
+                    orgId,
+                    Set.of(Roles.CUSTOMER),
+                    "Customer Demo",
+                    "customer@example.test",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "https://cdn.test/customer.png")));
 
     var result = service.managerFinanceHistory(managerId, 0, 20);
 
@@ -857,6 +870,9 @@ class ContractWorkflowServiceTest {
     assertThat(result.summary().netPlatformInflow()).isEqualByComparingTo("11000000.00");
     assertThat(result.summary().totalCommissionEarned()).isEqualByComparingTo("1500000.00");
     assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().customerName()).isEqualTo("Customer Demo");
+    assertThat(result.customerAvatarUrls())
+        .containsExactlyEntriesOf(Map.of(orgId, "https://cdn.test/customer.png"));
     assertThat(result.content().getFirst().netCommissionAmount())
         .isEqualByComparingTo("1500000.00");
 
@@ -890,6 +906,7 @@ class ContractWorkflowServiceTest {
     assertThat(payoutScopeResult.summary().pendingInspectorPayout())
         .isEqualByComparingTo("15300000.00");
     assertThat(payoutScopeResult.content()).hasSize(2);
+    assertThat(payoutScopeResult.customerAvatarUrls()).isEmpty();
     assertThat(payoutScopeResult.content().get(1).paymentStatus()).isEqualTo("PENDING");
     assertThat(payoutScopeResult.content().get(1).payoutStatus()).isEqualTo("ELIGIBLE");
   }

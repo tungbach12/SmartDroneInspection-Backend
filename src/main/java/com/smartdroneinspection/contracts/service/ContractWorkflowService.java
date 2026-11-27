@@ -2279,7 +2279,8 @@ public class ContractWorkflowService
 
     java.util.Map<UUID, ServiceRequest> requestCache = new java.util.HashMap<>();
     java.util.Map<UUID, String> assetNameCache = new java.util.HashMap<>();
-    java.util.Map<UUID, String> userNameCache = new java.util.HashMap<>();
+    Map<UUID, Optional<UserAccess.ActiveUser>> customerCache = new HashMap<>();
+    Map<UUID, String> inspectorNameCache = new HashMap<>();
 
     List<ManagerFinanceHistoryResponse.ManagerFinanceHistoryItem> content =
         pageResult.getContent().stream()
@@ -2295,20 +2296,16 @@ public class ContractWorkflowService
                               assetId, id -> assets.findById(id).map(Asset::getName).orElse(null))
                           : null;
                   UUID customerId = request != null ? request.getOwnerCustomerId() : null;
-                  String customerName =
+                  UserAccess.ActiveUser customer =
                       customerId != null
-                          ? userNameCache.computeIfAbsent(
-                              customerId,
-                              id ->
-                                  users
-                                      .findActiveUser(id)
-                                      .map(UserAccess.ActiveUser::fullName)
-                                      .orElse(null))
+                          ? customerCache
+                              .computeIfAbsent(customerId, users::findActiveUser)
+                              .orElse(null)
                           : null;
                   UUID inspectorId = occurrence.getInspectorId();
                   String inspectorName =
                       inspectorId != null
-                          ? userNameCache.computeIfAbsent(
+                          ? inspectorNameCache.computeIfAbsent(
                               inspectorId,
                               id ->
                                   users
@@ -2322,14 +2319,23 @@ public class ContractWorkflowService
                       assetId,
                       assetName,
                       customerId,
-                      customerName,
+                      customer != null ? customer.fullName() : null,
                       inspectorId,
                       inspectorName);
                 })
             .toList();
 
+    Map<UUID, String> customerAvatarUrls = new HashMap<>();
+    if (!payoutsScope) {
+      customerCache.forEach(
+          (id, customer) ->
+              customer
+                  .map(UserAccess.ActiveUser::avatarUrl)
+                  .filter(url -> !url.isBlank())
+                  .ifPresent(url -> customerAvatarUrls.put(id, url)));
+    }
     return new ManagerFinanceHistoryResponse(
-        summary, content, pageResult.getTotalElements(), page, size);
+        summary, content, customerAvatarUrls, pageResult.getTotalElements(), page, size);
   }
 
   /** Manager financial breakdown detail for a single revenue-paid or payout-eligible occurrence. */
