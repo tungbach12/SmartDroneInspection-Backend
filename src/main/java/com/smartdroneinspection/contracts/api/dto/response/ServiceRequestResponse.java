@@ -14,6 +14,7 @@ public record ServiceRequestResponse(
     UUID id,
     UUID ownerCustomerId,
     String ownerCustomerName,
+    String ownerCustomerAvatarUrl,
     UUID assetId,
     String assetName,
     String assetCode,
@@ -53,6 +54,7 @@ public record ServiceRequestResponse(
   public static ServiceRequestResponse forAssignmentRegistry(ServiceRequest request) {
     return new ServiceRequestResponse(
         request.getId(),
+        null,
         null,
         null,
         request.getAssetId(),
@@ -106,6 +108,7 @@ public record ServiceRequestResponse(
         null,
         null,
         null,
+        null,
         currentQuote,
         serviceManager,
         occurrences,
@@ -116,6 +119,7 @@ public record ServiceRequestResponse(
   public static ServiceRequestResponse from(
       ServiceRequest request,
       String ownerCustomerName,
+      String ownerCustomerAvatarUrl,
       String assetName,
       String assetCode,
       String assetLocationText,
@@ -128,6 +132,7 @@ public record ServiceRequestResponse(
         request.getId(),
         request.getOwnerCustomerId(),
         ownerCustomerName,
+        ownerCustomerAvatarUrl,
         request.getAssetId(),
         assetName,
         assetCode,

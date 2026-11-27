@@ -529,7 +529,7 @@ public class ContractWorkflowService
     if (actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER) {
       List<ServiceRequest> queue = requests.findManagerQueue(actor.id());
       Map<UUID, Asset> assetById = loadAssetMap(queue);
-      Map<UUID, String> customerNameById = loadCustomerNameMap(queue);
+      Map<UUID, UserAccess.ActiveUser> customersById = loadRequestCustomers(queue);
       return queue.stream()
           .map(
               request ->
@@ -541,7 +541,7 @@ public class ContractWorkflowService
                           actor,
                           request.getAssignedManagerId() != null
                               && request.getAssignedManagerId().equals(actor.id()),
-                          customerNameById.get(request.getOwnerCustomerId()),
+                          customersById.get(request.getOwnerCustomerId()),
                           assetById.get(request.getAssetId()))))
           .toList();
     }
@@ -561,23 +561,16 @@ public class ContractWorkflowService
     ServiceRequest request = requireRequestForActor(actor, requestId);
     boolean isManager = actorPolicy.actorKind(actor.roles()) == Mf2ActorPolicy.ActorKind.MANAGER;
     boolean includeManagerProfile = includeManagerContact && request.getAssignedManagerId() != null;
-    boolean managerOwnsRequest = isManager && request.getAssignedManagerId() != null;
-    // Only the Manager detail needs the customer label for its persistent asset overview, so the
-    // lookup stays off the list path and does not turn it into an N+1 query.
-    String ownerCustomerName =
-        isManager
-            ? users
-                .findActiveUser(request.getOwnerCustomerId())
-                .map(UserAccess.ActiveUser::fullName)
-                .orElse(null)
-            : null;
+    boolean managerOwnsRequest = isManager && actor.id().equals(request.getAssignedManagerId());
+    UserAccess.ActiveUser ownerCustomer =
+        isManager ? users.findActiveUser(request.getOwnerCustomerId()).orElse(null) : null;
     ServiceRequestResponse response =
         toResponse(
             request,
             includeManagerProfile,
             isManager ? actor : null,
             !isManager || managerOwnsRequest,
-            ownerCustomerName);
+            ownerCustomer);
     return isManager ? withAssignmentOptions(actor, response) : response;
   }
 
@@ -610,7 +603,14 @@ public class ContractWorkflowService
     }
     requests.saveAndFlush(request);
     recordManagerAssignmentAudit(manager.id(), request, null, manager.id(), "CLAIMED");
-    return withAssignmentOptions(manager, toResponse(request, false, manager, true));
+    return withAssignmentOptions(
+        manager,
+        toResponse(
+            request,
+            false,
+            manager,
+            true,
+            users.findActiveUser(request.getOwnerCustomerId()).orElse(null)));
   }
 
   @Transactional
@@ -3734,27 +3734,14 @@ public class ContractWorkflowService
       ServiceRequest request,
       boolean includeManagerContact,
       UserAccess.ActiveUser managerActor,
-      boolean includeManagerMessages) {
-    return toResponse(request, includeManagerContact, managerActor, includeManagerMessages, null);
-  }
-
-  private ServiceRequestResponse toResponse(
-      ServiceRequest request,
-      boolean includeManagerContact,
-      UserAccess.ActiveUser managerActor,
       boolean includeManagerMessages,
-      String ownerCustomerName) {
+      UserAccess.ActiveUser ownerCustomer) {
     Asset asset =
         assets != null && request.getAssetId() != null
             ? assets.findById(request.getAssetId()).orElse(null)
             : null;
     return toResponse(
-        request,
-        includeManagerContact,
-        managerActor,
-        includeManagerMessages,
-        ownerCustomerName,
-        asset);
+        request, includeManagerContact, managerActor, includeManagerMessages, ownerCustomer, asset);
   }
 
   private ServiceRequestResponse toResponse(
@@ -3762,7 +3749,7 @@ public class ContractWorkflowService
       boolean includeManagerContact,
       UserAccess.ActiveUser managerActor,
       boolean includeManagerMessages,
-      String ownerCustomerName,
+      UserAccess.ActiveUser ownerCustomer,
       Asset asset) {
     boolean managerHasNotClaimed = managerActor != null && request.getAssignedManagerId() == null;
     ServiceRequestQuoteResponse quote =
@@ -3800,7 +3787,12 @@ public class ContractWorkflowService
     }
     return ServiceRequestResponse.from(
         request,
-        ownerCustomerName,
+        ownerCustomer == null ? null : ownerCustomer.fullName(),
+        ownerCustomer != null
+                && managerActor != null
+                && managerActor.id().equals(request.getAssignedManagerId())
+            ? ownerCustomer.avatarUrl()
+            : null,
         asset != null ? asset.getName() : null,
         asset != null ? asset.getCode() : null,
         asset != null ? asset.getLocationText() : null,
@@ -3835,20 +3827,19 @@ public class ContractWorkflowService
     return map;
   }
 
-  private Map<UUID, String> loadCustomerNameMap(Collection<ServiceRequest> requestList) {
+  private Map<UUID, UserAccess.ActiveUser> loadRequestCustomers(
+      Collection<ServiceRequest> requestList) {
     if (users == null || requestList == null || requestList.isEmpty()) {
       return Map.of();
     }
-    Map<UUID, String> names = new HashMap<>();
+    Map<UUID, UserAccess.ActiveUser> customers = new HashMap<>();
     for (ServiceRequest req : requestList) {
       UUID customerId = req.getOwnerCustomerId();
-      if (customerId != null && !names.containsKey(customerId)) {
-        String fullName =
-            users.findActiveUser(customerId).map(UserAccess.ActiveUser::fullName).orElse(null);
-        names.put(customerId, fullName);
+      if (customerId != null && !customers.containsKey(customerId)) {
+        customers.put(customerId, users.findActiveUser(customerId).orElse(null));
       }
     }
-    return names;
+    return customers;
   }
 
   private Map<UUID, String> loadDroneLabels(List<ServiceRequestOccurrence> requestOccurrences) {
@@ -4038,6 +4029,7 @@ public class ContractWorkflowService
         response.id(),
         response.ownerCustomerId(),
         response.ownerCustomerName(),
+        response.ownerCustomerAvatarUrl(),
         response.assetId(),
         response.assetName(),
         response.assetCode(),
