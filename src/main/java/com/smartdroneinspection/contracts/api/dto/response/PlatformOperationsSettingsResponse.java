@@ -6,17 +6,24 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record PlatformOperationsSettingsResponse(
-    int assignmentAcceptanceTimeoutHours, UUID updatedByUserId, Instant updatedAt) {
+    int assignmentAcceptanceTimeoutHours,
+    int serviceRequestLeadDays,
+    UUID updatedByUserId,
+    Instant updatedAt) {
 
   public static PlatformOperationsSettingsResponse from(PlatformOperationsSettings settings) {
     return new PlatformOperationsSettingsResponse(
         settings.getAssignmentAcceptanceTimeoutHours(),
+        settings.getServiceRequestLeadDays(),
         settings.getUpdatedByUserId(),
         settings.getUpdatedAt());
   }
 
   public static PlatformOperationsSettingsResponse defaults() {
     return new PlatformOperationsSettingsResponse(
-        PlatformOperationsPolicyPort.DEFAULT_ASSIGNMENT_ACCEPTANCE_TIMEOUT_HOURS, null, null);
+        PlatformOperationsPolicyPort.DEFAULT_ASSIGNMENT_ACCEPTANCE_TIMEOUT_HOURS,
+        PlatformOperationsPolicyPort.DEFAULT_SERVICE_REQUEST_LEAD_DAYS,
+        null,
+        null);
   }
 }

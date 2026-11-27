@@ -305,6 +305,60 @@ class ContractWorkflowServiceTest {
   }
 
   @Test
+  void honorsAdminConfiguredServiceRequestLeadDaysPolicy() {
+    com.smartdroneinspection.shared.api.PlatformOperationsPolicyPort policy =
+        mock(com.smartdroneinspection.shared.api.PlatformOperationsPolicyPort.class);
+    when(policy.getServiceRequestLeadDays()).thenReturn(7);
+    service.setOperationsSettings(Optional.of(policy));
+
+    assertThat(service.getSchedulingPolicy(customerId).minimumLeadDays()).isEqualTo(7);
+
+    Asset asset = mock(Asset.class);
+    when(asset.getId()).thenReturn(assetId);
+    when(asset.getName()).thenReturn("Bridge 1");
+    when(asset.getStatus()).thenReturn(AssetStatus.ACTIVE);
+    when(assets.findByIdAndOwnerCustomerId(assetId, orgId)).thenReturn(Optional.of(asset));
+    when(requests.saveAndFlush(any(ServiceRequest.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+    CreateServiceRequest tooSoon =
+        new CreateServiceRequest(
+            assetId,
+            null,
+            today.plusDays(6),
+            null,
+            "Asia/Ho_Chi_Minh",
+            null,
+            null,
+            RequestType.ONE_TIME,
+            null,
+            null,
+            null,
+            null);
+    assertThatThrownBy(() -> service.create(customerId, tooSoon))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("at least 7 days");
+
+    CreateServiceRequest allowed =
+        new CreateServiceRequest(
+            assetId,
+            null,
+            today.plusDays(7),
+            null,
+            "Asia/Ho_Chi_Minh",
+            null,
+            null,
+            RequestType.ONE_TIME,
+            null,
+            null,
+            null,
+            null);
+    var response = service.create(customerId, allowed);
+    assertThat(response.requestedFrom()).isEqualTo(today.plusDays(7));
+  }
+
+  @Test
   void recurringCountRequestDerivesEndDateFromMonthInterval() {
     Asset asset = mock(Asset.class);
     when(asset.getId()).thenReturn(assetId);
