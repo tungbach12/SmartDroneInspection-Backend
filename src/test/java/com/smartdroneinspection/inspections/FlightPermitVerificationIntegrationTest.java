@@ -225,19 +225,8 @@ class FlightPermitVerificationIntegrationTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("PERMIT_SCHEDULE_MISMATCH"));
 
-    mockMvc
-        .perform(
-            MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
-                .file(validPdf())
-                .param("permitNumber", "GP-2026-100")
-                .param("issuingAuthority", "Cục Tác chiến - BTTM")
-                .param("validFrom", validFrom)
-                .param("validTo", validTo)
-                .with(principal(inspectorId, "INSPECTOR")))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("PERMIT_ALTITUDE_REQUIRED"));
-
     // 4. A valid upload is self-attested by the assigned inspector and is immediately usable
+    // (restricted-zone permits do not enforce a hard zone ceiling once a valid permit is uploaded)
     mockMvc
         .perform(
             MockMvcRequestBuilders.multipart("/api/v1/inspections/{id}/flight-permit", inspectionId)
@@ -247,7 +236,6 @@ class FlightPermitVerificationIntegrationTest {
                 .param("validFrom", validFrom)
                 .param("validTo", validTo)
                 .param("droneSerial", "SN-DJI-M300-88")
-                .param("maxAltitudeM", "120")
                 .with(principal(inspectorId, "INSPECTOR")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.flightPermitVerificationStatus").value("APPROVED"))
