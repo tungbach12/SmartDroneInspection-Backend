@@ -4,6 +4,9 @@ package com.smartdroneinspection.shared.api;
 public interface PlatformOperationsPolicyPort {
 
   int DEFAULT_ASSIGNMENT_ACCEPTANCE_TIMEOUT_HOURS = 24;
+  int DEFAULT_SERVICE_REQUEST_LEAD_DAYS = 20;
 
   int getAssignmentAcceptanceTimeoutHours();
+
+  int getServiceRequestLeadDays();
 }
