@@ -83,7 +83,7 @@ public class AirspaceAdvisoryService {
               120,
               "Bộ Tư lệnh TP. Hồ Chí Minh",
               "Nghị định 288/2025/NĐ-CP (Khu vực hạn chế bay đô thị)",
-              "Khu vực cầu Thủ Thiêm, cầu Ba Son và luồng tàu thủy sông Sài Gòn; giới hạn độ cao <= 120m AGL theo giấy phép.",
+              "Khu vực cầu Thủ Thiêm, cầu Ba Son và luồng tàu thủy sông Sài Gòn; yêu cầu giấy phép bay hợp lệ trước khi vận hành.",
               null),
           new AirspaceZoneResponse(
               "VN-RES-SGN-CATLAI-500KV",
