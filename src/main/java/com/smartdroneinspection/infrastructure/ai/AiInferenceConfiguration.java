@@ -1,5 +1,6 @@
 package com.smartdroneinspection.infrastructure.ai;
 
+import com.smartdroneinspection.shared.api.DroneSpecVisionPort;
 import java.net.http.HttpClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -42,6 +43,13 @@ class AiInferenceConfiguration {
   OpenAiCompatibleInferenceClient openAiCompatibleInferenceClient(
       RestClient compatibleVisionRestClient, CompatibleVisionProperties properties) {
     return new OpenAiCompatibleInferenceClient(
+        compatibleVisionRestClient, properties.apiKey(), properties.model(), new ObjectMapper());
+  }
+
+  @Bean
+  DroneSpecVisionPort droneSpecVisionPort(
+      RestClient compatibleVisionRestClient, CompatibleVisionProperties properties) {
+    return new CompatibleVisionDroneSpecExtractor(
         compatibleVisionRestClient, properties.apiKey(), properties.model(), new ObjectMapper());
   }
 
