@@ -313,8 +313,9 @@ class HistoricalCaseApiIntegrationTest {
             .getContentAsString();
     JsonNode englishData = objectMapper.readTree(english).path("data");
     assertThat(englishData.path("note").asString())
-        .contains("high-severity", "Facade crack", "Crack observed near the mid-span.")
+        .contains("High-severity Facade crack", "Crack observed near the mid-span.")
         .contains("TCVN 9343:2012", "within the marked region")
+        .doesNotContain("Inspector's current note:")
         .doesNotContain(findingId.toString());
 
     String vietnamese =
@@ -333,7 +334,8 @@ class HistoricalCaseApiIntegrationTest {
             .getResponse()
             .getContentAsString();
     assertThat(objectMapper.readTree(vietnamese).path("data").path("note").asString())
-        .contains("Lỗi Facade crack", "trong vùng đã đánh dấu", "Tiêu chuẩn TCVN 9343:2012");
+        .contains(
+            "Ghi nhận Facade crack", "trong vùng đã đánh dấu", "Theo tiêu chuẩn TCVN 9343:2012");
   }
 
   @Test
