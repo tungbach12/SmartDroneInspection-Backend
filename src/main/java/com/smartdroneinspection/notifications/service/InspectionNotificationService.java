@@ -409,9 +409,29 @@ public class InspectionNotificationService {
     long epoch =
         submittedAt != null ? submittedAt.getEpochSecond() : Instant.now().getEpochSecond();
     String deduplicationPrefix = "REPORT_SUBMITTED:" + reportVersionId + ":" + epoch;
+    String submitterName =
+        submittedByUserId != null
+            ? userAccess
+                .findActiveUser(submittedByUserId)
+                .map(ActiveUser::fullName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse(null)
+            : null;
     String title = "Report submitted for review";
     String body =
-        "Report version " + versionNo + " for inspection " + inspectionId + " is awaiting review.";
+        submitterName != null
+            ? "Report version "
+                + versionNo
+                + " for inspection "
+                + inspectionId
+                + " was submitted by "
+                + submitterName
+                + " and is awaiting review."
+            : "Report version "
+                + versionNo
+                + " for inspection "
+                + inspectionId
+                + " is awaiting review.";
 
     for (ActiveUser reviewer : activeReviewers()) {
       if (reviewer.id() == null

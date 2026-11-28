@@ -344,11 +344,12 @@ public class ReportService {
     InspectionReport saved = versions.saveAndFlush(version);
     inspection.markUnderReview();
     inspections.saveAndFlush(inspection);
+    publishReportSubmitted(inspectionId, saved, actorId);
     return toResponse(saved, inspection.getInspectorId());
   }
 
   /**
-   * MF3-08 manual authoring. Creates an auto-generated structured draft from existing data under
+   * MF3-08 manual authoring. Creates an auto-generated structured report from existing data under
    * the same review gates.
    */
   @Transactional
@@ -378,6 +379,7 @@ public class ReportService {
     InspectionReport saved = versions.saveAndFlush(version);
     inspection.markUnderReview();
     inspections.saveAndFlush(inspection);
+    publishReportSubmitted(inspectionId, saved, actorId);
     return toResponse(saved, inspection.getInspectorId());
   }
 
@@ -432,6 +434,11 @@ public class ReportService {
       throw new BusinessException(HttpStatus.CONFLICT, "REPORT_STATE_CONFLICT", ex.getMessage());
     }
     InspectionReport saved = versions.saveAndFlush(version);
+    publishReportSubmitted(inspectionId, saved, actorId);
+    return toResponse(saved, inspection.getInspectorId());
+  }
+
+  private void publishReportSubmitted(UUID inspectionId, InspectionReport saved, UUID actorId) {
     events.publishEvent(
         new ReportSubmittedEvent(
             inspectionId,
@@ -439,7 +446,6 @@ public class ReportService {
             saved.getVersionNo(),
             actorId,
             saved.getSubmittedAt() != null ? saved.getSubmittedAt() : java.time.Instant.now()));
-    return toResponse(saved, inspection.getInspectorId());
   }
 
   /** A draft created before the latest findings confirmation is stale. */

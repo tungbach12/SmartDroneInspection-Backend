@@ -176,6 +176,41 @@ class ReportServiceReviewerScopeTest {
   }
 
   @Test
+  @DisplayName("Compiling and submitting a fresh report publishes a REPORT_SUBMITTED event")
+  void generateDraftPublishesReportSubmittedEvent() {
+    Inspection inspection =
+        new Inspection(orgId, UUID.randomUUID(), inspectorId, UUID.randomUUID(), null, null);
+    ReflectionTestUtils.setField(inspection, "id", inspectionId);
+    ReflectionTestUtils.setField(inspection, "status", InspectionStatus.FIELD_COMPLETED);
+    ReflectionTestUtils.setField(inspection, "findingsConfirmedAt", java.time.Instant.now());
+
+    when(evidenceService.requireAssignedInspection(inspectorId, inspectionId))
+        .thenReturn(inspection);
+    when(evidence.existsByInspectionIdAndIsDeletedFalse(inspectionId)).thenReturn(true);
+    when(versions.findFirstByInspectionIdOrderByVersionNoDesc(inspectionId))
+        .thenReturn(Optional.empty());
+    when(versions.saveAndFlush(org.mockito.ArgumentMatchers.any(InspectionReport.class)))
+        .thenAnswer(
+            inv -> {
+              InspectionReport saved = inv.getArgument(0);
+              ReflectionTestUtils.setField(saved, "id", versionId);
+              return saved;
+            });
+
+    reportService.generateDraft(inspectorId, inspectionId, java.util.Locale.ENGLISH, "Compiled");
+
+    ArgumentCaptor<ReportSubmittedEvent> eventCaptor =
+        ArgumentCaptor.forClass(ReportSubmittedEvent.class);
+    verify(events).publishEvent(eventCaptor.capture());
+    ReportSubmittedEvent event = eventCaptor.getValue();
+    assertThat(event.inspectionId()).isEqualTo(inspectionId);
+    assertThat(event.reportVersionId()).isEqualTo(versionId);
+    assertThat(event.versionNo()).isEqualTo(1);
+    assertThat(event.submittedByUserId()).isEqualTo(inspectorId);
+    assertThat(event.submittedAt()).isNotNull();
+  }
+
+  @Test
   @DisplayName("Returning a report publishes a REPORT_RETURNED event for the author")
   void reviewerReturnPublishesReportReturnedEvent() {
     UserAccess.ActiveUser manager =
