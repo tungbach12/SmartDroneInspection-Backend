@@ -1,4 +1,8 @@
-# GitHub Copilot Instructions for Clean Architecture Template
+# GitHub Copilot Instructions
+
+For the active Java backend, follow `AGENTS.md`. Create or update documentation only when the user explicitly requests it. Consult or cite documents only when the task needs them.
+
+The template notes below apply to the archived .NET backend.
 
 ## Project Overview
 This is a **Clean Architecture template** for .NET 9 that demonstrates Domain-Driven Design (DDD) patterns. It's a starter template, not a reference application - delete sample code once you understand the patterns.

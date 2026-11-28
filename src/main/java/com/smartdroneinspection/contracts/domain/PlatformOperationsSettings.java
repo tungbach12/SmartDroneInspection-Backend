@@ -18,6 +18,8 @@ public class PlatformOperationsSettings {
   public static final int MAX_TIMEOUT_HOURS = 720;
   public static final int MIN_SERVICE_REQUEST_LEAD_DAYS = 0;
   public static final int MAX_SERVICE_REQUEST_LEAD_DAYS = 365;
+  public static final int MIN_API_TIMEOUT_SECONDS = 10;
+  public static final int MAX_API_TIMEOUT_SECONDS = 600;
 
   @Id @GeneratedValue private UUID id;
 
@@ -28,6 +30,10 @@ public class PlatformOperationsSettings {
   @Column(name = "service_request_lead_days", nullable = false)
   private int serviceRequestLeadDays =
       PlatformOperationsPolicyPort.DEFAULT_SERVICE_REQUEST_LEAD_DAYS;
+
+  @Column(name = "api_request_timeout_seconds", nullable = false)
+  private int apiRequestTimeoutSeconds =
+      PlatformOperationsPolicyPort.DEFAULT_API_REQUEST_TIMEOUT_SECONDS;
 
   @Column(name = "updated_by_user_id")
   private UUID updatedByUserId;
@@ -46,15 +52,47 @@ public class PlatformOperationsSettings {
 
   public PlatformOperationsSettings(
       int assignmentAcceptanceTimeoutHours, int serviceRequestLeadDays, UUID updatedByUserId) {
-    updateSettings(assignmentAcceptanceTimeoutHours, serviceRequestLeadDays, updatedByUserId);
+    this(
+        assignmentAcceptanceTimeoutHours,
+        serviceRequestLeadDays,
+        PlatformOperationsPolicyPort.DEFAULT_API_REQUEST_TIMEOUT_SECONDS,
+        updatedByUserId);
+  }
+
+  public PlatformOperationsSettings(
+      int assignmentAcceptanceTimeoutHours,
+      int serviceRequestLeadDays,
+      int apiRequestTimeoutSeconds,
+      UUID updatedByUserId) {
+    updateSettings(
+        assignmentAcceptanceTimeoutHours,
+        serviceRequestLeadDays,
+        apiRequestTimeoutSeconds,
+        updatedByUserId);
   }
 
   public void updateTimeoutHours(int assignmentAcceptanceTimeoutHours, UUID updatedByUserId) {
-    updateSettings(assignmentAcceptanceTimeoutHours, this.serviceRequestLeadDays, updatedByUserId);
+    updateSettings(
+        assignmentAcceptanceTimeoutHours,
+        this.serviceRequestLeadDays,
+        this.apiRequestTimeoutSeconds,
+        updatedByUserId);
   }
 
   public void updateSettings(
       int assignmentAcceptanceTimeoutHours, int serviceRequestLeadDays, UUID updatedByUserId) {
+    updateSettings(
+        assignmentAcceptanceTimeoutHours,
+        serviceRequestLeadDays,
+        this.apiRequestTimeoutSeconds,
+        updatedByUserId);
+  }
+
+  public void updateSettings(
+      int assignmentAcceptanceTimeoutHours,
+      int serviceRequestLeadDays,
+      int apiRequestTimeoutSeconds,
+      UUID updatedByUserId) {
     if (assignmentAcceptanceTimeoutHours < MIN_TIMEOUT_HOURS
         || assignmentAcceptanceTimeoutHours > MAX_TIMEOUT_HOURS) {
       throw new IllegalArgumentException(
@@ -73,8 +111,18 @@ public class PlatformOperationsSettings {
               + MAX_SERVICE_REQUEST_LEAD_DAYS
               + " days");
     }
+    if (apiRequestTimeoutSeconds < MIN_API_TIMEOUT_SECONDS
+        || apiRequestTimeoutSeconds > MAX_API_TIMEOUT_SECONDS) {
+      throw new IllegalArgumentException(
+          "API request timeout must be between "
+              + MIN_API_TIMEOUT_SECONDS
+              + " and "
+              + MAX_API_TIMEOUT_SECONDS
+              + " seconds");
+    }
     this.assignmentAcceptanceTimeoutHours = assignmentAcceptanceTimeoutHours;
     this.serviceRequestLeadDays = serviceRequestLeadDays;
+    this.apiRequestTimeoutSeconds = apiRequestTimeoutSeconds;
     this.updatedByUserId = updatedByUserId;
     this.updatedAt = Instant.now();
   }
@@ -89,6 +137,10 @@ public class PlatformOperationsSettings {
 
   public int getServiceRequestLeadDays() {
     return serviceRequestLeadDays;
+  }
+
+  public int getApiRequestTimeoutSeconds() {
+    return apiRequestTimeoutSeconds;
   }
 
   public UUID getUpdatedByUserId() {

@@ -2,6 +2,10 @@
 
 Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, PostgreSQL (pgvector) + MinIO via docker-compose.
 
+## Documentation scope
+
+Create or update documentation only when the user explicitly requests it. Consult or cite documents only when they help complete or verify the task. Use the current code, API contracts, and tests when they provide the needed evidence.
+
 ## Commands
 
 - `docker compose up -d` - start postgres + MinIO (required before run/tests)

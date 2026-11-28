@@ -7,17 +7,20 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record ManagerFinanceHistoryResponse(
     ManagerFinanceSummary summary,
     List<ManagerFinanceHistoryItem> content,
+    Map<UUID, String> customerAvatarUrls,
     long totalElements,
     int page,
     int size) {
 
   public ManagerFinanceHistoryResponse {
     content = content == null ? List.of() : List.copyOf(content);
+    customerAvatarUrls = Map.copyOf(customerAvatarUrls);
   }
 
   public record ManagerFinanceSummary(
