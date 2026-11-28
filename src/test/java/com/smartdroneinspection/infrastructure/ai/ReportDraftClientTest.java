@@ -258,6 +258,62 @@ class ReportDraftClientTest {
   }
 
   @Test
+  void summarizeReportStripsNoisyNoteArtifactsFromPromptAndNormalizesListPrefixes()
+      throws Exception {
+    String aiSummaryReply =
+        """
+        {"summary":"Visual inspection of Highlands Building recorded 1 finding.",\
+        "keyHighlights":["- Surface Crack (x1 · F-1) [MEDIUM]: Hairline fracture observed."],\
+        "recommendedActions":"1. Surface Crack (F-1): Seal via low-pressure epoxy.\\n- Follow-up: Re-check in 90 days.",\
+        "overallRisk":"medium"}""";
+    AtomicReference<String> requestBody = new AtomicReference<>();
+    startServer(
+        exchange -> {
+          requestBody.set(
+              new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+          respond(exchange, 200, chatCompletionBody(aiSummaryReply));
+        });
+
+    DraftContext noisyContext =
+        new DraftContext(
+            new InspectionSummary(
+                List.of("Facade zone"),
+                "permit-1.pdf",
+                null,
+                null,
+                null,
+                "INITIAL",
+                "Highlands Building"),
+            List.of(
+                new FindingSummary(
+                    "abscission",
+                    "MEDIUM",
+                    "Surface spalling observed. Inspector's current note: abscission. Reference EN 1504-9 advises define repair; a comparable case recorded published.",
+                    "F-1",
+                    "0.83")),
+            context().evidence(),
+            context().candidates(),
+            context().fieldSessions(),
+            Locale.ENGLISH);
+
+    ReportDraftPort.AiSummary summary = client("key", "model").summarizeReport(noisyContext);
+
+    assertThat(requestBody.get())
+        .contains("Highlands Building")
+        .contains("Code: F-1")
+        .contains("AI confidence: 83%")
+        .doesNotContain("Inspector's current note: abscission")
+        .doesNotContain("Reference EN 1504-9 advises")
+        .doesNotContain("comparable case recorded published.");
+    assertThat(summary.overallRisk()).isEqualTo("MEDIUM");
+    assertThat(summary.keyHighlights())
+        .containsExactly("Surface Crack (x1 · F-1) [MEDIUM]: Hairline fracture observed.");
+    assertThat(summary.recommendedActions())
+        .isEqualTo(
+            "Surface Crack (F-1): Seal via low-pressure epoxy.\nFollow-up: Re-check in 90 days.");
+  }
+
+  @Test
   void summarizeReportThrowsIOExceptionOnHttpErrorOrMalformedJson() throws Exception {
     startServer(exchange -> respond(exchange, 500, "Internal Server Error"));
     ReportDraftClient client = client("key", "model");

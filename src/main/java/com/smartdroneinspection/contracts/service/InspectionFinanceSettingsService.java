@@ -45,12 +45,24 @@ public class InspectionFinanceSettingsService {
   @Transactional
   public InspectionFinanceSettingsResponse updateSettings(
       UUID actorId, BigDecimal commissionRate, BigDecimal vatRate, BigDecimal tncnRate) {
+    return updateSettings(actorId, commissionRate, vatRate, tncnRate, null);
+  }
+
+  @Transactional
+  public InspectionFinanceSettingsResponse updateSettings(
+      UUID actorId,
+      BigDecimal commissionRate,
+      BigDecimal vatRate,
+      BigDecimal tncnRate,
+      BigDecimal tncnThresholdAmount) {
     requireAdmin(actorId);
     InspectionFinanceSettings settings = repository.findCurrentSettings().orElse(null);
     if (settings == null) {
-      settings = new InspectionFinanceSettings(commissionRate, vatRate, tncnRate, actorId);
+      settings =
+          new InspectionFinanceSettings(
+              commissionRate, vatRate, tncnRate, tncnThresholdAmount, actorId);
     } else {
-      settings.updateRates(commissionRate, vatRate, tncnRate, actorId);
+      settings.updateRates(commissionRate, vatRate, tncnRate, tncnThresholdAmount, actorId);
     }
     return InspectionFinanceSettingsResponse.from(repository.saveAndFlush(settings));
   }

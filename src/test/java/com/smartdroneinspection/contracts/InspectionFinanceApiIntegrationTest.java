@@ -233,12 +233,21 @@ class InspectionFinanceApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("commissionRate", 15.00, "vatRate", 10.00, "tncnRate", 10.00))))
+                        Map.of(
+                            "commissionRate",
+                            15.00,
+                            "vatRate",
+                            10.00,
+                            "tncnRate",
+                            10.00,
+                            "tncnThresholdAmount",
+                            2000000.00))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.configured").value(true))
         .andExpect(jsonPath("$.data.commissionRate").value(15.00))
         .andExpect(jsonPath("$.data.vatRate").value(10.00))
         .andExpect(jsonPath("$.data.tncnRate").value(10.00))
+        .andExpect(jsonPath("$.data.tncnThresholdAmount").value(2000000.00))
         .andExpect(jsonPath("$.data.accountingDisclaimer").isNotEmpty());
 
     // -------------------------------------------------------------------------

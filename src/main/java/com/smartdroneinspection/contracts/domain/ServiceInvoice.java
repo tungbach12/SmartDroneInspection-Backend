@@ -40,6 +40,9 @@ public class ServiceInvoice {
   @Column(name = "tncn_rate", precision = 5, scale = 2)
   private BigDecimal tncnRate;
 
+  @Column(name = "tncn_threshold_amount", precision = 15, scale = 2)
+  private BigDecimal tncnThresholdAmount;
+
   @Column(name = "report_accepted_at")
   private Instant reportAcceptedAt;
 
@@ -61,6 +64,15 @@ public class ServiceInvoice {
 
   void snapshotFinance(
       BigDecimal totalPrice, BigDecimal vatRate, BigDecimal commissionRate, BigDecimal tncnRate) {
+    snapshotFinance(totalPrice, vatRate, commissionRate, tncnRate, null);
+  }
+
+  void snapshotFinance(
+      BigDecimal totalPrice,
+      BigDecimal vatRate,
+      BigDecimal commissionRate,
+      BigDecimal tncnRate,
+      BigDecimal tncnThresholdAmount) {
     if (this.totalPrice != null) {
       return;
     }
@@ -68,6 +80,7 @@ public class ServiceInvoice {
     this.vatRate = vatRate;
     this.commissionRate = commissionRate;
     this.tncnRate = tncnRate;
+    this.tncnThresholdAmount = tncnThresholdAmount;
     this.updatedAt = Instant.now();
   }
 
@@ -86,7 +99,8 @@ public class ServiceInvoice {
         || tncnRate == null) {
       return null;
     }
-    return InspectionFinanceCalculator.calculate(totalPrice, vatRate, commissionRate, tncnRate);
+    return InspectionFinanceCalculator.calculate(
+        totalPrice, vatRate, commissionRate, tncnRate, tncnThresholdAmount);
   }
 
   public UUID getOccurrenceId() {
@@ -127,6 +141,10 @@ public class ServiceInvoice {
 
   public BigDecimal getTncnRate() {
     return tncnRate;
+  }
+
+  public BigDecimal getTncnThresholdAmount() {
+    return tncnThresholdAmount;
   }
 
   public BigDecimal getTncnAmount() {

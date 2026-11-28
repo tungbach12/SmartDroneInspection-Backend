@@ -25,12 +25,25 @@ public final class InspectionFinanceCalculator {
       BigDecimal vatRatePercent,
       BigDecimal commissionRatePercent,
       BigDecimal tncnRatePercent) {
+    return calculate(
+        totalPriceInclusiveVat, vatRatePercent, commissionRatePercent, tncnRatePercent, null);
+  }
+
+  public static FinanceCalculation calculate(
+      BigDecimal totalPriceInclusiveVat,
+      BigDecimal vatRatePercent,
+      BigDecimal commissionRatePercent,
+      BigDecimal tncnRatePercent,
+      BigDecimal tncnThresholdAmount) {
     if (totalPriceInclusiveVat == null || totalPriceInclusiveVat.signum() <= 0) {
       throw new IllegalArgumentException("Total price must be positive");
     }
     if (vatRatePercent == null || commissionRatePercent == null || tncnRatePercent == null) {
       throw new IllegalArgumentException(
           "All settlement rates (VAT, commission, TNCN) are required");
+    }
+    if (tncnThresholdAmount != null && tncnThresholdAmount.compareTo(BigDecimal.ZERO) < 0) {
+      throw new IllegalArgumentException("TNCN threshold amount must not be negative");
     }
 
     BigDecimal vatRatio = vatRatePercent.divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP);
@@ -52,9 +65,19 @@ public final class InspectionFinanceCalculator {
     // MVP tax base: Inspector gross compensation after platform commission and before TNCN
     BigDecimal inspectorGrossPayout = serviceBaseAmount.subtract(commissionAmount);
 
-    // TNCN (PIT) withholding calculated against Inspector gross compensation
+    BigDecimal normalizedThreshold =
+        tncnThresholdAmount == null || tncnThresholdAmount.signum() <= 0
+            ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+            : tncnThresholdAmount.setScale(2, RoundingMode.HALF_UP);
+    boolean shouldWithholdTncn =
+        normalizedThreshold.signum() == 0
+            || inspectorGrossPayout.compareTo(normalizedThreshold) >= 0;
+
+    // TNCN (PIT) withholding calculated against Inspector gross compensation when >= threshold
     BigDecimal tncnAmount =
-        inspectorGrossPayout.multiply(tncnRatio).setScale(2, RoundingMode.HALF_UP);
+        shouldWithholdTncn
+            ? inspectorGrossPayout.multiply(tncnRatio).setScale(2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
     // Inspector Net Payout = gross payout minus TNCN withheld
     BigDecimal inspectorNetPayout = inspectorGrossPayout.subtract(tncnAmount);
@@ -69,7 +92,8 @@ public final class InspectionFinanceCalculator {
         inspectorGrossPayout,
         tncnRatePercent.setScale(2, RoundingMode.HALF_UP),
         tncnAmount,
-        inspectorNetPayout);
+        inspectorNetPayout,
+        normalizedThreshold);
   }
 
   public record FinanceCalculation(
@@ -82,5 +106,32 @@ public final class InspectionFinanceCalculator {
       BigDecimal inspectorGrossPayout,
       BigDecimal tncnRate,
       BigDecimal tncnAmount,
-      BigDecimal inspectorNetPayout) {}
+      BigDecimal inspectorNetPayout,
+      BigDecimal tncnThresholdAmount) {
+
+    public FinanceCalculation(
+        BigDecimal totalPrice,
+        BigDecimal serviceBaseAmount,
+        BigDecimal vatRate,
+        BigDecimal vatAmount,
+        BigDecimal commissionRate,
+        BigDecimal commissionAmount,
+        BigDecimal inspectorGrossPayout,
+        BigDecimal tncnRate,
+        BigDecimal tncnAmount,
+        BigDecimal inspectorNetPayout) {
+      this(
+          totalPrice,
+          serviceBaseAmount,
+          vatRate,
+          vatAmount,
+          commissionRate,
+          commissionAmount,
+          inspectorGrossPayout,
+          tncnRate,
+          tncnAmount,
+          inspectorNetPayout,
+          BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+    }
+  }
 }

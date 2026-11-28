@@ -66,7 +66,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -1012,16 +1014,48 @@ public class InspectionController {
     return paymentDocumentService.render(actorId(jwt), inspectionId);
   }
 
+  @GetMapping("/report/ai-summary")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
+  public ApiResponse<ReportAiSummaryResponse> getPreviewAiSummary(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(defaultValue = "false") boolean regenerate,
+      HttpServletRequest request) {
+    boolean inspectorCaller = isInspectorCaller();
+    if (regenerate && !inspectorCaller) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the assigned Inspector can regenerate the AI summary");
+    }
+    return ApiResponse.success(
+        reportService.getOrGeneratePreviewAiSummary(
+            actorId(jwt), inspectionId, RequestLocale.from(request), regenerate, inspectorCaller));
+  }
+
   @GetMapping("/report/versions/{versionId}/ai-summary")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<ReportAiSummaryResponse> getAiSummary(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
+      @RequestParam(defaultValue = "false") boolean regenerate,
       HttpServletRequest request) {
+    boolean inspectorCaller = isInspectorCaller();
+    if (regenerate && !inspectorCaller) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the assigned Inspector can regenerate the AI summary");
+    }
     return ApiResponse.success(
         reportService.getOrGenerateAiSummary(
-            actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
+            actorId(jwt),
+            inspectionId,
+            versionId,
+            RequestLocale.from(request),
+            regenerate,
+            inspectorCaller));
   }
 
   @GetMapping("/report/versions/{versionId}/preview")
@@ -1244,6 +1278,15 @@ public class InspectionController {
                     "Re-inspection verification service is unavailable"));
     return ApiResponse.success(
         service.updateVerification(actorId(jwt), inspectionId, verificationId, request));
+  }
+
+  private static boolean isInspectorCaller() {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication == null) {
+      return false;
+    }
+    return authentication.getAuthorities().stream()
+        .anyMatch(authority -> "ROLE_INSPECTOR".equals(authority.getAuthority()));
   }
 
   private static UUID actorId(Jwt jwt) {

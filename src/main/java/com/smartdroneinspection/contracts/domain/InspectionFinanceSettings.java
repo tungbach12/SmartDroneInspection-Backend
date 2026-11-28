@@ -31,6 +31,8 @@ import java.util.UUID;
 @Table(name = "inspection_finance_settings")
 public class InspectionFinanceSettings {
 
+  public static final BigDecimal DEFAULT_TNCN_THRESHOLD_AMOUNT = new BigDecimal("2000000.00");
+
   @Id @GeneratedValue private UUID id;
 
   @Column(name = "commission_rate", precision = 5, scale = 2)
@@ -42,6 +44,9 @@ public class InspectionFinanceSettings {
   @Column(name = "tncn_rate", precision = 5, scale = 2)
   private BigDecimal tncnRate;
 
+  @Column(name = "tncn_threshold_amount", nullable = false, precision = 15, scale = 2)
+  private BigDecimal tncnThresholdAmount = DEFAULT_TNCN_THRESHOLD_AMOUNT;
+
   @Column(name = "updated_by_user_id")
   private UUID updatedByUserId;
 
@@ -52,23 +57,54 @@ public class InspectionFinanceSettings {
 
   public InspectionFinanceSettings(
       BigDecimal commissionRate, BigDecimal vatRate, BigDecimal tncnRate, UUID updatedByUserId) {
-    updateRates(commissionRate, vatRate, tncnRate, updatedByUserId);
+    this(commissionRate, vatRate, tncnRate, DEFAULT_TNCN_THRESHOLD_AMOUNT, updatedByUserId);
+  }
+
+  public InspectionFinanceSettings(
+      BigDecimal commissionRate,
+      BigDecimal vatRate,
+      BigDecimal tncnRate,
+      BigDecimal tncnThresholdAmount,
+      UUID updatedByUserId) {
+    updateRates(commissionRate, vatRate, tncnRate, tncnThresholdAmount, updatedByUserId);
   }
 
   public void updateRates(
       BigDecimal commissionRate, BigDecimal vatRate, BigDecimal tncnRate, UUID updatedByUserId) {
+    updateRates(commissionRate, vatRate, tncnRate, null, updatedByUserId);
+  }
+
+  public void updateRates(
+      BigDecimal commissionRate,
+      BigDecimal vatRate,
+      BigDecimal tncnRate,
+      BigDecimal tncnThresholdAmount,
+      UUID updatedByUserId) {
     validateRate("commissionRate", commissionRate);
     validateRate("vatRate", vatRate);
     validateRate("tncnRate", tncnRate);
+    BigDecimal resolvedThreshold =
+        tncnThresholdAmount != null
+            ? tncnThresholdAmount
+            : (this.tncnThresholdAmount != null
+                ? this.tncnThresholdAmount
+                : DEFAULT_TNCN_THRESHOLD_AMOUNT);
+    if (resolvedThreshold.compareTo(BigDecimal.ZERO) < 0) {
+      throw new IllegalArgumentException("tncnThresholdAmount must be greater than or equal to 0");
+    }
     this.commissionRate = commissionRate.setScale(2, java.math.RoundingMode.HALF_UP);
     this.vatRate = vatRate.setScale(2, java.math.RoundingMode.HALF_UP);
     this.tncnRate = tncnRate.setScale(2, java.math.RoundingMode.HALF_UP);
+    this.tncnThresholdAmount = resolvedThreshold.setScale(2, java.math.RoundingMode.HALF_UP);
     this.updatedByUserId = updatedByUserId;
     this.updatedAt = Instant.now();
   }
 
   public boolean isFullyConfigured() {
-    return commissionRate != null && vatRate != null && tncnRate != null;
+    return commissionRate != null
+        && vatRate != null
+        && tncnRate != null
+        && tncnThresholdAmount != null;
   }
 
   private static void validateRate(String name, BigDecimal rate) {
@@ -94,6 +130,10 @@ public class InspectionFinanceSettings {
 
   public BigDecimal getTncnRate() {
     return tncnRate;
+  }
+
+  public BigDecimal getTncnThresholdAmount() {
+    return tncnThresholdAmount;
   }
 
   public UUID getUpdatedByUserId() {

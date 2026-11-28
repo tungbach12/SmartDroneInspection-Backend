@@ -130,7 +130,8 @@ public interface ReportDraftPort {
       String plannedStartAt,
       String plannedEndAt,
       String assignedDroneId,
-      String inspectionType) {
+      String inspectionType,
+      String assetName) {
 
     public InspectionSummary(
         List<String> inspectionItems,
@@ -144,7 +145,25 @@ public interface ReportDraftPort {
           plannedStartAt,
           plannedEndAt,
           assignedDroneId,
-          "INITIAL");
+          "INITIAL",
+          null);
+    }
+
+    public InspectionSummary(
+        List<String> inspectionItems,
+        String flightPermitFileName,
+        String plannedStartAt,
+        String plannedEndAt,
+        String assignedDroneId,
+        String inspectionType) {
+      this(
+          inspectionItems,
+          flightPermitFileName,
+          plannedStartAt,
+          plannedEndAt,
+          assignedDroneId,
+          inspectionType,
+          null);
     }
 
     public InspectionSummary {
@@ -152,7 +171,17 @@ public interface ReportDraftPort {
     }
   }
 
-  record FindingSummary(String defectLabel, String severity, String technicalNotes) {}
+  record FindingSummary(
+      String defectLabel,
+      String severity,
+      String technicalNotes,
+      String findingCode,
+      String confidence) {
+
+    public FindingSummary(String defectLabel, String severity, String technicalNotes) {
+      this(defectLabel, severity, technicalNotes, null, null);
+    }
+  }
 
   record EvidenceSummary(
       String fileName,

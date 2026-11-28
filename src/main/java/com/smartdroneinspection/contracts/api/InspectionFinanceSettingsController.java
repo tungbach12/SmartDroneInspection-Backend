@@ -39,7 +39,11 @@ public class InspectionFinanceSettingsController {
       @Valid @RequestBody UpdateInspectionFinanceSettingsRequest request) {
     return ApiResponse.success(
         financeSettings.updateSettings(
-            actorId(jwt), request.commissionRate(), request.vatRate(), request.tncnRate()));
+            actorId(jwt),
+            request.commissionRate(),
+            request.vatRate(),
+            request.tncnRate(),
+            request.tncnThresholdAmount()));
   }
 
   private static UUID actorId(Jwt jwt) {

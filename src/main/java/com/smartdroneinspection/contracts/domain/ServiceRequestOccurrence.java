@@ -111,6 +111,16 @@ public class ServiceRequestOccurrence {
   }
 
   public void snapshotFinance(
+      BigDecimal totalPrice,
+      BigDecimal vatRate,
+      BigDecimal commissionRate,
+      BigDecimal tncnRate,
+      BigDecimal tncnThresholdAmount) {
+    invoice.snapshotFinance(totalPrice, vatRate, commissionRate, tncnRate, tncnThresholdAmount);
+    this.updatedAt = Instant.now();
+  }
+
+  public void snapshotFinance(
       String currency,
       BigDecimal totalPrice,
       BigDecimal serviceBaseAmount,
@@ -878,6 +888,10 @@ public class ServiceRequestOccurrence {
 
   public BigDecimal getTncnRate() {
     return invoice.getTncnRate();
+  }
+
+  public BigDecimal getTncnThresholdAmount() {
+    return invoice.getTncnThresholdAmount();
   }
 
   public BigDecimal getTncnAmount() {

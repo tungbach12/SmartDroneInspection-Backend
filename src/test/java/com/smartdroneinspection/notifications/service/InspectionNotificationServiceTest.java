@@ -275,6 +275,10 @@ class InspectionNotificationServiceTest {
         .thenReturn(java.util.List.of(new ActiveUser(managerId, Set.of("MANAGER"), "Manager")));
     when(userAccess.listActiveAdmins())
         .thenReturn(java.util.List.of(new ActiveUser(adminId, Set.of("ADMIN"), "Admin")));
+    when(userAccess.findActiveUser(inspectorId))
+        .thenReturn(
+            java.util.Optional.of(
+                new ActiveUser(inspectorId, Set.of("INSPECTOR"), "Pham Van Bay")));
 
     service.recordReportSubmitted(inspectionId, reportVersionId, 2, inspectorId, submittedAt);
 
@@ -288,7 +292,7 @@ class InspectionNotificationServiceTest {
             notification -> {
               assertThat(notification.getEventType()).isEqualTo("REPORT_SUBMITTED");
               assertThat(notification.getBody())
-                  .contains("Report version 2", inspectionId.toString());
+                  .contains("Report version 2", inspectionId.toString(), "Pham Van Bay");
               assertThat(notification.getDeduplicationKey())
                   .startsWith("REPORT_SUBMITTED:" + reportVersionId + ":");
             });

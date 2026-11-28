@@ -103,4 +103,31 @@ class InspectionFinanceCalculatorTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("All settlement rates");
   }
+
+  @Test
+  @DisplayName("Waives TNCN withholding when inspector gross payout is below configured threshold")
+  void waivesTncnBelowConfiguredThreshold() {
+    // Customer pays 1,200,000 VND (base = 1,090,909.09, 15% comm = 163,636.36, gross = 927,272.73)
+    BigDecimal totalPrice = new BigDecimal("1200000.00");
+    BigDecimal vatRate = new BigDecimal("10.00");
+    BigDecimal commissionRate = new BigDecimal("15.00");
+    BigDecimal tncnRate = new BigDecimal("10.00");
+
+    var belowThreshold =
+        InspectionFinanceCalculator.calculate(
+            totalPrice, vatRate, commissionRate, tncnRate, new BigDecimal("2000000.00"));
+    assertThat(belowThreshold.tncnAmount()).isEqualByComparingTo("0.00");
+    assertThat(belowThreshold.inspectorNetPayout())
+        .isEqualByComparingTo(belowThreshold.inspectorGrossPayout());
+    assertThat(belowThreshold.tncnThresholdAmount()).isEqualByComparingTo("2000000.00");
+
+    // Threshold 0 disables the exemption and withholds TNCN regardless of payout size
+    var noThreshold =
+        InspectionFinanceCalculator.calculate(
+            totalPrice, vatRate, commissionRate, tncnRate, BigDecimal.ZERO);
+    assertThat(noThreshold.tncnAmount()).isEqualByComparingTo("92727.27");
+    assertThat(noThreshold.inspectorNetPayout())
+        .isEqualByComparingTo(
+            noThreshold.inspectorGrossPayout().subtract(noThreshold.tncnAmount()));
+  }
 }

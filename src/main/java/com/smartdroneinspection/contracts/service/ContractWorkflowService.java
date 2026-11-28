@@ -1574,7 +1574,11 @@ public class ContractWorkflowService
                 if (currentSettings.isPresent() && currentSettings.get().isFullyConfigured()) {
                   InspectionFinanceSettings s = currentSettings.get();
                   occurrence.snapshotFinance(
-                      price, s.getVatRate(), s.getCommissionRate(), s.getTncnRate());
+                      price,
+                      s.getVatRate(),
+                      s.getCommissionRate(),
+                      s.getTncnRate(),
+                      s.getTncnThresholdAmount());
                 } else {
                   occurrence.snapshotFinance(price, null, null, null);
                 }
@@ -3255,6 +3259,7 @@ public class ContractWorkflowService
     java.math.BigDecimal commAmount = occurrence.getCommissionAmount();
     java.math.BigDecimal grossPayout = occurrence.getInspectorGrossPayout();
     java.math.BigDecimal tncnRate = occurrence.getTncnRate();
+    java.math.BigDecimal tncnThresholdAmount = occurrence.getTncnThresholdAmount();
     java.math.BigDecimal tncnAmount = occurrence.getTncnAmount();
     java.math.BigDecimal netPayout = occurrence.getInspectorNetPayout();
 
@@ -3267,7 +3272,11 @@ public class ContractWorkflowService
         InspectionFinanceSettings s = current.get();
         InspectionFinanceCalculator.FinanceCalculation calc =
             InspectionFinanceCalculator.calculate(
-                occurrence.getTotalPrice(), s.getVatRate(), s.getCommissionRate(), s.getTncnRate());
+                occurrence.getTotalPrice(),
+                s.getVatRate(),
+                s.getCommissionRate(),
+                s.getTncnRate(),
+                s.getTncnThresholdAmount());
         serviceBase = calc.serviceBaseAmount();
         vatRate = calc.vatRate();
         vatAmount = calc.vatAmount();
@@ -3275,6 +3284,7 @@ public class ContractWorkflowService
         commAmount = calc.commissionAmount();
         grossPayout = calc.inspectorGrossPayout();
         tncnRate = calc.tncnRate();
+        tncnThresholdAmount = calc.tncnThresholdAmount();
         tncnAmount = calc.tncnAmount();
         netPayout = calc.inspectorNetPayout();
       }
@@ -3305,7 +3315,8 @@ public class ContractWorkflowService
         bankDetails != null ? bankDetails.bankName() : null,
         bankDetails != null ? bankDetails.accountNumber() : null,
         bankDetails != null ? bankDetails.accountHolder() : null,
-        bankDetails != null ? bankDetails.bankBranch() : null);
+        bankDetails != null ? bankDetails.bankBranch() : null,
+        tncnThresholdAmount);
   }
 
   private void materializeOccurrences(ServiceRequest request, ServiceRequestQuote quote) {
@@ -3377,7 +3388,11 @@ public class ContractWorkflowService
         if (currentSettings.isPresent() && currentSettings.get().isFullyConfigured()) {
           InspectionFinanceSettings s = currentSettings.get();
           occurrence.snapshotFinance(
-              quote.getEffectivePrice(), s.getVatRate(), s.getCommissionRate(), s.getTncnRate());
+              quote.getEffectivePrice(),
+              s.getVatRate(),
+              s.getCommissionRate(),
+              s.getTncnRate(),
+              s.getTncnThresholdAmount());
         } else {
           occurrence.snapshotFinance(quote.getEffectivePrice(), null, null, null);
         }
