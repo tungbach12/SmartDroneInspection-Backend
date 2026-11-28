@@ -1012,16 +1012,29 @@ public class InspectionController {
     return paymentDocumentService.render(actorId(jwt), inspectionId);
   }
 
+  @GetMapping("/report/ai-summary")
+  @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN')")
+  public ApiResponse<ReportAiSummaryResponse> getPreviewAiSummary(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID inspectionId,
+      @RequestParam(defaultValue = "false") boolean regenerate,
+      HttpServletRequest request) {
+    return ApiResponse.success(
+        reportService.getOrGeneratePreviewAiSummary(
+            actorId(jwt), inspectionId, RequestLocale.from(request), regenerate));
+  }
+
   @GetMapping("/report/versions/{versionId}/ai-summary")
   @PreAuthorize("hasAnyRole('INSPECTOR', 'MANAGER', 'ADMIN', 'CUSTOMER')")
   public ApiResponse<ReportAiSummaryResponse> getAiSummary(
       @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID inspectionId,
       @PathVariable UUID versionId,
+      @RequestParam(defaultValue = "false") boolean regenerate,
       HttpServletRequest request) {
     return ApiResponse.success(
         reportService.getOrGenerateAiSummary(
-            actorId(jwt), inspectionId, versionId, RequestLocale.from(request)));
+            actorId(jwt), inspectionId, versionId, RequestLocale.from(request), regenerate));
   }
 
   @GetMapping("/report/versions/{versionId}/preview")

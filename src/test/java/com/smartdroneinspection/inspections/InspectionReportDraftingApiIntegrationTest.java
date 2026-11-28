@@ -348,6 +348,40 @@ class InspectionReportDraftingApiIntegrationTest {
   }
 
   @Test
+  void previewAiSummarySupportsRealGenerationCachingAndRegenerate() throws Exception {
+    insertConfirmedFinding("abscission", "MEDIUM");
+    confirmFindings(false);
+
+    DraftingStub.LAST_CONTEXT.set(null);
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/ai-summary", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.summary").value("AI summary for 1 confirmed findings."));
+    assertThat(DraftingStub.LAST_CONTEXT.get()).isNotNull();
+
+    // Cached hit avoids unnecessary repeat model invocation when findings did not change
+    DraftingStub.LAST_CONTEXT.set(null);
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/ai-summary", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.summary").value("AI summary for 1 confirmed findings."));
+    assertThat(DraftingStub.LAST_CONTEXT.get()).isNull();
+
+    // Explicit regenerate=true bypasses cache and re-queries the AI model
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/ai-summary", fixture.inspectionId())
+                .param("regenerate", "true")
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk());
+    assertThat(DraftingStub.LAST_CONTEXT.get()).isNotNull();
+  }
+
+  @Test
   void theManualDraftRemainsAvailableAsAnAutoStructuredVersion() throws Exception {
     confirmFindings(true);
     mockMvc

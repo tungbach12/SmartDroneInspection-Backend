@@ -75,6 +75,16 @@ public class ReportService {
   private static final String PROMPT_VERSION = "mf3-report-v3-bilingual";
 
   private static final String PDF_MEDIA_TYPE = "application/pdf";
+  private static final int AI_SUMMARY_CACHE_MAX_ENTRIES = 200;
+
+  private final Map<String, ReportAiSummaryResponse> aiSummaryCache =
+      java.util.Collections.synchronizedMap(
+          new LinkedHashMap<>(128, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, ReportAiSummaryResponse> eldest) {
+              return size() > AI_SUMMARY_CACHE_MAX_ENTRIES;
+            }
+          });
 
   private final InspectionRepository inspections;
   private final ReportContextAccess reportContextAccess;
@@ -1443,29 +1453,88 @@ public class ReportService {
     };
   }
 
+  /** Generates or returns a preview executive AI summary before a report version exists. */
+  @Transactional(readOnly = true)
+  public ReportAiSummaryResponse getOrGeneratePreviewAiSummary(
+      UUID actorId, UUID inspectionId, Locale locale, boolean regenerate) {
+    evidenceService.requireInspectionInScope(actorId, inspectionId);
+    Inspection inspection =
+        inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    return resolveAiSummary(inspection, null, locale, regenerate);
+  }
+
   /** Generates or returns an executive AI summary for Manager review and Customer viewing. */
   @Transactional(readOnly = true)
   public ReportAiSummaryResponse getOrGenerateAiSummary(
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
+    return getOrGenerateAiSummary(actorId, inspectionId, versionId, locale, false);
+  }
+
+  /** Generates, returns, or explicitly regenerates an executive AI summary for a version. */
+  @Transactional(readOnly = true)
+  public ReportAiSummaryResponse getOrGenerateAiSummary(
+      UUID actorId, UUID inspectionId, UUID versionId, Locale locale, boolean regenerate) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    boolean allowRegenerate = regenerate && version.getStatus() != ReportStatus.PUBLISHED;
+    return resolveAiSummary(inspection, version, locale, allowRegenerate);
+  }
 
-    List<KnowledgeReferenceSummary> references = knowledgeReferences(inspectionId);
+  private ReportAiSummaryResponse resolveAiSummary(
+      Inspection inspection, InspectionReport version, Locale locale, boolean regenerate) {
+    List<KnowledgeReferenceSummary> references = knowledgeReferences(inspection.getId());
     ReportDraftPort.DraftContext context = buildDraftContext(inspection, locale, references);
-    ReportAiSummaryResponse deterministic = buildDeterministicAiSummary(context);
-    if (version.getSummary() != null && !version.getSummary().isBlank()) {
-      return withKnowledgeReferences(
-          new ReportAiSummaryResponse(
-              version.getSummary(),
-              deterministic.keyHighlights(),
-              deterministic.recommendedActions(),
-              deterministic.overallRisk()),
-          references);
+    String lang = locale == null ? "en" : locale.getLanguage().toLowerCase(Locale.ROOT);
+    String cacheKey = inspection.getId() + ":" + lang + ":" + findingsSignature(context);
+
+    if (!regenerate) {
+      ReportAiSummaryResponse cached = aiSummaryCache.get(cacheKey);
+      if (cached != null) {
+        return withKnowledgeReferences(cached, references);
+      }
     }
 
-    return withKnowledgeReferences(generateAiSummaryFromContext(context), references);
+    ReportAiSummaryResponse generated = generateAiSummaryFromContext(context, cacheKey);
+    if (version != null
+        && version.getStatus() == ReportStatus.PUBLISHED
+        && version.getSummary() != null
+        && !version.getSummary().isBlank()) {
+      generated =
+          new ReportAiSummaryResponse(
+              version.getSummary(),
+              generated.keyHighlights(),
+              generated.recommendedActions(),
+              generated.overallRisk());
+    }
+    return withKnowledgeReferences(generated, references);
+  }
+
+  private static String findingsSignature(ReportDraftPort.DraftContext context) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(context.evidence().size()).append('|');
+    for (var f : context.findings()) {
+      sb.append(Objects.toString(f.findingCode(), ""))
+          .append(':')
+          .append(Objects.toString(f.defectLabel(), ""))
+          .append(':')
+          .append(Objects.toString(f.severity(), ""))
+          .append(':')
+          .append(Objects.toString(f.confidence(), ""))
+          .append(':')
+          .append(Objects.toString(f.technicalNotes(), ""))
+          .append(';');
+    }
+    for (var v : context.defectVerifications()) {
+      sb.append(Objects.toString(v.defectLabel(), ""))
+          .append(':')
+          .append(Objects.toString(v.resolutionStatus(), ""))
+          .append(':')
+          .append(Objects.toString(v.inspectorNotes(), ""))
+          .append(';');
+    }
+    return sb.toString();
   }
 
   private static ReportAiSummaryResponse withKnowledgeReferences(
@@ -1550,14 +1619,19 @@ public class ReportService {
             droneDisplayReference(reportIdentity, inspection.getDroneId()),
             inspection.getInspectionType() == null
                 ? "INITIAL"
-                : inspection.getInspectionType().name()),
+                : inspection.getInspectionType().name(),
+            reportIdentity == null ? null : reportIdentity.assetName()),
         confirmedFindings.stream()
             .map(
                 finding ->
                     new ReportDraftPort.FindingSummary(
                         finding.getDefectLabel(),
                         finding.getSeverity().name(),
-                        finding.getTechnicalNotes()))
+                        finding.getTechnicalNotes(),
+                        finding.getFindingCode(),
+                        finding.getConfidence() == null
+                            ? null
+                            : finding.getConfidence().toPlainString()))
             .toList(),
         confirmedEvidence.stream()
             .map(
@@ -1608,15 +1682,25 @@ public class ReportService {
 
   private ReportAiSummaryResponse generateAiSummaryFromContext(
       ReportDraftPort.DraftContext context) {
+    return generateAiSummaryFromContext(context, null);
+  }
+
+  private ReportAiSummaryResponse generateAiSummaryFromContext(
+      ReportDraftPort.DraftContext context, String cacheKey) {
     if (draftPort.isPresent()) {
       try {
         ReportDraftPort.AiSummary aiSummary = draftPort.get().summarizeReport(context);
         if (aiSummary != null && aiSummary.summary() != null && !aiSummary.summary().isBlank()) {
-          return new ReportAiSummaryResponse(
-              aiSummary.summary(),
-              aiSummary.keyHighlights() == null ? List.of() : aiSummary.keyHighlights(),
-              aiSummary.recommendedActions(),
-              aiSummary.overallRisk() == null ? "MEDIUM" : aiSummary.overallRisk());
+          ReportAiSummaryResponse response =
+              new ReportAiSummaryResponse(
+                  aiSummary.summary(),
+                  aiSummary.keyHighlights() == null ? List.of() : aiSummary.keyHighlights(),
+                  aiSummary.recommendedActions(),
+                  aiSummary.overallRisk() == null ? "MEDIUM" : aiSummary.overallRisk());
+          if (cacheKey != null) {
+            aiSummaryCache.put(cacheKey, response);
+          }
+          return response;
         }
       } catch (Exception ex) {
         // Fall back to deterministic rule-based summary
@@ -1647,7 +1731,7 @@ public class ReportService {
       for (var v : defectVerifications) {
         String noteSuffix =
             v.inspectorNotes() != null && !v.inspectorNotes().isBlank()
-                ? " — " + v.inspectorNotes()
+                ? ": " + v.inspectorNotes().trim()
                 : "";
         highlights.add(v.defectLabel() + " [" + v.resolutionStatus() + "]" + noteSuffix);
       }
@@ -1668,8 +1752,8 @@ public class ReportService {
                     + " khiếm khuyết chưa đạt hoặc cần kiểm tra bổ sung.";
         recommendedActions =
             allResolved
-                ? "Khuyến nghị Khách hàng xác nhận nghiệm thu báo cáo tái kiểm định."
-                : "Khuyến nghị tiếp tục khắc phục các khiếm khuyết chưa đạt và lập đợt tái kiểm định bổ sung.";
+                ? "Nghiệm thu kết quả: Xác nhận hoàn tất đợt tái kiểm định và lưu hồ sơ."
+                : "Khắc phục bổ sung: Xử lý triệt để các khiếm khuyết chưa đạt và đặt lịch tái kiểm tra.";
       } else {
         summary =
             allResolved
@@ -1685,8 +1769,8 @@ public class ReportService {
                     + " unresolved/inconclusive item(s).";
         recommendedActions =
             allResolved
-                ? "Recommend Customer acceptance of the re-inspection deliverable."
-                : "Recommend further remediation for unresolved target defects followed by verification.";
+                ? "Deliverable acceptance: Confirm Customer acceptance of the verified re-inspection report."
+                : "Follow-up remediation: Address unresolved target defects and schedule verification.";
       }
       return new ReportAiSummaryResponse(summary, highlights, recommendedActions, reinspectionRisk);
     }
@@ -1698,6 +1782,11 @@ public class ReportService {
     boolean hasMedium = findings.stream().anyMatch(f -> "MEDIUM".equalsIgnoreCase(f.severity()));
 
     String overallRisk = hasCritical ? "CRITICAL" : hasHigh ? "HIGH" : hasMedium ? "MEDIUM" : "LOW";
+    String assetLabel =
+        context.inspection().assetName() != null && !context.inspection().assetName().isBlank()
+            ? context.inspection().assetName().trim()
+            : (isVietnamese ? "công trình kiểm định" : "the inspected structure");
+    int evidenceCount = context.evidence().size();
 
     String summary;
     List<String> keyHighlights = new ArrayList<>();
@@ -1706,66 +1795,142 @@ public class ReportService {
     if (isVietnamese) {
       if (findings.isEmpty()) {
         summary =
-            "Khảo sát kiểm định trực quan bằng drone đã hoàn tất. Không phát hiện khiếm khuyết kết"
-                + " cấu nào trong phạm vi khảo sát. Hiện trạng tổng thể của tài sản được đánh giá ở"
-                + " mức Tốt.";
-        keyHighlights.add("Không ghi nhận khiếm khuyết kết cấu nào");
-        recommendedActions = "Khuyến nghị duy trì lịch trình bay kiểm tra định kỳ theo quy định.";
+            String.format(
+                "Kiểm định trực quan bằng drone tại %s (%d bằng chứng) đã hoàn tất. Không ghi nhận khiếm khuyết kết cấu cần xử lý trong phạm vi khảo sát.",
+                assetLabel, evidenceCount);
+        keyHighlights.add("Không ghi nhận khiếm khuyết kết cấu bất thường trong phạm vi khảo sát.");
+        recommendedActions =
+            "Bảo trì định kỳ: Tiếp tục duy trì chu kỳ kiểm định bằng drone theo kế hoạch.";
       } else {
-        long criticalCount =
-            findings.stream().filter(f -> "CRITICAL".equalsIgnoreCase(f.severity())).count();
-        long highCount =
-            findings.stream().filter(f -> "HIGH".equalsIgnoreCase(f.severity())).count();
-        long mediumCount =
-            findings.stream().filter(f -> "MEDIUM".equalsIgnoreCase(f.severity())).count();
-        long lowCount = findings.stream().filter(f -> "LOW".equalsIgnoreCase(f.severity())).count();
-
+        Map<String, List<ReportDraftPort.FindingSummary>> grouped = groupFindingsByLabel(findings);
+        String riskSentence =
+            switch (overallRisk) {
+              case "CRITICAL" -> "Yêu cầu phong tỏa cục bộ và can thiệp kỹ thuật khẩn cấp.";
+              case "HIGH" -> "Cần ưu tiên lập phương án sửa chữa sớm để ngăn hư hỏng lan rộng.";
+              case "MEDIUM" ->
+                  "Tình trạng xuống cấp bề mặt ở mức trung bình, cần đưa vào kế hoạch bảo trì khắc phục.";
+              default -> "Khiếm khuyết mức nhẹ, tiếp tục theo dõi trong chu kỳ bảo trì định kỳ.";
+            };
         summary =
             String.format(
-                "Khảo sát kiểm định trực quan bằng drone đã hoàn tất với %d khiếm khuyết được ghi"
-                    + " nhận. Đánh giá rủi ro hiện trạng ở mức %s.",
-                findings.size(), overallRisk);
-
-        if (criticalCount > 0)
-          keyHighlights.add(criticalCount + " khiếm khuyết mức độ Nghiêm trọng (CRITICAL)");
-        if (highCount > 0) keyHighlights.add(highCount + " khiếm khuyết mức độ Cao (HIGH)");
-        if (mediumCount > 0)
-          keyHighlights.add(mediumCount + " khiếm khuyết mức độ Trung bình (MEDIUM)");
-        if (lowCount > 0) keyHighlights.add(lowCount + " khiếm khuyết mức độ Thấp (LOW)");
-
-        recommendedActions =
-            "Đề xuất đánh giá các khiếm khuyết nghiêm trọng và lập kế hoạch theo dõi phù hợp.";
+                "Kiểm định trực quan tại %s ghi nhận %d khiếm khuyết đã xác nhận trên %d bằng chứng hiện trường. %s",
+                assetLabel, findings.size(), evidenceCount, riskSentence);
+        List<String> actions = new ArrayList<>();
+        grouped.forEach(
+            (label, items) -> {
+              String topSeverity = highestSeverity(items);
+              String codeMeta = formatCodeMeta(items);
+              keyHighlights.add(
+                  String.format(
+                      "%s (%s) [%s]: Ghi nhận tại %d vị trí xác nhận, cần theo dõi và xử lý đúng cấp độ.",
+                      label, codeMeta, topSeverity, items.size()));
+              actions.add(
+                  String.format(
+                      "%s (%s): Kiểm tra hiện trường và lập phương án khắc phục kỹ thuật phù hợp.",
+                      label, formatCodesOnly(items)));
+            });
+        recommendedActions = String.join("\n", actions);
       }
     } else {
       if (findings.isEmpty()) {
         summary =
-            "Drone aerial visual inspection completed. No structural defects were observed within the"
-                + " inspected scope. Overall asset condition is assessed as Good.";
-        keyHighlights.add("No structural defects observed");
-        recommendedActions = "Routine periodic drone inspection schedule is recommended.";
+            String.format(
+                "Visual drone inspection of %s across %d captured evidence item(s) is complete. No confirmed structural defects were identified within the surveyed scope.",
+                assetLabel, evidenceCount);
+        keyHighlights.add("No structural defects confirmed across surveyed surfaces.");
+        recommendedActions =
+            "Routine monitoring: Maintain scheduled periodic visual inspection cycle.";
       } else {
+        Map<String, List<ReportDraftPort.FindingSummary>> grouped = groupFindingsByLabel(findings);
+        String riskSentence =
+            switch (overallRisk) {
+              case "CRITICAL" ->
+                  "Immediate engineering assessment and safety isolation are advised.";
+              case "HIGH" ->
+                  "Priority corrective maintenance is advised to prevent progressive deterioration.";
+              case "MEDIUM" ->
+                  "Moderate surface deterioration is indicated; scheduled corrective maintenance is recommended.";
+              default ->
+                  "Minor localized conditions observed; monitor under routine maintenance cycles.";
+            };
         summary =
             String.format(
-                "Drone aerial visual inspection completed with %d confirmed defect(s). Overall"
-                    + " condition risk is assessed as %s.",
-                findings.size(), overallRisk);
-
-        findings.stream()
-            .filter(
-                f ->
-                    "CRITICAL".equalsIgnoreCase(f.severity())
-                        || "HIGH".equalsIgnoreCase(f.severity()))
-            .forEach(f -> keyHighlights.add(f.defectLabel() + " (" + f.severity() + ")"));
-        if (keyHighlights.isEmpty()) {
-          keyHighlights.add(findings.size() + " defect(s) confirmed at moderate severity");
-        }
-
-        recommendedActions =
-            "Prompt evaluation and appropriate follow-up are recommended for critical/high defects.";
+                "Visual inspection of %s identified %d confirmed defect(s) across %d captured evidence item(s). %s",
+                assetLabel, findings.size(), evidenceCount, riskSentence);
+        List<String> actions = new ArrayList<>();
+        grouped.forEach(
+            (label, items) -> {
+              String topSeverity = highestSeverity(items);
+              String codeMeta = formatCodeMeta(items);
+              keyHighlights.add(
+                  String.format(
+                      "%s (%s) [%s]: Confirmed across %d location(s); schedule targeted inspection and remediation.",
+                      label, codeMeta, topSeverity, items.size()));
+              actions.add(
+                  String.format(
+                      "%s (%s): Inspect defect extent on-site and execute targeted remediation.",
+                      label, formatCodesOnly(items)));
+            });
+        recommendedActions = String.join("\n", actions);
       }
     }
 
     return new ReportAiSummaryResponse(summary, keyHighlights, recommendedActions, overallRisk);
+  }
+
+  private static Map<String, List<ReportDraftPort.FindingSummary>> groupFindingsByLabel(
+      List<ReportDraftPort.FindingSummary> findings) {
+    Map<String, List<ReportDraftPort.FindingSummary>> grouped = new LinkedHashMap<>();
+    for (var f : findings) {
+      String label =
+          f.defectLabel() != null && !f.defectLabel().isBlank()
+              ? f.defectLabel().trim()
+              : "Unspecified defect";
+      grouped.computeIfAbsent(label, ignored -> new ArrayList<>()).add(f);
+    }
+    return grouped;
+  }
+
+  private static String highestSeverity(List<ReportDraftPort.FindingSummary> items) {
+    int bestRank = 0;
+    String best = "LOW";
+    for (var item : items) {
+      String sev =
+          item.severity() == null ? "LOW" : item.severity().trim().toUpperCase(Locale.ROOT);
+      int rank =
+          switch (sev) {
+            case "CRITICAL" -> 4;
+            case "HIGH" -> 3;
+            case "MEDIUM" -> 2;
+            default -> 1;
+          };
+      if (rank > bestRank) {
+        bestRank = rank;
+        best = sev;
+      }
+    }
+    return best;
+  }
+
+  private static String formatCodesOnly(List<ReportDraftPort.FindingSummary> items) {
+    List<String> codes =
+        items.stream()
+            .map(ReportDraftPort.FindingSummary::findingCode)
+            .filter(code -> code != null && !code.isBlank())
+            .map(String::trim)
+            .toList();
+    return codes.isEmpty() ? "x" + items.size() : String.join(", ", codes);
+  }
+
+  private static String formatCodeMeta(List<ReportDraftPort.FindingSummary> items) {
+    List<String> codes =
+        items.stream()
+            .map(ReportDraftPort.FindingSummary::findingCode)
+            .filter(code -> code != null && !code.isBlank())
+            .map(String::trim)
+            .toList();
+    String countTag = "x" + items.size();
+    return codes.isEmpty() ? countTag : countTag + " · " + String.join(", ", codes);
   }
 
   private String composePurposeScopeCriteria(
