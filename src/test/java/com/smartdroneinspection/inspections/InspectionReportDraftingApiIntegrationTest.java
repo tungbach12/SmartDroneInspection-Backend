@@ -372,6 +372,7 @@ class InspectionReportDraftingApiIntegrationTest {
     assertThat(DraftingStub.LAST_CONTEXT.get()).isNull();
 
     // Explicit regenerate=true bypasses cache and re-queries the AI model
+    DraftingStub.LAST_CONTEXT.set(null);
     mockMvc
         .perform(
             get("/api/v1/inspections/{id}/report/ai-summary", fixture.inspectionId())
@@ -379,6 +380,26 @@ class InspectionReportDraftingApiIntegrationTest {
                 .with(principal(fixture.inspectorId(), "INSPECTOR")))
         .andExpect(status().isOk());
     assertThat(DraftingStub.LAST_CONTEXT.get()).isNotNull();
+
+    // Confirm and Submit (generateDraft) reuses the cached preview summary without invoking LLM
+    // again
+    DraftingStub.LAST_CONTEXT.set(null);
+    mockMvc
+        .perform(
+            post("/api/v1/inspections/{id}/report/draft", fixture.inspectionId())
+                .with(principal(fixture.inspectorId(), "INSPECTOR")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+        .andExpect(jsonPath("$.data.summary").value("AI summary for 1 confirmed findings."));
+    assertThat(DraftingStub.LAST_CONTEXT.get()).isNull();
+
+    // Manager and Customer cannot regenerate (strictly read-only)
+    mockMvc
+        .perform(
+            get("/api/v1/inspections/{id}/report/ai-summary", fixture.inspectionId())
+                .param("regenerate", "true")
+                .with(principal(fixture.inspectorId(), "MANAGER")))
+        .andExpect(status().isForbidden());
   }
 
   @Test

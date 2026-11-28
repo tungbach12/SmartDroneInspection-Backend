@@ -337,7 +337,7 @@ public class ReportService {
     String summaryText =
         providedSummary != null && !providedSummary.isBlank()
             ? providedSummary.trim()
-            : generateAiSummaryFromContext(buildDraftContext(inspection, locale)).summary();
+            : resolveAiSummary(inspection, null, locale, false).summary();
 
     int versionNo = latestExisting == null ? 1 : latestExisting.getVersionNo() + 1;
     InspectionReport version = new InspectionReport(inspectionId, versionNo, summaryText);
@@ -1463,9 +1463,26 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ReportAiSummaryResponse getOrGeneratePreviewAiSummary(
       UUID actorId, UUID inspectionId, Locale locale, boolean regenerate) {
+    return getOrGeneratePreviewAiSummary(actorId, inspectionId, locale, regenerate, true);
+  }
+
+  /** Generates or returns a preview executive AI summary before a report version exists. */
+  @Transactional(readOnly = true)
+  public ReportAiSummaryResponse getOrGeneratePreviewAiSummary(
+      UUID actorId,
+      UUID inspectionId,
+      Locale locale,
+      boolean regenerate,
+      boolean allowRegenerateCaller) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
+    if (regenerate && (!allowRegenerateCaller || !inspection.getInspectorId().equals(actorId))) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the assigned Inspector can regenerate the AI summary");
+    }
     return resolveAiSummary(inspection, null, locale, regenerate);
   }
 
@@ -1473,18 +1490,42 @@ public class ReportService {
   @Transactional(readOnly = true)
   public ReportAiSummaryResponse getOrGenerateAiSummary(
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale) {
-    return getOrGenerateAiSummary(actorId, inspectionId, versionId, locale, false);
+    return getOrGenerateAiSummary(actorId, inspectionId, versionId, locale, false, true);
   }
 
   /** Generates, returns, or explicitly regenerates an executive AI summary for a version. */
   @Transactional(readOnly = true)
   public ReportAiSummaryResponse getOrGenerateAiSummary(
       UUID actorId, UUID inspectionId, UUID versionId, Locale locale, boolean regenerate) {
+    return getOrGenerateAiSummary(actorId, inspectionId, versionId, locale, regenerate, true);
+  }
+
+  /** Generates, returns, or explicitly regenerates an executive AI summary for a version. */
+  @Transactional(readOnly = true)
+  public ReportAiSummaryResponse getOrGenerateAiSummary(
+      UUID actorId,
+      UUID inspectionId,
+      UUID versionId,
+      Locale locale,
+      boolean regenerate,
+      boolean allowRegenerateCaller) {
     evidenceService.requireInspectionInScope(actorId, inspectionId);
     InspectionReport version = requireVersion(inspectionId, versionId);
     Inspection inspection =
         inspections.findById(inspectionId).orElseThrow(this::inspectionNotFound);
-    boolean allowRegenerate = regenerate && version.getStatus() != ReportStatus.PUBLISHED;
+    if (regenerate && (!allowRegenerateCaller || !inspection.getInspectorId().equals(actorId))) {
+      throw new BusinessException(
+          HttpStatus.FORBIDDEN,
+          "REPORT_SCOPE_DENIED",
+          "Only the assigned Inspector can regenerate the AI summary");
+    }
+    boolean allowRegenerate =
+        regenerate
+            && allowRegenerateCaller
+            && inspection.getInspectorId().equals(actorId)
+            && version.getStatus() != ReportStatus.PUBLISHED
+            && version.getStatus() != ReportStatus.SUBMITTED
+            && version.getStatus() != ReportStatus.APPROVED;
     return resolveAiSummary(inspection, version, locale, allowRegenerate);
   }
 
