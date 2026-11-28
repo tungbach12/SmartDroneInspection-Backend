@@ -35,6 +35,11 @@ public interface InspectionReportAcceptancePort {
   /** Creates a Sepay VietQR code for the occurrence associated with this inspection. */
   SepayCheckoutDetails createSepayPaymentLink(UUID actorId, UUID inspectionId);
 
+  /** Confirms a pending Sepay VietQR customer payment using a mock reference for demo/testing. */
+  default void mockConfirmSepayPayment(UUID actorId, UUID inspectionId) {
+    throw new UnsupportedOperationException("Sepay mock payment confirmation is not supported");
+  }
+
   /** Creates a Sepay VietQR payout code targeting the assigned Inspector's bank account. */
   default SepayCheckoutDetails createSepayPayoutLink(UUID actorId, UUID inspectionId) {
     throw new UnsupportedOperationException("Sepay payout link creation is not supported");

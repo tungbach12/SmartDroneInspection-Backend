@@ -917,6 +917,20 @@ public class InspectionController {
         reportAcceptancePort.get().createSepayPaymentLink(actorId(jwt), inspectionId));
   }
 
+  @PostMapping("/sepay/mock-pay")
+  @PreAuthorize("hasAnyRole('CUSTOMER', 'MANAGER')")
+  public ApiResponse<Void> mockConfirmSepayPayment(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID inspectionId) {
+    if (reportAcceptancePort.isEmpty()) {
+      throw new BusinessException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "PAYMENT_GATEWAY_UNAVAILABLE",
+          "Inspection payment service is not configured");
+    }
+    reportAcceptancePort.get().mockConfirmSepayPayment(actorId(jwt), inspectionId);
+    return ApiResponse.success(null);
+  }
+
   @PostMapping("/sepay/create-payout-link")
   @PreAuthorize("hasRole('MANAGER')")
   public ApiResponse<InspectionReportAcceptancePort.SepayCheckoutDetails> createSepayPayoutLink(

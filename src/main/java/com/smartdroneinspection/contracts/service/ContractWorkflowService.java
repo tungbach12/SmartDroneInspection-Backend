@@ -2835,6 +2835,65 @@ public class ContractWorkflowService
         resp.orderCode(), resp.amount(), resp.paymentLinkId(), resp.checkoutUrl(), resp.qrCode());
   }
 
+  @Override
+  @Transactional
+  public void mockConfirmSepayPayment(UUID actorId, UUID inspectionId) {
+    if (actorId == null || inspectionId == null) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "ARGUMENT_INVALID", "Actor and inspection IDs are required");
+    }
+    ServiceRequestOccurrence occurrence =
+        occurrences
+            .findWithLockByInspectionId(inspectionId)
+            .orElseThrow(
+                () ->
+                    failure(
+                        HttpStatus.NOT_FOUND,
+                        "OCCURRENCE_NOT_FOUND",
+                        "No contract occurrence linked to inspection"));
+    ServiceRequest request =
+        requests
+            .findById(occurrence.getRequestId())
+            .orElseThrow(
+                () -> failure(HttpStatus.NOT_FOUND, REQUEST_NOT_FOUND, REQUEST_NOT_FOUND_DETAIL));
+
+    UserAccess.ActiveUser actor = requireActor(actorId, null);
+    requireRequestForActor(actor, request.getId());
+    if (actor.hasRole(Roles.ADMIN)) {
+      throw forbidden();
+    }
+    if (actor.hasRole(Roles.MANAGER)) {
+      requireAssignedManager(request, actor);
+    } else if (!actor.hasRole(Roles.CUSTOMER)
+        || actor.ownerCustomerId() == null
+        || !actor.ownerCustomerId().equals(request.getOwnerCustomerId())) {
+      throw forbidden();
+    }
+
+    if (occurrence.getPaymentStatus() == OccurrencePaymentStatus.PAID) {
+      return;
+    }
+    if (occurrence.getReportAcceptedAt() == null
+        || occurrence.getPaymentStatus() != OccurrencePaymentStatus.PAYMENT_DUE
+        || !"SEPAY".equalsIgnoreCase(occurrence.getPaymentMethod())
+        || occurrence.getGatewayOrderCode() == null) {
+      throw failure(
+          HttpStatus.CONFLICT, "PAYMENT_NOT_PAYABLE", "Occurrence is not awaiting a Sepay payment");
+    }
+    if (occurrence.getTotalPrice() == null
+        || occurrence.getTotalPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "PAYMENT_AMOUNT_INVALID",
+          "Occurrence total price must be positive");
+    }
+
+    String paymentRef = "SEPAY-MOCK-" + occurrence.getGatewayOrderCode();
+    occurrence.confirmOnlinePayment(paymentRef, occurrence.getTotalPrice(), "SEPAY");
+    occurrences.saveAndFlush(occurrence);
+    publishPaymentSettled(occurrence);
+  }
+
   /** Manager creates a Sepay VietQR payout code targeting the assigned Inspector's bank account. */
   @Transactional
   public SepayPaymentLinkResponse createSepayPayoutLink(
