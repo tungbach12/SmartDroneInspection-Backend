@@ -8,4 +8,5 @@ import java.math.BigDecimal;
 public record UpdateInspectionFinanceSettingsRequest(
     @NotNull @DecimalMin("0.00") @DecimalMax("100.00") BigDecimal commissionRate,
     @NotNull @DecimalMin("0.00") @DecimalMax("100.00") BigDecimal vatRate,
-    @NotNull @DecimalMin("0.00") @DecimalMax("100.00") BigDecimal tncnRate) {}
+    @NotNull @DecimalMin("0.00") @DecimalMax("100.00") BigDecimal tncnRate,
+    @DecimalMin("0.00") BigDecimal tncnThresholdAmount) {}

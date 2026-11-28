@@ -9,6 +9,7 @@ public record InspectionFinanceSettingsResponse(
     BigDecimal commissionRate,
     BigDecimal vatRate,
     BigDecimal tncnRate,
+    BigDecimal tncnThresholdAmount,
     boolean configured,
     UUID updatedByUserId,
     Instant updatedAt,
@@ -16,14 +17,15 @@ public record InspectionFinanceSettingsResponse(
 
   private static final String MVP_DISCLAIMER =
       "MVP assumption: Tax base = Inspector gross payout after platform commission and before TNCN. "
-          + "Configured TNCN rate is applied to this base. Base, rate, and withholding are snapshotted per occurrence. "
-          + "This is a simplified product assumption for MVP and accounting validation, not statutory tax advice.";
+          + "Configured TNCN rate applies when Inspector gross payout meets or exceeds the configured TNCN threshold (default 2,000,000 VND per payout; 0 VND applies to all payouts). "
+          + "Rates, threshold, and withholding are snapshotted per occurrence for accounting validation, not statutory tax advice.";
 
   public static InspectionFinanceSettingsResponse from(InspectionFinanceSettings settings) {
     return new InspectionFinanceSettingsResponse(
         settings.getCommissionRate(),
         settings.getVatRate(),
         settings.getTncnRate(),
+        settings.getTncnThresholdAmount(),
         settings.isFullyConfigured(),
         settings.getUpdatedByUserId(),
         settings.getUpdatedAt(),
@@ -32,6 +34,13 @@ public record InspectionFinanceSettingsResponse(
 
   public static InspectionFinanceSettingsResponse unconfigured() {
     return new InspectionFinanceSettingsResponse(
-        null, null, null, false, null, null, MVP_DISCLAIMER);
+        null,
+        null,
+        null,
+        InspectionFinanceSettings.DEFAULT_TNCN_THRESHOLD_AMOUNT,
+        false,
+        null,
+        null,
+        MVP_DISCLAIMER);
   }
 }
