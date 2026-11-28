@@ -1,5 +1,7 @@
 # Backend - SmartDroneInspection
 
+For the active Java backend, follow `AGENTS.md`. Create or update documentation only when the user explicitly requests it. Consult or cite documents only when the task needs them.
+
 Modular monolith: Spring Boot 4.1, Java 21, Maven wrapper, Spring Modulith, PostgreSQL (pgvector) + MinIO via docker-compose.
 
 ## Commands
