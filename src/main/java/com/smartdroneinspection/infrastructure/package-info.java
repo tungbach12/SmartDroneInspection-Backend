@@ -2,6 +2,7 @@
     displayName = "Infrastructure",
     allowedDependencies = {
       "shared",
+      "shared::api",
       "shared::exception",
       "shared::storage",
       "inspections::spi",
