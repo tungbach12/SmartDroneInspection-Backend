@@ -8,6 +8,7 @@ import java.util.UUID;
 public record PlatformOperationsSettingsResponse(
     int assignmentAcceptanceTimeoutHours,
     int serviceRequestLeadDays,
+    int apiRequestTimeoutSeconds,
     UUID updatedByUserId,
     Instant updatedAt) {
 
@@ -15,6 +16,7 @@ public record PlatformOperationsSettingsResponse(
     return new PlatformOperationsSettingsResponse(
         settings.getAssignmentAcceptanceTimeoutHours(),
         settings.getServiceRequestLeadDays(),
+        settings.getApiRequestTimeoutSeconds(),
         settings.getUpdatedByUserId(),
         settings.getUpdatedAt());
   }
@@ -23,6 +25,7 @@ public record PlatformOperationsSettingsResponse(
     return new PlatformOperationsSettingsResponse(
         PlatformOperationsPolicyPort.DEFAULT_ASSIGNMENT_ACCEPTANCE_TIMEOUT_HOURS,
         PlatformOperationsPolicyPort.DEFAULT_SERVICE_REQUEST_LEAD_DAYS,
+        PlatformOperationsPolicyPort.DEFAULT_API_REQUEST_TIMEOUT_SECONDS,
         null,
         null);
   }

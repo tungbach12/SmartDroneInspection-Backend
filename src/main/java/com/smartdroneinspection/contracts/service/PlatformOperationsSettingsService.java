@@ -46,6 +46,15 @@ public class PlatformOperationsSettingsService implements PlatformOperationsPoli
         .orElse(DEFAULT_SERVICE_REQUEST_LEAD_DAYS);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public int getApiRequestTimeoutSeconds() {
+    return repository
+        .findFirstByOrderByUpdatedAtDesc()
+        .map(PlatformOperationsSettings::getApiRequestTimeoutSeconds)
+        .orElse(DEFAULT_API_REQUEST_TIMEOUT_SECONDS);
+  }
+
   @Transactional(readOnly = true)
   public PlatformOperationsSettingsResponse getSettings(UUID actorId) {
     requireAdmin(actorId);
@@ -58,12 +67,21 @@ public class PlatformOperationsSettingsService implements PlatformOperationsPoli
   @Transactional
   public PlatformOperationsSettingsResponse updateSettings(
       UUID actorId, int assignmentAcceptanceTimeoutHours) {
-    return updateSettings(actorId, assignmentAcceptanceTimeoutHours, null);
+    return updateSettings(actorId, assignmentAcceptanceTimeoutHours, null, null);
   }
 
   @Transactional
   public PlatformOperationsSettingsResponse updateSettings(
       UUID actorId, int assignmentAcceptanceTimeoutHours, Integer serviceRequestLeadDays) {
+    return updateSettings(actorId, assignmentAcceptanceTimeoutHours, serviceRequestLeadDays, null);
+  }
+
+  @Transactional
+  public PlatformOperationsSettingsResponse updateSettings(
+      UUID actorId,
+      int assignmentAcceptanceTimeoutHours,
+      Integer serviceRequestLeadDays,
+      Integer apiRequestTimeoutSeconds) {
     requireAdmin(actorId);
     PlatformOperationsSettings settings = repository.findFirstByOrderByUpdatedAtDesc().orElse(null);
     int resolvedLeadDays =
@@ -72,12 +90,19 @@ public class PlatformOperationsSettingsService implements PlatformOperationsPoli
             : settings != null
                 ? settings.getServiceRequestLeadDays()
                 : DEFAULT_SERVICE_REQUEST_LEAD_DAYS;
+    int resolvedTimeoutSeconds =
+        apiRequestTimeoutSeconds != null
+            ? apiRequestTimeoutSeconds
+            : settings != null
+                ? settings.getApiRequestTimeoutSeconds()
+                : DEFAULT_API_REQUEST_TIMEOUT_SECONDS;
     if (settings == null) {
       settings =
           new PlatformOperationsSettings(
-              assignmentAcceptanceTimeoutHours, resolvedLeadDays, actorId);
+              assignmentAcceptanceTimeoutHours, resolvedLeadDays, resolvedTimeoutSeconds, actorId);
     } else {
-      settings.updateSettings(assignmentAcceptanceTimeoutHours, resolvedLeadDays, actorId);
+      settings.updateSettings(
+          assignmentAcceptanceTimeoutHours, resolvedLeadDays, resolvedTimeoutSeconds, actorId);
     }
     return PlatformOperationsSettingsResponse.from(repository.saveAndFlush(settings));
   }

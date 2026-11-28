@@ -26,6 +26,15 @@ public class PlatformOperationsSettingsController {
     this.operationsSettings = operationsSettings;
   }
 
+  public record ClientTimeoutResponse(int apiRequestTimeoutSeconds) {}
+
+  @GetMapping("/client-timeout")
+  @PreAuthorize("isAuthenticated()")
+  public ApiResponse<ClientTimeoutResponse> getClientTimeout() {
+    return ApiResponse.success(
+        new ClientTimeoutResponse(operationsSettings.getApiRequestTimeoutSeconds()));
+  }
+
   @GetMapping
   @PreAuthorize("hasRole('ADMIN')")
   public ApiResponse<PlatformOperationsSettingsResponse> getSettings(
@@ -42,7 +51,8 @@ public class PlatformOperationsSettingsController {
         operationsSettings.updateSettings(
             actorId(jwt),
             request.assignmentAcceptanceTimeoutHours(),
-            request.serviceRequestLeadDays()));
+            request.serviceRequestLeadDays(),
+            request.apiRequestTimeoutSeconds()));
   }
 
   private static UUID actorId(Jwt jwt) {

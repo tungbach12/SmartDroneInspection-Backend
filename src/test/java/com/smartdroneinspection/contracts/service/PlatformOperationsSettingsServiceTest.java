@@ -34,13 +34,14 @@ class PlatformOperationsSettingsServiceTest {
   }
 
   @Test
-  void defaultsToTwentyFourHoursAndTwentyLeadDaysWhenNoSettingsExist() {
+  void defaultsToTwentyFourHoursTwentyLeadDaysAndOneHundredTwentySecondsWhenNoSettingsExist() {
     assertThat(service.getAssignmentAcceptanceTimeoutHours()).isEqualTo(24);
     assertThat(service.getServiceRequestLeadDays()).isEqualTo(20);
+    assertThat(service.getApiRequestTimeoutSeconds()).isEqualTo(120);
   }
 
   @Test
-  void adminCanConfigureCustomAssignmentAcceptanceTimeoutHoursAndLeadDays() {
+  void adminCanConfigureCustomAssignmentAcceptanceTimeoutHoursLeadDaysAndApiTimeout() {
     UUID adminId = UUID.randomUUID();
     when(users.findActiveUser(adminId))
         .thenReturn(
@@ -60,9 +61,10 @@ class PlatformOperationsSettingsServiceTest {
     when(repository.saveAndFlush(any(PlatformOperationsSettings.class)))
         .thenAnswer(inv -> inv.getArgument(0));
 
-    PlatformOperationsSettingsResponse updated = service.updateSettings(adminId, 48, 10);
+    PlatformOperationsSettingsResponse updated = service.updateSettings(adminId, 48, 10, 240);
     assertThat(updated.assignmentAcceptanceTimeoutHours()).isEqualTo(48);
     assertThat(updated.serviceRequestLeadDays()).isEqualTo(10);
+    assertThat(updated.apiRequestTimeoutSeconds()).isEqualTo(240);
     assertThat(updated.updatedByUserId()).isEqualTo(adminId);
   }
 
@@ -126,6 +128,10 @@ class PlatformOperationsSettingsServiceTest {
     assertThatThrownBy(() -> new PlatformOperationsSettings(24, -1, UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new PlatformOperationsSettings(24, 366, UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new PlatformOperationsSettings(24, 20, 9, UUID.randomUUID()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new PlatformOperationsSettings(24, 20, 601, UUID.randomUUID()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

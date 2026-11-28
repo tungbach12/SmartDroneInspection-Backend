@@ -166,12 +166,13 @@ class FullDatabaseSchemaMigrationTest {
     assertThat(versions)
         .containsExactly(
             "1", "2", "3", "4", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70",
-            "71", "72", "73", "74", "75", "76", "77", "78", "79", "80", "81");
+            "71", "72", "73", "74", "75", "76", "77", "78", "79", "80", "81", "82");
 
     assertColumns(
         "platform_operations_settings",
         "assignment_acceptance_timeout_hours",
-        "service_request_lead_days");
+        "service_request_lead_days",
+        "api_request_timeout_seconds");
 
     assertColumns(
         "drone_registration_applications", "mtow_kg", "max_flight_time_minutes", "camera_sensor");
