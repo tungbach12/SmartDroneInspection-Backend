@@ -254,34 +254,36 @@ public class HistoricalCaseService {
     String observation;
     if (vietnamese) {
       observation =
-          "Lỗi " + defect + (severity.isEmpty() ? "" : " ở mức " + severity) + region + ".";
+          "Ghi nhận "
+              + defect
+              + (severity.isEmpty() ? "" : " ở mức độ " + severityLabelVi(severity))
+              + region
+              + ".";
     } else {
       observation =
-          "The "
-              + (severity.isEmpty() ? "" : severity.toLowerCase(Locale.ROOT) + "-severity ")
-              + defect
+          (severity.isEmpty()
+                  ? capitalize(defect)
+                  : capitalize(severity.toLowerCase(Locale.ROOT)) + "-severity " + defect)
               + " is observed"
               + region
               + ".";
     }
 
-    String existing = cleanText(command.existingNote(), "");
-    String preserved;
-    if (existing.isEmpty()) {
-      preserved =
-          vietnamese
-              ? "Chưa có ghi chú bổ sung từ kiểm viên."
-              : "No additional inspector observation was recorded.";
-    } else {
-      preserved =
-          (vietnamese ? "Ghi chú hiện tại của kiểm viên: " : "Inspector's current note: ")
-              + asSentence(existing);
+    String existing = meaningfulExistingNote(command.existingNote(), defect);
+    StringBuilder note = new StringBuilder(observation);
+    if (!existing.isEmpty()) {
+      note.append(' ').append(asSentence(existing));
     }
 
-    StringBuilder note = new StringBuilder(observation).append(' ').append(preserved);
     String reference = referenceSentence(command, vietnamese);
     if (!reference.isEmpty()) {
       note.append(' ').append(reference);
+    } else if (existing.isEmpty()) {
+      note.append(' ')
+          .append(
+              vietnamese
+                  ? "Cần ghi nhận hiện trạng khu vực bị ảnh hưởng và đánh giá điều kiện bề mặt trước khi xử lý."
+                  : "Document the affected area and verify substrate condition before planning remediation.");
     }
     return note.toString();
   }
@@ -296,30 +298,30 @@ public class HistoricalCaseService {
 
     String standardCode = guideline == null ? "" : cleanText(guideline.standardCode(), "");
     String action = guideline == null ? "" : conciseAction(guideline.guidance());
-    String outcome =
-        matchedCase == null ? "" : cleanText(matchedCase.outcome(), "").toLowerCase(Locale.ROOT);
+    String rawOutcome = matchedCase == null ? "" : cleanText(matchedCase.outcome(), "");
+    String outcome = isWorkflowStatusOnly(rawOutcome) ? "" : rawOutcome.toLowerCase(Locale.ROOT);
 
     if (!standardCode.isEmpty() && !action.isEmpty() && !outcome.isEmpty()) {
       return vietnamese
-          ? "Tiêu chuẩn "
+          ? "Theo tiêu chuẩn "
               + standardCode
-              + " khuyến nghị "
+              + ", cần "
               + action
-              + "; một ca tương tự đã ghi nhận kết quả "
+              + "; một ca tương tự trước đây ghi nhận kết quả "
               + outcome
               + "."
-          : "Reference "
+          : "Per "
               + standardCode
-              + " advises "
+              + ", "
               + action
-              + "; a comparable case recorded "
+              + "; a comparable case was recorded as "
               + outcome
               + ".";
     }
     if (!standardCode.isEmpty() && !action.isEmpty()) {
       return vietnamese
-          ? "Tiêu chuẩn " + standardCode + " khuyến nghị " + action + "."
-          : "Reference " + standardCode + " advises " + action + ".";
+          ? "Theo tiêu chuẩn " + standardCode + ", cần " + action + "."
+          : "Per " + standardCode + ", " + action + ".";
     }
     if (!outcome.isEmpty()) {
       String label =
@@ -327,8 +329,8 @@ public class HistoricalCaseService {
               ? ""
               : cleanText(matchedCase.defectLabel(), "defect").toLowerCase(Locale.ROOT);
       return vietnamese
-          ? "Một ca tương tự về " + label + " đã ghi nhận kết quả " + outcome + "."
-          : "A comparable " + label + " case recorded " + outcome + ".";
+          ? "Một ca tương tự về " + label + " trước đây ghi nhận kết quả " + outcome + "."
+          : "A comparable " + label + " case was recorded as " + outcome + ".";
     }
     return "";
   }
@@ -352,15 +354,65 @@ public class HistoricalCaseService {
     if (text.isEmpty()) {
       return "";
     }
+    int maxLen = 180;
     int cut = text.length();
-    for (String delimiter : List.of(". ", "; ", ": ")) {
+    for (String delimiter : List.of(". ", "; ")) {
       int index = text.indexOf(delimiter);
       if (index > 20 && index < cut) {
         cut = index;
       }
     }
-    String action = text.substring(0, Math.min(cut, 90)).strip();
-    return action.replaceAll("[.;,]+$", "").toLowerCase(Locale.ROOT);
+    if (cut > maxLen) {
+      int spaceCut = text.lastIndexOf(' ', maxLen);
+      cut = spaceCut > 20 ? spaceCut : maxLen;
+    }
+    String action = text.substring(0, cut).strip();
+    return action.replaceAll("[.;,:]+$", "").toLowerCase(Locale.ROOT);
+  }
+
+  private static String meaningfulExistingNote(String value, String defect) {
+    String cleaned = cleanText(value, "");
+    if (cleaned.isEmpty() || cleaned.equalsIgnoreCase(defect)) {
+      return "";
+    }
+    String lower = cleaned.toLowerCase(Locale.ROOT);
+    if (lower.equals("pending candidate")
+        || lower.equals("confirmed by assigned inspector")
+        || lower.equals("modified by assigned inspector")
+        || lower.equals("corrected by assigned inspector")) {
+      return "";
+    }
+    return cleaned;
+  }
+
+  private static boolean isWorkflowStatusOnly(String outcome) {
+    if (outcome == null || outcome.isBlank()) {
+      return true;
+    }
+    String lower = outcome.trim().toLowerCase(Locale.ROOT);
+    return lower.equals("published")
+        || lower.equals("approved")
+        || lower.equals("submitted")
+        || lower.equals("draft")
+        || lower.equals("returned")
+        || lower.equals("superseded");
+  }
+
+  private static String severityLabelVi(String severity) {
+    return switch (severity) {
+      case "CRITICAL" -> "nghiêm trọng";
+      case "HIGH" -> "cao";
+      case "MEDIUM" -> "trung bình";
+      case "LOW" -> "thấp";
+      default -> severity;
+    };
+  }
+
+  private static String capitalize(String text) {
+    if (text == null || text.isEmpty()) {
+      return "";
+    }
+    return Character.toUpperCase(text.charAt(0)) + text.substring(1);
   }
 
   private static String asSentence(String text) {

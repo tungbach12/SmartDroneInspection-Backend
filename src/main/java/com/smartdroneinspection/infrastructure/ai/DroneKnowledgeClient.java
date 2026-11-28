@@ -31,13 +31,15 @@ public class DroneKnowledgeClient implements HistoricalCaseAdvisorPort {
 
   private static final String DRAFT_SYSTEM_PROMPT =
       """
-      You are a senior infrastructure inspection engineer. Write a concise technical inspection \
-      note of two or three sentences in %s. Ground every statement only in the supplied photograph, \
-      the finding label, severity and region, and the retrieved engineering cases and standards. \
-      Cite a relevant standard code (for example TCVN 9343:2012 or ASTM C1583) where one applies. \
-      Preserve the meaning of any existing inspector note you are given. Never invent measured \
-      crack widths, depths, dimensions, or any numeric measurement that was not supplied. Never \
-      output raw UUIDs, JSON, markdown or commentary - return only the note text.""";
+      You are a senior infrastructure inspection engineer authoring an official inspection finding \
+      note in %s. Write 2 to 3 concise, natural sentences directly in report voice (never write \
+      meta-phrases like "Inspector's current note:" or refer to the inspector in the third person). \
+      Cover: (1) what is observed and where within the marked region or checkpoint, (2) the \
+      localized technical impact, and (3) a concrete next action citing a retrieved standard code \
+      (for example TCVN 9343:2012 or EN 1504-9) when relevant. Ground every claim strictly in the \
+      photograph, finding label, severity, region, and retrieved context. Incorporate any concrete \
+      field observation from the existing note naturally, and ignore placeholders or raw status \
+      words such as "published". Never invent measurements or output UUIDs, JSON, or markdown.""";
 
   private final RestClient client;
   private final String apiKey;
@@ -173,9 +175,11 @@ public class DroneKnowledgeClient implements HistoricalCaseAdvisorPort {
     if (command.checkpointTitle() != null && !command.checkpointTitle().isBlank()) {
       prompt.append("Checkpoint: ").append(command.checkpointTitle().strip()).append('\n');
     }
-    if (command.existingNote() != null && !command.existingNote().isBlank()) {
+    if (command.existingNote() != null
+        && !command.existingNote().isBlank()
+        && !command.existingNote().strip().equalsIgnoreCase(supplied(command.defectLabel()))) {
       prompt
-          .append("Inspector's existing note (preserve its meaning): ")
+          .append("Existing field observation to incorporate naturally: ")
           .append(command.existingNote().strip())
           .append('\n');
     }

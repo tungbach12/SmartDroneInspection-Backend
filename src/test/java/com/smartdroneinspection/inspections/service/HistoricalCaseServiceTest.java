@@ -334,9 +334,11 @@ class HistoricalCaseServiceTest {
         HistoricalCaseService.synthesizeDeterministicNote(
             draftCommand("en", "Facade crack", "HIGH", "Crack observed near the mid-span."));
 
-    assertThat(note).contains("high-severity", "Facade crack", "within the marked region");
-    assertThat(note).contains("Inspector's current note: Crack observed near the mid-span.");
-    assertThat(note).contains("TCVN 9343:2012", "classify visible cracks by width", "published");
+    assertThat(note).contains("High-severity Facade crack is observed within the marked region.");
+    assertThat(note).contains("Crack observed near the mid-span.");
+    assertThat(note).contains("Per TCVN 9343:2012, classify visible cracks by width");
+    assertThat(note).doesNotContain("Inspector's current note:");
+    assertThat(note).doesNotContain("recorded published");
     assertThat(note).doesNotContain(ORGANIZATION_ID.toString());
     assertThat(note.chars().filter(character -> character == '.').count()).isBetween(2L, 3L);
   }
@@ -348,9 +350,42 @@ class HistoricalCaseServiceTest {
             draftCommand("vi", "Facade crack", "HIGH", "Vết nứt đã thấy tại vị trí giữa nhịp."));
 
     assertThat(note)
-        .contains("Lỗi Facade crack", "mức HIGH", "trong vùng đã đánh dấu")
-        .contains("Ghi chú hiện tại của kiểm viên: Vết nứt đã thấy tại vị trí giữa nhịp.")
-        .contains("Tiêu chuẩn TCVN 9343:2012", "một ca tương tự");
+        .contains("Ghi nhận Facade crack ở mức độ cao trong vùng đã đánh dấu.")
+        .contains("Vết nứt đã thấy tại vị trí giữa nhịp.")
+        .contains("Theo tiêu chuẩn TCVN 9343:2012, cần")
+        .doesNotContain("Ghi chú hiện tại của kiểm viên:")
+        .doesNotContain("published");
+  }
+
+  @Test
+  void deterministicNoteSkipsDuplicateLabelAndDoesNotTruncateWords() {
+    DraftFindingNoteCommand command =
+        new DraftFindingNoteCommand(
+            "abscission",
+            "MEDIUM",
+            "{\"xMin\":0.1,\"yMin\":0.2,\"xMax\":0.4,\"yMax\":0.6}",
+            "abscission",
+            "en",
+            "HIGH_RISE_OFFICE",
+            "Tower A",
+            null,
+            null,
+            null,
+            List.of(new DraftFindingNoteCommand.CaseReference("abscission", "notes", "PUBLISHED")),
+            List.of(
+                new DraftFindingNoteCommand.GuidelineReference(
+                    "EN 1504-9",
+                    "Concrete repair",
+                    "Define the repair objective, document the as-found condition, and plan a follow-up inspection.")));
+
+    String note = HistoricalCaseService.synthesizeDeterministicNote(command);
+
+    assertThat(note)
+        .contains("Medium-severity abscission is observed within the marked region.")
+        .contains("plan a follow-up inspection.")
+        .doesNotContain("Inspector's current note:")
+        .doesNotContain("follow-up inspect;")
+        .doesNotContain("recorded published");
   }
 
   @Test
@@ -373,8 +408,8 @@ class HistoricalCaseServiceTest {
     String note = HistoricalCaseService.synthesizeDeterministicNote(command);
 
     assertThat(note)
-        .contains("low-severity Coating blistering is observed.")
-        .contains("No additional inspector observation was recorded.");
+        .contains("Low-severity Coating blistering is observed.")
+        .contains("Document the affected area and verify substrate condition");
     assertThat(note.chars().filter(character -> character == '.').count()).isEqualTo(2L);
     assertThat(HistoricalCaseService.normalizeLocale(null)).isEqualTo("en");
     assertThat(HistoricalCaseService.normalizeLocale("vi-VN")).isEqualTo("vi");

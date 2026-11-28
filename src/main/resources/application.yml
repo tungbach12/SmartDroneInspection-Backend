@@ -151,7 +151,7 @@ app:
     # Chat/vision model is optional; when unset, note drafting falls back to the vision or draft
     # model already configured for the deployment and finally to deterministic RAG synthesis.
     chat-model: ${KNOWLEDGE_AI_CHAT_MODEL:${COMPATIBLE_VISION_MODEL:${REPORT_DRAFT_MODEL:}}}
-    timeout: ${KNOWLEDGE_AI_TIMEOUT:15s}
+    timeout: ${KNOWLEDGE_AI_TIMEOUT:${REPORT_DRAFT_TIMEOUT:60s}}
   maintenance-advisor:
     enabled: ${MAINTENANCE_ADVISOR_ENABLED:false}
     base-url: ${MAINTENANCE_ADVISOR_BASE_URL:${REPORT_DRAFT_BASE_URL:http://localhost:11434}}
